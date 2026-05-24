@@ -9,6 +9,7 @@ The system must:
 - Receive user input from one or more ingestion channels.
 - Preserve the raw input as source evidence.
 - Extract candidate entities and relationships.
+- Extract candidate contact details, external references, and metadata patches when present.
 - Extract candidate profile memories when the user reveals durable traits, preferences, or goals.
 - Detect missing or ambiguous information.
 - Ask focused clarification questions when needed.
@@ -50,6 +51,7 @@ Clarification should be triggered by:
 - Low confidence extraction.
 - Conflicting facts already present in the graph.
 - User-configured policies for sensitive facts.
+- Contact details, addresses, or external enrichment results would be stored or changed.
 
 ## Entity Resolution And Unification
 
@@ -67,6 +69,21 @@ It must handle:
 
 Resolution should use a combination of deterministic rules, embeddings, graph context, source metadata, LLM reasoning, and user confirmation.
 
+## Entity Metadata And Enrichment
+
+The system should support useful structured metadata on entities without turning metadata into an uncontrolled dumping ground.
+
+It should support:
+
+- Contact details for people and organizations.
+- External references such as provider IDs, map links, profile URLs, and contact-app IDs.
+- Enriched place data such as normalized addresses and coordinates.
+- Runtime lookup for information that should not be stored permanently.
+- Cached enrichment with expiration when freshness matters.
+- Provenance and confirmation status for stored enrichment.
+
+Contact details and enriched external data should be inspectable, correctable, and removable.
+
 ## Interrogation
 
 The user can ask natural language questions such as:
@@ -76,6 +93,8 @@ The user can ask natural language questions such as:
 - Show me memories related to my trip to Japan.
 - What places are connected to Capco events?
 - Which people have I mentioned together most often?
+- What is the latest phone number I have for Luca?
+- Open the map link for the restaurant I went to with Giulia.
 
 The system must:
 

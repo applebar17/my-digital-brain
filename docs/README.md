@@ -9,8 +9,10 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
 - [Graph model](network/graph-model.md): entity types, relationship types, evidence, identity, and provenance.
+- [Entity metadata and enrichment](network/entity-metadata-enrichment.md): contact details, external references, enrichment policy, and runtime lookup tradeoffs.
 - [Personal profile memory](network/personal-profile-memory.md): personality traits, preferences, stable user context, and LLM configuration memory.
 - [Ingestion flow](flows/ingestion.md): conversational ingestion, clarification loops, extraction, and graph writes.
+- [Structured ingestion objects](flows/structured-ingestion-objects.md): candidate entities, relationships, claims, metadata patches, and validation objects.
 - [Entity resolution flow](flows/entity-resolution.md): duplicate prevention, ambiguous matches, merges, and splits.
 - [Interrogation flow](flows/interrogation.md): Graph-RAG, natural language querying, graph queries, and answer grounding.
 - [Telegram integration](external-integrations/telegram.md): first likely chat interface.
@@ -41,7 +43,9 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - The first target user is the owner of the brain, not a public multi-user SaaS product.
 - Every extracted fact should retain provenance back to the source message, media item, or user confirmation.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
+- Structured ingestion objects are required between LLM extraction and graph writes.
 - Duplicate handling and entity unification are first-class requirements, not cleanup tasks.
+- Sensitive and mutable metadata, such as contact details, should be modeled with provenance and validity rather than buried in arbitrary metadata.
 - Ambiguity should trigger clarification where useful, especially for people, locations, dates, and event boundaries.
 - Natural language answers must be grounded in retrieved graph facts and source evidence.
 - The architecture should support both local-first and cloud deployment modes.

@@ -163,6 +163,8 @@ Profile memory should not be silently treated as permanent truth. It should reta
 - `DERIVED_FROM`: Entity, relationship, or claim to Source or extraction run.
 - `DESCRIBES_USER`: ProfileMemory to Person, where the person is the owner of the brain.
 - `CONFIGURES`: ProfileMemory to prompt, agent, or retrieval policy if configuration is represented in the graph.
+- `HAS_CONTACT_POINT`: Person or Organization to ContactPoint.
+- `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
 
 ## Provenance Model
 
@@ -190,6 +192,8 @@ The `metadata` object is useful for information that is real but not yet importa
 
 Metadata should not become the primary modeling strategy. If a metadata key becomes frequently queried, used in resolution, or important to the product behavior, it should be promoted to a typed property, relationship, or claim.
 
+Sensitive, mutable, or integration-relevant details should usually be promoted early. Examples include phone numbers, email addresses, physical addresses, external profile URLs, and provider place IDs. These values need provenance, validity, privacy handling, and conflict resolution.
+
 Recommended metadata shape:
 
 ```json
@@ -202,6 +206,47 @@ Recommended metadata shape:
   "notes": "Optional short note about why this metadata exists."
 }
 ```
+
+## Contact Details And External References
+
+Contact details can start as properties for a private MVP, but the better long-term model is a dedicated contact or external-reference structure.
+
+Possible node types:
+
+- `ContactPoint`: phone number, email address, website, social handle, or messaging account.
+- `ExternalReference`: provider-specific identifier or URL, such as a maps link, contact-app ID, calendar ID, or social profile.
+
+Possible relationships:
+
+- `HAS_CONTACT_POINT`: Person or Organization to ContactPoint.
+- `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
+- `PRIMARY_CONTACT_FOR`: ContactPoint to Entity when one value is preferred.
+
+Useful `ContactPoint` properties:
+
+- `kind`: phone, email, website, social, messaging.
+- `value`
+- `normalized_value`
+- `label`: work, personal, mobile, home, unknown.
+- `valid_from`
+- `valid_to`
+- `confidence`
+- `is_primary`
+- `privacy_level`
+- `metadata`
+
+Useful `ExternalReference` properties:
+
+- `provider`
+- `external_id`
+- `url`
+- `label`
+- `retrieved_at`
+- `expires_at`
+- `confidence`
+- `metadata`
+
+This keeps future integrations possible, such as retrieving a person's latest contact details from chat or syncing with a mobile contacts application, without treating contact data as unstructured notes.
 
 ## Identity Resolution
 

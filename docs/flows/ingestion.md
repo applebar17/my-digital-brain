@@ -8,7 +8,7 @@ The ingestion flow turns user input into graph updates while preserving source e
 
 1. User sends a message through Telegram or another channel.
 2. System stores the raw message as a `Source`.
-3. LLM extraction proposes entities, relationships, claims, dates, places, and missing fields.
+3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, metadata patches, dates, places, and missing fields.
 4. Validator checks schema, confidence, and required information.
 5. Resolution engine searches for existing graph matches.
 6. Clarification manager asks follow-up questions if needed.
@@ -58,6 +58,8 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 
 This allows validation and resolution before permanent graph writes.
 
+The candidate graph should be represented through structured ingestion objects rather than free-form model output. See [Structured ingestion objects](structured-ingestion-objects.md).
+
 ## Clarification Policy
 
 Ask clarification when:
@@ -68,6 +70,7 @@ Ask clarification when:
 - There is a conflict with existing graph facts.
 - The write would merge entities.
 - The source contains sensitive information and policy requires confirmation.
+- The system found a contact detail or external enrichment candidate that may affect future integrations.
 
 Do not ask clarification when:
 

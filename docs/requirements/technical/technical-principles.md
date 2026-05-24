@@ -34,12 +34,15 @@ The system should separate:
 - Graph write operations.
 - User confirmation events.
 - Profile memory proposals.
+- Metadata and enrichment proposals.
 
 ## Idempotent Ingestion
 
 Ingestion should be resumable and idempotent. Reprocessing the same source should not create duplicate entities or relationships.
 
 This requires stable source identifiers, extraction run identifiers, deduplication checks, and merge policies.
+
+Structured ingestion objects should sit between extraction and graph writes. The graph writer should consume validated write plans, not raw LLM output.
 
 ## Local And Cloud Portability
 
@@ -65,6 +68,7 @@ The user must eventually be able to correct the graph:
 - Mark relationships as wrong.
 - Attach or remove evidence.
 - Override inferred attributes.
+- Update or expire contact details.
 - Edit, disable, or delete profile memories.
 - Promote useful metadata into typed fields or relationships.
 
@@ -77,6 +81,7 @@ The system stores personal memory and must be designed as sensitive software.
 Baseline requirements:
 
 - Avoid unnecessary data exposure to third-party services.
+- Treat contact details, addresses, and external identifiers as sensitive data.
 - Keep raw sources and derived facts access-controlled.
 - Log operational metadata without leaking private content when possible.
 - Make provider and deployment choices explicit.
@@ -93,6 +98,7 @@ The system should expose enough internal state to debug ingestion and retrieval:
 - Merge decisions.
 - Graph write results.
 - Retrieval traces for answers.
+- Enrichment requests, cached values, provider provenance, and expiration status.
 
 ## Evolvable Schema
 
@@ -111,3 +117,15 @@ Rules:
 - Track metadata provenance when it matters.
 - Promote metadata keys into the schema when they become important.
 - Avoid using metadata as an unstructured dumping ground for facts that should be claims or relationships.
+
+## External Enrichment
+
+External tools may enrich entities, but enrichment must remain distinguishable from user-provided memory.
+
+Rules:
+
+- Store provider, retrieval time, input, confidence, and expiration policy.
+- Check provider terms and privacy constraints before storing or redisplaying external data.
+- Prefer runtime lookup when data changes often or should not become canonical memory.
+- Prefer stored enrichment when the value is stable, confirmed, useful offline, or important for resolution.
+- Cache with expiration when the data is useful but freshness matters.

@@ -37,6 +37,8 @@ LLM extraction should return a typed structure such as:
 - Candidate relationships.
 - Candidate claims.
 - Candidate profile memories.
+- Candidate metadata patches.
+- Candidate enrichment requests.
 - Mentioned time ranges.
 - Mentioned places.
 - Confidence scores.
@@ -46,6 +48,8 @@ LLM extraction should return a typed structure such as:
 - Evidence spans or source references.
 
 The exact schema should be versioned so previous extraction runs remain interpretable.
+
+LLM extraction should produce structured ingestion objects, not graph database writes. The downstream pipeline owns validation, resolution, clarification, and persistence.
 
 ## Personality And Profile Extraction
 
