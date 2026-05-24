@@ -34,7 +34,7 @@ Evidence Store --> Resolution Engine --> Graph Writer
 
 ### Ingestion Interfaces
 
-Receive input from Telegram, the frontend, and future external services. They normalize messages and media into source records.
+Receive input from Telegram, the frontend, and future external services. They normalize text messages, voice messages, and other media into source records.
 
 ### Source And Evidence Store
 
@@ -43,6 +43,10 @@ Preserves raw inputs, metadata, transcripts, attachments, and user confirmations
 ### LLM Extraction
 
 Converts source records into candidate entities, candidate relationships, summaries, missing-field signals, and ambiguity signals.
+
+### Media Processing
+
+Processes media sources into derived artifacts. For the early product, the most important media process is speech-to-text transcription for voice messages. The transcript then enters the normal ingestion flow while preserving a link back to the original audio.
 
 ### Clarification Manager
 
@@ -78,7 +82,7 @@ The first practical implementation can be modular without being over-distributed
 - One embedding store, either integrated with the database or separate.
 - One Telegram bot integration.
 - One web frontend.
-- Background jobs for extraction, media processing, embeddings, and graph maintenance.
+- Background jobs for extraction, voice transcription, media processing, embeddings, and graph maintenance.
 
 This keeps the system understandable while preserving clear boundaries for later scaling.
 
@@ -122,15 +126,16 @@ The first version is personal-first. Public-product requirements such as multi-t
 
 ## Data Lifecycle
 
-1. A source is received from a chat message or another ingestion channel.
+1. A source is received from a text message, voice message, or another ingestion channel.
 2. The raw source is stored with metadata.
-3. Extraction creates candidate entities and relationships.
-4. Validation checks structure and confidence.
-5. Clarification is requested if required.
-6. Resolution compares candidates with existing graph state.
-7. Graph writes create or update entities, relationships, evidence links, and embeddings.
-8. Durable user traits are routed to the personal profile agent when detected.
-9. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.
+3. Voice messages are transcribed and stored as derived source artifacts.
+4. Extraction creates candidate entities and relationships from text or transcript.
+5. Validation checks structure and confidence.
+6. Clarification is requested if required.
+7. Resolution compares candidates with existing graph state.
+8. Graph writes create or update entities, relationships, evidence links, and embeddings.
+9. Durable user traits are routed to the personal profile agent when detected.
+10. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.
 
 ## Architecture Decisions To Make
 

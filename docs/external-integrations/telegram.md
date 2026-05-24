@@ -7,6 +7,7 @@ Telegram is the likely first ingestion and chat interface. It gives the user a l
 ## Initial Capabilities
 
 - Receive text messages.
+- Receive voice messages and route them to transcription.
 - Send clarification questions.
 - Receive clarification answers.
 - Send ingestion summaries.
@@ -32,9 +33,10 @@ Free-form messages can still be supported, but explicit commands may reduce ambi
 2. Integration verifies the sender.
 3. Message is normalized into an internal source payload.
 4. Source is stored with Telegram metadata.
-5. Ingestion flow starts.
-6. Clarification questions are sent back through Telegram if needed.
-7. User replies are correlated to the pending ingestion session.
+5. Voice messages are stored as audio sources and sent to the transcription pipeline.
+6. Ingestion flow starts from text or transcript.
+7. Clarification questions are sent back through Telegram if needed.
+8. User replies are correlated to the pending ingestion session.
 
 ## Identity And Security
 
@@ -68,9 +70,21 @@ Avoid:
 Please provide all missing details for the event, including participants, date, location, topic, and context.
 ```
 
+## Voice Message Handling
+
+Voice messages are an important early capability because they let the user capture memories with less friction than typing.
+
+The integration should:
+
+- Download or reference the Telegram voice artifact.
+- Store Telegram message metadata and audio metadata.
+- Transcribe the audio.
+- Preserve the transcript as derived evidence.
+- Send transcription output into the same ingestion flow used for text messages.
+- Ask clarifications if names, places, dates, or participants are unclear.
+
 ## Later Capabilities
 
-- Voice note transcription.
 - Image ingestion.
 - File ingestion.
 - Inline buttons for disambiguation.

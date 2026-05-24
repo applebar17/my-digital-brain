@@ -10,11 +10,16 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Architecture overview](architecture/overview.md): major components and how they interact.
 - [Graph model](network/graph-model.md): entity types, relationship types, evidence, identity, and provenance.
 - [Entity metadata and enrichment](network/entity-metadata-enrichment.md): contact details, external references, enrichment policy, and runtime lookup tradeoffs.
+- [Metadata policy contract](network/metadata-policy-contract.md): how arbitrary metadata is accepted, promoted, indexed, and governed.
+- [Memory lifecycle](network/memory-lifecycle.md): lifecycle states for preserving memories while handling stale, disputed, and corrected facts.
+- [Temporal model](network/temporal-model.md): exact, fuzzy, observed, valid, and source time modeling.
 - [Personal profile memory](network/personal-profile-memory.md): personality traits, preferences, stable user context, and LLM configuration memory.
 - [Ingestion flow](flows/ingestion.md): conversational ingestion, clarification loops, extraction, and graph writes.
 - [Structured ingestion objects](flows/structured-ingestion-objects.md): candidate entities, relationships, claims, metadata patches, and validation objects.
 - [Entity resolution flow](flows/entity-resolution.md): duplicate prevention, ambiguous matches, merges, and splits.
 - [Interrogation flow](flows/interrogation.md): Graph-RAG, natural language querying, graph queries, and answer grounding.
+- [Memory management agent](flows/memory-management-agent.md): simple agent/toolbox for corrections, contradictions, and maintenance.
+- [Privacy and trust](requirements/privacy-and-trust.md): privacy zones, trust levels, and answer behavior.
 - [Telegram integration](external-integrations/telegram.md): first likely chat interface.
 - [LLM integration](external-integrations/llm-integration.md): how models are used for extraction, clarification, resolution, and querying.
 - [Media ingestion](external-integrations/media-ingestion.md): future handling of images, audio, documents, and other sources.
@@ -46,7 +51,10 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Structured ingestion objects are required between LLM extraction and graph writes.
 - Duplicate handling and entity unification are first-class requirements, not cleanup tasks.
 - Sensitive and mutable metadata, such as contact details, should be modeled with provenance and validity rather than buried in arbitrary metadata.
+- Memory lifecycle should preserve memories by default while still allowing correction, dispute, expiration, and deletion.
+- Time must be modeled explicitly, including fuzzy time, valid time, observed time, and source time.
 - Ambiguity should trigger clarification where useful, especially for people, locations, dates, and event boundaries.
+- Contradictions should trigger a friendly clarification path when they matter.
 - Natural language answers must be grounded in retrieved graph facts and source evidence.
 - The architecture should support both local-first and cloud deployment modes.
 - Media ingestion is part of the roadmap, but text-based conversational ingestion is the first practical path.

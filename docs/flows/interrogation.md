@@ -18,6 +18,14 @@ Advanced users or internal tools can run graph-native or SQL-like queries agains
 
 The frontend displays relevant subgraphs and lets the user expand, filter, inspect, and traverse connected entities.
 
+### Timeline View
+
+The frontend displays memories by event time, source time, or ingestion time. This is important for browsing memories without needing to know the exact query.
+
+### Map View
+
+The frontend displays places and place-linked events geographically. This helps the user explore memories by city, venue, trip, or recurring location.
+
 ## Graph-RAG Flow
 
 1. User asks a question.
@@ -27,7 +35,8 @@ The frontend displays relevant subgraphs and lets the user expand, filter, inspe
 5. Evidence is gathered and ranked.
 6. The answer generator produces a grounded response.
 7. The response includes uncertainty, missing information, and source references where useful.
-8. The user can follow up, ask for visualization, or correct the graph.
+8. Contradictions are surfaced when they materially affect the answer.
+9. The user can follow up, ask for visualization, or correct the graph.
 
 ## Retrieval Strategy
 
@@ -72,6 +81,8 @@ The query layer should support:
 - Filtering by confidence, source, date, and place.
 - Neighborhood extraction for frontend visualization.
 - Explain/debug mode for retrieval traces.
+- Timeline extraction for chronological visualization.
+- Map result extraction for geographic visualization.
 
 ## Visualization Handoff
 
@@ -83,5 +94,7 @@ When a natural language query produces graph results, the system should be able 
 - Suggested filters.
 - Evidence references.
 - Layout hints.
+- Timeline grouping when time is relevant.
+- Geographic grouping when places are relevant.
 
 The frontend should then render a focused graph neighborhood instead of the entire brain.

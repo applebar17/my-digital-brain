@@ -71,6 +71,7 @@ Ask clarification when:
 - The write would merge entities.
 - The source contains sensitive information and policy requires confirmation.
 - The system found a contact detail or external enrichment candidate that may affect future integrations.
+- The system detects a meaningful contradiction that would make future answers unreliable.
 
 Do not ask clarification when:
 
@@ -78,6 +79,21 @@ Do not ask clarification when:
 - The user can reasonably fill it later.
 - The answer can be represented as low precision.
 - The system can store the fact as uncertain without damaging identity resolution.
+- The clarification would interrupt memory capture more than it would improve memory quality.
+
+## Clarification Fatigue Policy
+
+The system should avoid turning ingestion into mechanical review.
+
+Preferred behavior:
+
+- Ask one focused question at a time.
+- Ask mostly for contradictions, risky merges, sensitive data, and important ambiguity.
+- Preserve low-precision memories when that is good enough.
+- Let the user skip clarification.
+- Use natural follow-up conversation to improve memory quality over time.
+
+The goal is to retain the user in a useful conversation, not to force complete data entry.
 
 ## Duplicate Prevention
 

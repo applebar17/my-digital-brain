@@ -13,7 +13,7 @@ LLMs are the main reasoning layer for extraction, clarification, summarization, 
 - Detect durable user traits and preferences for the personal profile memory flow.
 - Convert natural language questions into retrieval plans.
 - Generate grounded answers from retrieved graph evidence.
-- Assist with media-derived text such as transcripts, OCR, and captions.
+- Assist with media-derived text such as voice transcripts, OCR, and captions.
 
 ## Boundaries
 
@@ -46,6 +46,7 @@ LLM extraction should return a typed structure such as:
 - Ambiguity markers.
 - Proposed clarification questions.
 - Evidence spans or source references.
+- Transcript confidence and uncertain spans when input comes from voice messages.
 
 The exact schema should be versioned so previous extraction runs remain interpretable.
 
@@ -87,6 +88,7 @@ Open decisions:
 
 - Use a single provider first or create a provider abstraction immediately.
 - Use separate models for extraction, clarification, embeddings, and answer generation.
+- Use a dedicated speech-to-text model for voice messages.
 - Support local models for privacy-sensitive processing.
 - Decide which data can be sent to external providers.
 - Support both local-friendly and cloud-friendly model execution.
@@ -100,6 +102,7 @@ LLM output must be validated before use:
 - Dates and locations are normalized where possible.
 - Confidence is within expected range.
 - Evidence references point to valid sources.
+- Transcript-derived evidence points back to both transcript and original audio where possible.
 - Graph writes do not violate identity rules.
 
 Invalid output should be rejected, retried, or routed to a fallback prompt.
@@ -111,6 +114,7 @@ Because the graph contains personal memories, model calls should be explicit abo
 - Which content is sent externally.
 - Whether raw source content is sent or summarized first.
 - Whether sensitive data is redacted.
+- Whether voice audio or only the transcript is sent to external providers.
 - Whether provider logs or retention settings apply.
 - Whether a local processing mode is available.
 

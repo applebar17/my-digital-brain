@@ -29,7 +29,8 @@ The primary output is a graph database containing:
 - Visualize relevant subgraphs in a dedicated frontend.
 - Keep provenance and confidence visible enough to audit how a fact entered the brain.
 - Capture stable user traits and preferences separately from ordinary episodic memories.
-- Prepare for future media ingestion, including images, audio, documents, and links.
+- Support voice-message ingestion early, because spoken memory capture should be low friction.
+- Prepare for future media ingestion, including images, documents, links, and richer audio processing.
 - Run in local-friendly and cloud-friendly deployment modes.
 
 ## Non-Goals For The First Version
@@ -39,14 +40,15 @@ The primary output is a graph database containing:
 - Large-scale multi-user collaboration.
 - Public SaaS features such as billing, tenant administration, and generic onboarding.
 - Realtime processing of every external service from the beginning.
-- Complex media understanding before the text ingestion loop is reliable.
+- Complex media understanding before the text and voice-message ingestion loops are reliable.
 
 ## Product Principles
 
 - The user remains the authority over personal truth.
 - Personal-first usefulness is more important than public-product polish in the first version.
+- The system should preserve memories by default rather than aggressively pruning them.
 - The graph should represent uncertainty instead of hiding it.
-- Clarification should be targeted and lightweight, not a long form disguised as chat.
+- Clarification should be targeted, conversational, and useful, not a long form disguised as chat.
 - Every important fact should be explainable through its sources.
 - The system should improve from corrections and repeated references.
 - The frontend should help navigation and inspection, not only display generated summaries.
@@ -55,6 +57,8 @@ The primary output is a graph database containing:
 
 - Bad entity resolution can corrupt the graph faster than later cleanup can fix it.
 - Over-eager ingestion can store false or private information without enough review.
+- Under-eager ingestion can lose memories, which conflicts with the main product purpose.
+- Clarification fatigue can make the user stop capturing memories if every ingestion feels like maintenance.
 - Natural language answers can overstate confidence if graph evidence is weak.
 - Media ingestion can become expensive and noisy without clear source modeling.
 - A graph schema that is too rigid will block organic memory capture; one that is too loose will be hard to query.

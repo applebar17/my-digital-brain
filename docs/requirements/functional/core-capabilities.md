@@ -2,12 +2,13 @@
 
 ## Conversational Ingestion
 
-The user can send messages through a chat interface such as Telegram. Messages may describe memories, corrections, facts, events, people, places, or objects.
+The user can send text or voice messages through a chat interface such as Telegram. Messages may describe memories, corrections, facts, events, people, places, or objects.
 
 The system must:
 
 - Receive user input from one or more ingestion channels.
 - Preserve the raw input as source evidence.
+- Transcribe voice messages into derived text evidence.
 - Extract candidate entities and relationships.
 - Extract candidate contact details, external references, and metadata patches when present.
 - Extract candidate profile memories when the user reveals durable traits, preferences, or goals.
@@ -52,6 +53,9 @@ Clarification should be triggered by:
 - Conflicting facts already present in the graph.
 - User-configured policies for sensitive facts.
 - Contact details, addresses, or external enrichment results would be stored or changed.
+- Meaningful contradictions that would affect future answers.
+
+Clarification should stay lightweight. The system should preserve low-precision or uncertain memories when asking would create unnecessary friction.
 
 ## Entity Resolution And Unification
 
@@ -95,6 +99,8 @@ The user can ask natural language questions such as:
 - Which people have I mentioned together most often?
 - What is the latest phone number I have for Luca?
 - Open the map link for the restaurant I went to with Giulia.
+- Show me a timeline of my memories from last summer.
+- Show me memories around Milan on a map.
 
 The system must:
 
@@ -125,6 +131,8 @@ It should support:
 - Entity detail views.
 - Relationship lists.
 - Interactive graph neighborhoods.
+- Timeline view.
+- Map view.
 - Search and filtering.
 - Source/evidence inspection.
 - Confidence and ambiguity indicators.
@@ -143,14 +151,15 @@ The system should support:
 
 ## Media And External Sources
 
-The system should eventually ingest:
+The system should ingest voice messages early and should eventually ingest:
 
+- Voice messages.
 - Images.
-- Audio and voice notes.
+- Other audio files.
 - Documents.
 - Links and web pages.
 - Calendar entries.
 - Location history or check-ins, if explicitly enabled.
 - Other personal data exports.
 
-The first version should model media as source evidence even if deep media understanding is deferred.
+The first version should model media as source evidence even if deep media understanding is deferred. Voice messages are the exception: they should be transcribed early because spoken memory capture is a core ingestion behavior.

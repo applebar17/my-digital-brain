@@ -21,7 +21,10 @@ Core fields:
 - `received_at`
 - `content_ref`
 - `raw_text`
+- `derived_from_source_id`
 - `metadata`
+
+For voice messages, the original audio and derived transcript should be represented separately. The audio source preserves the raw artifact, while the transcript source gives the extraction pipeline text to process.
 
 ### ExtractionRun
 
@@ -39,6 +42,8 @@ Core fields:
 - `started_at`
 - `completed_at`
 - `status`
+
+Speech-to-text runs should also be represented as extraction or processing runs, with model/provider information and transcript confidence metadata.
 
 ### CandidateEntity
 

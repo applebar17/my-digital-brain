@@ -100,4 +100,12 @@ Recommended policy:
 - Sensitive traits can create privacy issues.
 - Stale profile memories can conflict with the user's current needs.
 
-The system should treat profile memory as useful context, not as permanent identity.
+The main risk is not storing explicit preferences. The risk is letting the system infer too much about the user and then behave as if those guesses are permanent truth.
+
+Example:
+
+- The user once asks for a short answer because they are in a hurry.
+- The system incorrectly stores "the user always wants very short answers."
+- Future answers become too terse even when the user needs depth.
+
+The system should treat profile memory as useful context, not as permanent identity. Explicit user statements are stronger than inferred patterns, and current instructions always override profile memory.
