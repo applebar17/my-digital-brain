@@ -11,11 +11,12 @@ The ingestion flow turns user input into graph updates while preserving source e
 3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, metadata patches, dates, places, and missing fields.
 4. Validator checks schema, confidence, and required information.
 5. Resolution engine searches for existing graph matches.
-6. Clarification manager asks follow-up questions if needed.
-7. User replies to clarification questions.
-8. System updates candidates with the answers.
-9. Graph writer persists entities, relationships, evidence links, and embeddings.
-10. User receives a concise ingestion summary when useful.
+6. The AI Manager asks a follow-up question if useful.
+7. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
+8. The user's next relevant message is appended to that pending ingestion session.
+9. The AI Manager resumes the ingestion dynamically.
+10. Graph writer persists entities, relationships, evidence links, and embeddings.
+11. User receives a concise ingestion summary when useful.
 
 ## Example
 
@@ -62,6 +63,8 @@ The candidate graph should be represented through structured ingestion objects r
 
 ## Clarification Policy
 
+Clarification is an agentic behavior inside the ingestion loop. It is not a standalone public API, workflow engine, or fully deterministic process.
+
 Ask clarification when:
 
 - A candidate maps to multiple high-probability existing entities.
@@ -94,6 +97,24 @@ Preferred behavior:
 - Use natural follow-up conversation to improve memory quality over time.
 
 The goal is to retain the user in a useful conversation, not to force complete data entry.
+
+## Pending Ingestion State
+
+The MVP should persist only the state needed to resume an interrupted or waiting ingestion.
+
+Minimal state:
+
+- `ingestion_session_id`
+- `telegram_chat_id`
+- `status`
+- `pending_question`
+- `candidate_graph_snapshot`
+- `expires_at`
+- `updated_at`
+
+When a new Telegram message arrives, the AI Manager checks whether the chat has a waiting ingestion. If yes, the message can be interpreted as the clarification answer and appended to that session. If not, the message starts a new ingestion or query flow.
+
+The AI Manager can still decide that a message is not a valid clarification answer and can use tools such as skip, restart, expire, or ask another clarification. The MVP does not need to handle every edge case explicitly before it appears in real usage.
 
 ## Duplicate Prevention
 

@@ -12,22 +12,25 @@ Chat Interface / Frontend / External Sources
 Ingestion API
   |
   v
-Source Store ---> LLM Extraction ---> Clarification Manager
-  |                  |                       |
-  |                  v                       v
-  |            Candidate Graph        User Clarifications
-  |                  |
-  v                  v
-Evidence Store --> Resolution Engine --> Graph Writer
-                     |                |
-                     v                v
-          Personal Profile Agent   Graph Database
-                                      |
-                                      v
-                           Retrieval + Query Layer
-                                      |
-                                      v
-                         Chat Answers + Graph UI
+AI Manager
+  |
+  |----> Model Providers / Speech-to-Text / External Tools
+  |
+  |----> Source Store / Evidence Store / Media Processing
+  |
+  v
+Network API
+  |
+  |----> Entity + Relationship CRUD
+  |----> Graph Query + Search
+  |----> Resolution + Contradiction Checks
+  |----> Statistics + Retrieval Context
+  |
+  v
+Graph Database
+  |
+  v
+Chat Answers + Graph UI
 ```
 
 ## Component Responsibilities
@@ -35,6 +38,30 @@ Evidence Store --> Resolution Engine --> Graph Writer
 ### Ingestion Interfaces
 
 Receive input from Telegram, the frontend, and future external services. They normalize text messages, voice messages, and other media into source records.
+
+### AI Manager
+
+Owns the agentic behavior of the system. It decides whether an incoming message is a new memory, a query, a clarification answer, a correction, or a tool-driven operation.
+
+The AI Manager coordinates model calls, speech-to-text, source storage, extraction, clarification, resolution, and calls to the Network API. It should remain dynamic and tool-driven rather than fully deterministic.
+
+### Network API
+
+Provides the stable interface to the memory network and graph database.
+
+Responsibilities:
+
+- Entity CRUD.
+- Relationship CRUD.
+- Claim and metadata storage.
+- Source and evidence linking.
+- Graph queries.
+- Retrieval context assembly.
+- Entity resolution support.
+- Contradiction checks.
+- Statistics and diagnostics.
+
+The Network API should validate graph writes and keep them auditable. The AI Manager can be dynamic, but graph mutations should still be structured.
 
 ### Source And Evidence Store
 
@@ -48,9 +75,9 @@ Converts source records into candidate entities, candidate relationships, summar
 
 Processes media sources into derived artifacts. For the early product, the most important media process is speech-to-text transcription for voice messages. The transcript then enters the normal ingestion flow while preserving a link back to the original audio.
 
-### Clarification Manager
+### Clarification Handling
 
-Tracks incomplete ingestion sessions and asks the user targeted follow-up questions. It merges clarification answers back into the candidate graph before final resolution.
+Clarification is part of the AI Manager ingestion loop, not a standalone public API or heavy workflow engine. The MVP only needs enough persisted state to resume the latest pending ingestion for a Telegram chat and expire it when it is no longer relevant.
 
 ### Resolution Engine
 
@@ -76,7 +103,7 @@ Provides search, graph visualization, entity inspection, evidence inspection, an
 
 The first practical implementation can be modular without being over-distributed:
 
-- One backend service for ingestion, resolution, querying, and API endpoints.
+- One backend service containing the AI Manager and Network API layers.
 - One graph database.
 - One source/evidence store.
 - One embedding store, either integrated with the database or separate.
@@ -129,13 +156,14 @@ The first version is personal-first. Public-product requirements such as multi-t
 1. A source is received from a text message, voice message, or another ingestion channel.
 2. The raw source is stored with metadata.
 3. Voice messages are transcribed and stored as derived source artifacts.
-4. Extraction creates candidate entities and relationships from text or transcript.
-5. Validation checks structure and confidence.
-6. Clarification is requested if required.
-7. Resolution compares candidates with existing graph state.
-8. Graph writes create or update entities, relationships, evidence links, and embeddings.
-9. Durable user traits are routed to the personal profile agent when detected.
-10. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.
+4. The AI Manager decides whether the input starts a new process or resumes a pending one.
+5. Extraction creates candidate entities and relationships from text or transcript.
+6. Validation checks structure and confidence.
+7. Clarification is requested by the AI Manager if useful.
+8. Resolution compares candidates with existing graph state through the Network API.
+9. Graph writes create or update entities, relationships, evidence links, and embeddings.
+10. Durable user traits are routed to the personal profile agent when detected.
+11. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.
 
 ## Architecture Decisions To Make
 
@@ -144,5 +172,7 @@ The first version is personal-first. Public-product requirements such as multi-t
 - LLM provider and model strategy.
 - Queue/background worker technology.
 - Authentication and user identity model.
+- Exact AI Manager tool surface.
+- Exact Network API surface.
 - Local, hosted, hybrid, and future public-product deployment boundaries.
 - Backup, export, and deletion model.

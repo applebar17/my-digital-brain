@@ -5,6 +5,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 ## Start Here
 
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
+- [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
@@ -37,6 +38,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 | Area | Purpose |
 | --- | --- |
 | `requirements/` | Product, functional, and technical requirements. |
+| `mvp/` | Practical first implementation scope and baseline decisions. |
 | `architecture/` | System decomposition, data flow, component responsibilities, and future decisions. |
 | `network/` | Graph schema, entity taxonomy, relation taxonomy, identity resolution, and provenance. |
 | `flows/` | User and system workflows such as ingestion, clarification, querying, and visualization. |
@@ -46,6 +48,8 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 
 - The graph is the canonical memory store.
 - The first target user is the owner of the brain, not a public multi-user SaaS product.
+- The MVP is a Telegram-based backend container managing a local graph database and using cloud/external AI services.
+- The backend should be split conceptually between an AI Manager layer and a Network API layer.
 - Every extracted fact should retain provenance back to the source message, media item, or user confirmation.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
 - Structured ingestion objects are required between LLM extraction and graph writes.
@@ -53,11 +57,13 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Sensitive and mutable metadata, such as contact details, should be modeled with provenance and validity rather than buried in arbitrary metadata.
 - Memory lifecycle should preserve memories by default while still allowing correction, dispute, expiration, and deletion.
 - Time must be modeled explicitly, including fuzzy time, valid time, observed time, and source time.
+- Clarification is an agentic ingestion behavior, not a standalone workflow engine or public API.
 - Ambiguity should trigger clarification where useful, especially for people, locations, dates, and event boundaries.
 - Contradictions should trigger a friendly clarification path when they matter.
 - Natural language answers must be grounded in retrieved graph facts and source evidence.
 - The architecture should support both local-first and cloud deployment modes.
-- Media ingestion is part of the roadmap, but text-based conversational ingestion is the first practical path.
+- Voice-message ingestion should be supported early through configurable speech-to-text.
+- Richer media ingestion is part of the roadmap, but text and voice conversational ingestion are the first practical paths.
 
 ## Open Decisions
 

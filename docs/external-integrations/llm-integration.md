@@ -4,6 +4,8 @@
 
 LLMs are the main reasoning layer for extraction, clarification, summarization, and natural language interrogation. They help transform unstructured input into candidate graph changes, but they are not the source of truth.
 
+In the MVP, model behavior is coordinated by the AI Manager. The AI Manager can make dynamic conversational decisions and call tools, while graph writes remain validated through the Network API.
+
 ## Core Uses
 
 - Extract entities, relationships, claims, dates, places, and topics from sources.
@@ -28,6 +30,8 @@ Separate these stages:
 - Resolution and policy checks.
 - Clarification.
 - Graph write.
+
+Clarification style and flow can be model-guided. Persistence is limited to pending ingestion state so the AI Manager can resume the conversation after the next Telegram message.
 
 ## Structured Outputs
 

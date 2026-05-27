@@ -36,6 +36,19 @@ The system should separate:
 - Profile memory proposals.
 - Metadata and enrichment proposals.
 
+## Agentic But Guarded
+
+The MVP should allow an agentic AI Manager to handle dynamic conversational cases instead of hard-coding every possible flow upfront.
+
+The system should separate:
+
+- Dynamic decisions: message intent, clarification style, tool selection, correction suggestions, and conversational recovery.
+- Guarded operations: graph writes, source storage, entity resolution decisions, privacy checks, and provenance.
+
+The AI Manager can be flexible. The Network API and graph mutation layer should remain structured, validated, and auditable.
+
+Not every edge case needs explicit deterministic handling in v1. The system should keep a small set of safe tools, persist minimal pending state, expire abandoned processes, and add more explicit handling only when real usage proves it necessary.
+
 ## Idempotent Ingestion
 
 Ingestion should be resumable and idempotent. Reprocessing the same source should not create duplicate entities or relationships.
@@ -43,6 +56,8 @@ Ingestion should be resumable and idempotent. Reprocessing the same source shoul
 This requires stable source identifiers, extraction run identifiers, deduplication checks, and merge policies.
 
 Structured ingestion objects should sit between extraction and graph writes. The graph writer should consume validated write plans, not raw LLM output.
+
+Clarification state should be minimal. It exists so the AI Manager can resume a pending ingestion after a later Telegram message, not as a separate clarification subsystem.
 
 ## Local And Cloud Portability
 

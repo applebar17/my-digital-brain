@@ -9,6 +9,7 @@ The system must:
 - Receive user input from one or more ingestion channels.
 - Preserve the raw input as source evidence.
 - Transcribe voice messages into derived text evidence.
+- Let the AI Manager decide whether the input is a new memory, query, correction, or clarification answer.
 - Extract candidate entities and relationships.
 - Extract candidate contact details, external references, and metadata patches when present.
 - Extract candidate profile memories when the user reveals durable traits, preferences, or goals.
@@ -55,7 +56,9 @@ Clarification should be triggered by:
 - Contact details, addresses, or external enrichment results would be stored or changed.
 - Meaningful contradictions that would affect future answers.
 
-Clarification should stay lightweight. The system should preserve low-precision or uncertain memories when asking would create unnecessary friction.
+Clarification should stay lightweight and agentic. The system should preserve low-precision or uncertain memories when asking would create unnecessary friction.
+
+The MVP should not expose a separate clarification API. It should store minimal pending ingestion state and let the AI Manager resume the latest waiting ingestion for the Telegram chat.
 
 ## Entity Resolution And Unification
 
