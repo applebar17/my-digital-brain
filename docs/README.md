@@ -6,6 +6,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
+- [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
 - [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
@@ -40,6 +41,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 | --- | --- |
 | `requirements/` | Product, functional, and technical requirements. |
 | `mvp/` | Practical first implementation scope and baseline decisions. |
+| `dev-plans/` | Multi-wave development plans for major implementation areas. |
 | `ai-engineering/` | Principles for prompts, structured outputs, context building, tools, agents, and guardrails. |
 | `architecture/` | System decomposition, data flow, component responsibilities, and future decisions. |
 | `network/` | Graph schema, entity taxonomy, relation taxonomy, identity resolution, and provenance. |
