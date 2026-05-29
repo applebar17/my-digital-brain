@@ -6,6 +6,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
+- [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
@@ -39,6 +40,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 | --- | --- |
 | `requirements/` | Product, functional, and technical requirements. |
 | `mvp/` | Practical first implementation scope and baseline decisions. |
+| `ai-engineering/` | Principles for prompts, structured outputs, context building, tools, agents, and guardrails. |
 | `architecture/` | System decomposition, data flow, component responsibilities, and future decisions. |
 | `network/` | Graph schema, entity taxonomy, relation taxonomy, identity resolution, and provenance. |
 | `flows/` | User and system workflows such as ingestion, clarification, querying, and visualization. |
@@ -50,6 +52,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - The first target user is the owner of the brain, not a public multi-user SaaS product.
 - The MVP is a Telegram-based backend container managing a local graph database and using cloud/external AI services.
 - The backend should be split conceptually between an AI Manager layer and a Network API layer.
+- AI features should follow the documented AI engineering principles: structured outputs, explicit context building, clear tool contracts, and deterministic guardrails.
 - Every extracted fact should retain provenance back to the source message, media item, or user confirmation.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
 - Structured ingestion objects are required between LLM extraction and graph writes.
