@@ -48,10 +48,11 @@ Required provider abstractions:
 - `LLMProvider`
 - `SpeechToTextProvider`
 - `EmbeddingProvider`
+- `VectorStore`
 - `ModelRouter`
 - `ProviderRequestLog`
 
-Provider abstractions should hide OpenAI versus Azure OpenAI differences from the ingestion pipeline.
+Provider abstractions should hide OpenAI versus Azure OpenAI differences from the ingestion pipeline. The vector store abstraction should support Chroma locally and Azure AI services in cloud mode.
 
 ## Wave 2: Resolution And Contradiction Handling
 
@@ -86,6 +87,7 @@ Provider abstractions should hide OpenAI versus Azure OpenAI differences from th
 - Text memories can create nodes and relationships.
 - Voice memories can be transcribed and ingested.
 - OpenAI or Azure OpenAI can be swapped through configuration without changing ingestion logic.
+- Chroma or Azure AI services can be swapped through the vector store protocol without changing ingestion logic.
 - Ambiguous person/place references can trigger a clarification.
 - Graph writes are auditable.
 - Reprocessing a source does not create duplicate graph pollution.

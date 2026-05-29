@@ -15,7 +15,9 @@ Telegram Bot
   -> AI Manager
       -> OpenAI / Azure OpenAI / speech-to-text / tools
       -> Network API
-          -> Graph Database
+          -> Neo4j Graph Database
+          -> Relational operational database
+          -> Vector database
           -> source and media storage
 ```
 
@@ -93,7 +95,9 @@ Preferred starting point:
 - Python backend.
 - FastAPI or similar lightweight Python API framework.
 - Pydantic or equivalent for structured objects.
-- Local graph database, likely Neo4j unless a better reason emerges.
+- Neo4j graph database.
+- Relational operational database from v1, local or remote.
+- Separate vector database from v1, with Chroma locally and Azure AI services in cloud mode through a protocolled interface.
 - Local source/media storage for MVP.
 - OpenAI or Azure OpenAI for LLM usage.
 - Speech-to-text provider configurable for voice messages.
@@ -104,7 +108,6 @@ This is a baseline, not a lock-in. Choices can evolve as implementation pressure
 ## What To Keep Agile
 
 - Exact frontend stack.
-- Exact graph database until implementation starts.
 - Exact JSON contracts beyond first coding needs.
 - Complete edge-case handling.
 - Advanced media ingestion beyond voice transcription.
@@ -114,6 +117,10 @@ This is a baseline, not a lock-in. Choices can evolve as implementation pressure
 
 - Source provenance.
 - Graph write validation.
+- Neo4j as graph database.
+- Relational operational storage.
+- Vector store protocol.
+- LLM-facing ID aliases for model contexts.
 - Minimal pending ingestion state.
 - Voice transcript provenance.
 - Entity resolution basics.

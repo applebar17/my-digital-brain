@@ -52,9 +52,10 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 
 - The graph is the canonical memory store.
 - The first target user is the owner of the brain, not a public multi-user SaaS product.
-- The MVP is a Telegram-based backend container managing a local graph database and using cloud/external AI services.
+- The MVP is a Telegram-based backend container using Neo4j, a relational operational database, a separate vector database, and cloud/external AI services.
 - The backend should be split conceptually between an AI Manager layer and a Network API layer.
 - AI features should follow the documented AI engineering principles: structured outputs, explicit context building, clear tool contracts, and deterministic guardrails.
+- Internal IDs should be app-generated UUIDs, while LLM contexts should use short temporary aliases such as `NODE_000001`.
 - Every extracted fact should retain provenance back to the source message, media item, or user confirmation.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
 - Structured ingestion objects are required between LLM extraction and graph writes.
@@ -67,14 +68,14 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Contradictions should trigger a friendly clarification path when they matter.
 - Natural language answers must be grounded in retrieved graph facts and source evidence.
 - The architecture should support both local-first and cloud deployment modes.
+- Vector storage should use a protocolled interface with Chroma locally and Azure AI services in cloud mode.
 - Voice-message ingestion should be supported early through configurable speech-to-text.
 - Richer media ingestion is part of the roadmap, but text and voice conversational ingestion are the first practical paths.
 
 ## Open Decisions
 
-- Graph database: Neo4j, Memgraph, ArangoDB, PostgreSQL with graph extensions, or another option.
-- Query language: Cypher, Gremlin, SQL over graph tables, or a custom query abstraction.
-- Embedding storage: inside the graph database, in a vector database, or in PostgreSQL.
+- Relational database implementation: local Postgres-compatible database, remote managed database, or another relational option.
+- Query abstraction: whether to expose Cypher directly or wrap it behind Network API query methods.
 - LLM provider strategy: single provider first, or provider abstraction from day one.
 - Confirmation policy: what can be auto-written versus what requires user confirmation.
 - Final deployment mode: fully local, private cloud, hybrid, or public product later.

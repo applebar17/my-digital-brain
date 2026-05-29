@@ -26,8 +26,10 @@ Network API
   |----> Resolution + Contradiction Checks
   |----> Statistics + Retrieval Context
   |
-  v
-Graph Database
+  |----> Neo4j Graph Database
+  |----> Relational Operational Database
+  |----> Vector Database
+  |----> Source / Media Storage
   |
   v
 Chat Answers + Graph UI
@@ -63,9 +65,21 @@ Responsibilities:
 
 The Network API should validate graph writes and keep them auditable. The AI Manager can be dynamic, but graph mutations should still be structured.
 
+The Network API also owns ID translation for model contexts. Internal persistent UUIDs can be mapped to short LLM-facing aliases such as `NODE_000001` and resolved back before any graph operation.
+
 ### Source And Evidence Store
 
 Preserves raw inputs, metadata, transcripts, attachments, and user confirmations. The graph should reference this store instead of copying every raw artifact into graph properties.
+
+### Relational Operational Store
+
+Stores application runtime data that should not live directly in the graph, such as Telegram chat records, pending ingestion sessions, provider request logs, job state, prompt/schema registries, vector record references, backup/export records, and audit logs.
+
+The relational store can be local or remote. It supports the application, but the graph remains the canonical memory model.
+
+### Vector Store
+
+Stores embeddings for semantic retrieval. The application should access it through a protocolled interface, with Chroma as the local option and Azure AI services as the cloud option.
 
 ### LLM Extraction
 
@@ -104,9 +118,10 @@ Provides search, graph visualization, entity inspection, evidence inspection, an
 The first practical implementation can be modular without being over-distributed:
 
 - One backend service containing the AI Manager and Network API layers.
-- One graph database.
+- One Neo4j graph database.
+- One relational operational database.
+- One vector database.
 - One source/evidence store.
-- One embedding store, either integrated with the database or separate.
 - One Telegram bot integration.
 - One web frontend.
 - Background jobs for extraction, voice transcription, media processing, embeddings, and graph maintenance.
@@ -127,6 +142,7 @@ Expected shape:
 - Backend service running locally.
 - Local graph database.
 - Local Postgres or lightweight source store.
+- Local vector database, initially Chroma.
 - Local file/object storage for media.
 - Optional local LLM and embedding models.
 - Optional local chat interface when Telegram is not desired.
@@ -142,6 +158,7 @@ Expected shape:
 - Hosted backend service.
 - Managed or self-hosted graph database.
 - Managed Postgres or equivalent operational store.
+- Cloud vector store through Azure AI services.
 - Object storage for media.
 - Queue and background workers.
 - Telegram webhook endpoint.
@@ -167,8 +184,8 @@ The first version is personal-first. Public-product requirements such as multi-t
 
 ## Architecture Decisions To Make
 
-- Graph database selection.
-- Embedding storage strategy.
+- Exact relational database implementation.
+- Exact vector store implementation details behind the `VectorStore` protocol.
 - LLM provider and model strategy.
 - Queue/background worker technology.
 - Authentication and user identity model.
