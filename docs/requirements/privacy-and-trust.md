@@ -71,6 +71,22 @@ Before sending data to cloud LLMs or enrichment providers, the system should che
 - Whether redaction is possible.
 - Whether local processing is available.
 
+## Graph And Backup Security
+
+Graph database authentication should be enabled even for local-first deployment. The graph database should not be exposed outside the local container or trusted network unless explicitly needed.
+
+Authentication protects the running database service. It does not protect copied database files, dumps, or exported backup packages. Those should be encrypted separately.
+
+Secure export and restore should include:
+
+- Authenticated export initiation.
+- Encrypted backup package.
+- Manifest with schema version, timestamps, included data stores, and checksums.
+- Optional manifest signature.
+- Short-lived remote download authorization if backups are stored remotely.
+- Checksum verification before restore.
+- Clear policy for where encryption keys or passphrases are stored.
+
 ## Lightweight UX
 
 Privacy and trust should not become a complicated management interface. Most interactions should happen through simple chat prompts and clear answer wording:
