@@ -186,6 +186,30 @@ Good guardrails:
 
 Overly rigid prompts can make the agent brittle. Under-specified prompts invite hallucination.
 
+### 12. Simplify IDs In Model Context
+
+Long opaque database IDs are bad prompt material. They increase token usage, are hard for humans to inspect, and are easy for models to copy incorrectly.
+
+When passing graph context to a model, the context builder should map internal persistent IDs to short temporary aliases.
+
+Example:
+
+```text
+Internal UUID 8f1f7c3a-... becomes NODE_000001.
+Internal UUID 17dc7a91-... becomes CLAIM_000001.
+Internal UUID 72ad38f4-... becomes SOURCE_000001.
+```
+
+The model should use the aliases in structured outputs and tool arguments. The backend must resolve aliases back to internal IDs before validation and execution.
+
+Rules:
+
+- Aliases are scoped to a single model context or process step.
+- Aliases are not canonical IDs.
+- Alias maps should be explicit in the context.
+- Failed alias resolution should fail validation.
+- The model should never invent aliases that were not provided.
+
 ## Practical Development Rules
 
 - Treat schemas, tools, and prompts as one design surface.
@@ -195,6 +219,7 @@ Overly rigid prompts can make the agent brittle. Under-specified prompts invite 
 - Prefer a small strong toolbox over many vague tools.
 - Add deterministic code where it is clearly cheaper, faster, and more reliable.
 - Add model calls where language, ambiguity, or contextual judgment matters.
+- Use short LLM-facing aliases instead of raw database IDs in prompts and tool schemas.
 - Record model inputs, outputs, prompt versions, schema versions, and tool calls when they affect persistent memory.
 
 ## Design Checklist For New AI Features
@@ -206,6 +231,7 @@ Before implementing a new AI behavior, answer:
 - What structured output is expected?
 - Which context is necessary?
 - Which context should be excluded?
+- Which internal IDs need LLM-facing aliases?
 - Which tools are available?
 - What are the deterministic guardrails?
 - What happens if the model is uncertain?
@@ -222,5 +248,6 @@ For the MVP, these principles imply:
 - Keep the Network API responsible for structured graph operations.
 - Use cloud AI services initially, with provider boundaries documented.
 - Support voice transcription as a first-class ingestion path.
+- Use LLM-facing ID aliases for graph context and tool calls.
 - Keep pending ingestion state minimal and expiring.
 - Add richer deterministic handling only when real usage shows the need.
