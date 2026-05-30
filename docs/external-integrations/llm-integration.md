@@ -9,6 +9,7 @@ In the MVP, model behavior is coordinated by the AI Manager. The AI Manager can 
 ## Core Uses
 
 - Extract entities, relationships, claims, dates, places, and topics from sources.
+- Extract user-stated perceptions, emotional summaries, relationship contexts, and original user wording when present.
 - Detect missing information and propose clarification questions.
 - Compare ambiguous entity candidates during resolution.
 - Summarize entities, events, sources, and graph neighborhoods.
@@ -40,6 +41,10 @@ LLM extraction should return a typed structure such as:
 - Candidate entities.
 - Candidate relationships.
 - Candidate claims.
+- Candidate perceptions.
+- Candidate relationship contexts.
+- Emotional summaries.
+- Original user wording references.
 - Candidate profile memories.
 - Candidate metadata patches.
 - Candidate enrichment requests.

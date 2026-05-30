@@ -8,7 +8,7 @@ The ingestion flow turns user input into graph updates while preserving source e
 
 1. User sends a message through Telegram or another channel.
 2. System stores the raw message as a `Source`.
-3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, metadata patches, dates, places, and missing fields.
+3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, perceptions, relationship contexts, emotional summaries, metadata patches, dates, places, and missing fields.
 4. Validator checks schema, confidence, and required information.
 5. Resolution engine searches for existing graph matches.
 6. The AI Manager asks a follow-up question if useful.
@@ -43,6 +43,7 @@ Potential graph output:
 - Place: clarified city or venue.
 - Topic: new project.
 - Relationships: people participated in event, event happened at place, event was about topic.
+- Affective memory: emotional tone, user-stated perceptions, or relationship context if present in the source.
 - Source: original Telegram message plus clarification replies.
 
 ## Candidate Graph
@@ -51,6 +52,9 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 
 - Candidate nodes.
 - Candidate relationships.
+- Candidate perceptions.
+- Candidate relationship contexts.
+- Emotional summaries and original user wording when present.
 - Confidence scores.
 - Evidence references.
 - Missing fields.

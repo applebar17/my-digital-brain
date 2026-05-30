@@ -4,7 +4,7 @@
 
 Define the local graph database that stores memories, entities, relationships, claims, sources, profile memories, metadata, provenance, and queryable structure for Graph-RAG.
 
-The graph database is the canonical memory store. It should be rich enough from v1 to preserve provenance, uncertainty, time, lifecycle, and privacy, while keeping the number of entity classes controlled.
+The graph database is the canonical memory store. It should be rich enough from v1 to preserve provenance, uncertainty, time, lifecycle, privacy, and affective memory, while keeping the number of entity classes controlled.
 
 ## Design Stance
 
@@ -12,6 +12,8 @@ The graph database is the canonical memory store. It should be rich enough from 
 - Keep source evidence and provenance first-class.
 - Use direct relationships for high-confidence graph structure.
 - Use `Claim` nodes for uncertain, disputed, temporal, or evidence-heavy facts.
+- Use `Perception` and `RelationshipContext` nodes for subjective and emotionally meaningful memory.
+- Preserve emotional summaries and original user wording as first-class memory fields when present.
 - Keep arbitrary metadata available, but promote important metadata into typed properties, relationships, or dedicated nodes.
 - Use app-generated persistent IDs internally, but expose simplified temporary aliases to LLM contexts.
 - Use a relational operational store from the beginning for app/session/source/provider/runtime data that does not belong in the graph.
@@ -25,6 +27,8 @@ The graph database is the canonical memory store. It should be rich enough from 
 - Operational relational store: include from v1, local or remote.
 - Schema philosophy: controlled rich core.
 - Complex fact modeling: use `Claim` nodes for uncertain, disputed, temporal, or evidence-heavy facts.
+- Affective memory modeling: use `Perception` and `RelationshipContext` nodes from v1.
+- Emotional fields: include `emotional_summary`, `emotional_valence`, `emotional_intensity`, `emotion_tags`, and `original_user_words` where relevant.
 - Internal ID strategy: app-generated UUIDs.
 - LLM-facing ID strategy: simplified aliases mapped per context, such as `NODE_000001`, `REL_000001`, `CLAIM_000001`, and `SOURCE_000001`.
 - Vector storage: separate vector database behind a protocolled interface.
@@ -59,6 +63,8 @@ Canonical memory graph:
 - Entities.
 - Relationships.
 - Claims.
+- Perceptions.
+- Relationship contexts.
 - Profile memories.
 - Contact points.
 - External references.
@@ -148,6 +154,8 @@ Implement these node types first:
 - `Topic`
 - `Source`
 - `Claim`
+- `Perception`
+- `RelationshipContext`
 - `ProfileMemory`
 - `ContactPoint`
 - `ExternalReference`
@@ -172,6 +180,14 @@ Most memory nodes should include:
 - `privacy_level`
 - `lifecycle_state`
 - `metadata`
+
+Affective fields should be available on emotionally meaningful nodes:
+
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
 
 Recommended common enum values:
 
@@ -250,6 +266,35 @@ Recommended common enum values:
 - `source_time`
 - `time_precision`
 
+`Perception`:
+
+- `description`
+- `perception_type`
+- `target_type`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `source_kind`
+- `valid_from`
+- `valid_to`
+- `time_precision`
+
+`RelationshipContext`:
+
+- `description`
+- `relationship_type`
+- `status`
+- `closeness`
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `valid_from`
+- `valid_to`
+- `time_precision`
+
 `ProfileMemory`:
 
 - `profile_key`
@@ -322,6 +367,10 @@ Implement these relationships first:
 - `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
 - `DESCRIBES_USER`: ProfileMemory to Person.
 - `CONTRADICTS`: Claim to Claim.
+- `PERCEIVES`: Person to Perception.
+- `PERCEPTION_OF`: Perception to target entity.
+- `HAS_RELATIONSHIP_CONTEXT`: Person to RelationshipContext.
+- `RELATIONSHIP_WITH`: RelationshipContext to target entity.
 
 Common relationship properties:
 
@@ -348,6 +397,7 @@ Wave 1 should create constraints for:
 - Unique `Source` by `(channel, external_id)` where available.
 - Unique `ExternalReference` by `(provider, external_id)` where available.
 - Unique `ExtractionRun.id`.
+- Unique IDs for `Perception` and `RelationshipContext`.
 
 Wave 1 should create indexes for:
 
@@ -356,6 +406,8 @@ Wave 1 should create indexes for:
 - Event started_at and ended_at.
 - Source channel, external_id, received_at.
 - Claim claim_type, valid_from, valid_to.
+- Perception perception_type, emotional_valence.
+- RelationshipContext relationship_type, status, closeness.
 - lifecycle_state.
 - privacy_level.
 - trust_level.
@@ -365,6 +417,8 @@ Full-text or vector indexes can be added for:
 - Entity descriptions.
 - Source/transcript text.
 - Claim text.
+- Perception descriptions and original user words.
+- RelationshipContext descriptions and emotional summaries.
 - Event summaries.
 
 Vector indexes should be managed in the external vector store rather than Neo4j for v1. Neo4j may still have full-text indexes for graph-native lookup.
@@ -380,6 +434,7 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Add role separation for graph access, such as app read/write, read-only, and maintenance users.
 - Add backup/export metadata for graph copy creation, including schema version, export timestamp, checksum, and encryption status.
 - Add relationship promotion rules: when a generic `RELATED_TO` or metadata value becomes important, migrate it to a typed relationship, property, or claim.
+- Add affective extraction review rules for separating user-stated perceptions from LLM-inferred emotional summaries.
 - Add richer relational indexes for session lookup, source lookup, provider logs, and audit queries.
 - Add vector namespace/versioning strategy for re-embedding when models change.
 
@@ -391,6 +446,7 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Historical views of entity state over time.
 - Automatic stale fact detection.
 - Graph analytics: most-mentioned people, places, topics, relationship density, memory clusters.
+- Affective graph analytics: recurring emotional tags, relationship tone changes, and emotionally dense memory clusters.
 - Saved graph views for frontend visualization.
 - Timeline-ready query helpers.
 - Map-ready place and event extraction.
@@ -405,6 +461,8 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Updates should preserve old values when history matters.
 - Sensitive fields should carry `privacy_level`.
 - Low-confidence facts should use `Claim` nodes or lifecycle/trust metadata rather than pretending to be canonical.
+- Subjective perceptions should not be written as objective properties on target entities.
+- Affective information should mark whether it is user-stated, LLM-inferred, or system-derived.
 - Deletion should be explicit; archival, expiration, or dispute is preferred when preserving memory is useful.
 
 ## Query Patterns To Support Early
@@ -417,6 +475,9 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Get memories by time range.
 - Get latest known contact details.
 - Get source evidence for a claim or entity.
+- Get perceptions associated with an entity.
+- Get relationship context between the user and another entity.
+- Get emotional summaries and original user wording for a memory.
 - Find possible duplicates.
 - Find contradictions.
 - Build a focused graph neighborhood for visualization.
@@ -462,6 +523,7 @@ Graph copies and downloads:
 - Direct relationship provenance is limited in Neo4j unless represented through properties or claim nodes.
 - Database authentication protects the running graph service, but it does not protect copied database files or exported backups by itself.
 - Rich v1 schemas can create false confidence if extraction quality is weak.
+- LLMs can over-interpret emotion if user-stated perception and inferred affect are not separated.
 - Exposing long opaque UUIDs to LLMs can increase token usage and model copy errors.
 - A relational store adds operational complexity, but it prevents the graph from becoming a dumping ground for app runtime state.
 - A separate vector store adds one more dependency, but it keeps semantic retrieval portable across local and cloud modes.
@@ -471,6 +533,8 @@ Graph copies and downloads:
 - Can create and query core entities and relationships.
 - Every graph fact links back to source evidence or stores source IDs.
 - Can represent uncertain claims.
+- Can represent user-stated perceptions and relationship contexts.
+- Can retrieve emotional summaries and original user wording with factual graph context.
 - Can represent contact details and external references.
 - Can preserve old values instead of overwriting important memory history.
 - Can query memories by person, place, topic, source, and time.

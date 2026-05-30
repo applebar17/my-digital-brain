@@ -9,6 +9,7 @@
 - Allow multiple names, aliases, and descriptions for the same entity.
 - Treat time and place as first-class dimensions.
 - Allow extensible metadata, but keep important queryable facts in typed fields or relationships.
+- Treat affective memory as first-class: perceptions, emotional summaries, and original user wording should be modeled explicitly when present.
 
 ## Core Node Types
 
@@ -121,6 +122,52 @@ Useful properties:
 
 Claims are useful when a direct relationship is too lossy or when multiple evidence sources support conflicting statements.
 
+### Perception
+
+A subjective perception held by the user about a person, relationship, event, place, organization, object, or topic.
+
+Useful properties:
+
+- `description`
+- `perception_type`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `source_kind`
+- `valid_from`
+- `valid_to`
+- `time_precision`
+- `confidence`
+- `privacy_level`
+- `metadata`
+
+Perceptions should not be treated as objective truth about the target. They represent the user's experienced truth and should retain provenance.
+
+### RelationshipContext
+
+A memory object describing the user's relationship with another entity over time.
+
+Useful properties:
+
+- `description`
+- `relationship_type`
+- `status`
+- `closeness`
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `valid_from`
+- `valid_to`
+- `time_precision`
+- `confidence`
+- `privacy_level`
+- `metadata`
+
+Relationship contexts are useful when a simple edge such as `KNOWS` loses the narrative and emotional history of a relationship.
+
 ### ProfileMemory
 
 A durable memory about the owner of the brain that can help configure future LLM behavior or retrieval context.
@@ -165,6 +212,10 @@ Profile memory should not be silently treated as permanent truth. It should reta
 - `CONFIGURES`: ProfileMemory to prompt, agent, or retrieval policy if configuration is represented in the graph.
 - `HAS_CONTACT_POINT`: Person or Organization to ContactPoint.
 - `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
+- `PERCEIVES`: Person to Perception.
+- `PERCEPTION_OF`: Perception to target entity.
+- `HAS_RELATIONSHIP_CONTEXT`: Person to RelationshipContext.
+- `RELATIONSHIP_WITH`: RelationshipContext to target entity.
 
 ## Provenance Model
 
@@ -184,6 +235,9 @@ Relationships may need their own provenance, not only nodes. For example, two pe
 Every major entity should support:
 
 - A human-readable `description`.
+- An optional `emotional_summary` when the memory has affective weight.
+- Optional `emotion_tags`, `emotional_valence`, and `emotional_intensity` when relevant.
+- Optional `original_user_words` when the user's phrasing carries important memory signal.
 - Stable typed fields used for filtering and querying.
 - A flexible `metadata` object for additional variable information.
 - Provenance for metadata when the information is important.
@@ -191,6 +245,8 @@ Every major entity should support:
 The `metadata` object is useful for information that is real but not yet important enough to promote into the core schema. Examples include personal labels, source-specific attributes, external IDs, temporary analysis scores, display hints, and domain-specific details.
 
 Metadata should not become the primary modeling strategy. If a metadata key becomes frequently queried, used in resolution, or important to the product behavior, it should be promoted to a typed property, relationship, or claim.
+
+Affective information should not be hidden in metadata when it is important. Perceptions, relationship contexts, emotional summaries, and original user wording should be typed fields or dedicated nodes.
 
 Sensitive, mutable, or integration-relevant details should usually be promoted early. Examples include phone numbers, email addresses, physical addresses, external profile URLs, and provider place IDs. These values need provenance, validity, privacy handling, and conflict resolution.
 

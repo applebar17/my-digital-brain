@@ -12,6 +12,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
 - [Graph model](network/graph-model.md): entity types, relationship types, evidence, identity, and provenance.
+- [Affective memory](network/affective-memory.md): emotional traits, perceptions, user voice, and subjective memory modeling.
 - [Entity metadata and enrichment](network/entity-metadata-enrichment.md): contact details, external references, enrichment policy, and runtime lookup tradeoffs.
 - [Metadata policy contract](network/metadata-policy-contract.md): how arbitrary metadata is accepted, promoted, indexed, and governed.
 - [Memory lifecycle](network/memory-lifecycle.md): lifecycle states for preserving memories while handling stale, disputed, and corrected facts.
@@ -29,11 +30,11 @@ This documentation describes the foundation for a personal digital brain: a grap
 
 ## Core Idea
 
-The main output is a graph database of entities and relationships that represents memories and contextual knowledge. Entities include people, events, places, organizations, objects, media, topics, and other classes that become useful while modeling personal memory. Relationships capture facts such as participation, location, time, ownership, similarity, causality, references, and evidence.
+The main output is a graph database of entities and relationships that represents memories and contextual knowledge. Entities include people, events, places, organizations, objects, media, topics, perceptions, relationship contexts, and other classes that become useful while modeling personal memory. Relationships capture facts such as participation, location, time, ownership, similarity, causality, references, and evidence.
 
-The graph is built incrementally from conversations and other ingestion sources. A chat interface, most likely Telegram at first, lets the user send memories, notes, corrections, images, audio, or other inputs. An LLM-based ingestion pipeline extracts candidate entities and relationships, detects uncertainty, asks clarification questions when needed, and writes confirmed knowledge into the graph.
+The graph is built incrementally from conversations and other ingestion sources. A chat interface, most likely Telegram at first, lets the user send memories, notes, corrections, images, audio, or other inputs. An LLM-based ingestion pipeline extracts candidate entities, relationships, perceptions, emotional summaries, user wording, and uncertainty, asks clarification questions when needed, and writes confirmed knowledge into the graph.
 
-The graph is queried as a Graph-RAG system. It supports semantic search through embeddings, graph traversal, natural language questions, and structured SQL-like or graph-native queries. The frontend will let the user visualize and navigate relevant graph neighborhoods rather than only reading generated answers.
+The graph is queried as a Graph-RAG system. It supports semantic search through embeddings, graph traversal, natural language questions, and structured SQL-like or graph-native queries. Retrieval must preserve the affective shape of memory: emotional summaries, subjective perceptions, and original user wording should travel with the factual graph context when relevant. The frontend will let the user visualize and navigate relevant graph neighborhoods rather than only reading generated answers.
 
 ## Documentation Map
 
@@ -57,6 +58,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - AI features should follow the documented AI engineering principles: structured outputs, explicit context building, clear tool contracts, and deterministic guardrails.
 - Internal IDs should be app-generated UUIDs, while LLM contexts should use short temporary aliases such as `NODE_000001`.
 - Every extracted fact should retain provenance back to the source message, media item, or user confirmation.
+- Affective memory is core: perceptions, emotional summaries, emotional valence, and original user wording should be modeled explicitly when present.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
 - Structured ingestion objects are required between LLM extraction and graph writes.
 - Duplicate handling and entity unification are first-class requirements, not cleanup tasks.

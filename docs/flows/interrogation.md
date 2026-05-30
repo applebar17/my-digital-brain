@@ -31,12 +31,13 @@ The frontend displays places and place-linked events geographically. This helps 
 1. User asks a question.
 2. System classifies intent: lookup, exploration, summary, comparison, timeline, contradiction check, or graph operation.
 3. Semantic retrieval finds relevant sources, entities, claims, and summaries.
-4. Graph traversal expands around high-confidence hits.
+4. Graph traversal expands around high-confidence hits, including perception and relationship-context nodes when relevant.
 5. Evidence is gathered and ranked.
-6. The answer generator produces a grounded response.
-7. The response includes uncertainty, missing information, and source references where useful.
-8. Contradictions are surfaced when they materially affect the answer.
-9. The user can follow up, ask for visualization, or correct the graph.
+6. Affective context such as emotional summaries, original user wording, and user-stated perceptions is included when it helps answer the question.
+7. The answer generator produces a grounded response.
+8. The response includes uncertainty, missing information, and source references where useful.
+9. Contradictions are surfaced when they materially affect the answer.
+10. The user can follow up, ask for visualization, or correct the graph.
 
 ## Retrieval Strategy
 
@@ -45,6 +46,7 @@ Retrieval should combine:
 - Embedding search over sources and entity summaries.
 - Exact graph lookup for names, aliases, dates, and places.
 - Graph expansion from retrieved entities.
+- Expansion through perceptions and relationship contexts.
 - Time and location filters.
 - Relationship type filters.
 - Confidence and provenance filters.
@@ -61,6 +63,7 @@ The system should expose:
 - Which relationships were used.
 - Which sources support the answer.
 - Whether facts are inferred, confirmed, or uncertain.
+- Which emotional or perceptual context is user-stated versus inferred.
 - Conflicts or missing data.
 
 ## Example Questions
@@ -71,6 +74,8 @@ The system should expose:
 - Which people are connected to both Capco and my university memories?
 - What places in Italy have I mentioned most often?
 - Do I have conflicting information about where that meeting happened?
+- What happened with Alessandro?
+- What emotional memories do I associate with that period?
 
 ## Structured Query Requirements
 

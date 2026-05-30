@@ -4,6 +4,8 @@
 
 Personal profile memory captures stable information about the owner of the digital brain. This is different from ordinary episodic memory. It helps the system understand how the user thinks, communicates, decides, and wants the assistant or agents to behave.
 
+Profile memory is related to affective memory but not the same thing. Affective memory captures how a specific memory, person, place, or relationship feels to the user. Profile memory captures more stable traits or preferences of the user across memories.
+
 Examples:
 
 - Communication preferences.
@@ -14,6 +16,7 @@ Examples:
 - Privacy preferences.
 - Decision-making patterns.
 - Things the user explicitly likes or dislikes.
+- Recurring emotional patterns, when they are stable and not only tied to one memory.
 
 ## Why This Is Separate
 
@@ -82,6 +85,8 @@ Profile memory can be used to:
 - Improve entity resolution with user-specific vocabulary.
 
 Profile memory should not override explicit user instructions in the current conversation.
+
+Future research may explore whether stable profile memory and affective memory can support personality-trait simulation or cloning experiments. That is not an MVP behavior. The current requirement is to preserve the data foundation carefully, with provenance and user control.
 
 ## Confirmation Policy
 
