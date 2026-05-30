@@ -33,6 +33,8 @@ packages = ["src/my_digital_brain"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+cache_dir = "data/test-cache/pytest"
+addopts = "-p no:cacheprovider"
 
 [tool.ruff]
 line-length = 100
