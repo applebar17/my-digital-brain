@@ -57,6 +57,7 @@ Core fields:
 - `description`
 - `aliases`
 - `typed_properties`
+- `affective_fields`
 - `metadata`
 - `evidence_refs`
 - `confidence`
@@ -74,6 +75,7 @@ Core fields:
 - `from_ref`
 - `to_ref`
 - `properties`
+- `affective_fields`
 - `metadata`
 - `evidence_refs`
 - `confidence`
@@ -97,6 +99,50 @@ Core fields:
 - `valid_from`
 - `valid_to`
 - `contradiction_refs`
+
+### CandidatePerception
+
+A proposed subjective perception before validation and graph linking. It can target any memory-bearing node or a relationship context.
+
+Core fields:
+
+- `candidate_perception_id`
+- `target_ref`
+- `description`
+- `perception_type`
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `source_kind`: user_stated, llm_inferred, system_derived.
+- `temporal_scope`
+- `evidence_refs`
+- `confidence`
+- `requires_confirmation`
+
+### CandidateRelationshipContext
+
+A proposed relationship-as-memory object. Use this when a relationship has its own emotional tone, temporal history, evidence, or narrative description.
+
+Core fields:
+
+- `candidate_relationship_context_id`
+- `from_ref`
+- `to_ref`
+- `relationship_type`
+- `status`
+- `closeness`
+- `description`
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
+- `temporal_scope`
+- `evidence_refs`
+- `confidence`
+- `requires_confirmation`
 
 ### CandidateMetadataPatch
 
@@ -161,6 +207,8 @@ Core fields:
 - `relationships_to_create`
 - `relationships_to_update`
 - `claims_to_create`
+- `perceptions_to_create`
+- `relationship_contexts_to_create`
 - `metadata_patches`
 - `evidence_links`
 - `idempotency_keys`
@@ -201,6 +249,8 @@ The first implementation does not need every field above, but it should establis
 - `ExtractionRun`
 - `CandidateEntity`
 - `CandidateRelationship`
+- `CandidatePerception`
+- `CandidateRelationshipContext`
 - `ClarificationRequest`
 - `ResolutionDecision`
 - `GraphWritePlan`

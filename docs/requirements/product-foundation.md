@@ -17,7 +17,7 @@ The primary output is a graph database containing:
 - Evidence: source messages, uploaded media, transcripts, metadata, user confirmations, and model extraction traces.
 - Embeddings: semantic representations for entities, relationships, source chunks, and graph neighborhoods.
 - Personal profile memory: durable traits, preferences, communication style, recurring goals, and other stable context about the user that can configure future LLM behavior.
-- Affective memory: perceptions, emotional summaries, relationship contexts, original user wording, and emotional traits attached to memories.
+- Affective memory: perceptions, emotional summaries, relationship contexts, original user wording, and emotional traits attached to any memory-bearing node or important relationship.
 
 ## Goals
 
@@ -30,7 +30,7 @@ The primary output is a graph database containing:
 - Visualize relevant subgraphs in a dedicated frontend.
 - Keep provenance and confidence visible enough to audit how a fact entered the brain.
 - Preserve the emotional and subjective shape of memories, not only their factual skeleton.
-- Store user-stated perceptions as user experience, not as objective truth about other people or entities.
+- Store user-stated perceptions as user experience, not as objective truth about people, places, events, organizations, objects, topics, sources, claims, or relationships.
 - Capture stable user traits and preferences separately from ordinary episodic memories.
 - Support voice-message ingestion early, because spoken memory capture should be low friction.
 - Prepare for future media ingestion, including images, documents, links, and richer audio processing.
@@ -50,7 +50,7 @@ The primary output is a graph database containing:
 - The user remains the authority over personal truth.
 - Personal-first usefulness is more important than public-product polish in the first version.
 - The system should preserve memories by default rather than aggressively pruning them.
-- A memory's emotional description can be as important as its factual links.
+- A memory target's emotional description can be as important as its factual links, whether the target is a person, place, event, object, topic, organization, source, claim, or relationship.
 - The graph should represent uncertainty instead of hiding it.
 - Clarification should be targeted, conversational, and useful, not a long form disguised as chat.
 - Every important fact should be explainable through its sources.

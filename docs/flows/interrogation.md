@@ -31,7 +31,7 @@ The frontend displays places and place-linked events geographically. This helps 
 1. User asks a question.
 2. System classifies intent: lookup, exploration, summary, comparison, timeline, contradiction check, or graph operation.
 3. Semantic retrieval finds relevant sources, entities, claims, and summaries.
-4. Graph traversal expands around high-confidence hits, including perception and relationship-context nodes when relevant.
+4. Graph traversal expands around high-confidence hits, including perception and relationship-context nodes for any relevant memory target.
 5. Evidence is gathered and ranked.
 6. Affective context such as emotional summaries, original user wording, and user-stated perceptions is included when it helps answer the question.
 7. The answer generator produces a grounded response.
@@ -46,7 +46,7 @@ Retrieval should combine:
 - Embedding search over sources and entity summaries.
 - Exact graph lookup for names, aliases, dates, and places.
 - Graph expansion from retrieved entities.
-- Expansion through perceptions and relationship contexts.
+- Expansion through perceptions, affective fields, and relationship contexts.
 - Time and location filters.
 - Relationship type filters.
 - Confidence and provenance filters.
@@ -76,6 +76,7 @@ The system should expose:
 - Do I have conflicting information about where that meeting happened?
 - What happened with Alessandro?
 - What emotional memories do I associate with that period?
+- Why does that place, object, topic, or project feel important to me?
 
 ## Structured Query Requirements
 
@@ -83,6 +84,7 @@ The query layer should support:
 
 - Entity search by type, name, alias, and embedding.
 - Relationship traversal by type and depth.
+- Affective-context lookup for any memory-bearing node or important relationship.
 - Filtering by confidence, source, date, and place.
 - Neighborhood extraction for frontend visualization.
 - Explain/debug mode for retrieval traces.

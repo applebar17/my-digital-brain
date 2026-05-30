@@ -12,8 +12,8 @@ The graph database is the canonical memory store. It should be rich enough from 
 - Keep source evidence and provenance first-class.
 - Use direct relationships for high-confidence graph structure.
 - Use `Claim` nodes for uncertain, disputed, temporal, or evidence-heavy facts.
-- Use `Perception` and `RelationshipContext` nodes for subjective and emotionally meaningful memory.
-- Preserve emotional summaries and original user wording as first-class memory fields when present.
+- Use `Perception` and `RelationshipContext` nodes for subjective and emotionally meaningful memory attached to any relevant target, not only people.
+- Preserve emotional summaries and original user wording as first-class memory fields on memory-bearing nodes and important relationships when present.
 - Keep arbitrary metadata available, but promote important metadata into typed properties, relationships, or dedicated nodes.
 - Use app-generated persistent IDs internally, but expose simplified temporary aliases to LLM contexts.
 - Use a relational operational store from the beginning for app/session/source/provider/runtime data that does not belong in the graph.
@@ -28,7 +28,7 @@ The graph database is the canonical memory store. It should be rich enough from 
 - Schema philosophy: controlled rich core.
 - Complex fact modeling: use `Claim` nodes for uncertain, disputed, temporal, or evidence-heavy facts.
 - Affective memory modeling: use `Perception` and `RelationshipContext` nodes from v1.
-- Emotional fields: include `emotional_summary`, `emotional_valence`, `emotional_intensity`, `emotion_tags`, and `original_user_words` where relevant.
+- Emotional fields: include `emotional_summary`, `emotional_valence`, `emotional_intensity`, `emotion_tags`, and `original_user_words` where relevant on nodes and relationships.
 - Internal ID strategy: app-generated UUIDs.
 - LLM-facing ID strategy: simplified aliases mapped per context, such as `NODE_000001`, `REL_000001`, `CLAIM_000001`, and `SOURCE_000001`.
 - Vector storage: separate vector database behind a protocolled interface.
@@ -107,6 +107,8 @@ Embedding search:
 - Entity descriptions.
 - Claim text.
 - Event summaries.
+- Perception descriptions.
+- Relationship context summaries.
 - Graph neighborhood summaries.
 
 The application should use a `VectorStore` protocol so Chroma can be used locally and Azure AI services can be used in cloud mode.
@@ -169,7 +171,7 @@ Optional support nodes:
 
 ### Common Node Properties
 
-Most memory nodes should include:
+Most memory-bearing nodes should include:
 
 - `id`
 - `created_at`
@@ -181,7 +183,7 @@ Most memory nodes should include:
 - `lifecycle_state`
 - `metadata`
 
-Affective fields should be available on emotionally meaningful nodes:
+Affective fields should be available on every emotionally meaningful node and important relationship:
 
 - `emotional_summary`
 - `emotional_valence`
@@ -295,6 +297,8 @@ Recommended common enum values:
 - `valid_to`
 - `time_precision`
 
+`Perception` and `RelationshipContext` are not person-only concepts. A `Perception` may target a place, event, object, topic, organization, source, claim, profile memory, or relationship context. A `RelationshipContext` should be used whenever a relationship itself has enough emotional, temporal, or evidential weight to become a memory object.
+
 `ProfileMemory`:
 
 - `profile_key`
@@ -367,10 +371,11 @@ Implement these relationships first:
 - `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
 - `DESCRIBES_USER`: ProfileMemory to Person.
 - `CONTRADICTS`: Claim to Claim.
-- `PERCEIVES`: Person to Perception.
-- `PERCEPTION_OF`: Perception to target entity.
-- `HAS_RELATIONSHIP_CONTEXT`: Person to RelationshipContext.
-- `RELATIONSHIP_WITH`: RelationshipContext to target entity.
+- `PERCEIVES`: User/Person to Perception.
+- `PERCEPTION_OF`: Perception to any memory-bearing target entity or relationship context.
+- `HAS_RELATIONSHIP_CONTEXT`: User/Person to RelationshipContext.
+- `RELATIONSHIP_WITH`: RelationshipContext to any target entity.
+- `HAS_AFFECTIVE_CONTEXT`: Entity, Claim, Source, or RelationshipContext to Perception when affective context needs to be explicit and queryable.
 
 Common relationship properties:
 
@@ -383,11 +388,16 @@ Common relationship properties:
 - `lifecycle_state`
 - `valid_from`
 - `valid_to`
+- `emotional_summary`
+- `emotional_valence`
+- `emotional_intensity`
+- `emotion_tags`
+- `original_user_words`
 - `source_ids`
 - `extraction_run_ids`
 - `metadata`
 
-Important Neo4j constraint: relationships cannot have outgoing relationships to evidence nodes. For v1, relationship provenance can be stored through `source_ids`, `extraction_run_ids`, and metadata. When a relationship needs richer evidence, contradiction handling, or temporal nuance, represent the fact as a `Claim` node linked to sources.
+Important Neo4j constraint: relationships cannot have outgoing relationships to evidence nodes. For v1, relationship provenance can be stored through `source_ids`, `extraction_run_ids`, and metadata. When a relationship needs richer evidence, contradiction handling, temporal nuance, or affective history, represent the fact as a `Claim` or `RelationshipContext` node linked to sources.
 
 ### Constraints And Indexes
 
@@ -420,6 +430,7 @@ Full-text or vector indexes can be added for:
 - Perception descriptions and original user words.
 - RelationshipContext descriptions and emotional summaries.
 - Event summaries.
+- Affective summaries attached to places, events, objects, topics, organizations, claims, sources, and important relationships.
 
 Vector indexes should be managed in the external vector store rather than Neo4j for v1. Neo4j may still have full-text indexes for graph-native lookup.
 
@@ -463,6 +474,8 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Low-confidence facts should use `Claim` nodes or lifecycle/trust metadata rather than pretending to be canonical.
 - Subjective perceptions should not be written as objective properties on target entities.
 - Affective information should mark whether it is user-stated, LLM-inferred, or system-derived.
+- Affective memory should not be limited to people. If a place, event, object, topic, organization, source, claim, or relationship carries emotional meaning, preserve that signal explicitly.
+- Use direct affective properties for simple relationship tone. Use `RelationshipContext` or `Claim` when a relationship needs history, provenance, contradiction handling, or richer affective description.
 - Deletion should be explicit; archival, expiration, or dispute is preferred when preserving memory is useful.
 
 ## Query Patterns To Support Early
@@ -476,8 +489,8 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 - Get latest known contact details.
 - Get source evidence for a claim or entity.
 - Get perceptions associated with an entity.
-- Get relationship context between the user and another entity.
-- Get emotional summaries and original user wording for a memory.
+- Get relationship context between the user and another entity, or for any important relationship modeled as a memory object.
+- Get emotional summaries and original user wording for any memory-bearing node or important relationship.
 - Find possible duplicates.
 - Find contradictions.
 - Build a focused graph neighborhood for visualization.
@@ -533,8 +546,8 @@ Graph copies and downloads:
 - Can create and query core entities and relationships.
 - Every graph fact links back to source evidence or stores source IDs.
 - Can represent uncertain claims.
-- Can represent user-stated perceptions and relationship contexts.
-- Can retrieve emotional summaries and original user wording with factual graph context.
+- Can represent user-stated perceptions and relationship contexts for people, places, events, objects, topics, organizations, sources, claims, and important relationships.
+- Can retrieve emotional summaries and original user wording with factual graph context across the whole memory graph.
 - Can represent contact details and external references.
 - Can preserve old values instead of overwriting important memory history.
 - Can query memories by person, place, topic, source, and time.

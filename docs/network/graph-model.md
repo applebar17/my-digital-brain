@@ -9,7 +9,7 @@
 - Allow multiple names, aliases, and descriptions for the same entity.
 - Treat time and place as first-class dimensions.
 - Allow extensible metadata, but keep important queryable facts in typed fields or relationships.
-- Treat affective memory as first-class: perceptions, emotional summaries, and original user wording should be modeled explicitly when present.
+- Treat affective memory as first-class for every memory-bearing node and important relationship: perceptions, emotional summaries, and original user wording should be modeled explicitly when present.
 
 ## Core Node Types
 
@@ -124,7 +124,7 @@ Claims are useful when a direct relationship is too lossy or when multiple evide
 
 ### Perception
 
-A subjective perception held by the user about a person, relationship, event, place, organization, object, or topic.
+A subjective perception held by the user about any graph target: person, relationship context, event, place, organization, object, topic, source, claim, project, or profile-relevant memory.
 
 Useful properties:
 
@@ -142,11 +142,11 @@ Useful properties:
 - `privacy_level`
 - `metadata`
 
-Perceptions should not be treated as objective truth about the target. They represent the user's experienced truth and should retain provenance.
+Perceptions should not be treated as objective truth about the target. They represent the user's experienced truth and should retain provenance. This applies equally to people, places, events, objects, topics, organizations, sources, claims, and relationships.
 
 ### RelationshipContext
 
-A memory object describing the user's relationship with another entity over time.
+A memory object describing an emotionally or narratively meaningful relationship over time. It is usually between the user and another entity, but the target can be any meaningful memory anchor.
 
 Useful properties:
 
@@ -166,7 +166,7 @@ Useful properties:
 - `privacy_level`
 - `metadata`
 
-Relationship contexts are useful when a simple edge such as `KNOWS` loses the narrative and emotional history of a relationship.
+Relationship contexts are useful when a simple edge such as `KNOWS`, `WORKED_ON`, `LIVED_IN`, or `RELATED_TO` loses the narrative and emotional history of a relationship.
 
 ### ProfileMemory
 
@@ -212,10 +212,11 @@ Profile memory should not be silently treated as permanent truth. It should reta
 - `CONFIGURES`: ProfileMemory to prompt, agent, or retrieval policy if configuration is represented in the graph.
 - `HAS_CONTACT_POINT`: Person or Organization to ContactPoint.
 - `HAS_EXTERNAL_REFERENCE`: Entity to ExternalReference.
-- `PERCEIVES`: Person to Perception.
-- `PERCEPTION_OF`: Perception to target entity.
-- `HAS_RELATIONSHIP_CONTEXT`: Person to RelationshipContext.
-- `RELATIONSHIP_WITH`: RelationshipContext to target entity.
+- `PERCEIVES`: User/Person to Perception.
+- `PERCEPTION_OF`: Perception to any memory-bearing target entity or relationship context.
+- `HAS_RELATIONSHIP_CONTEXT`: User/Person to RelationshipContext.
+- `RELATIONSHIP_WITH`: RelationshipContext to any target entity.
+- `HAS_AFFECTIVE_CONTEXT`: Entity, Claim, Source, or RelationshipContext to Perception when affective context needs to be explicit and queryable.
 
 ## Provenance Model
 
@@ -230,9 +231,11 @@ Each graph write should preserve:
 
 Relationships may need their own provenance, not only nodes. For example, two people can both exist confidently while the relationship between them remains uncertain.
 
+Relationships may also carry affective memory. A simple relationship can store lightweight fields such as `emotional_summary`, `emotional_valence`, `emotional_intensity`, `emotion_tags`, and `original_user_words`. If the relationship needs temporal changes, evidence, contradictions, lifecycle, or a richer description, reify it as a `RelationshipContext` or `Claim`.
+
 ## Descriptions And Extensible Metadata
 
-Every major entity should support:
+Every memory-bearing node and important relationship should support:
 
 - A human-readable `description`.
 - An optional `emotional_summary` when the memory has affective weight.
@@ -246,7 +249,7 @@ The `metadata` object is useful for information that is real but not yet importa
 
 Metadata should not become the primary modeling strategy. If a metadata key becomes frequently queried, used in resolution, or important to the product behavior, it should be promoted to a typed property, relationship, or claim.
 
-Affective information should not be hidden in metadata when it is important. Perceptions, relationship contexts, emotional summaries, and original user wording should be typed fields or dedicated nodes.
+Affective information should not be hidden in metadata when it is important. Perceptions, relationship contexts, emotional summaries, and original user wording should be typed fields or dedicated nodes. This rule applies beyond people: places, events, objects, organizations, topics, sources, claims, and relationships can all be emotionally meaningful.
 
 Sensitive, mutable, or integration-relevant details should usually be promoted early. Examples include phone numbers, email addresses, physical addresses, external profile URLs, and provider place IDs. These values need provenance, validity, privacy handling, and conflict resolution.
 

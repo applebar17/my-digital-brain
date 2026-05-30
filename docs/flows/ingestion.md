@@ -43,7 +43,7 @@ Potential graph output:
 - Place: clarified city or venue.
 - Topic: new project.
 - Relationships: people participated in event, event happened at place, event was about topic.
-- Affective memory: emotional tone, user-stated perceptions, or relationship context if present in the source.
+- Affective memory: emotional tone, user-stated perceptions, original wording, or relationship context for any memory-bearing target if present in the source.
 - Source: original Telegram message plus clarification replies.
 
 ## Candidate Graph

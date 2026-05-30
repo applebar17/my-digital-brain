@@ -22,10 +22,35 @@ class GraphRecordBase(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     description: str | None = None
+    emotional_summary: str | None = None
+    emotional_valence: str | None = None
+    emotional_intensity: float | None = Field(default=None, ge=0.0, le=1.0)
+    emotion_tags: list[str] = Field(default_factory=list)
+    original_user_words: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     trust_level: TrustLevel | None = None
     privacy_level: PrivacyLevel = PrivacyLevel.NORMAL
     lifecycle_state: LifecycleState = LifecycleState.ACTIVE
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphRelationshipBase(BaseModel):
+    id: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    emotional_summary: str | None = None
+    emotional_valence: str | None = None
+    emotional_intensity: float | None = Field(default=None, ge=0.0, le=1.0)
+    emotion_tags: list[str] = Field(default_factory=list)
+    original_user_words: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    trust_level: TrustLevel | None = None
+    privacy_level: PrivacyLevel = PrivacyLevel.NORMAL
+    lifecycle_state: LifecycleState = LifecycleState.ACTIVE
+    source_ids: list[str] = Field(default_factory=list)
+    extraction_run_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

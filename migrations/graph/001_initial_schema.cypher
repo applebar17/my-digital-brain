@@ -25,6 +25,12 @@ FOR (n:Source) REQUIRE (n.channel, n.external_id) IS UNIQUE;
 CREATE CONSTRAINT claim_id_unique IF NOT EXISTS
 FOR (n:Claim) REQUIRE n.id IS UNIQUE;
 
+CREATE CONSTRAINT perception_id_unique IF NOT EXISTS
+FOR (n:Perception) REQUIRE n.id IS UNIQUE;
+
+CREATE CONSTRAINT relationship_context_id_unique IF NOT EXISTS
+FOR (n:RelationshipContext) REQUIRE n.id IS UNIQUE;
+
 CREATE CONSTRAINT profile_memory_id_unique IF NOT EXISTS
 FOR (n:ProfileMemory) REQUIRE n.id IS UNIQUE;
 
@@ -57,6 +63,12 @@ FOR (n:Source) ON (n.channel, n.external_id, n.received_at);
 
 CREATE INDEX claim_temporal_lookup IF NOT EXISTS
 FOR (n:Claim) ON (n.claim_type, n.valid_from, n.valid_to);
+
+CREATE INDEX perception_lookup IF NOT EXISTS
+FOR (n:Perception) ON (n.perception_type, n.emotional_valence);
+
+CREATE INDEX relationship_context_lookup IF NOT EXISTS
+FOR (n:RelationshipContext) ON (n.relationship_type, n.status, n.closeness);
 
 CREATE INDEX person_lifecycle_lookup IF NOT EXISTS
 FOR (n:Person) ON (n.lifecycle_state);
@@ -129,6 +141,24 @@ FOR (n:Claim) ON (n.privacy_level);
 
 CREATE INDEX claim_trust_lookup IF NOT EXISTS
 FOR (n:Claim) ON (n.trust_level);
+
+CREATE INDEX perception_lifecycle_lookup IF NOT EXISTS
+FOR (n:Perception) ON (n.lifecycle_state);
+
+CREATE INDEX perception_privacy_lookup IF NOT EXISTS
+FOR (n:Perception) ON (n.privacy_level);
+
+CREATE INDEX perception_trust_lookup IF NOT EXISTS
+FOR (n:Perception) ON (n.trust_level);
+
+CREATE INDEX relationship_context_lifecycle_lookup IF NOT EXISTS
+FOR (n:RelationshipContext) ON (n.lifecycle_state);
+
+CREATE INDEX relationship_context_privacy_lookup IF NOT EXISTS
+FOR (n:RelationshipContext) ON (n.privacy_level);
+
+CREATE INDEX relationship_context_trust_lookup IF NOT EXISTS
+FOR (n:RelationshipContext) ON (n.trust_level);
 
 CREATE INDEX profile_memory_lifecycle_lookup IF NOT EXISTS
 FOR (n:ProfileMemory) ON (n.lifecycle_state);

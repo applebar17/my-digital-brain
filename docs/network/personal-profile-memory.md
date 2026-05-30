@@ -4,7 +4,7 @@
 
 Personal profile memory captures stable information about the owner of the digital brain. This is different from ordinary episodic memory. It helps the system understand how the user thinks, communicates, decides, and wants the assistant or agents to behave.
 
-Profile memory is related to affective memory but not the same thing. Affective memory captures how a specific memory, person, place, or relationship feels to the user. Profile memory captures more stable traits or preferences of the user across memories.
+Profile memory is related to affective memory but not the same thing. Affective memory captures how any specific memory target feels to the user: a person, place, event, object, organization, topic, source, claim, or relationship. Profile memory captures more stable traits or preferences of the user across memories.
 
 Examples:
 
