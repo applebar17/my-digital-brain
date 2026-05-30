@@ -40,10 +40,15 @@ class GraphRecordBase(BaseModel):
     valid_to: datetime | None = None
     observed_at: datetime | None = None
     source_time: datetime | None = None
+    resolved_start: str | None = None
+    resolved_end: str | None = None
     time_precision: str | None = None
+    time_basis: str | None = None
+    timezone: str | None = None
     original_time_text: str | None = None
     source_ids: list[str] = Field(default_factory=list)
     extraction_run_ids: list[str] = Field(default_factory=list)
+    merged_into_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -55,6 +60,12 @@ class GraphRelationshipBase(BaseModel):
     updated_at: datetime | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+    resolved_start: str | None = None
+    resolved_end: str | None = None
+    time_precision: str | None = None
+    time_basis: str | None = None
+    timezone: str | None = None
+    original_time_text: str | None = None
     emotional_summary: str | None = None
     emotional_valence: str | None = None
     emotional_intensity: float | None = Field(default=None, ge=0.0, le=1.0)

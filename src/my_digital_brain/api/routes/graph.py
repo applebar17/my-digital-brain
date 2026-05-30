@@ -11,11 +11,19 @@ from my_digital_brain.graph.exceptions import (
 )
 from my_digital_brain.graph.models import (
     AffectiveContextResult,
+    ChangeRecordCreateRequest,
+    ContradictionCreateRequest,
+    ContradictionUpdateRequest,
+    LifecycleTransitionRequest,
+    MergeCreateRequest,
+    MergeUpdateRequest,
     NeighborhoodResult,
     NodePatchRequest,
     NodeSearchResult,
     NodeUpsertRequest,
+    RelationshipContextDetailResult,
     RelationshipResult,
+    RelationshipStateCreateRequest,
     RelationshipUpsertRequest,
 )
 from my_digital_brain.graph.service import GraphService
@@ -156,5 +164,221 @@ def get_affective_context(
 ) -> AffectiveContextResult:
     try:
         return service.get_affective_context(node_id, limit=limit)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/relationship-contexts/{context_id}/states", response_model=NodeSearchResult)
+def create_relationship_state(
+    context_id: str,
+    request: RelationshipStateCreateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.create_relationship_state(
+            context_id,
+            request.properties,
+            make_current=request.make_current,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/relationship-contexts/{context_id}/states", response_model=list[NodeSearchResult])
+def get_relationship_states(
+    context_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.get_relationship_states(context_id, limit=limit)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get(
+    "/relationship-contexts/{context_id}/detail",
+    response_model=RelationshipContextDetailResult,
+)
+def get_relationship_context_detail(
+    context_id: str,
+    include_state_history: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> RelationshipContextDetailResult:
+    try:
+        return service.get_relationship_context_detail(
+            context_id,
+            include_state_history=include_state_history,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/change-records", response_model=NodeSearchResult)
+def create_change_record(
+    request: ChangeRecordCreateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.create_change_record(request.properties)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/targets/{target_id}/changes", response_model=list[NodeSearchResult])
+def get_change_records_for_target(
+    target_id: str,
+    target_kind: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.get_change_records_for_target(
+            target_id,
+            target_kind=target_kind,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/nodes/{node_id}/lifecycle", response_model=NodeSearchResult)
+def transition_node_lifecycle(
+    node_id: str,
+    request: LifecycleTransitionRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.transition_node_lifecycle(node_id, request)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/relationships/{relationship_id}/lifecycle", response_model=RelationshipResult)
+def transition_relationship_lifecycle(
+    relationship_id: str,
+    request: LifecycleTransitionRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> RelationshipResult:
+    try:
+        return service.transition_relationship_lifecycle(relationship_id, request)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/contradictions", response_model=NodeSearchResult)
+def create_contradiction(
+    request: ContradictionCreateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.create_contradiction(request.properties, target_ids=request.target_ids)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/contradictions", response_model=list[NodeSearchResult])
+def query_contradictions(
+    target_id: str | None = None,
+    status: str | None = None,
+    severity: str | None = None,
+    contradiction_type: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.query_contradictions(
+            target_id=target_id,
+            status=status,
+            severity=severity,
+            contradiction_type=contradiction_type,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.patch("/contradictions/{contradiction_id}", response_model=NodeSearchResult)
+def update_contradiction(
+    contradiction_id: str,
+    request: ContradictionUpdateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.update_contradiction(contradiction_id, request.properties)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/merges", response_model=NodeSearchResult)
+def create_merge(
+    request: MergeCreateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.create_merge_record(
+            canonical_node_id=request.canonical_node_id,
+            merged_node_ids=request.merged_node_ids,
+            reason=request.reason,
+            performed_by=request.performed_by,
+            source_ids=request.source_ids,
+            extraction_run_ids=request.extraction_run_ids,
+            metadata=request.metadata,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/merges", response_model=list[NodeSearchResult])
+def query_merges(
+    canonical_node_id: str | None = None,
+    merged_node_id: str | None = None,
+    status: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.query_merges(
+            canonical_node_id=canonical_node_id,
+            merged_node_id=merged_node_id,
+            status=status,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.patch("/merges/{merge_id}", response_model=NodeSearchResult)
+def update_merge(
+    merge_id: str,
+    request: MergeUpdateRequest,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.update_merge_record(merge_id, request.properties)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.post("/merges/{merge_id}/apply", response_model=NodeSearchResult)
+def apply_merge(
+    merge_id: str,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.apply_merge(merge_id)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/canonical", response_model=NodeSearchResult)
+def get_canonical_node(
+    node_id: str,
+    service: GraphService = Depends(get_graph_service),
+) -> NodeSearchResult:
+    try:
+        return service.get_canonical_node(node_id)
     except Exception as exc:
         raise graph_http_error(exc) from exc

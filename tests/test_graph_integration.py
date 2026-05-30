@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from my_digital_brain.config import get_settings
+from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.repository import GraphRepository
 from my_digital_brain.graph.service import GraphService
 from my_digital_brain.migrations.graph import Neo4jMigrationRunner
@@ -57,3 +58,73 @@ def test_graph_wave1_affective_memory_round_trip() -> None:
             "A place remembered as energizing."
         )
         assert context.perceptions[0].properties["target_type"] == "Place"
+
+
+def test_graph_wave2_memory_semantics_round_trip() -> None:
+    pytest.importorskip("neo4j")
+    settings = get_settings()
+    with GraphClient.from_settings(settings) as client:
+        runner = Neo4jMigrationRunner(client, Path("migrations/graph"))
+        runner.run()
+        assert runner.run() == []
+        service = GraphService(GraphRepository(client))
+
+        context = service.upsert_node(
+            "RelationshipContext",
+            {
+                "id": new_uuid(),
+                "description": "Old relationship summary.",
+                "status": "close",
+            },
+        )
+        state = service.create_relationship_state(
+            context.properties["id"],
+            {
+                "id": new_uuid(),
+                "description": "We are distant now.",
+                "status": "low_contact",
+                "resolved_start": "2024-01-01",
+            },
+        )
+        refreshed_context = service.get_node(context.properties["id"])
+        changes = service.get_change_records_for_target(
+            context.properties["id"],
+            target_kind="relationship_context",
+        )
+
+        assert state.label == "RelationshipState"
+        assert refreshed_context.properties["status"] == "low_contact"
+        assert changes
+
+        contradiction = service.create_contradiction(
+            {
+                "id": new_uuid(),
+                "contradiction_type": "relationship",
+                "severity": "low",
+            },
+            target_ids=[context.properties["id"]],
+        )
+        contradictions = service.query_contradictions(target_id=context.properties["id"])
+
+        assert contradictions[0].properties["id"] == contradiction.properties["id"]
+
+        canonical = service.upsert_node(
+            "Person",
+            {"id": new_uuid(), "display_name": "Marco", "aliases": ["Marco"]},
+        )
+        duplicate = service.upsert_node(
+            "Person",
+            {"id": new_uuid(), "display_name": "Marco from university", "aliases": ["Uni Marco"]},
+        )
+        merge = service.create_merge_record(
+            canonical_node_id=canonical.properties["id"],
+            merged_node_ids=[duplicate.properties["id"]],
+            reason="Integration-test duplicate.",
+        )
+        applied = service.apply_merge(merge.properties["id"])
+        archived_duplicate = service.get_node(duplicate.properties["id"])
+        canonical_after = service.get_canonical_node(duplicate.properties["id"])
+
+        assert applied.properties["status"] == "applied"
+        assert archived_duplicate.properties["lifecycle_state"] == "archived"
+        assert canonical_after.properties["id"] == canonical.properties["id"]

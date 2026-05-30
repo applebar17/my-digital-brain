@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -7,12 +8,18 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from my_digital_brain.core.enums import LifecycleState, PrivacyLevel, TrustLevel
-from my_digital_brain.graph.exceptions import GraphNotFoundError, GraphValidationError
+from my_digital_brain.graph.exceptions import (
+    GraphConflictError,
+    GraphNotFoundError,
+    GraphValidationError,
+)
 from my_digital_brain.graph.models import (
     AffectiveContextResult,
     GraphRelationshipModel,
+    LifecycleTransitionRequest,
     NeighborhoodResult,
     NodeSearchResult,
+    RelationshipContextDetailResult,
     RelationshipResult,
     node_model_for_label,
 )
@@ -36,6 +43,38 @@ AFFECTIVE_FIELD_NAMES = {
     "emotion_tags",
     "original_user_words",
 }
+RELATIONSHIP_CONTEXT_CURRENT_FIELDS = {
+    "description",
+    "status",
+    "closeness",
+    "emotional_summary",
+    "emotional_valence",
+    "emotional_intensity",
+    "emotion_tags",
+    "original_user_words",
+    "valid_from",
+    "valid_to",
+    "resolved_start",
+    "resolved_end",
+    "time_precision",
+    "time_basis",
+    "timezone",
+    "original_time_text",
+}
+NODE_LIKE_TARGET_KINDS = {
+    "node",
+    "relationship_context",
+    "relationship_state",
+    "claim",
+    "perception",
+    "contradiction_record",
+    "merge_record",
+}
+CHANGE_TARGET_KINDS = NODE_LIKE_TARGET_KINDS | {"relationship"}
+CONTRADICTION_STATUSES = {"detected", "needs_clarification", "resolved", "ignored"}
+MERGE_STATUSES = {"proposed", "applied", "rejected", "archived", "reverted"}
+SAFE_MERGE_LIST_FIELDS = {"aliases", "source_ids", "extraction_run_ids"}
+ALIAS_LABELS = {"Person", "Organization", "Topic"}
 
 
 class GraphService:
@@ -215,6 +254,457 @@ class GraphService:
             affective_relationships=affective_relationships,
         )
 
+    def create_relationship_state(
+        self,
+        context_id: str,
+        properties: dict[str, Any],
+        *,
+        make_current: bool = True,
+    ) -> NodeSearchResult:
+        context = self.get_node(context_id)
+        if context.label != "RelationshipContext":
+            raise GraphValidationError(
+                "Relationship states can only attach to RelationshipContext nodes"
+            )
+
+        state_properties = dict(properties)
+        state_properties["is_current"] = make_current
+        state_properties = self._normalize_node_properties("RelationshipState", state_properties)
+        state_properties = self._add_write_timestamps(state_properties, is_create=True)
+        state = NodeSearchResult.model_validate(
+            self.repository.upsert_node("RelationshipState", state_properties)
+        )
+        self.upsert_relationship("HAS_RELATIONSHIP_STATE", context_id, state.properties["id"], {})
+
+        if make_current:
+            self.repository.clear_current_relationship_states(
+                context_id,
+                except_state_id=state.properties["id"],
+                updated_at=datetime.now(UTC).isoformat(),
+            )
+
+        current_patch = {
+            field: state.properties[field]
+            for field in RELATIONSHIP_CONTEXT_CURRENT_FIELDS
+            if field in state.properties
+        }
+        if make_current and current_patch:
+            previous_values = {
+                field: context.properties.get(field)
+                for field in current_patch
+                if context.properties.get(field) != current_patch[field]
+            }
+            changed_values = {
+                field: value
+                for field, value in current_patch.items()
+                if context.properties.get(field) != value
+            }
+            if changed_values:
+                self.patch_node(context_id, changed_values)
+                self.create_change_record(
+                    {
+                        "target_kind": "relationship_context",
+                        "target_id": context_id,
+                        "target_label": "RelationshipContext",
+                        "field_path": "current_relationship_state",
+                        "previous_value_json": dump_change_value(previous_values),
+                        "new_value_json": dump_change_value(changed_values),
+                        "changed_by": "system",
+                        "reason": "relationship_state_marked_current",
+                        "source_ids": state.properties.get("source_ids", []),
+                        "extraction_run_ids": state.properties.get("extraction_run_ids", []),
+                    }
+                )
+
+        return state
+
+    def get_relationship_states(
+        self,
+        context_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        context = self.get_node(context_id)
+        if context.label != "RelationshipContext":
+            raise GraphValidationError("Relationship state history requires a RelationshipContext")
+        records = self.repository.get_relationship_states(
+            context_id,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def get_relationship_context_detail(
+        self,
+        context_id: str,
+        *,
+        include_state_history: bool = False,
+        limit: int = 50,
+    ) -> RelationshipContextDetailResult:
+        context = self.get_node(context_id)
+        if context.label != "RelationshipContext":
+            raise GraphValidationError("Relationship context detail requires a RelationshipContext")
+        states = (
+            self.get_relationship_states(context_id, limit=limit)
+            if include_state_history
+            else []
+        )
+        return RelationshipContextDetailResult(context=context, state_history=states)
+
+    def create_change_record(self, properties: dict[str, Any]) -> NodeSearchResult:
+        change_properties = dict(properties)
+        target_kind = change_properties.get("target_kind")
+        if target_kind not in CHANGE_TARGET_KINDS:
+            raise GraphValidationError(f"Unsupported change target kind: {target_kind}")
+
+        target_id = change_properties.get("target_id")
+        if not isinstance(target_id, str) or not target_id:
+            raise GraphValidationError("ChangeRecord requires target_id")
+
+        if target_kind == "relationship":
+            relationship = self.repository.get_relationship(target_id)
+            if relationship is None:
+                raise GraphNotFoundError(f"Graph relationship not found: {target_id}")
+            change_properties.setdefault("target_relationship_type", relationship["type"])
+        elif self.repository.get_node(target_id) is None:
+            raise GraphNotFoundError(f"Graph node not found: {target_id}")
+
+        change_properties.setdefault("changed_at", datetime.now(UTC).isoformat())
+        change_properties = self._normalize_node_properties("ChangeRecord", change_properties)
+        change_properties = self._add_write_timestamps(change_properties, is_create=True)
+        change = NodeSearchResult.model_validate(
+            self.repository.upsert_node("ChangeRecord", change_properties)
+        )
+        if target_kind != "relationship":
+            self.upsert_relationship("HAS_CHANGE_RECORD", target_id, change.properties["id"], {})
+        return change
+
+    def get_change_records_for_target(
+        self,
+        target_id: str,
+        *,
+        target_kind: str | None = None,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        if target_kind is not None and target_kind not in CHANGE_TARGET_KINDS:
+            raise GraphValidationError(f"Unsupported change target kind: {target_kind}")
+        records = self.repository.find_change_records_for_target(
+            target_id,
+            target_kind=target_kind,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def transition_node_lifecycle(
+        self,
+        node_id: str,
+        transition: LifecycleTransitionRequest,
+    ) -> NodeSearchResult:
+        new_state = self._validate_enum_value(
+            transition.lifecycle_state,
+            LifecycleState,
+            "lifecycle_state",
+        )
+        existing = self.get_node(node_id)
+        previous_state = existing.properties.get("lifecycle_state")
+        patched = self.patch_node(node_id, {"lifecycle_state": new_state})
+        self.create_change_record(
+            {
+                "target_kind": "node",
+                "target_id": node_id,
+                "target_label": existing.label,
+                "field_path": "lifecycle_state",
+                "previous_value_json": dump_change_value(previous_state),
+                "new_value_json": dump_change_value(new_state),
+                "changed_by": transition.changed_by,
+                "reason": transition.reason,
+                "source_ids": transition.source_ids,
+                "extraction_run_ids": transition.extraction_run_ids,
+                "metadata": transition.metadata,
+            }
+        )
+        return patched
+
+    def transition_relationship_lifecycle(
+        self,
+        relationship_id: str,
+        transition: LifecycleTransitionRequest,
+    ) -> RelationshipResult:
+        new_state = self._validate_enum_value(
+            transition.lifecycle_state,
+            LifecycleState,
+            "lifecycle_state",
+        )
+        relationship = self.repository.get_relationship(relationship_id)
+        if relationship is None:
+            raise GraphNotFoundError(f"Graph relationship not found: {relationship_id}")
+
+        previous_state = relationship["properties"].get("lifecycle_state")
+        patch_properties = self._add_write_timestamps(
+            {"lifecycle_state": new_state},
+            is_create=False,
+        )
+        merged_properties = dict(relationship["properties"])
+        merged_properties.update(patch_properties)
+        try:
+            GraphRelationshipModel.model_validate(merged_properties)
+        except ValidationError as exc:
+            raise GraphValidationError(str(exc)) from exc
+
+        patched = self.repository.patch_relationship(relationship_id, patch_properties)
+        if patched is None:
+            raise GraphNotFoundError(f"Graph relationship not found: {relationship_id}")
+        self.create_change_record(
+            {
+                "target_kind": "relationship",
+                "target_id": relationship_id,
+                "target_relationship_type": relationship["type"],
+                "field_path": "lifecycle_state",
+                "previous_value_json": dump_change_value(previous_state),
+                "new_value_json": dump_change_value(new_state),
+                "changed_by": transition.changed_by,
+                "reason": transition.reason,
+                "source_ids": transition.source_ids,
+                "extraction_run_ids": transition.extraction_run_ids,
+                "metadata": transition.metadata,
+            }
+        )
+        return RelationshipResult.model_validate(patched)
+
+    def create_contradiction(
+        self,
+        properties: dict[str, Any],
+        *,
+        target_ids: list[str] | None = None,
+    ) -> NodeSearchResult:
+        target_ids = target_ids or []
+        for target_id in target_ids:
+            if self.repository.get_node(target_id) is None:
+                raise GraphNotFoundError(f"Graph node not found: {target_id}")
+
+        contradiction_properties = dict(properties)
+        status = contradiction_properties.setdefault("status", "detected")
+        if status not in CONTRADICTION_STATUSES:
+            raise GraphValidationError(f"Unsupported contradiction status: {status}")
+        contradiction_properties.setdefault("detected_at", datetime.now(UTC).isoformat())
+        contradiction = self.upsert_node("ContradictionRecord", contradiction_properties)
+        for target_id in target_ids:
+            self.upsert_relationship(
+                "HAS_CONTRADICTION_RECORD",
+                target_id,
+                contradiction.properties["id"],
+                {},
+            )
+        return contradiction
+
+    def query_contradictions(
+        self,
+        *,
+        target_id: str | None = None,
+        status: str | None = None,
+        severity: str | None = None,
+        contradiction_type: str | None = None,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        if status is not None and status not in CONTRADICTION_STATUSES:
+            raise GraphValidationError(f"Unsupported contradiction status: {status}")
+        if target_id is not None and self.repository.get_node(target_id) is None:
+            raise GraphNotFoundError(f"Graph node not found: {target_id}")
+        records = self.repository.find_contradictions(
+            target_id=target_id,
+            status=status,
+            severity=severity,
+            contradiction_type=contradiction_type,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def update_contradiction(
+        self,
+        contradiction_id: str,
+        properties: dict[str, Any],
+    ) -> NodeSearchResult:
+        existing = self.get_node(contradiction_id)
+        if existing.label != "ContradictionRecord":
+            raise GraphValidationError("Contradiction update requires a ContradictionRecord")
+        if (
+            properties.get("status") is not None
+            and properties["status"] not in CONTRADICTION_STATUSES
+        ):
+            raise GraphValidationError(f"Unsupported contradiction status: {properties['status']}")
+
+        patch_properties = dict(properties)
+        if patch_properties.get("status") == "resolved":
+            patch_properties.setdefault("resolved_at", datetime.now(UTC).isoformat())
+        previous_values = {
+            field: existing.properties.get(field)
+            for field in patch_properties
+            if existing.properties.get(field) != patch_properties[field]
+        }
+        patched = self.patch_node(contradiction_id, patch_properties)
+        if previous_values:
+            self.create_change_record(
+                {
+                    "target_kind": "contradiction_record",
+                    "target_id": contradiction_id,
+                    "target_label": "ContradictionRecord",
+                    "field_path": "contradiction_record",
+                    "previous_value_json": dump_change_value(previous_values),
+                    "new_value_json": dump_change_value(patch_properties),
+                    "changed_by": "system",
+                    "reason": "contradiction_record_updated",
+                }
+            )
+        return patched
+
+    def create_merge_record(
+        self,
+        *,
+        canonical_node_id: str,
+        merged_node_ids: list[str],
+        reason: str | None = None,
+        performed_by: str = "system",
+        source_ids: list[str] | None = None,
+        extraction_run_ids: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> NodeSearchResult:
+        canonical, merged_nodes = self._validate_merge_nodes(canonical_node_id, merged_node_ids)
+        merge_properties = {
+            "canonical_node_id": canonical.properties["id"],
+            "merged_node_ids": [node.properties["id"] for node in merged_nodes],
+            "reason": reason,
+            "performed_by": performed_by,
+            "status": "proposed",
+            "source_ids": source_ids or [],
+            "extraction_run_ids": extraction_run_ids or [],
+            "metadata": metadata or {},
+        }
+        return self.upsert_node("MergeRecord", merge_properties)
+
+    def query_merges(
+        self,
+        *,
+        canonical_node_id: str | None = None,
+        merged_node_id: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        if status is not None and status not in MERGE_STATUSES:
+            raise GraphValidationError(f"Unsupported merge status: {status}")
+        records = self.repository.find_merges(
+            canonical_node_id=canonical_node_id,
+            merged_node_id=merged_node_id,
+            status=status,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def update_merge_record(self, merge_id: str, properties: dict[str, Any]) -> NodeSearchResult:
+        existing = self.get_node(merge_id)
+        if existing.label != "MergeRecord":
+            raise GraphValidationError("Merge update requires a MergeRecord")
+        status = properties.get("status")
+        if status is not None:
+            if status not in MERGE_STATUSES:
+                raise GraphValidationError(f"Unsupported merge status: {status}")
+            if status == "applied":
+                raise GraphValidationError("Use the merge apply endpoint to apply a merge")
+        return self.patch_node(merge_id, properties)
+
+    def apply_merge(self, merge_id: str) -> NodeSearchResult:
+        merge_record = self.get_node(merge_id)
+        if merge_record.label != "MergeRecord":
+            raise GraphValidationError("Merge apply requires a MergeRecord")
+        status = merge_record.properties.get("status")
+        if status == "applied":
+            raise GraphConflictError(f"Merge record is already applied: {merge_id}")
+        if status != "proposed":
+            raise GraphConflictError(f"Only proposed merge records can be applied: {merge_id}")
+
+        canonical_id = merge_record.properties["canonical_node_id"]
+        merged_ids = list(merge_record.properties.get("merged_node_ids", []))
+        canonical, merged_nodes = self._validate_merge_nodes(canonical_id, merged_ids)
+
+        self.upsert_relationship("CANONICAL_NODE", merge_id, canonical_id, {})
+        for merged_node in merged_nodes:
+            merged_id = merged_node.properties["id"]
+            self.upsert_relationship("MERGED_NODE", merge_id, merged_id, {})
+            self.upsert_relationship("MERGED_INTO", merged_id, canonical_id, {})
+
+        canonical_patch = self._safe_merge_patch(canonical, merged_nodes)
+        if canonical_patch:
+            previous_values = {
+                field: canonical.properties.get(field)
+                for field in canonical_patch
+                if canonical.properties.get(field) != canonical_patch[field]
+            }
+            self.patch_node(canonical_id, canonical_patch)
+            self.create_change_record(
+                {
+                    "target_kind": "node",
+                    "target_id": canonical_id,
+                    "target_label": canonical.label,
+                    "field_path": "merge_safe_fields",
+                    "previous_value_json": dump_change_value(previous_values),
+                    "new_value_json": dump_change_value(canonical_patch),
+                    "changed_by": merge_record.properties.get("performed_by") or "system",
+                    "reason": merge_record.properties.get("reason"),
+                    "source_ids": merge_record.properties.get("source_ids", []),
+                    "extraction_run_ids": merge_record.properties.get("extraction_run_ids", []),
+                }
+            )
+
+        for merged_node in merged_nodes:
+            previous_values = {
+                "lifecycle_state": merged_node.properties.get("lifecycle_state"),
+                "merged_into_id": merged_node.properties.get("merged_into_id"),
+            }
+            patch = {
+                "lifecycle_state": LifecycleState.ARCHIVED.value,
+                "merged_into_id": canonical_id,
+            }
+            self.patch_node(merged_node.properties["id"], patch)
+            self.create_change_record(
+                {
+                    "target_kind": "node",
+                    "target_id": merged_node.properties["id"],
+                    "target_label": merged_node.label,
+                    "field_path": "merge_archive",
+                    "previous_value_json": dump_change_value(previous_values),
+                    "new_value_json": dump_change_value(patch),
+                    "changed_by": merge_record.properties.get("performed_by") or "system",
+                    "reason": merge_record.properties.get("reason"),
+                    "source_ids": merge_record.properties.get("source_ids", []),
+                    "extraction_run_ids": merge_record.properties.get("extraction_run_ids", []),
+                }
+            )
+
+        return self.patch_node(
+            merge_id,
+            {"status": "applied", "merged_at": datetime.now(UTC).isoformat()},
+        )
+
+    def get_canonical_node(self, node_id: str) -> NodeSearchResult:
+        current_id = node_id
+        seen: set[str] = set()
+        while True:
+            if current_id in seen:
+                raise GraphValidationError(f"Merge cycle detected while resolving {node_id}")
+            seen.add(current_id)
+            current = self.get_node(current_id)
+            relationships = self.repository.get_node_relationships(
+                current_id,
+                relationship_type="MERGED_INTO",
+                direction="out",
+                limit=2,
+            )
+            if not relationships:
+                return current
+            if len(relationships) > 1:
+                raise GraphValidationError(
+                    f"Multiple canonical nodes found while resolving {node_id}"
+                )
+            current_id = relationships[0]["to_id"]
+
     def _normalize_node_properties(self, label: str, properties: dict[str, Any]) -> dict[str, Any]:
         normalized_properties = dict(properties)
         if label in NORMALIZED_NAME_LABELS and not normalized_properties.get("normalized_name"):
@@ -291,6 +781,56 @@ class GraphService:
             raise GraphValidationError("Limit must be greater than 0")
         return min(limit, 200)
 
+    def _validate_merge_nodes(
+        self,
+        canonical_node_id: str,
+        merged_node_ids: list[str],
+    ) -> tuple[NodeSearchResult, list[NodeSearchResult]]:
+        if not merged_node_ids:
+            raise GraphValidationError("Merge requires at least one merged node")
+        if canonical_node_id in merged_node_ids:
+            raise GraphValidationError("Canonical node cannot be included in merged_node_ids")
+        if len(set(merged_node_ids)) != len(merged_node_ids):
+            raise GraphValidationError("Merge cannot contain duplicate merged_node_ids")
+
+        canonical = self.get_node(canonical_node_id)
+        merged_nodes = [self.get_node(node_id) for node_id in merged_node_ids]
+        if any(node.label != canonical.label for node in merged_nodes):
+            raise GraphValidationError("Merge nodes must share the same primary label")
+        return canonical, merged_nodes
+
+    def _safe_merge_patch(
+        self,
+        canonical: NodeSearchResult,
+        merged_nodes: list[NodeSearchResult],
+    ) -> dict[str, Any]:
+        patch: dict[str, Any] = {}
+        for field in SAFE_MERGE_LIST_FIELDS:
+            if field == "aliases" and canonical.label not in ALIAS_LABELS:
+                continue
+            current_values = list(canonical.properties.get(field, []))
+            merged_values: list[Any] = []
+            for node in merged_nodes:
+                values = node.properties.get(field, [])
+                if isinstance(values, list):
+                    merged_values.extend(values)
+            merged = merge_unique_values(current_values, merged_values)
+            if merged != current_values:
+                patch[field] = merged
+        return patch
+
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def dump_change_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def merge_unique_values(existing: list[Any], additions: list[Any]) -> list[Any]:
+    merged = list(existing)
+    for value in additions:
+        if value not in merged:
+            merged.append(value)
+    return merged

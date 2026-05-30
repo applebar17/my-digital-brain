@@ -13,6 +13,7 @@ from my_digital_brain.graph.models import (
     AffectiveContextResult,
     NeighborhoodResult,
     NodeSearchResult,
+    RelationshipContextDetailResult,
     RelationshipResult,
 )
 
@@ -103,6 +104,156 @@ class FakeGraphService:
             affective_relationships=[],
         )
 
+    def create_relationship_state(
+        self,
+        context_id: str,
+        properties: dict[str, object],
+        make_current: bool = True,
+    ) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="RelationshipState",
+            labels=["RelationshipState"],
+            properties={
+                "id": "state-1",
+                "context_id": context_id,
+                "is_current": make_current,
+                **properties,
+            },
+        )
+
+    def get_relationship_states(self, *_args: object, **_kwargs: object) -> list[NodeSearchResult]:
+        return [
+            NodeSearchResult(
+                label="RelationshipState",
+                labels=["RelationshipState"],
+                properties={"id": "state-1", "status": "low_contact"},
+            )
+        ]
+
+    def get_relationship_context_detail(
+        self,
+        context_id: str,
+        include_state_history: bool = False,
+        **_kwargs: object,
+    ) -> RelationshipContextDetailResult:
+        return RelationshipContextDetailResult(
+            context=NodeSearchResult(
+                label="RelationshipContext",
+                labels=["RelationshipContext"],
+                properties={"id": context_id},
+            ),
+            state_history=self.get_relationship_states() if include_state_history else [],
+        )
+
+    def create_change_record(self, properties: dict[str, object]) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="ChangeRecord",
+            labels=["ChangeRecord"],
+            properties={"id": "change-1", **properties},
+        )
+
+    def get_change_records_for_target(
+        self,
+        target_id: str,
+        **_kwargs: object,
+    ) -> list[NodeSearchResult]:
+        return [
+            NodeSearchResult(
+                label="ChangeRecord",
+                labels=["ChangeRecord"],
+                properties={"id": "change-1", "target_id": target_id},
+            )
+        ]
+
+    def transition_node_lifecycle(self, node_id: str, request: object) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": node_id, "lifecycle_state": request.lifecycle_state},
+        )
+
+    def transition_relationship_lifecycle(
+        self,
+        relationship_id: str,
+        request: object,
+    ) -> RelationshipResult:
+        return RelationshipResult(
+            type="RELATED_TO",
+            from_id="node-1",
+            to_id="node-2",
+            properties={"id": relationship_id, "lifecycle_state": request.lifecycle_state},
+        )
+
+    def create_contradiction(
+        self,
+        properties: dict[str, object],
+        target_ids: list[str] | None = None,
+    ) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="ContradictionRecord",
+            labels=["ContradictionRecord"],
+            properties={"id": "contradiction-1", "target_ids": target_ids or [], **properties},
+        )
+
+    def query_contradictions(self, **_kwargs: object) -> list[NodeSearchResult]:
+        return [
+            NodeSearchResult(
+                label="ContradictionRecord",
+                labels=["ContradictionRecord"],
+                properties={"id": "contradiction-1", "status": "detected"},
+            )
+        ]
+
+    def update_contradiction(
+        self,
+        contradiction_id: str,
+        properties: dict[str, object],
+    ) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="ContradictionRecord",
+            labels=["ContradictionRecord"],
+            properties={"id": contradiction_id, **properties},
+        )
+
+    def create_merge_record(self, **kwargs: object) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="MergeRecord",
+            labels=["MergeRecord"],
+            properties={"id": "merge-1", "status": "proposed", **kwargs},
+        )
+
+    def query_merges(self, **_kwargs: object) -> list[NodeSearchResult]:
+        return [
+            NodeSearchResult(
+                label="MergeRecord",
+                labels=["MergeRecord"],
+                properties={"id": "merge-1", "status": "proposed"},
+            )
+        ]
+
+    def update_merge_record(self, merge_id: str, properties: dict[str, object]) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="MergeRecord",
+            labels=["MergeRecord"],
+            properties={"id": merge_id, **properties},
+        )
+
+    def apply_merge(self, merge_id: str) -> NodeSearchResult:
+        if merge_id == "already-applied":
+            raise GraphConflictError("already applied")
+        return NodeSearchResult(
+            label="MergeRecord",
+            labels=["MergeRecord"],
+            properties={"id": merge_id, "status": "applied"},
+        )
+
+    def get_canonical_node(self, node_id: str) -> NodeSearchResult:
+        return NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": "canonical-for-" + node_id},
+        )
+
 
 def client_for(service: FakeGraphService) -> TestClient:
     app = FastAPI()
@@ -180,6 +331,97 @@ def test_relationships_neighborhood_and_affective_context_endpoints() -> None:
     assert affective.status_code == 200
     assert affective.json()["direct_affective_fields"]["emotional_summary"] == "Comforting place."
     assert affective.json()["perceptions"][0]["properties"]["target_type"] == "Place"
+
+
+def test_wave2_relationship_state_and_change_endpoints() -> None:
+    client = client_for(FakeGraphService())
+
+    state = client.post(
+        "/graph/relationship-contexts/context-1/states",
+        json={
+            "properties": {"status": "low_contact", "description": "We speak rarely."},
+            "make_current": True,
+        },
+    )
+    states = client.get("/graph/relationship-contexts/context-1/states")
+    detail = client.get("/graph/relationship-contexts/context-1/detail?include_state_history=true")
+    change = client.post(
+        "/graph/change-records",
+        json={
+            "properties": {
+                "target_kind": "node",
+                "target_id": "node-1",
+                "field_path": "lifecycle_state",
+            }
+        },
+    )
+    changes = client.get("/graph/targets/node-1/changes?target_kind=node")
+
+    assert state.status_code == 200
+    assert state.json()["label"] == "RelationshipState"
+    assert states.status_code == 200
+    assert detail.json()["state_history"][0]["label"] == "RelationshipState"
+    assert change.json()["label"] == "ChangeRecord"
+    assert changes.json()[0]["properties"]["target_id"] == "node-1"
+
+
+def test_wave2_lifecycle_contradiction_and_merge_endpoints() -> None:
+    client = client_for(FakeGraphService())
+
+    node_lifecycle = client.post(
+        "/graph/nodes/node-1/lifecycle",
+        json={"lifecycle_state": "archived", "reason": "merged"},
+    )
+    relationship_lifecycle = client.post(
+        "/graph/relationships/rel-1/lifecycle",
+        json={"lifecycle_state": "stale"},
+    )
+    contradiction = client.post(
+        "/graph/contradictions",
+        json={
+            "properties": {"contradiction_type": "location", "severity": "medium"},
+            "target_ids": ["claim-1"],
+        },
+    )
+    contradictions = client.get("/graph/contradictions?status=detected")
+    updated_contradiction = client.patch(
+        "/graph/contradictions/contradiction-1",
+        json={"properties": {"status": "resolved"}},
+    )
+    merge = client.post(
+        "/graph/merges",
+        json={
+            "canonical_node_id": "person-1",
+            "merged_node_ids": ["person-2"],
+            "reason": "duplicate",
+        },
+    )
+    merges = client.get("/graph/merges?status=proposed")
+    updated_merge = client.patch(
+        "/graph/merges/merge-1",
+        json={"properties": {"status": "rejected"}},
+    )
+    applied = client.post("/graph/merges/merge-1/apply")
+    canonical = client.get("/graph/nodes/person-2/canonical")
+
+    assert node_lifecycle.json()["properties"]["lifecycle_state"] == "archived"
+    assert relationship_lifecycle.json()["properties"]["lifecycle_state"] == "stale"
+    assert contradiction.json()["label"] == "ContradictionRecord"
+    assert contradictions.json()[0]["properties"]["status"] == "detected"
+    assert updated_contradiction.json()["properties"]["status"] == "resolved"
+    assert merge.json()["label"] == "MergeRecord"
+    assert merges.json()[0]["properties"]["status"] == "proposed"
+    assert updated_merge.json()["properties"]["status"] == "rejected"
+    assert applied.json()["properties"]["status"] == "applied"
+    assert canonical.json()["properties"]["id"] == "canonical-for-person-2"
+
+
+def test_wave2_conflict_error_mapping() -> None:
+    client = client_for(FakeGraphService())
+
+    response = client.post("/graph/merges/already-applied/apply")
+
+    assert response.status_code == 409
 
 
 def test_graph_api_error_mapping() -> None:

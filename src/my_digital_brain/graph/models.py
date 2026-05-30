@@ -155,6 +155,54 @@ class ExtractionRunNode(GraphNodeModel):
     status: str | None = None
 
 
+class RelationshipStateNode(GraphNodeModel):
+    label: ClassVar[str] = "RelationshipState"
+
+    status: str | None = None
+    closeness: str | None = None
+    source_kind: str | None = None
+    is_current: bool | None = None
+
+
+class ChangeRecordNode(GraphNodeModel):
+    label: ClassVar[str] = "ChangeRecord"
+
+    target_kind: str
+    target_id: str
+    target_label: str | None = None
+    target_relationship_type: str | None = None
+    field_path: str
+    previous_value_json: str | None = None
+    new_value_json: str | None = None
+    changed_at: str | None = None
+    changed_by: str | None = None
+    reason: str | None = None
+
+
+class ContradictionRecordNode(GraphNodeModel):
+    label: ClassVar[str] = "ContradictionRecord"
+
+    contradiction_type: str | None = None
+    severity: str | None = None
+    status: str = "detected"
+    reason: str | None = None
+    detected_by: str | None = None
+    detected_at: str | None = None
+    resolved_at: str | None = None
+    resolution_summary: str | None = None
+
+
+class MergeRecordNode(GraphNodeModel):
+    label: ClassVar[str] = "MergeRecord"
+
+    merged_node_ids: list[str] = Field(default_factory=list)
+    canonical_node_id: str
+    reason: str | None = None
+    merged_at: str | None = None
+    performed_by: str | None = None
+    status: str = "proposed"
+
+
 NODE_MODEL_BY_LABEL: dict[str, type[GraphNodeModel]] = {
     PersonNode.label: PersonNode,
     EventNode.label: EventNode,
@@ -170,6 +218,10 @@ NODE_MODEL_BY_LABEL: dict[str, type[GraphNodeModel]] = {
     ContactPointNode.label: ContactPointNode,
     ExternalReferenceNode.label: ExternalReferenceNode,
     ExtractionRunNode.label: ExtractionRunNode,
+    RelationshipStateNode.label: RelationshipStateNode,
+    ChangeRecordNode.label: ChangeRecordNode,
+    ContradictionRecordNode.label: ContradictionRecordNode,
+    MergeRecordNode.label: MergeRecordNode,
 }
 
 
@@ -206,6 +258,66 @@ class RelationshipUpsertRequest(BaseModel):
     type: str
     from_id: str
     to_id: str
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class RelationshipStateCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    properties: dict[str, Any] = Field(default_factory=dict)
+    make_current: bool = True
+
+
+class RelationshipContextDetailResult(BaseModel):
+    context: NodeSearchResult
+    state_history: list[NodeSearchResult] = Field(default_factory=list)
+
+
+class ChangeRecordCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class LifecycleTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lifecycle_state: str
+    reason: str | None = None
+    changed_by: str = "system"
+    source_ids: list[str] = Field(default_factory=list)
+    extraction_run_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContradictionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    properties: dict[str, Any] = Field(default_factory=dict)
+    target_ids: list[str] = Field(default_factory=list)
+
+
+class ContradictionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class MergeCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    canonical_node_id: str
+    merged_node_ids: list[str]
+    reason: str | None = None
+    performed_by: str = "system"
+    source_ids: list[str] = Field(default_factory=list)
+    extraction_run_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MergeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     properties: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 
 from my_digital_brain.graph.exceptions import GraphValidationError
-from my_digital_brain.graph.models import GraphRelationshipModel, PerceptionNode, PersonNode
+from my_digital_brain.graph.models import (
+    ChangeRecordNode,
+    ContradictionRecordNode,
+    GraphRelationshipModel,
+    MergeRecordNode,
+    PerceptionNode,
+    PersonNode,
+    RelationshipStateNode,
+)
 from my_digital_brain.graph.registry import (
     CORE_NODE_LABELS,
     CORE_RELATIONSHIP_TYPES,
@@ -57,6 +65,7 @@ def test_core_node_model_accepts_metadata_provenance_and_affective_fields() -> N
     assert dumped["metadata"]["source"] == "fixture"
     assert dumped["source_ids"] == ["source-1"]
     assert dumped["emotion_tags"] == ["warmth", "distance"]
+    assert "resolved_start" in dumped
 
 
 def test_perception_can_target_non_person_memory() -> None:
@@ -82,6 +91,40 @@ def test_relationship_model_accepts_affective_and_provenance_fields() -> None:
 
     assert relationship.emotional_summary == "Stressful but meaningful collaboration."
     assert relationship.source_ids == ["source-1"]
+
+
+def test_wave2_models_accept_temporal_history_and_audit_fields() -> None:
+    state = RelationshipStateNode(
+        status="low_contact",
+        description="We stopped talking regularly.",
+        resolved_start="2020-01-01",
+        time_basis="user_stated",
+        timezone="Europe/Rome",
+        is_current=True,
+    )
+    change = ChangeRecordNode(
+        target_kind="node",
+        target_id="node-1",
+        target_label="Person",
+        field_path="lifecycle_state",
+        previous_value_json='"active"',
+        new_value_json='"archived"',
+    )
+    contradiction = ContradictionRecordNode(
+        contradiction_type="location",
+        severity="medium",
+        reason="Conflicting event location.",
+    )
+    merge = MergeRecordNode(
+        canonical_node_id="node-1",
+        merged_node_ids=["node-2"],
+        reason="Same person.",
+    )
+
+    assert state.resolved_start == "2020-01-01"
+    assert change.field_path == "lifecycle_state"
+    assert contradiction.status == "detected"
+    assert merge.status == "proposed"
 
 
 def test_metadata_serializes_as_deterministic_json_and_round_trips() -> None:

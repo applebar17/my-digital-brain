@@ -19,6 +19,10 @@ CORE_NODE_LABELS = (
     "ContactPoint",
     "ExternalReference",
     "ExtractionRun",
+    "RelationshipState",
+    "ChangeRecord",
+    "ContradictionRecord",
+    "MergeRecord",
 )
 
 CORE_RELATIONSHIP_TYPES = (
@@ -46,6 +50,12 @@ CORE_RELATIONSHIP_TYPES = (
     "SAME_AS",
     "CONFIGURES",
     "PRIMARY_CONTACT_FOR",
+    "HAS_RELATIONSHIP_STATE",
+    "HAS_CHANGE_RECORD",
+    "HAS_CONTRADICTION_RECORD",
+    "MERGED_NODE",
+    "CANONICAL_NODE",
+    "MERGED_INTO",
 )
 
 CORE_NODE_LABEL_SET = frozenset(CORE_NODE_LABELS)
