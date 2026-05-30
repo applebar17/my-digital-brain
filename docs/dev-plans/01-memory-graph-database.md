@@ -438,6 +438,18 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 
 Wave 2 should stay graph-focused. The goal is to make the graph behave like a memory system with time, current state, history, relationship evolution, contradiction representation, merge auditability, and affective provenance.
 
+Locked Wave 2 implementation decisions:
+
+- Do not implement the contradiction judge agent or judge invocation flow in Wave 2.
+- Add `ChangeRecord`.
+- Store current state directly on the main node, relationship, `Perception`, or `RelationshipContext`.
+- Preserve history underneath through graph records.
+- Attach `RelationshipState` only to `RelationshipContext`, not directly to bare relationships.
+- Add service/API support for `ContradictionRecord`.
+- Add service/API support for `MergeRecord`.
+- Implement entity merge as an auditable, non-destructive graph operation.
+- Create a `ChangeRecord` for every explicit lifecycle transition.
+
 ### Temporal Semantics
 
 Add deterministic time fields that preserve both the user's original expression and the resolved queryable range:
@@ -475,9 +487,10 @@ Later update: relationship softened after reconnecting.
 Implementation stance:
 
 - Current fields live on the main node, relationship, `Perception`, or `RelationshipContext`.
-- Historical changes are preserved as `Claim`, `Perception`, `RelationshipContext`, `RelationshipState`, or `ChangeRecord`-like graph records.
+- Historical changes are preserved as `Claim`, `Perception`, `RelationshipContext`, `RelationshipState`, or `ChangeRecord` graph records.
 - Important previous values are not overwritten without preserving the old state.
 - Query APIs should return current facts by default and history only when requested.
+- Current state is stored directly for simple querying; it is not dynamically recomputed from history on every read in Wave 2.
 
 ### Relationship State History
 
@@ -491,6 +504,8 @@ Recommended model:
 - `RelationshipState`: a dated state entry belonging to a relationship context.
 - `HAS_RELATIONSHIP_STATE`: RelationshipContext to RelationshipState.
 - `RELATIONSHIP_WITH`: RelationshipContext to the target entity.
+
+`RelationshipState` should not attach directly to a bare edge. If a relationship needs state history, it is complex enough to be represented as a `RelationshipContext`.
 
 `RelationshipState` should support:
 
@@ -529,11 +544,42 @@ Add explicit lifecycle transition handling for nodes, relationships, claims, per
 
 Lifecycle transitions should preserve source evidence, actor, timestamp, reason, and previous state when meaningful.
 
+Every explicit lifecycle transition should create a `ChangeRecord`.
+
+### Change Records
+
+Add `ChangeRecord` as the generic audit record for updates that are not naturally represented as claims, perceptions, relationship states, contradiction records, or merge records.
+
+Use `ChangeRecord` for:
+
+- Lifecycle transitions.
+- Current-state field updates.
+- Important metadata promotions or corrections.
+- Changes to mutable facts where the old value should remain inspectable.
+
+Useful fields:
+
+- `target_kind`: node, relationship, relationship_context, relationship_state, claim, perception.
+- `target_id`
+- `target_label`
+- `target_relationship_type`
+- `field_path`
+- `previous_value_json`
+- `new_value_json`
+- `changed_at`
+- `changed_by`: user, system.
+- `reason`
+- `source_ids`
+- `extraction_run_ids`
+- `metadata`
+
+When the target is a node-like graph record, link it with `HAS_CHANGE_RECORD`. For bare relationships, store the relationship `id` in `target_id` because Neo4j relationships cannot own outgoing relationships.
+
 ### Contradiction Modeling
 
 Use `CONTRADICTS` between claims for explicit contradictions after review. Add a richer contradiction record when the contradiction needs review, severity, resolution state, or clarification history.
 
-Contradiction handling should be agent-invoked, not rule-determined. The graph layer should not try to prove logical contradiction from the whole graph. Instead:
+The future contradiction judge flow should be agent-invoked, not rule-determined. This is documented here so the Wave 2 graph model is compatible with it, but the judge agent itself is not implemented in Wave 2. The graph layer should not try to prove logical contradiction from the whole graph. Future flow:
 
 1. A memory-writing agent proposes a node, relationship, claim, perception, or relationship state.
 2. The context builder retrieves nearby graph context before the write, including current state, relevant history, sources, relationship contexts, perceptions, place/time context, and similar entities.
@@ -565,13 +611,13 @@ Possible `ContradictionRecord` fields:
 - `severity`: low, medium, high.
 - `status`: detected, needs_clarification, resolved, ignored.
 - `reason`
-- `detected_by`: memory_writer, llm_judge, user, system.
+- `detected_by`: memory_writer, future_llm_judge, user, system.
 - `detected_at`
 - `resolved_at`
 - `resolution_summary`
 - source references
 
-The judge output should be structured:
+Future judge output should be structured:
 
 - `decision`: no_conflict, nuance, temporal_update, contradiction, needs_clarification.
 - `severity`: low, medium, high.
@@ -579,7 +625,7 @@ The judge output should be structured:
 - `graph_action`: allow_write, write_as_disputed, create_contradiction_record, create_relationship_state, ask_user.
 - `clarification_question`
 
-Deterministic code should provide guardrails, not contradiction rulings:
+Future deterministic code should provide guardrails, not contradiction rulings:
 
 - Build focused graph context before write.
 - Validate judge input/output schemas.
@@ -588,7 +634,14 @@ Deterministic code should provide guardrails, not contradiction rulings:
 - Prevent direct graph mutation by the judge outside approved write tools.
 - Persist judge decisions when they affect memory.
 
-Do not implement fixed deterministic contradiction rules in the graph wave. The graph should provide a clean place for contradiction judge decisions and clarification outcomes.
+Do not implement fixed deterministic contradiction rules in the graph wave. In Wave 2, implement only the graph structures and service methods to create/query contradiction records. The future judge flow can write to those structures later.
+
+Wave 2 service/API support should include:
+
+- Create contradiction record.
+- Link contradiction record to claims, entities, relationship contexts, or sources.
+- Query contradiction records by target, status, severity, and contradiction type.
+- Update contradiction record status or resolution summary with a `ChangeRecord`.
 
 ### Merge And Split Audit
 
@@ -607,11 +660,34 @@ Useful fields:
 - `canonical_node_id`
 - `reason`
 - `merged_at`
-- `performed_by`: user, system, llm_judge.
+- `performed_by`: user, system, future_llm_judge.
 - `status`: proposed, applied, reverted.
 - source references
 
+Wave 2 should implement actual merge application as a non-destructive graph operation:
+
+- Select one canonical node.
+- Create a `MergeRecord`.
+- Link the merge record to merged nodes with `MERGED_NODE`.
+- Link the merge record to the canonical node with `CANONICAL_NODE`.
+- Link merged nodes to the canonical node with `MERGED_INTO`.
+- Archive merged nodes instead of deleting them.
+- Preserve merged node IDs.
+- Copy useful aliases and source references to the canonical node when this does not create conflicts.
+- Keep conflicting fields on the merged node or as `ChangeRecord`/metadata rather than overwriting canonical values silently.
+- Create `ChangeRecord` entries for lifecycle changes and canonical field changes.
+
+This gives us a real merge operation without making identity history irreversible.
+
 Splits should be supported later. Until split/revert is implemented, risky merges should remain proposed or require user confirmation.
+
+Wave 2 service/API support should include:
+
+- Create proposed merge record.
+- Apply merge record.
+- Query merge records by canonical node, merged node, and status.
+- Retrieve canonical node for a merged node.
+- Reject or archive a proposed merge.
 
 ### Affective Provenance
 
@@ -640,7 +716,22 @@ Keep these out of the immediate Wave 2 graph implementation unless they become n
 - Richer relational indexes.
 - Vector namespace/versioning strategy.
 - Telegram clarification behavior.
+- Contradiction judge agent or judge invocation flow.
 - Hard-coded deterministic contradiction rules.
+
+### Wave 2 Public Interfaces
+
+Add graph service/API support for:
+
+- Create/query relationship states for a relationship context.
+- Retrieve current relationship context with optional state history.
+- Create/query change records.
+- Apply lifecycle transitions with `ChangeRecord` creation.
+- Create/query/update contradiction records.
+- Create/query/apply merge records.
+- Resolve canonical node for a merged node.
+
+These interfaces remain graph-level. They should not include Telegram, LLM judging, speech-to-text, or natural-language ingestion behavior.
 
 ## Wave 3: Advanced Graph Capabilities
 

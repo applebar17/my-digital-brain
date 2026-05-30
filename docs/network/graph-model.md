@@ -192,6 +192,8 @@ Useful properties:
 
 Relationship states can be sparse. They are meant to work like a structured diary: on date X the relationship felt close, on date Y it felt distant, on date Z it softened again.
 
+Relationship states belong to `RelationshipContext` nodes. Do not attach them directly to bare graph relationships. If a relationship needs state history, model it as a relationship context.
+
 ### ProfileMemory
 
 A durable memory about the owner of the brain that can help configure future LLM behavior or retrieval context.
@@ -216,6 +218,30 @@ Examples:
 
 Profile memory should not be silently treated as permanent truth. It should retain evidence, confidence, and correction history.
 
+### ChangeRecord
+
+A generic audit node for meaningful changes to graph memory.
+
+Use change records when a change is not naturally represented as a claim, perception, relationship state, contradiction record, or merge record.
+
+Useful properties:
+
+- `target_kind`: node, relationship, relationship_context, relationship_state, claim, perception.
+- `target_id`
+- `target_label`
+- `target_relationship_type`
+- `field_path`
+- `previous_value_json`
+- `new_value_json`
+- `changed_at`
+- `changed_by`: user, system.
+- `reason`
+- `source_ids`
+- `extraction_run_ids`
+- `metadata`
+
+Change records are required for explicit lifecycle transitions and important current-state updates. Current values can still live directly on the target node or relationship for fast queries; the change record preserves history underneath.
+
 ### MergeRecord
 
 An audit node for entity unification.
@@ -228,11 +254,13 @@ Useful properties:
 - `canonical_node_id`
 - `reason`
 - `merged_at`
-- `performed_by`: user, system, llm_judge.
+- `performed_by`: user, system, future_llm_judge.
 - `status`: proposed, applied, reverted.
 - `metadata`
 
 Merge records preserve why an identity decision happened, make wrong merges debuggable, and prepare the system for future split or revert flows.
+
+Applied merges should be non-destructive. The canonical node remains active, merged nodes are archived and linked with `MERGED_INTO`, and useful aliases/source references may be copied to the canonical node when safe. Conflicting fields should not silently overwrite canonical values.
 
 ### ContradictionRecord
 
@@ -244,7 +272,7 @@ Useful properties:
 - `severity`: low, medium, high.
 - `status`: detected, needs_clarification, resolved, ignored.
 - `reason`
-- `detected_by`: memory_writer, llm_judge, user, system.
+- `detected_by`: memory_writer, future_llm_judge, user, system.
 - `detected_at`
 - `resolved_at`
 - `resolution_summary`
@@ -253,6 +281,8 @@ Useful properties:
 Contradiction records store decisions from an agent-invoked contradiction judge. The judge should be invoked when a memory-writing agent, after receiving focused graph context, has a grounded doubt that a proposed write conflicts with existing memory.
 
 The graph layer should not try to prove contradiction through fixed rules. It should preserve the judged decision, severity, source references, and recommended resolution path.
+
+The graph model supports future judge decisions, but the database layer can also create and query contradiction records directly before the judge flow exists.
 
 ## Core Relationship Types
 
@@ -284,6 +314,7 @@ The graph layer should not try to prove contradiction through fixed rules. It sh
 - `CANONICAL_NODE`: MergeRecord to canonical node.
 - `MERGED_INTO`: Merged node to canonical node.
 - `HAS_CONTRADICTION_RECORD`: Claim, entity, or relationship context to ContradictionRecord.
+- `HAS_CHANGE_RECORD`: Node-like graph record to ChangeRecord.
 
 ## Provenance Model
 

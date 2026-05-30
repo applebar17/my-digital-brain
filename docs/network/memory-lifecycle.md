@@ -51,6 +51,8 @@ Removed or suppressed according to deletion policy. Derived facts from deleted s
 - Delete when the user explicitly asks, when data is unsafe to retain, or when legal/privacy policy requires it.
 - Keep old values when historical context matters.
 - Return current values by default, but make historical values available when asked.
+- Store current state directly on the relevant node, relationship, perception, or relationship context for simple queries.
+- Preserve meaningful state changes underneath through `ChangeRecord`, `Claim`, `RelationshipState`, or other history records.
 
 ## Mutable Facts
 
@@ -65,6 +67,32 @@ Some facts should be expected to change:
 - Project status.
 
 Mutable facts should include validity metadata such as `valid_from`, `valid_to`, `observed_at`, and `is_current` where appropriate.
+
+## Change Records
+
+Every explicit lifecycle transition should create a `ChangeRecord`.
+
+Examples:
+
+- active to confirmed
+- active to stale
+- active to disputed
+- stale to expired
+- active to archived after merge
+
+The change record should preserve:
+
+- target ID
+- target kind
+- field path, usually `lifecycle_state`
+- previous value
+- new value
+- actor
+- timestamp
+- reason
+- source references when available
+
+This keeps the current state easy to query while preserving a historical log for deeper inspection.
 
 ## Memory Management Agent
 

@@ -113,6 +113,24 @@ Purpose:
 
 Splits should be supported later to recover from incorrect merges. Until then, risky merges should remain proposed or require user confirmation.
 
+## Applying A Merge
+
+Applying a merge should be non-destructive.
+
+Recommended behavior:
+
+- Select a canonical node.
+- Create a `MergeRecord`.
+- Link all merged nodes to the merge record.
+- Link the canonical node to the merge record.
+- Add `MERGED_INTO` from each merged node to the canonical node.
+- Mark merged nodes as archived instead of deleting them.
+- Copy safe aliases and source references to the canonical node.
+- Do not silently overwrite canonical fields with conflicting values.
+- Create `ChangeRecord` entries for lifecycle changes and canonical field changes.
+
+This makes the merge useful immediately while preserving identity history and leaving room for future split/revert behavior.
+
 ## Resolution Evidence
 
 Each decision should be explainable:

@@ -64,6 +64,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Duplicate handling and entity unification are first-class requirements, not cleanup tasks.
 - Sensitive and mutable metadata, such as contact details, should be modeled with provenance and validity rather than buried in arbitrary metadata.
 - Memory lifecycle should preserve memories by default while still allowing correction, dispute, expiration, and deletion.
+- Current state should be stored directly for simple queries, while meaningful updates are preserved through history records such as `ChangeRecord` and `RelationshipState`.
 - Time must be modeled explicitly, including fuzzy time, valid time, observed time, and source time.
 - Clarification is an agentic ingestion behavior, not a standalone workflow engine or public API.
 - Ambiguity should trigger clarification where useful, especially for people, locations, dates, and event boundaries.
