@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from neo4j import GraphDatabase
-from neo4j import Driver
+if TYPE_CHECKING:
+    from neo4j import Driver
 
 from my_digital_brain.config import Settings
 
@@ -16,6 +16,8 @@ class GraphClient:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "GraphClient":
+        from neo4j import GraphDatabase
+
         driver = GraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_user, settings.neo4j_password),

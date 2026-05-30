@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from my_digital_brain.core.enums import LifecycleState, PrivacyLevel, TrustLevel
+from my_digital_brain.core.ids import new_uuid
 
 
 class TemporalFields(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
+
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     observed_at: datetime | None = None
@@ -18,7 +21,9 @@ class TemporalFields(BaseModel):
 
 
 class GraphRecordBase(BaseModel):
-    id: str
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: str = Field(default_factory=new_uuid)
     created_at: datetime | None = None
     updated_at: datetime | None = None
     description: str | None = None
@@ -31,11 +36,21 @@ class GraphRecordBase(BaseModel):
     trust_level: TrustLevel | None = None
     privacy_level: PrivacyLevel = PrivacyLevel.NORMAL
     lifecycle_state: LifecycleState = LifecycleState.ACTIVE
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    observed_at: datetime | None = None
+    source_time: datetime | None = None
+    time_precision: str | None = None
+    original_time_text: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+    extraction_run_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphRelationshipBase(BaseModel):
-    id: str
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: str = Field(default_factory=new_uuid)
     created_at: datetime | None = None
     updated_at: datetime | None = None
     valid_from: datetime | None = None

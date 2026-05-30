@@ -1,0 +1,104 @@
+{
+  "nodes": [
+    {
+      "label": "Source",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "source_type": "text",
+        "channel": "fixture",
+        "external_id": "sample-affective-memory-001",
+        "description": "Fixture source for an affective memory."
+      }
+    },
+    {
+      "label": "Person",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "display_name": "Alessandro",
+        "description": "A person connected to teenage memories.",
+        "emotional_summary": "Warm teenage bond mixed with distance and discomfort now.",
+        "emotional_valence": "mixed",
+        "emotion_tags": ["warmth", "distance", "pressure"],
+        "original_user_words": "Great relationship during teenage years, now low contact."
+      }
+    },
+    {
+      "label": "Event",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "title": "Teenage years relationship memory",
+        "description": "A remembered period of closeness and later distance."
+      }
+    },
+    {
+      "label": "Place",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Milan",
+        "city": "Milan",
+        "country": "Italy",
+        "emotional_summary": "A broad place anchor for teenage memories."
+      }
+    },
+    {
+      "label": "Perception",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "description": "The user perceived some traits as oppressive.",
+        "perception_type": "personality_trait_perception",
+        "target_type": "Person",
+        "emotional_valence": "negative",
+        "emotional_intensity": 0.7,
+        "emotion_tags": ["pressure", "oppression"],
+        "original_user_words": "I have always felt some of his personality traits as oppressive.",
+        "source_kind": "user_stated"
+      }
+    },
+    {
+      "label": "RelationshipContext",
+      "properties": {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "description": "Great relationship during teenage years, now low contact.",
+        "relationship_type": "friendship",
+        "status": "low_contact",
+        "closeness": "historically_close",
+        "emotional_summary": "Warm past bond mixed with present distance.",
+        "emotional_valence": "mixed",
+        "emotion_tags": ["warmth", "nostalgia", "distance"],
+        "original_user_words": "Great relationship during teenage years, now low contact."
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "type": "MENTIONED_IN",
+      "from_id": "00000000-0000-4000-8000-000000000002",
+      "to_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "PARTICIPATED_IN",
+      "from_id": "00000000-0000-4000-8000-000000000002",
+      "to_id": "00000000-0000-4000-8000-000000000003"
+    },
+    {
+      "type": "HAPPENED_AT",
+      "from_id": "00000000-0000-4000-8000-000000000003",
+      "to_id": "00000000-0000-4000-8000-000000000004"
+    },
+    {
+      "type": "PERCEPTION_OF",
+      "from_id": "00000000-0000-4000-8000-000000000005",
+      "to_id": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "type": "HAS_RELATIONSHIP_CONTEXT",
+      "from_id": "00000000-0000-4000-8000-000000000002",
+      "to_id": "00000000-0000-4000-8000-000000000006"
+    },
+    {
+      "type": "RELATIONSHIP_WITH",
+      "from_id": "00000000-0000-4000-8000-000000000006",
+      "to_id": "00000000-0000-4000-8000-000000000002"
+    }
+  ]
+}

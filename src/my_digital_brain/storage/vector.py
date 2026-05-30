@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-import chromadb
+if TYPE_CHECKING:
+    import chromadb
 
 from my_digital_brain.config import Settings
 
@@ -41,6 +42,8 @@ class ChromaVectorStore:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "ChromaVectorStore":
+        import chromadb
+
         client = chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
         return cls(client=client, collection_prefix=settings.chroma_collection_prefix)
 
@@ -80,9 +83,10 @@ class ChromaVectorStore:
         distances = results.get("distances", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
         documents = results.get("documents", [[]])[0]
+        rows = zip(ids, distances, metadatas, documents, strict=False)
         return [
             {"id": item_id, "distance": distance, "metadata": metadata, "document": document}
-            for item_id, distance, metadata, document in zip(ids, distances, metadatas, documents, strict=False)
+            for item_id, distance, metadata, document in rows
         ]
 
     def delete(self, collection: str, vector_id: str) -> None:

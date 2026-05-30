@@ -49,7 +49,11 @@ class Neo4jMigrationRunner:
         return bool(result and result[0]["count"] > 0)
 
     def _apply(self, migration: GraphMigration) -> None:
-        statements = [statement.strip() for statement in migration.cypher.split(";") if statement.strip()]
+        statements = [
+            statement.strip()
+            for statement in migration.cypher.split(";")
+            if statement.strip()
+        ]
         for statement in statements:
             self.client.execute_write(statement)
         self.client.execute_write(

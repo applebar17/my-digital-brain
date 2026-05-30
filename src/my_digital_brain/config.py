@@ -1,11 +1,45 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+except ModuleNotFoundError:
+
+    def SettingsConfigDict(**_kwargs: object) -> ConfigDict:
+        return ConfigDict(extra="ignore", populate_by_name=True)
+
+    class BaseSettings(BaseModel):
+        model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+        def __init__(self, **data: object) -> None:
+            env_values = _read_env_file(Path(".env"))
+            env_values.update(os.environ)
+            alias_values: dict[str, object] = {}
+            for field in self.__class__.model_fields.values():
+                alias = field.alias
+                if alias and alias in env_values:
+                    alias_values[alias] = env_values[alias]
+            alias_values.update(data)
+            super().__init__(**alias_values)
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
 
 
 class Settings(BaseSettings):
@@ -19,7 +53,10 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(default="change-me-neo4j", alias="NEO4J_PASSWORD")
     neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
 
-    relational_backend: Literal["postgres", "sqlite"] = Field(default="postgres", alias="RELATIONAL_BACKEND")
+    relational_backend: Literal["postgres", "sqlite"] = Field(
+        default="postgres",
+        alias="RELATIONAL_BACKEND",
+    )
     postgres_dsn: str = Field(
         default="postgresql+psycopg://brain:brain@localhost:5432/brain",
         alias="POSTGRES_DSN",

@@ -41,7 +41,10 @@ class SourceRecord(TimestampMixin, Base):
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     channel: Mapped[str] = mapped_column(String(64), nullable=False)
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    source_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
