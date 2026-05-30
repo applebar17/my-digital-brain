@@ -118,7 +118,6 @@ Useful properties:
 - `valid_from`
 - `valid_to`
 - `time_precision`
-- `confidence`
 - `trust_level`
 - `privacy_level`
 - `lifecycle_state`
@@ -141,7 +140,6 @@ Useful properties:
 - `valid_from`
 - `valid_to`
 - `time_precision`
-- `confidence`
 - `trust_level`
 - `privacy_level`
 - `lifecycle_state`
@@ -165,6 +163,8 @@ Useful properties:
 - Do not label a place, project, or organization as objectively "stressful" unless that is an external fact. Store that the user experienced it as stressful.
 - Preserve emotionally meaningful descriptions as first-class fields, not only as metadata.
 - Mark whether affective information is user-stated or LLM-inferred.
+- Treat user-stated affective memory as stronger than LLM-inferred or system-derived summaries.
+- Do not ask LLMs to invent numeric confidence for affective memory in the first version; use provenance, source links, and user confirmation instead.
 - Use privacy levels conservatively; perceptions about people are usually private or sensitive.
 - Preserve temporal context when the emotional state changed over time.
 - Let later memories update, nuance, dispute, or soften earlier perceptions.
@@ -192,3 +192,18 @@ You described the relationship as very positive during your teenage years, but w
 Future versions may explore whether personality traits and affective memory can support a model that responds more similarly to the user. This is a research direction, not an MVP behavior.
 
 For now, the system should preserve affective memory and profile memory in a way that makes such experimentation possible later, without pretending to clone the user or treating inferred traits as permanent identity.
+
+## Relationship State History
+
+Complex relationships can evolve through many states. A relationship with an ex, family member, close friend, organization, project, or place can move through closeness, rupture, distance, reconnection, ambivalence, and many other states over years.
+
+The graph should support a diary-like state history:
+
+- `RelationshipContext`: stable relationship memory object.
+- `RelationshipState`: one dated relationship state.
+- `HAS_RELATIONSHIP_STATE`: RelationshipContext to RelationshipState.
+- `RELATIONSHIP_WITH`: RelationshipContext to the target entity.
+
+`RelationshipState` should be flexible and sparse. It may contain only a short description and date, or it may include status, closeness, emotional summary, emotion tags, original user words, source links, and temporal fields.
+
+This avoids forcing every relationship update into a rigid taxonomy while still making current status and historical evolution queryable.

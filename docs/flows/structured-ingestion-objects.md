@@ -179,6 +179,39 @@ Core fields:
 - `created_at`
 - `expires_at`
 
+### ContradictionJudgeRequest
+
+A request created when a memory-writing agent has grounded doubt that a proposed write may conflict with existing memory.
+
+Core fields:
+
+- `judge_request_id`
+- `proposed_write_ref`
+- `retrieved_context_refs`
+- `affected_entity_refs`
+- `affected_relationship_refs`
+- `source_refs`
+- `agent_doubt`
+- `requested_at`
+
+The `agent_doubt` should be a short explanation, not a final ruling.
+
+### ContradictionJudgeDecision
+
+The structured output from the contradiction judge.
+
+Core fields:
+
+- `judge_decision_id`
+- `judge_request_id`
+- `decision`: no_conflict, nuance, temporal_update, contradiction, needs_clarification.
+- `severity`: low, medium, high.
+- `reason`
+- `graph_action`: allow_write, write_as_disputed, create_contradiction_record, create_relationship_state, ask_user.
+- `clarification_question`
+- `inspected_context_refs`
+- `decided_at`
+
 ### ResolutionDecision
 
 The result of matching a candidate to graph state.
@@ -209,6 +242,7 @@ Core fields:
 - `claims_to_create`
 - `perceptions_to_create`
 - `relationship_contexts_to_create`
+- `contradiction_records_to_create`
 - `metadata_patches`
 - `evidence_links`
 - `idempotency_keys`
@@ -222,6 +256,8 @@ Before writing to the graph:
 - Required fields must be present or explicitly marked unknown.
 - Evidence references must point to stored sources.
 - Candidate references must resolve to candidate or existing graph IDs.
+- Contradiction judge requests must include the proposed write, retrieved context, and agent doubt.
+- Contradiction judge decisions must be structured and must not mutate graph state directly.
 - Sensitive fields must follow confirmation policy.
 - Contact details must be normalized when possible.
 - External enrichment must include provider provenance.
@@ -251,6 +287,8 @@ The first implementation does not need every field above, but it should establis
 - `CandidateRelationship`
 - `CandidatePerception`
 - `CandidateRelationshipContext`
+- `ContradictionJudgeRequest`
+- `ContradictionJudgeDecision`
 - `ClarificationRequest`
 - `ResolutionDecision`
 - `GraphWritePlan`

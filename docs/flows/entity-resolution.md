@@ -85,16 +85,33 @@ The system should avoid merging events automatically unless confidence is high. 
 
 Merges should be reversible or at least auditable.
 
+`MergeRecord` is a graph audit object created when two or more nodes are judged to represent the same real-world entity.
+
+Example:
+
+- The graph has `Person: Marco from university`.
+- Later the user mentions `Marco Bianchi`.
+- Evidence shows these are the same person.
+- The system creates or proposes a merge into one canonical `Person`.
+
 Merge records should preserve:
 
 - Original entity IDs.
-- Merged entity ID.
+- Canonical entity ID.
 - Merge reason.
 - User or system actor.
 - Timestamp.
 - Source evidence.
+- Status: proposed, applied, reverted.
 
-Splits should be supported later to recover from incorrect merges. Until then, risky merges should require confirmation.
+Purpose:
+
+- Explain why identity unification happened.
+- Make incorrect merges debuggable.
+- Prepare for future split or revert behavior.
+- Avoid silent graph corruption.
+
+Splits should be supported later to recover from incorrect merges. Until then, risky merges should remain proposed or require user confirmation.
 
 ## Resolution Evidence
 

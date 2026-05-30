@@ -436,18 +436,211 @@ Vector indexes should be managed in the external vector store rather than Neo4j 
 
 ## Wave 2: Rich Memory Semantics
 
-- Add temporal fields for event time, valid time, observed time, source time, and ingestion time.
-- Support fuzzy time and precision metadata.
-- Add lifecycle state transitions: active, confirmed, inferred, disputed, stale, expired, archived, deleted.
-- Add contradiction modeling with `CONTRADICTS`.
-- Add merge/split audit records.
-- Add indexes for names, aliases, time, source IDs, lifecycle state, and privacy level.
-- Add role separation for graph access, such as app read/write, read-only, and maintenance users.
-- Add backup/export metadata for graph copy creation, including schema version, export timestamp, checksum, and encryption status.
-- Add relationship promotion rules: when a generic `RELATED_TO` or metadata value becomes important, migrate it to a typed relationship, property, or claim.
-- Add affective extraction review rules for separating user-stated perceptions from LLM-inferred emotional summaries.
-- Add richer relational indexes for session lookup, source lookup, provider logs, and audit queries.
-- Add vector namespace/versioning strategy for re-embedding when models change.
+Wave 2 should stay graph-focused. The goal is to make the graph behave like a memory system with time, current state, history, relationship evolution, contradiction representation, merge auditability, and affective provenance.
+
+### Temporal Semantics
+
+Add deterministic time fields that preserve both the user's original expression and the resolved queryable range:
+
+- `original_time_text`: the user/source expression, such as `yesterday`, `last summer`, or `during university`.
+- `resolved_start`: ISO date or datetime when the time starts.
+- `resolved_end`: ISO date or datetime when the time ends.
+- `time_precision`: exact, day, month, year, season, period, range, unknown.
+- `time_basis`: conversation_at, source_created_at, user_stated, inferred, external_metadata.
+- `timezone`: IANA timezone when relevant, such as `Europe/Rome`.
+
+Do not ask LLMs to provide numeric confidence for time inference in v1. Instead, preserve `time_basis`, `time_precision`, and `original_time_text` so the system can reason about reliability without fake precision.
+
+Future ingestion should use a dedicated temporal inference pipeline when the date is uncertain. That pipeline can receive conversation time, source time, user locale/timezone, prior context, and external calendar/source metadata, then return the same structured temporal fields.
+
+### Current State Plus History
+
+Expose current state by default, but preserve the historical log underneath.
+
+Example current layer:
+
+```text
+Alessandro: low contact now, historically close, emotionally mixed.
+```
+
+Example history layer:
+
+```text
+2010-2015: close friendship.
+2020 onward: low contact.
+User-stated perception: some traits felt oppressive.
+Later update: relationship softened after reconnecting.
+```
+
+Implementation stance:
+
+- Current fields live on the main node, relationship, `Perception`, or `RelationshipContext`.
+- Historical changes are preserved as `Claim`, `Perception`, `RelationshipContext`, `RelationshipState`, or `ChangeRecord`-like graph records.
+- Important previous values are not overwritten without preserving the old state.
+- Query APIs should return current facts by default and history only when requested.
+
+### Relationship State History
+
+Simple facts should remain simple edges. Example: `Person` `WORKS_AT` `Organization`, or `Event` `HAPPENED_AT` `Place`.
+
+Complex relationships need a diary-like model capable of storing many states over time with low restriction. A long relationship with an ex, close friend, family member, project, or organization can move through many states across years. The graph must preserve those state changes without forcing a rigid relationship taxonomy.
+
+Recommended model:
+
+- `RelationshipContext`: the stable relationship memory object.
+- `RelationshipState`: a dated state entry belonging to a relationship context.
+- `HAS_RELATIONSHIP_STATE`: RelationshipContext to RelationshipState.
+- `RELATIONSHIP_WITH`: RelationshipContext to the target entity.
+
+`RelationshipState` should support:
+
+- `description`
+- `status`
+- `closeness`
+- `emotional_summary`
+- `emotional_valence`
+- `emotion_tags`
+- `original_user_words`
+- temporal fields
+- lifecycle/privacy/trust fields
+- source references
+- metadata
+
+This lets the graph store entries like:
+
+- Date X: "we were very close".
+- Date Y: "we broke up and stopped talking".
+- Date Z: "we met again and things felt calmer".
+
+The states can be detailed or sparse. The important point is that each state is a preserved memory slice.
+
+### Lifecycle Transitions
+
+Add explicit lifecycle transition handling for nodes, relationships, claims, perceptions, relationship contexts, and relationship states:
+
+- active
+- confirmed
+- inferred
+- disputed
+- stale
+- expired
+- archived
+- deleted
+
+Lifecycle transitions should preserve source evidence, actor, timestamp, reason, and previous state when meaningful.
+
+### Contradiction Modeling
+
+Use `CONTRADICTS` between claims for explicit contradictions after review. Add a richer contradiction record when the contradiction needs review, severity, resolution state, or clarification history.
+
+Contradiction handling should be agent-invoked, not rule-determined. The graph layer should not try to prove logical contradiction from the whole graph. Instead:
+
+1. A memory-writing agent proposes a node, relationship, claim, perception, or relationship state.
+2. The context builder retrieves nearby graph context before the write, including current state, relevant history, sources, relationship contexts, perceptions, place/time context, and similar entities.
+3. The memory-writing agent compares the proposal with that context.
+4. If the agent has a grounded doubt, it invokes the contradiction judge tool with the proposal, retrieved context, and a short explanation of the suspected conflict.
+5. The judge may navigate the graph further through read-only tools.
+6. The judge classifies the situation and recommends a graph action or user clarification.
+
+Example:
+
+```text
+New proposal: the dinner with Marco happened in Milan.
+Retrieved context: the same event is currently linked to Turin.
+Memory-writing agent doubt: possible location conflict for the same event.
+Action: invoke contradiction judge.
+```
+
+The judge may decide:
+
+- no_conflict: these are different events or different scopes.
+- nuance: both facts can be true with better wording.
+- temporal_update: the new statement updates an older state.
+- contradiction: the facts cannot both be true in the same scope/time.
+- needs_clarification: the user should resolve it.
+
+Possible `ContradictionRecord` fields:
+
+- `contradiction_type`: identity, time, location, relationship, contact_detail, affective, metadata, other.
+- `severity`: low, medium, high.
+- `status`: detected, needs_clarification, resolved, ignored.
+- `reason`
+- `detected_by`: memory_writer, llm_judge, user, system.
+- `detected_at`
+- `resolved_at`
+- `resolution_summary`
+- source references
+
+The judge output should be structured:
+
+- `decision`: no_conflict, nuance, temporal_update, contradiction, needs_clarification.
+- `severity`: low, medium, high.
+- `reason`
+- `graph_action`: allow_write, write_as_disputed, create_contradiction_record, create_relationship_state, ask_user.
+- `clarification_question`
+
+Deterministic code should provide guardrails, not contradiction rulings:
+
+- Build focused graph context before write.
+- Validate judge input/output schemas.
+- Enforce read-only graph access for judge investigation.
+- Enforce tool-call limits.
+- Prevent direct graph mutation by the judge outside approved write tools.
+- Persist judge decisions when they affect memory.
+
+Do not implement fixed deterministic contradiction rules in the graph wave. The graph should provide a clean place for contradiction judge decisions and clarification outcomes.
+
+### Merge And Split Audit
+
+Add graph-first `MergeRecord` support for entity unification. A merge record is created when the system decides that two or more graph nodes represent the same real-world entity.
+
+Purpose:
+
+- Preserve why a merge happened.
+- Keep identity decisions auditable.
+- Support debugging wrong merges.
+- Prepare for future split/revert workflows.
+
+Useful fields:
+
+- `merged_node_ids`
+- `canonical_node_id`
+- `reason`
+- `merged_at`
+- `performed_by`: user, system, llm_judge.
+- `status`: proposed, applied, reverted.
+- source references
+
+Splits should be supported later. Until split/revert is implemented, risky merges should remain proposed or require user confirmation.
+
+### Affective Provenance
+
+Affective memory should separate strong user-stated perception from weaker model or system interpretation.
+
+Strong form:
+
+```json
+{
+  "description": "The user perceived some traits as oppressive.",
+  "source_kind": "user_stated",
+  "original_user_words": "I felt his traits as oppressive"
+}
+```
+
+Weaker forms such as `llm_inferred` or `system_derived` may be stored, but should not be treated as equally strong in retrieval or answers.
+
+Do not ask LLMs to provide numeric affective confidence in v1. Use provenance fields, source links, and user confirmation instead.
+
+### Deferred From Wave 2
+
+Keep these out of the immediate Wave 2 graph implementation unless they become necessary:
+
+- Role separation for graph access.
+- Backup/export hardening.
+- Richer relational indexes.
+- Vector namespace/versioning strategy.
+- Telegram clarification behavior.
+- Hard-coded deterministic contradiction rules.
 
 ## Wave 3: Advanced Graph Capabilities
 

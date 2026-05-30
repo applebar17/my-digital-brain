@@ -8,7 +8,7 @@ It should act through simple chat interactions and safe tools.
 
 ## Responsibilities
 
-- Detect contradictions.
+- Review contradiction suspicions raised by memory-writing agents.
 - Ask clarification when contradictions matter.
 - Propose merges and splits.
 - Mark facts as stale, expired, disputed, or confirmed.
@@ -26,10 +26,24 @@ It should act through simple chat interactions and safe tools.
 
 ## Contradiction Handling
 
-When a new memory conflicts with existing memory, the agent should decide whether it is:
+Contradiction handling should start from agentic suspicion, not deterministic contradiction rules.
+
+During ingestion, the memory-writing agent receives focused graph context before writing. If it sees a possible conflict, it invokes a contradiction judge tool with:
+
+- proposed write
+- retrieved graph context
+- affected entities and relationships
+- source references
+- short explanation of the doubt
+
+The contradiction judge can then inspect more graph context through read-only tools.
+
+When a new memory appears to conflict with existing memory, the judge should decide whether it is:
 
 - A real contradiction.
 - A temporal update.
+- A relationship state change.
+- A nuance that can be stored without conflict.
 - A different entity with a similar name.
 - A low-confidence extraction issue.
 - Not important enough to interrupt the user.
@@ -44,14 +58,34 @@ I found a possible conflict: I had Luca's phone number as X, but you just mentio
 You previously said this happened in Rome, but this message says Milan. Were these two different events?
 ```
 
-Contradiction notifications should be sent through the active chat interface when the contradiction matters. They should be phrased as a simple clarification, not as a system error.
+Contradiction notifications should be sent through the active chat interface when the judge decides the contradiction matters. They should be phrased as a simple clarification, not as a system error.
 
 Do not notify when:
 
-- The contradiction is low confidence.
+- The judge classifies the issue as low severity.
 - The facts may both be true at different times.
 - The difference is not useful enough to interrupt the user.
 - The system can safely preserve both as uncertain memories.
+
+## Contradiction Judge Output
+
+The judge should return structured output:
+
+- `decision`: no_conflict, nuance, temporal_update, contradiction, needs_clarification.
+- `severity`: low, medium, high.
+- `reason`
+- `graph_action`: allow_write, write_as_disputed, create_contradiction_record, create_relationship_state, ask_user.
+- `clarification_question`
+
+The judge should not mutate the graph directly. It recommends actions that the AI Manager or Network API executes through approved tools.
+
+Deterministic guardrails still apply:
+
+- max read/tool iterations
+- read-only graph access during investigation
+- structured output validation
+- privacy checks
+- persistence of judge decisions when they affect memory
 
 ## Clarification Style
 

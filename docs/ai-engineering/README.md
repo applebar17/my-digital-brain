@@ -52,6 +52,8 @@ Prefer modular steps when useful:
 - Answer generation.
 - Tool selection.
 
+Contradiction handling should prefer a specialized judge call when there is meaningful doubt. The memory-writing agent should not rely on brittle deterministic contradiction rules; it should inspect retrieved graph context and invoke the judge when it can explain the suspected conflict.
+
 Modularity should reduce cognitive load for the model, but it should not add unnecessary latency or cost for trivial tasks.
 
 ### 4. Use AI Dynamically Where It Adds Value
@@ -82,8 +84,12 @@ Context may include:
 - Privacy and trust constraints.
 - Tool results.
 - Previous extraction candidates.
+- Nearby graph context for proposed writes.
+- Current state plus relevant history when checking for contradiction risk.
 
 The context builder should ask: what information does this model call need to do this job well, and what information would distract or bias it?
+
+For memory-writing calls, context should include enough nearby graph state for the agent to notice possible contradictions: similar entities, current facts, historical states, related sources, relationship contexts, perceptions, time context, and place context. This context enables agentic suspicion before a contradiction judge is invoked.
 
 ### 6. Tooling Enables Dynamic Processes
 
@@ -116,6 +122,14 @@ The protocol should clarify:
 
 Tools should then be added to support that behavior, not to let the agent improvise without boundaries.
 
+For contradiction handling, the behavioral protocol is:
+
+- Memory-writing agents may raise a contradiction doubt when retrieved context conflicts with a proposed write.
+- The doubt must include a short explanation grounded in provided context.
+- A contradiction judge tool reviews the doubt and may inspect more graph context through read-only tools.
+- The judge returns a structured decision and recommended action.
+- The judge does not mutate the graph directly.
+
 ### 8. Guardrails Protect Against Bad Loops
 
 Agentic flows need deterministic guardrails to prevent unstable behavior.
@@ -130,6 +144,8 @@ Guardrails may include:
 - Expiration for pending processes.
 - Retry limits.
 - Fallback behavior.
+- Read-only tool scopes for judge investigation.
+- Mandatory structured outputs for judge decisions.
 
 The agent can be dynamic inside the guardrails. The guardrails prevent runaway loops, accidental writes, and confusing user experiences.
 

@@ -11,6 +11,8 @@ In the MVP, model behavior is coordinated by the AI Manager. The AI Manager can 
 - Extract entities, relationships, claims, dates, places, and topics from sources.
 - Extract user-stated perceptions, emotional summaries, relationship contexts, and original user wording for any memory-bearing target when present.
 - Detect missing information and propose clarification questions.
+- Raise grounded contradiction doubts when retrieved graph context conflicts with proposed memory writes.
+- Run a specialized contradiction judge over proposed writes and graph context when invoked.
 - Compare ambiguous entity candidates during resolution.
 - Summarize entities, events, sources, and graph neighborhoods.
 - Detect durable user traits and preferences for the personal profile memory flow.
@@ -29,6 +31,8 @@ Separate these stages:
 - Structured output parsing.
 - Schema validation.
 - Resolution and policy checks.
+- Context review for contradiction suspicion.
+- Contradiction judge invocation when the memory-writing agent has grounded doubt.
 - Clarification.
 - Graph write.
 

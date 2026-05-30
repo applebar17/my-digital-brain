@@ -11,12 +11,15 @@ The ingestion flow turns user input into graph updates while preserving source e
 3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, perceptions, relationship contexts, emotional summaries, metadata patches, dates, places, and missing fields.
 4. Validator checks schema, confidence, and required information.
 5. Resolution engine searches for existing graph matches.
-6. The AI Manager asks a follow-up question if useful.
-7. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
-8. The user's next relevant message is appended to that pending ingestion session.
-9. The AI Manager resumes the ingestion dynamically.
-10. Graph writer persists entities, relationships, evidence links, and embeddings.
-11. User receives a concise ingestion summary when useful.
+6. Context builder retrieves nearby graph context for proposed writes.
+7. Memory-writing agent reviews the proposal against current state, relevant history, sources, relationship contexts, perceptions, place/time context, and similar entities.
+8. If the agent has a grounded contradiction doubt, it invokes the contradiction judge tool with the proposal, retrieved context, and explanation.
+9. The AI Manager asks a follow-up question if useful.
+10. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
+11. The user's next relevant message is appended to that pending ingestion session.
+12. The AI Manager resumes the ingestion dynamically.
+13. Graph writer persists entities, relationships, evidence links, and embeddings.
+14. User receives a concise ingestion summary when useful.
 
 ## Example
 
@@ -59,6 +62,8 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 - Evidence references.
 - Missing fields.
 - Ambiguity markers.
+- Retrieved context used for write review.
+- Agent contradiction doubts when present.
 - Suggested clarification questions.
 
 This allows validation and resolution before permanent graph writes.
@@ -78,7 +83,9 @@ Ask clarification when:
 - The write would merge entities.
 - The source contains sensitive information and policy requires confirmation.
 - The system found a contact detail or external enrichment candidate that may affect future integrations.
-- The system detects a meaningful contradiction that would make future answers unreliable.
+- The contradiction judge decides a suspected conflict would make future answers unreliable.
+
+Contradiction clarification should usually come from the contradiction judge decision, not from a fixed deterministic rule.
 
 Do not ask clarification when:
 
@@ -101,6 +108,42 @@ Preferred behavior:
 - Use natural follow-up conversation to improve memory quality over time.
 
 The goal is to retain the user in a useful conversation, not to force complete data entry.
+
+## Agentic Contradiction Suspicion
+
+Contradiction handling is not a deterministic rule engine.
+
+Before writing candidate memory, the system should provide the memory-writing agent with focused graph context. The agent can then notice a possible contradiction in natural semantic context.
+
+Example:
+
+```text
+New proposal: "the dinner with Marco happened in Milan."
+Retrieved context: the same event currently has location Turin.
+Agent doubt: "This appears to be the same dinner, but the location differs."
+```
+
+In that case, the memory-writing agent may invoke the contradiction judge tool.
+
+The judge receives:
+
+- proposed write
+- retrieved context
+- affected entities and relationships
+- source references
+- the agent's explanation of the doubt
+
+The judge may use read-only graph tools to inspect more context. It returns a structured decision:
+
+- no_conflict
+- nuance
+- temporal_update
+- contradiction
+- needs_clarification
+
+The judge may recommend allowing the write, writing the new fact as disputed, creating a `ContradictionRecord`, creating a `RelationshipState`, or asking the user a clarification.
+
+Deterministic code should only provide guardrails: context retrieval, schema validation, tool limits, permission boundaries, and persistence of auditable judge decisions.
 
 ## Pending Ingestion State
 

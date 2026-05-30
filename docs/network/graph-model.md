@@ -168,6 +168,30 @@ Useful properties:
 
 Relationship contexts are useful when a simple edge such as `KNOWS`, `WORKED_ON`, `LIVED_IN`, or `RELATED_TO` loses the narrative and emotional history of a relationship.
 
+Complex relationships should not be flattened into one current edge. A relationship can have many states over time, especially with ex partners, close friends, family members, organizations, projects, or places. Use a `RelationshipContext` as the stable relationship object and attach dated `RelationshipState` records when the relationship changes.
+
+### RelationshipState
+
+A dated state slice inside a relationship context.
+
+Useful properties:
+
+- `description`
+- `status`
+- `closeness`
+- `emotional_summary`
+- `emotional_valence`
+- `emotion_tags`
+- `original_user_words`
+- `valid_from`
+- `valid_to`
+- `time_precision`
+- `source_kind`
+- `privacy_level`
+- `metadata`
+
+Relationship states can be sparse. They are meant to work like a structured diary: on date X the relationship felt close, on date Y it felt distant, on date Z it softened again.
+
 ### ProfileMemory
 
 A durable memory about the owner of the brain that can help configure future LLM behavior or retrieval context.
@@ -191,6 +215,44 @@ Examples:
 - The user dislikes unnecessary product polish before the core system works.
 
 Profile memory should not be silently treated as permanent truth. It should retain evidence, confidence, and correction history.
+
+### MergeRecord
+
+An audit node for entity unification.
+
+Merge records are created when the system decides that two or more graph nodes refer to the same real-world entity.
+
+Useful properties:
+
+- `merged_node_ids`
+- `canonical_node_id`
+- `reason`
+- `merged_at`
+- `performed_by`: user, system, llm_judge.
+- `status`: proposed, applied, reverted.
+- `metadata`
+
+Merge records preserve why an identity decision happened, make wrong merges debuggable, and prepare the system for future split or revert flows.
+
+### ContradictionRecord
+
+A review node for contradictions that need more than a direct `CONTRADICTS` edge.
+
+Useful properties:
+
+- `contradiction_type`: identity, time, location, relationship, contact_detail, affective, metadata, other.
+- `severity`: low, medium, high.
+- `status`: detected, needs_clarification, resolved, ignored.
+- `reason`
+- `detected_by`: memory_writer, llm_judge, user, system.
+- `detected_at`
+- `resolved_at`
+- `resolution_summary`
+- `metadata`
+
+Contradiction records store decisions from an agent-invoked contradiction judge. The judge should be invoked when a memory-writing agent, after receiving focused graph context, has a grounded doubt that a proposed write conflicts with existing memory.
+
+The graph layer should not try to prove contradiction through fixed rules. It should preserve the judged decision, severity, source references, and recommended resolution path.
 
 ## Core Relationship Types
 
@@ -216,7 +278,12 @@ Profile memory should not be silently treated as permanent truth. It should reta
 - `PERCEPTION_OF`: Perception to any memory-bearing target entity or relationship context.
 - `HAS_RELATIONSHIP_CONTEXT`: User/Person to RelationshipContext.
 - `RELATIONSHIP_WITH`: RelationshipContext to any target entity.
+- `HAS_RELATIONSHIP_STATE`: RelationshipContext to RelationshipState.
 - `HAS_AFFECTIVE_CONTEXT`: Entity, Claim, Source, or RelationshipContext to Perception when affective context needs to be explicit and queryable.
+- `MERGED_NODE`: MergeRecord to merged node.
+- `CANONICAL_NODE`: MergeRecord to canonical node.
+- `MERGED_INTO`: Merged node to canonical node.
+- `HAS_CONTRADICTION_RECORD`: Claim, entity, or relationship context to ContradictionRecord.
 
 ## Provenance Model
 
