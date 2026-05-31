@@ -44,6 +44,8 @@ The frontend displays places and place-linked events geographically. This helps 
 Retrieval should combine:
 
 - Embedding search over sources and entity summaries.
+- Semantic text-to-node retrieval that turns a natural language query into likely
+  graph seed nodes before graph expansion.
 - Exact graph lookup for names, aliases, dates, and places.
 - Graph expansion from retrieved entities.
 - Expansion through perceptions, affective fields, and relationship contexts.
@@ -52,6 +54,10 @@ Retrieval should combine:
 - Confidence and provenance filters.
 
 The system should avoid answering from embeddings alone when graph evidence is available.
+
+Semantic text-to-node retrieval is a dedicated retrieval feature, not part of the
+graph storage foundation. The graph layer should expose seed-based query helpers;
+the retrieval layer decides how natural language maps to those seeds.
 
 ## Answer Grounding
 

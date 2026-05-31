@@ -735,16 +735,292 @@ These interfaces remain graph-level. They should not include Telegram, LLM judgi
 
 ## Wave 3: Advanced Graph Capabilities
 
-- Graph neighborhood summaries.
-- Graph-native embeddings for entities, claims, sources, and neighborhoods.
-- Optional graph-native embeddings if Neo4j vector indexes become useful in addition to the external vector store.
-- Historical views of entity state over time.
-- Automatic stale fact detection.
-- Graph analytics: most-mentioned people, places, topics, relationship density, memory clusters.
-- Affective graph analytics: recurring emotional tags, relationship tone changes, and emotionally dense memory clusters.
-- Saved graph views for frontend visualization.
-- Timeline-ready query helpers.
-- Map-ready place and event extraction.
+Wave 3 is the last graph-foundation wave before moving heavier attention to ingestion,
+chatting, retrieval, and frontend. The goal is to make the rich graph usable: queryable,
+timeline-ready, map-ready, visualization-ready, and ready to produce clean LLM context.
+
+Locked Wave 3 direction:
+
+- Add graph query helper services instead of forcing every caller to compose low-level graph API calls.
+- Add timeline-oriented query outputs for memories near a query target.
+- Add practical historical inspection, not perfect point-in-time graph reconstruction.
+- Add frontend-friendly graph view outputs.
+- Add a simple analytics baseline, with deeper analytics deferred.
+- Keep stale/expired state support, but do not add proactive stale detection or automatic
+  maintenance prompts in this graph wave.
+- Add map-ready place and event query helpers without external map enrichment yet.
+- Add LLM-friendly graph context packages that include relevant informative fields and avoid noisy metadata.
+- Keep vector and embedding writes mostly out of this graph wave unless a minimal interface is needed.
+- Add `Animal` as a first-class node type.
+- Add a user-perceived social grouping model for family, close friends, colleagues, and other personal circles.
+
+### Graph Query Helpers
+
+Add higher-level read helpers for common memory questions:
+
+- Find memories involving a node.
+- Find memories involving a person, place, event, topic, organization, animal, object, or social circle.
+- Get entity detail with direct relationships, relationship contexts, perceptions, sources, contradictions, merge status, and change records.
+- Get current facts by default and include historical records only when requested.
+- Get source evidence for a graph record.
+- Get latest known contact details.
+- Find possible duplicates through existing merge/canonical data and simple name/alias lookup.
+- Find contradictions by target, severity, status, and type.
+
+These helpers should return structured response objects rather than raw Neo4j records.
+
+### Timeline And Memory Stream
+
+Add a normalized `TimelineItem` read model. The timeline should be a
+stream of relevant memory-bearing nodes and relationships collected from a query seed.
+
+Example flow:
+
+```text
+User asks: "What happened during my last vacation in Greece?"
+System retrieves similar or matching graph seeds.
+System expands bounded neighbors: events, places, people, sources, perceptions, claims.
+System converts memory records into `TimelineItem` objects.
+System sorts by inferred or provided memory time.
+System passes the timeline package to an LLM for a human-friendly answer.
+```
+
+Timeline sorting should prefer:
+
+1. `resolved_start`
+2. `valid_from`
+3. `source_time`
+4. `observed_at`
+5. source `received_at`
+6. `created_at`
+
+The output should preserve the chosen time basis so downstream answers can distinguish:
+
+- when something happened
+- when the user said it
+- when the source was created
+- when the system learned it
+
+### Historical Inspection
+
+Wave 3 should support practical history views:
+
+- Current record.
+- Relationship state history.
+- Change records.
+- Related claims and perceptions in a time range.
+- Contradiction and merge records.
+
+Do not attempt a perfect historical graph snapshot in this wave. The first useful
+version is "show me what changed and what was recorded around this period."
+
+### Frontend-Friendly Graph Views
+
+Add saved and generated graph-view outputs for future dashboard work:
+
+- Bounded neighborhood view.
+- Entity detail view.
+- Timeline view.
+- Relationship history view.
+- Affective context view.
+- Map view input.
+- Merge/contradiction review view.
+
+Graph views should include stable display fields:
+
+- node ID and label
+- display title
+- short description
+- lifecycle/privacy/trust markers
+- affective summary when present
+- temporal summary when present
+- relationship type and direction
+- metadata only when useful for display or debugging
+
+Archived or merged nodes should be hidden by default, but expandable when the user
+asks for history or identity details.
+
+### Analytics Baseline
+
+Add simple graph analytics for personal insight and debugging:
+
+- Most mentioned people, places, topics, organizations, animals, and objects.
+- Most connected nodes.
+- Nodes with many sources.
+- Nodes with unresolved contradictions.
+- Nodes with frequent changes.
+- Relationship contexts with many state changes.
+- Recurring emotional tags.
+- Emotionally dense memories.
+- Relationship tone changes over time.
+
+This baseline should use simple counts and query helpers. Deeper clustering,
+centrality, and embedding-based analytics can come later.
+
+### Stale And Expired Facts
+
+The graph should support stale and expired lifecycle states, but Wave 3 should not
+implement proactive stale detection, scheduled maintenance jobs, or automatic
+clarification prompts.
+
+Staleness should come from external input:
+
+- The user corrects or updates a fact.
+- A new source provides newer information.
+- A future external integration reports updated contact, calendar, map, or profile data.
+- The user explicitly asks the system to review or clean a category of memories.
+
+Rationale:
+
+- The product exists to preserve memories, not to nag the user into database
+  maintenance.
+- The user may not know whether old information is still valid.
+- Proactive stale prompts can create clarification fatigue.
+- Without real usage data, stale thresholds would be arbitrary.
+
+Wave 3 should therefore provide the primitives, not the behavior:
+
+- Query mutable facts and their observed/source times.
+- Mark a fact stale, expired, confirmed, or archived through explicit lifecycle tools.
+- Preserve the previous value with `ChangeRecord`.
+- Return enough context for a future memory-management agent to explain why it is
+  suggesting a lifecycle change.
+
+Example flow:
+
+```text
+Stored fact: Marco has phone number +39..., observed in 2022.
+No automatic process changes it.
+Later, the user says: "Marco changed number; the old one is no longer valid."
+The system marks the old ContactPoint as expired or stale.
+The new ContactPoint is stored as current.
+A ChangeRecord preserves the lifecycle transition.
+```
+
+Future optional stale review can be added later as an explicit user-invoked or
+agent-invoked maintenance task. Example:
+
+```text
+User asks: "Review old contact details."
+System finds active contact points last observed years ago.
+System returns candidates with reasons.
+The chatbot asks only if the user chooses to review them.
+```
+
+This future feature should be opt-in, explanation-driven, and conservative.
+
+### Map-Ready Queries
+
+Add map-ready query helpers without external map enrichment in Wave 3:
+
+- Places with coordinates.
+- Places missing coordinates.
+- Events linked to places.
+- Memories by city, country, region, or place.
+- Timeline items with place references.
+- Place clusters and emotionally meaningful places.
+
+The graph should expose enough structured data for a later map dashboard or Google
+Maps enrichment service without requiring that service now.
+
+### LLM-Friendly Graph Context Packages
+
+Add read models that prepare graph context for answer generation and future agents.
+These packages should be readable, compact, and low-noise.
+
+Principle:
+
+- Provide relevant information needed to answer or reason.
+- Exclude raw noisy metadata unless it is directly useful.
+- Prefer descriptions, emotional summaries, original user words, time summaries,
+  relationship context, provenance summaries, contradictions, and source references.
+- Use LLM-facing aliases instead of raw UUIDs.
+- Include enough history for the task, but not the entire graph history.
+
+Example package sections:
+
+- target summary
+- current facts
+- relevant relationships
+- relationship context and state history
+- perceptions and affective context
+- timeline snippets
+- source evidence summary
+- contradiction or merge notes
+- alias map
+
+### Animal Node
+
+Add `Animal` as a first-class node type. Pets and meaningful animals can carry
+memories, relationships, locations, events, perceptions, emotional context, and
+life history in the same way people and objects can.
+
+Useful properties:
+
+- `name`
+- `normalized_name`
+- `aliases`
+- `species`
+- `breed`
+- `sex`
+- `status`
+- `known_since`
+- `date_of_birth`
+- `date_of_death`
+- `owner_hint`
+- common temporal, provenance, privacy, lifecycle, metadata, and affective fields
+
+`Animal` should support relationships such as:
+
+- `LIVES_WITH`
+- `OWNED_BY` or `CARED_FOR_BY`
+- `PARTICIPATED_IN`
+- `MENTIONED_IN`
+- `HAS_AFFECTIVE_CONTEXT`
+- `PERCEPTION_OF`
+- `RELATIONSHIP_WITH` through `RelationshipContext`
+
+### Social Circles And User-Perceived Grouping
+
+Support user-perceived social grouping through a dedicated `SocialCircle` node.
+This should model personal categories such as family, close friends, colleagues,
+university friends, old friends, neighbors, or project circles.
+
+This is not objective taxonomy. It is a subjective memory organization layer.
+
+Useful `SocialCircle` properties:
+
+- `name`
+- `normalized_name`
+- `circle_type`
+- `description`
+- `source_kind`
+- temporal fields
+- common provenance, privacy, lifecycle, metadata, and affective fields
+
+Membership should allow multiple circles per person or animal:
+
+```text
+Lorenzo -> MEMBER_OF -> Close friends
+Alessandro -> MEMBER_OF -> Colleagues
+Brother -> MEMBER_OF -> Family
+```
+
+Use relationship properties for simple membership:
+
+- `role`
+- `source_kind`
+- `valid_from`
+- `valid_to`
+- `lifecycle_state`
+- `source_ids`
+
+Use `RelationshipContext` when the membership itself has emotional weight,
+history, contradiction risk, or rich narrative meaning.
+
+Locked naming decision:
+
+- Use `MEMBER_OF` for social circle membership.
 
 ## Graph Write Rules
 

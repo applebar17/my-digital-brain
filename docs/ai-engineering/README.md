@@ -226,16 +226,77 @@ Rules:
 - Failed alias resolution should fail validation.
 - The model should never invent aliases that were not provided.
 
+### 13. Build Low-Noise Context Packages
+
+LLM context should be prepared as a task-specific package, not as a raw dump of
+database records.
+
+The context package should provide the information needed to answer, reason, or
+choose tools, while excluding noisy metadata that can lower answer quality or
+encourage hallucination.
+
+Prefer including:
+
+- Display names and short descriptions.
+- Current facts.
+- Relevant history.
+- Temporal summaries.
+- Relationship context.
+- Affective summaries and original user words.
+- Source evidence summaries.
+- Contradiction or merge notes when relevant.
+- LLM-facing aliases.
+
+Avoid including:
+
+- Raw UUIDs when aliases are available.
+- Large metadata blobs.
+- Internal storage fields.
+- Full unrelated relationship lists.
+- Debug data unless the task is debugging.
+
+The question is not "what can we fit in the prompt?" The question is "what does
+the model need to produce the best grounded output for this task?"
+
+### 14. Tool Errors Must Guide The Model
+
+Tool errors are part of the agent loop. The LLM will see them, so they should be
+verbose enough to redirect the model toward a valid next action.
+
+Good tool errors should explain:
+
+- What failed.
+- Which field or constraint caused the failure.
+- Which values were accepted when useful.
+- Whether the model should retry, ask the user, or stop.
+- How to adjust the tool call.
+
+Bad tool errors are vague messages such as `invalid input`, `bad request`, or
+`failed`.
+
+Example:
+
+```text
+Invalid relationship type: FRIEND.
+Use one of: KNOWS, RELATED_TO, HAS_RELATIONSHIP_CONTEXT.
+If the relationship has emotional or temporal history, create a RelationshipContext instead.
+```
+
+Verbose errors are not only for humans. They are a control surface for agentic
+behavior.
+
 ## Practical Development Rules
 
 - Treat schemas, tools, and prompts as one design surface.
 - Keep model outputs structured when they affect memory state.
 - Let the AI Manager be dynamic, but keep graph writes validated.
 - Prefer context engineering over larger prompts.
+- Build low-noise context packages for LLM answer generation and tool use.
 - Prefer a small strong toolbox over many vague tools.
 - Add deterministic code where it is clearly cheaper, faster, and more reliable.
 - Add model calls where language, ambiguity, or contextual judgment matters.
 - Use short LLM-facing aliases instead of raw database IDs in prompts and tool schemas.
+- Make tool errors actionable enough for the model to repair invalid calls.
 - Record model inputs, outputs, prompt versions, schema versions, and tool calls when they affect persistent memory.
 
 ## Design Checklist For New AI Features
@@ -248,7 +309,9 @@ Before implementing a new AI behavior, answer:
 - Which context is necessary?
 - Which context should be excluded?
 - Which internal IDs need LLM-facing aliases?
+- What context package shape should be sent to the model?
 - Which tools are available?
+- What tool errors should guide invalid or unsafe calls?
 - What are the deterministic guardrails?
 - What happens if the model is uncertain?
 - What happens if validation fails?

@@ -6,6 +6,10 @@ The purpose of the product is to preserve memories and avoid losing them. The li
 
 This is not a heavy review workflow. It is a lightweight state model that lets the system answer honestly and maintain itself over time.
 
+Lifecycle state support does not imply proactive maintenance. In the MVP, stale
+and expired states should usually come from user correction, newer source evidence,
+or explicit external integration input rather than scheduled prompts.
+
 ## Lifecycle States
 
 ### Candidate
@@ -53,6 +57,8 @@ Removed or suppressed according to deletion policy. Derived facts from deleted s
 - Return current values by default, but make historical values available when asked.
 - Store current state directly on the relevant node, relationship, perception, or relationship context for simple queries.
 - Preserve meaningful state changes underneath through `ChangeRecord`, `Claim`, `RelationshipState`, or other history records.
+- Do not automatically mark facts stale only because time passed.
+- Do not proactively ask the user to review old facts unless the user explicitly starts a review or a future agent has strong external evidence.
 
 ## Mutable Facts
 
@@ -67,6 +73,11 @@ Some facts should be expected to change:
 - Project status.
 
 Mutable facts should include validity metadata such as `valid_from`, `valid_to`, `observed_at`, and `is_current` where appropriate.
+
+Mutable facts remain valid until updated by new information. For example, an old
+phone number should not be marked stale just because it is old. It should become
+stale or expired when the user says it changed, a newer source supersedes it, or
+an external integration reports that it is no longer valid.
 
 ## Change Records
 
@@ -109,7 +120,7 @@ Lifecycle changes should eventually be handled by a dedicated memory management 
 - Attach evidence.
 - Ask clarification.
 
-The agent should act conservatively and involve the user when the action affects important or sensitive memory.
+The agent should act conservatively and involve the user when the action affects important or sensitive memory. Memory maintenance should be mostly opt-in until real usage shows which prompts are useful instead of noisy.
 
 ## User Experience Principle
 

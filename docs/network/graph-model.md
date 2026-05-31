@@ -80,6 +80,31 @@ Useful properties:
 - `metadata`
 - `owner`
 
+### Animal
+
+A meaningful animal in the user's memory, especially pets or animals connected to
+places, people, events, routines, family history, or emotional memories.
+
+Useful properties:
+
+- `name`
+- `normalized_name`
+- `aliases`
+- `species`
+- `breed`
+- `sex`
+- `status`
+- `known_since`
+- `date_of_birth`
+- `date_of_death`
+- `owner_hint`
+- `description`
+- `metadata`
+
+Animals can carry affective memory, relationship contexts, life events, places,
+and source evidence. They should not be flattened into generic objects when they
+are socially or emotionally meaningful.
+
 ### Topic
 
 A recurring theme, interest, concept, project, or subject.
@@ -218,6 +243,29 @@ Examples:
 
 Profile memory should not be silently treated as permanent truth. It should retain evidence, confidence, and correction history.
 
+### SocialCircle
+
+A user-perceived social grouping such as family, close friends, colleagues,
+university friends, old friends, neighbors, or project circles.
+
+Useful properties:
+
+- `name`
+- `normalized_name`
+- `circle_type`
+- `description`
+- `source_kind`
+- `valid_from`
+- `valid_to`
+- `privacy_level`
+- `metadata`
+
+Social circles are subjective memory organization, not objective taxonomy. A
+person can belong to multiple circles at the same time or across different time
+periods. Membership can be simple when the category is enough, or represented
+through `RelationshipContext` when the relationship carries emotional history or
+needs richer narrative.
+
 ### ChangeRecord
 
 A generic audit node for meaningful changes to graph memory.
@@ -294,6 +342,10 @@ The graph model supports future judge decisions, but the database layer can also
 - `KNOWS`: Person to Person.
 - `WORKS_AT`: Person to Organization.
 - `OWNS`: Person to Object.
+- `OWNED_BY`: Animal or Object to Person, Organization, or SocialCircle.
+- `CARED_FOR_BY`: Animal to Person or Organization.
+- `LIVES_WITH`: Animal or Person to Person, Organization, or SocialCircle.
+- `MEMBER_OF`: Person or Animal to SocialCircle.
 - `ABOUT`: Source or Claim to Topic.
 - `LOCATED_IN`: Place to Place.
 - `ALIAS_OF`: Alias node or label to Entity, if aliases become nodes.

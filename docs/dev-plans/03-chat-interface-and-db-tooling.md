@@ -48,6 +48,8 @@ Network API capabilities:
 ## Wave 2: Rich Query And Memory Tools
 
 - Graph-RAG retrieval flow for natural language questions.
+- Semantic text-to-node retrieval: convert a user query into likely graph seeds through
+  embeddings and exact graph lookup before expanding neighborhoods.
 - Explain retrieved evidence when useful.
 - Query current versus historical facts.
 - Retrieve latest contact details.
