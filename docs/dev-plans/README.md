@@ -12,6 +12,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Frontend graph visualization dashboard](04-frontend-graph-dashboard.md)
 - [External API integrations](05-external-api-integrations.md)
 - [Miscellaneous add-ons](06-miscellaneous-add-ons.md)
+- [AI provider foundation](07-ai-provider-foundation.md)
 
 ## Wave Meaning
 
@@ -24,7 +25,7 @@ These plans break the project into multi-wave development topics. They are not r
 
 The listed topic areas are enough for now. The main cross-cutting concerns are:
 
-- AI Manager behavior and model/tool orchestration.
+- AI provider boundaries, model/tool orchestration, and speech-to-text.
 - Local deployment and containerization.
 - Observability and debugging.
 - Privacy, trust, and provider boundaries.
