@@ -9,6 +9,7 @@ dependencies = [
     "chromadb>=0.5.23",
     "fastapi>=0.115.0",
     "neo4j>=5.25.0",
+    "openai>=1.55.0",
     "psycopg[binary]>=3.2.3",
     "pydantic>=2.9.2",
     "pydantic-settings>=2.6.0",
