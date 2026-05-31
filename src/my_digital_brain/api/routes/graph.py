@@ -14,7 +14,12 @@ from my_digital_brain.graph.models import (
     ChangeRecordCreateRequest,
     ContradictionCreateRequest,
     ContradictionUpdateRequest,
+    EntityDetailResult,
+    GraphAnalyticsSummary,
+    GraphContextPackage,
+    GraphViewResult,
     LifecycleTransitionRequest,
+    MapViewResult,
     MergeCreateRequest,
     MergeUpdateRequest,
     NeighborhoodResult,
@@ -25,6 +30,7 @@ from my_digital_brain.graph.models import (
     RelationshipResult,
     RelationshipStateCreateRequest,
     RelationshipUpsertRequest,
+    TimelineResult,
 )
 from my_digital_brain.graph.service import GraphService
 
@@ -380,5 +386,151 @@ def get_canonical_node(
 ) -> NodeSearchResult:
     try:
         return service.get_canonical_node(node_id)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/detail", response_model=EntityDetailResult)
+def get_entity_detail(
+    node_id: str,
+    include_history: bool = False,
+    include_archived: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> EntityDetailResult:
+    try:
+        return service.get_entity_detail(
+            node_id,
+            include_history=include_history,
+            include_archived=include_archived,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/memories", response_model=GraphViewResult)
+def get_memories_for_node(
+    node_id: str,
+    include_history: bool = False,
+    include_archived: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> GraphViewResult:
+    try:
+        return service.get_memories_for_node(
+            node_id,
+            include_history=include_history,
+            include_archived=include_archived,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/targets/{target_id}/evidence", response_model=list[NodeSearchResult])
+def get_source_evidence(
+    target_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.get_source_evidence(target_id, limit=limit)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/timeline", response_model=TimelineResult)
+def get_timeline_for_node(
+    node_id: str,
+    from_time: str | None = None,
+    to_time: str | None = None,
+    include_history: bool = False,
+    limit: int = Query(default=100, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> TimelineResult:
+    try:
+        return service.get_timeline_for_node(
+            node_id,
+            from_time=from_time,
+            to_time=to_time,
+            include_history=include_history,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/views/neighborhood", response_model=GraphViewResult)
+def get_neighborhood_view(
+    seed_id: str,
+    depth: int = Query(default=1, ge=1, le=3),
+    include_history: bool = False,
+    include_archived: bool = False,
+    limit: int = Query(default=100, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> GraphViewResult:
+    try:
+        return service.get_neighborhood_view(
+            seed_id=seed_id,
+            depth=depth,
+            include_history=include_history,
+            include_archived=include_archived,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/views/map", response_model=MapViewResult)
+def get_map_view(
+    seed_id: str | None = None,
+    city: str | None = None,
+    country: str | None = None,
+    from_time: str | None = None,
+    to_time: str | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> MapViewResult:
+    try:
+        return service.get_map_view(
+            seed_id=seed_id,
+            city=city,
+            country=country,
+            from_time=from_time,
+            to_time=to_time,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/context-package", response_model=GraphContextPackage)
+def get_context_package(
+    node_id: str,
+    include_history: bool = True,
+    timeline_limit: int = Query(default=20, ge=1, le=200),
+    relationship_limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> GraphContextPackage:
+    try:
+        return service.get_context_package(
+            node_id,
+            include_history=include_history,
+            timeline_limit=timeline_limit,
+            relationship_limit=relationship_limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/analytics/summary", response_model=GraphAnalyticsSummary)
+def get_analytics_summary(
+    include_archived: bool = False,
+    limit: int = Query(default=20, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> GraphAnalyticsSummary:
+    try:
+        return service.get_analytics_summary(include_archived=include_archived, limit=limit)
     except Exception as exc:
         raise graph_http_error(exc) from exc

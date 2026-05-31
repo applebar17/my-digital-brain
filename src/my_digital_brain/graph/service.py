@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from my_digital_brain.core.enums import LifecycleState, PrivacyLevel, TrustLevel
+from my_digital_brain.core.ids import IdAliasMapper
 from my_digital_brain.graph.exceptions import (
     GraphConflictError,
     GraphNotFoundError,
@@ -15,12 +16,22 @@ from my_digital_brain.graph.exceptions import (
 )
 from my_digital_brain.graph.models import (
     AffectiveContextResult,
+    EntityDetailResult,
+    GraphAnalyticsItem,
+    GraphAnalyticsSummary,
+    GraphContextPackage,
     GraphRelationshipModel,
+    GraphViewNode,
+    GraphViewRelationship,
+    GraphViewResult,
     LifecycleTransitionRequest,
+    MapViewResult,
     NeighborhoodResult,
     NodeSearchResult,
     RelationshipContextDetailResult,
     RelationshipResult,
+    TimelineItem,
+    TimelineResult,
     node_model_for_label,
 )
 from my_digital_brain.graph.registry import (
@@ -34,7 +45,15 @@ from my_digital_brain.graph.repository import GraphRepository
 if TYPE_CHECKING:
     from my_digital_brain.storage.graph import GraphClient
 
-NORMALIZED_NAME_LABELS = {"Person", "Place", "Organization", "Object", "Topic"}
+NORMALIZED_NAME_LABELS = {
+    "Person",
+    "Place",
+    "Organization",
+    "Object",
+    "Animal",
+    "SocialCircle",
+    "Topic",
+}
 IMMUTABLE_PATCH_FIELDS = {"id", "created_at"}
 AFFECTIVE_FIELD_NAMES = {
     "emotional_summary",
@@ -74,7 +93,57 @@ CHANGE_TARGET_KINDS = NODE_LIKE_TARGET_KINDS | {"relationship"}
 CONTRADICTION_STATUSES = {"detected", "needs_clarification", "resolved", "ignored"}
 MERGE_STATUSES = {"proposed", "applied", "rejected", "archived", "reverted"}
 SAFE_MERGE_LIST_FIELDS = {"aliases", "source_ids", "extraction_run_ids"}
-ALIAS_LABELS = {"Person", "Organization", "Topic"}
+ALIAS_LABELS = {"Person", "Organization", "Animal", "Topic"}
+HISTORY_LABELS = {"RelationshipState", "ChangeRecord", "ContradictionRecord", "MergeRecord"}
+HIDDEN_LIFECYCLE_STATES = {LifecycleState.ARCHIVED.value, LifecycleState.DELETED.value}
+TIMELINE_TIME_FIELDS = (
+    "resolved_start",
+    "valid_from",
+    "source_time",
+    "observed_at",
+    "received_at",
+    "created_at",
+)
+DISPLAY_METADATA_FIELDS = (
+    "address",
+    "city",
+    "region",
+    "country",
+    "place_precision",
+    "species",
+    "breed",
+    "sex",
+    "status",
+    "known_since",
+    "circle_type",
+    "source_kind",
+    "relationship_type",
+    "closeness",
+    "kind",
+    "label",
+    "label_text",
+    "value",
+    "provider",
+    "external_id",
+    "url",
+    "category",
+    "domain",
+)
+CONTEXT_FACT_FIELDS = (
+    "description",
+    "emotional_summary",
+    "emotional_valence",
+    "emotion_tags",
+    "original_user_words",
+    "status",
+    "closeness",
+    "known_since",
+    "city",
+    "country",
+    "species",
+    "breed",
+    "circle_type",
+)
 
 
 class GraphService:
@@ -704,6 +773,668 @@ class GraphService:
                     f"Multiple canonical nodes found while resolving {node_id}"
                 )
             current_id = relationships[0]["to_id"]
+
+    def get_entity_detail(
+        self,
+        node_id: str,
+        *,
+        include_history: bool = False,
+        include_archived: bool = False,
+        limit: int = 50,
+    ) -> EntityDetailResult:
+        target = self.get_node(node_id)
+        bounded_limit = self._bounded_limit(limit)
+        canonical = self.get_canonical_node(node_id)
+        if canonical.properties["id"] == target.properties["id"]:
+            canonical = None
+
+        relationships = [
+            relationship
+            for relationship in self.get_node_relationships(node_id, limit=bounded_limit)
+            if include_archived or not self._is_hidden_relationship(relationship)
+        ]
+        affective = self.get_affective_context(node_id, limit=bounded_limit)
+        sources = self.get_source_evidence(node_id, limit=bounded_limit)
+        changes = (
+            self.get_change_records_for_target(node_id, limit=bounded_limit)
+            if include_history
+            else []
+        )
+        contradictions = self.query_contradictions(target_id=node_id, limit=bounded_limit)
+        merges = self._dedupe_nodes(
+            [
+                *self.query_merges(canonical_node_id=node_id, limit=bounded_limit),
+                *self.query_merges(merged_node_id=node_id, limit=bounded_limit),
+            ]
+        )
+
+        return EntityDetailResult(
+            target=target,
+            canonical=canonical,
+            relationships=relationships,
+            perceptions=self._filter_visible_nodes(
+                affective.perceptions,
+                include_archived=include_archived,
+                include_history=include_history,
+            ),
+            relationship_contexts=self._filter_visible_nodes(
+                affective.relationship_contexts,
+                include_archived=include_archived,
+                include_history=include_history,
+            ),
+            sources=sources,
+            changes=changes,
+            contradictions=contradictions,
+            merges=merges,
+        )
+
+    def get_memories_for_node(
+        self,
+        node_id: str,
+        *,
+        include_history: bool = False,
+        include_archived: bool = False,
+        limit: int = 50,
+    ) -> GraphViewResult:
+        self.get_node(node_id)
+        neighborhood = self.repository.get_related_records(
+            node_id,
+            depth=2,
+            limit=self._bounded_limit(limit),
+        )
+        return self._to_graph_view_result(
+            node_id,
+            neighborhood,
+            include_history=include_history,
+            include_archived=include_archived,
+        )
+
+    def get_source_evidence(self, target_id: str, *, limit: int = 50) -> list[NodeSearchResult]:
+        self.get_node(target_id)
+        records = self.repository.find_sources_for_target(
+            target_id,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def get_timeline_for_node(
+        self,
+        node_id: str,
+        *,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        include_history: bool = False,
+        limit: int = 100,
+    ) -> TimelineResult:
+        seed = self.get_node(node_id)
+        from_time = self._validate_time_filter(from_time, "from_time")
+        to_time = self._validate_time_filter(to_time, "to_time")
+        if from_time and to_time and from_time > to_time:
+            raise GraphValidationError("from_time cannot be later than to_time")
+
+        neighborhood = self.repository.get_related_records(
+            node_id,
+            depth=2,
+            limit=self._bounded_limit(limit),
+        )
+        items = [
+            self._to_timeline_item(node)
+            for node in neighborhood.nodes
+            if self._node_can_be_timeline_item(node, include_history=include_history)
+        ]
+        items = [
+            item
+            for item in items
+            if self._time_in_range(item.time_value, from_time=from_time, to_time=to_time)
+        ]
+        items.sort(key=self._timeline_sort_key)
+        return TimelineResult(seed=seed, items=items[: self._bounded_limit(limit)])
+
+    def get_neighborhood_view(
+        self,
+        *,
+        seed_id: str,
+        depth: int = 1,
+        include_history: bool = False,
+        include_archived: bool = False,
+        limit: int = 100,
+    ) -> GraphViewResult:
+        self.get_node(seed_id)
+        if depth < 1 or depth > 3:
+            raise GraphValidationError("Neighborhood depth must be between 1 and 3")
+        neighborhood = self.repository.get_related_records(
+            seed_id,
+            depth=depth,
+            limit=self._bounded_limit(limit),
+        )
+        return self._to_graph_view_result(
+            seed_id,
+            neighborhood,
+            include_history=include_history,
+            include_archived=include_archived,
+        )
+
+    def get_map_view(
+        self,
+        *,
+        seed_id: str | None = None,
+        city: str | None = None,
+        country: str | None = None,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        limit: int = 100,
+    ) -> MapViewResult:
+        bounded_limit = self._bounded_limit(limit)
+        from_time = self._validate_time_filter(from_time, "from_time")
+        to_time = self._validate_time_filter(to_time, "to_time")
+        if from_time and to_time and from_time > to_time:
+            raise GraphValidationError("from_time cannot be later than to_time")
+
+        if seed_id:
+            self.get_node(seed_id)
+            neighborhood = self.repository.get_related_records(
+                seed_id,
+                depth=2,
+                limit=bounded_limit,
+            )
+        else:
+            neighborhood = self.repository.find_map_records(
+                city=city,
+                country=country,
+                limit=bounded_limit,
+            )
+
+        city_filter = normalize_text(city) if city else None
+        country_filter = normalize_text(country) if country else None
+        view = self._to_graph_view_result(
+            seed_id or "",
+            neighborhood,
+            include_history=False,
+            include_archived=False,
+        )
+        places = [
+            node
+            for node in view.nodes
+            if node.label == "Place"
+            and self._matches_location_filter(node, city=city_filter, country=country_filter)
+        ]
+        place_ids = {node.id for node in places}
+        events = [
+            node
+            for node in view.nodes
+            if node.label == "Event"
+            and (
+                not place_ids
+                or any(
+                    relationship.type == "HAPPENED_AT"
+                    and relationship.from_id == node.id
+                    and relationship.to_id in place_ids
+                    for relationship in view.relationships
+                )
+            )
+        ]
+        map_node_ids = {node.id for node in places + events}
+        relationships = [
+            relationship
+            for relationship in view.relationships
+            if relationship.from_id in map_node_ids and relationship.to_id in map_node_ids
+        ]
+        timeline = [
+            self._to_timeline_item(node)
+            for node in neighborhood.nodes
+            if node.properties.get("id") in map_node_ids
+        ]
+        timeline = [
+            item
+            for item in timeline
+            if self._time_in_range(item.time_value, from_time=from_time, to_time=to_time)
+        ]
+        timeline.sort(key=self._timeline_sort_key)
+
+        return MapViewResult(
+            seed_id=seed_id,
+            places=places,
+            events=events,
+            relationships=relationships,
+            timeline=timeline[:bounded_limit],
+        )
+
+    def get_context_package(
+        self,
+        node_id: str,
+        *,
+        include_history: bool = True,
+        timeline_limit: int = 20,
+        relationship_limit: int = 50,
+    ) -> GraphContextPackage:
+        target = self.get_node(node_id)
+        timeline_limit = self._bounded_limit(timeline_limit)
+        relationship_limit = self._bounded_limit(relationship_limit)
+        mapper = IdAliasMapper()
+
+        target_summary = self._context_node_summary(target, mapper)
+        relationships = [
+            self._context_relationship_summary(relationship, mapper)
+            for relationship in self.get_node_relationships(node_id, limit=relationship_limit)
+            if not self._is_hidden_relationship(relationship)
+        ]
+        affective = self.get_affective_context(node_id, limit=relationship_limit)
+        timeline = self.get_timeline_for_node(
+            node_id,
+            include_history=include_history,
+            limit=timeline_limit,
+        )
+        evidence = self.get_source_evidence(node_id, limit=relationship_limit)
+        contradictions = self.query_contradictions(
+            target_id=node_id,
+            status="detected",
+            limit=relationship_limit,
+        )
+        canonical = self.get_canonical_node(node_id)
+
+        notes: list[str] = []
+        if canonical.properties["id"] != target.properties["id"]:
+            canonical_alias = self._alias_for_node(canonical, mapper)
+            notes.append(f"Node is merged into canonical alias {canonical_alias}.")
+        for contradiction in contradictions:
+            reason = contradiction.properties.get("reason") or "Unresolved contradiction."
+            notes.append(f"Unresolved contradiction: {reason}")
+
+        return GraphContextPackage(
+            target=target_summary,
+            current_facts=self._context_current_facts(target),
+            relationships=relationships,
+            relationship_contexts=[
+                self._context_node_summary(node, mapper)
+                for node in affective.relationship_contexts
+            ],
+            perceptions=[self._context_node_summary(node, mapper) for node in affective.perceptions],
+            timeline=[
+                self._context_timeline_item(item, mapper)
+                for item in timeline.items[:timeline_limit]
+            ],
+            evidence=[self._context_node_summary(node, mapper) for node in evidence],
+            notes=notes,
+            alias_map=mapper.export_context_map(),
+        )
+
+    def get_analytics_summary(
+        self,
+        *,
+        include_archived: bool = False,
+        limit: int = 20,
+    ) -> GraphAnalyticsSummary:
+        bounded_limit = self._bounded_limit(limit)
+        top_nodes = [
+            GraphAnalyticsItem(
+                key=item["node"]["properties"]["id"],
+                count=item["count"],
+                label=(
+                    f"{item['node']['label']}: "
+                    f"{self._display_title(NodeSearchResult.model_validate(item['node']))}"
+                ),
+            )
+            for item in self.repository.top_connected_nodes(
+                include_archived=include_archived,
+                limit=bounded_limit,
+            )
+        ]
+        top_tags = [
+            GraphAnalyticsItem(key=item["tag"], count=item["count"])
+            for item in self.repository.top_emotion_tags(
+                include_archived=include_archived,
+                limit=bounded_limit,
+            )
+        ]
+        return GraphAnalyticsSummary(
+            node_counts=self.repository.count_nodes_by_label(include_archived=include_archived),
+            relationship_counts=self.repository.count_relationships_by_type(),
+            top_connected_nodes=top_nodes,
+            top_emotion_tags=top_tags,
+            unresolved_contradictions=self.repository.count_unresolved_contradictions(),
+        )
+
+    def _to_graph_view_result(
+        self,
+        seed_id: str,
+        neighborhood: NeighborhoodResult,
+        *,
+        include_history: bool,
+        include_archived: bool,
+    ) -> GraphViewResult:
+        visible_nodes = self._filter_visible_nodes(
+            neighborhood.nodes,
+            include_archived=include_archived,
+            include_history=include_history,
+        )
+        visible_ids = {node.properties["id"] for node in visible_nodes}
+        visible_relationships = [
+            relationship
+            for relationship in neighborhood.relationships
+            if relationship.from_id in visible_ids
+            and relationship.to_id in visible_ids
+            and (include_archived or not self._is_hidden_relationship(relationship))
+        ]
+        return GraphViewResult(
+            seed_id=seed_id,
+            nodes=[self._to_graph_view_node(node) for node in visible_nodes],
+            relationships=[
+                self._to_graph_view_relationship(relationship)
+                for relationship in visible_relationships
+            ],
+        )
+
+    def _filter_visible_nodes(
+        self,
+        nodes: list[NodeSearchResult],
+        *,
+        include_archived: bool,
+        include_history: bool,
+    ) -> list[NodeSearchResult]:
+        return [
+            node
+            for node in nodes
+            if (include_history or node.label not in HISTORY_LABELS)
+            and (include_archived or not self._is_hidden_node(node))
+        ]
+
+    def _is_hidden_node(self, node: NodeSearchResult) -> bool:
+        lifecycle_state = node.properties.get("lifecycle_state")
+        return lifecycle_state in HIDDEN_LIFECYCLE_STATES or bool(
+            node.properties.get("merged_into_id")
+        )
+
+    def _is_hidden_relationship(self, relationship: RelationshipResult) -> bool:
+        return relationship.properties.get("lifecycle_state") in HIDDEN_LIFECYCLE_STATES
+
+    def _to_graph_view_node(self, node: NodeSearchResult) -> GraphViewNode:
+        properties = node.properties
+        return GraphViewNode(
+            id=properties["id"],
+            label=node.label,
+            title=self._display_title(node),
+            description=self._display_description(node),
+            lifecycle_state=properties.get("lifecycle_state"),
+            privacy_level=properties.get("privacy_level"),
+            trust_level=properties.get("trust_level"),
+            emotional_summary=properties.get("emotional_summary"),
+            temporal_summary=self._temporal_summary(properties),
+            latitude=properties.get("latitude"),
+            longitude=properties.get("longitude"),
+            display_metadata=self._display_metadata(properties),
+        )
+
+    def _to_graph_view_relationship(
+        self,
+        relationship: RelationshipResult,
+    ) -> GraphViewRelationship:
+        properties = relationship.properties
+        return GraphViewRelationship(
+            id=properties["id"],
+            type=relationship.type,
+            from_id=relationship.from_id,
+            to_id=relationship.to_id,
+            description=properties.get("description"),
+            lifecycle_state=properties.get("lifecycle_state"),
+            emotional_summary=properties.get("emotional_summary"),
+            temporal_summary=self._temporal_summary(properties),
+        )
+
+    def _to_timeline_item(self, node: NodeSearchResult) -> TimelineItem:
+        properties = node.properties
+        time_value, time_basis = self._timeline_time(properties)
+        return TimelineItem(
+            id=properties["id"],
+            label=node.label,
+            title=self._display_title(node),
+            description=self._display_description(node),
+            time_value=time_value,
+            time_basis=properties.get("time_basis") or time_basis,
+            time_precision=properties.get("time_precision"),
+            source_ids=list(properties.get("source_ids", [])),
+            emotional_summary=properties.get("emotional_summary"),
+            original_user_words=properties.get("original_user_words"),
+        )
+
+    def _node_can_be_timeline_item(
+        self,
+        node: NodeSearchResult,
+        *,
+        include_history: bool,
+    ) -> bool:
+        if self._is_hidden_node(node):
+            return False
+        if not include_history and node.label in HISTORY_LABELS:
+            return False
+        return self._timeline_time(node.properties)[0] is not None
+
+    def _timeline_sort_key(self, item: TimelineItem) -> tuple[int, str]:
+        if item.time_value is None:
+            return (1, "")
+        return (0, item.time_value)
+
+    def _timeline_time(self, properties: dict[str, Any]) -> tuple[str | None, str | None]:
+        for field in TIMELINE_TIME_FIELDS:
+            value = self._stringify_time(properties.get(field))
+            if value:
+                return value, field
+        return None, None
+
+    def _temporal_summary(self, properties: dict[str, Any]) -> str | None:
+        time_value, basis = self._timeline_time(properties)
+        if not time_value:
+            return None
+        precision = properties.get("time_precision")
+        if precision:
+            return f"{time_value} ({basis}, {precision})"
+        if basis:
+            return f"{time_value} ({basis})"
+        return time_value
+
+    def _display_title(self, node: NodeSearchResult) -> str:
+        properties = node.properties
+        for field in (
+            "display_name",
+            "name",
+            "title",
+            "text",
+            "profile_key",
+            "value",
+            "external_id",
+            "description",
+        ):
+            value = properties.get(field)
+            if isinstance(value, str) and value.strip():
+                return value
+        return f"{node.label} {properties['id']}"
+
+    def _display_description(self, node: NodeSearchResult) -> str | None:
+        for field in ("description", "emotional_summary", "original_user_words", "text"):
+            value = node.properties.get(field)
+            if isinstance(value, str) and value.strip():
+                return value
+        return None
+
+    def _display_metadata(self, properties: dict[str, Any]) -> dict[str, Any]:
+        return {
+            field: properties[field]
+            for field in DISPLAY_METADATA_FIELDS
+            if properties.get(field) not in (None, "", [])
+        }
+
+    def _matches_location_filter(
+        self,
+        node: GraphViewNode,
+        *,
+        city: str | None,
+        country: str | None,
+    ) -> bool:
+        metadata_city = node.display_metadata.get("city")
+        metadata_country = node.display_metadata.get("country")
+        if city and normalize_text(str(metadata_city or "")) != city:
+            return False
+        if country and normalize_text(str(metadata_country or "")) != country:
+            return False
+        return True
+
+    def _context_node_summary(
+        self,
+        node: NodeSearchResult,
+        mapper: IdAliasMapper,
+    ) -> dict[str, Any]:
+        properties = node.properties
+        summary = {
+            "alias": self._alias_for_node(node, mapper),
+            "label": node.label,
+            "title": self._display_title(node),
+        }
+        for field in (
+            "description",
+            "emotional_summary",
+            "emotional_valence",
+            "emotion_tags",
+            "original_user_words",
+            "status",
+            "closeness",
+            "relationship_type",
+            "source_kind",
+        ):
+            value = properties.get(field)
+            if value not in (None, "", []):
+                summary[field] = value
+        temporal_summary = self._temporal_summary(properties)
+        if temporal_summary:
+            summary["time"] = temporal_summary
+        source_ids = properties.get("source_ids")
+        if source_ids:
+            summary["source_ids"] = source_ids
+        return summary
+
+    def _context_relationship_summary(
+        self,
+        relationship: RelationshipResult,
+        mapper: IdAliasMapper,
+    ) -> dict[str, Any]:
+        properties = relationship.properties
+        from_alias = self._alias_for_endpoint(relationship.from_id, mapper)
+        to_alias = self._alias_for_endpoint(relationship.to_id, mapper)
+        summary = {
+            "alias": self._alias_for_id(properties["id"], "REL", mapper),
+            "type": relationship.type,
+            "from_alias": from_alias,
+            "to_alias": to_alias,
+        }
+        for field in (
+            "description",
+            "emotional_summary",
+            "emotional_valence",
+            "emotion_tags",
+            "original_user_words",
+        ):
+            value = properties.get(field)
+            if value not in (None, "", []):
+                summary[field] = value
+        temporal_summary = self._temporal_summary(properties)
+        if temporal_summary:
+            summary["time"] = temporal_summary
+        return summary
+
+    def _context_current_facts(self, node: NodeSearchResult) -> list[dict[str, Any]]:
+        facts: list[dict[str, Any]] = []
+        for field in CONTEXT_FACT_FIELDS:
+            value = node.properties.get(field)
+            if value not in (None, "", []):
+                facts.append({"field": field, "value": value})
+        temporal_summary = self._temporal_summary(node.properties)
+        if temporal_summary:
+            facts.append({"field": "time", "value": temporal_summary})
+        return facts
+
+    def _context_timeline_item(
+        self,
+        item: TimelineItem,
+        mapper: IdAliasMapper,
+    ) -> dict[str, Any]:
+        prefix = "SOURCE" if item.label == "Source" else "CLAIM" if item.label == "Claim" else "NODE"
+        summary = {
+            "alias": self._alias_for_id(item.id, prefix, mapper),
+            "label": item.label,
+            "title": item.title,
+            "time": item.time_value,
+        }
+        for field in ("description", "emotional_summary", "original_user_words"):
+            value = getattr(item, field)
+            if value not in (None, "", []):
+                summary[field] = value
+        if item.source_ids:
+            summary["source_ids"] = item.source_ids
+        return summary
+
+    def _alias_for_node(self, node: NodeSearchResult, mapper: IdAliasMapper) -> str:
+        if node.label == "Source":
+            prefix = "SOURCE"
+        elif node.label == "Claim":
+            prefix = "CLAIM"
+        else:
+            prefix = "NODE"
+        return self._alias_for_id(node.properties["id"], prefix, mapper)
+
+    def _alias_for_endpoint(self, node_id: str, mapper: IdAliasMapper) -> str:
+        node = self.repository.get_node(node_id)
+        if node is None:
+            return self._alias_for_id(node_id, "NODE", mapper)
+        return self._alias_for_node(NodeSearchResult.model_validate(node), mapper)
+
+    def _alias_for_id(self, internal_id: str, prefix: str, mapper: IdAliasMapper) -> str:
+        try:
+            return mapper.alias_for(internal_id, prefix)
+        except ValueError as exc:
+            raise GraphValidationError(
+                "Graph context packages require UUID internal ids; "
+                f"invalid id for {prefix}: {internal_id}"
+            ) from exc
+
+    def _validate_time_filter(self, value: str | None, field_name: str) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise GraphValidationError(f"{field_name} cannot be empty")
+        try:
+            datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise GraphValidationError(
+                f"{field_name} must be an ISO date or datetime string"
+            ) from exc
+        return normalized
+
+    def _time_in_range(
+        self,
+        value: str | None,
+        *,
+        from_time: str | None,
+        to_time: str | None,
+    ) -> bool:
+        if value is None:
+            return from_time is None and to_time is None
+        if from_time and value < from_time:
+            return False
+        if to_time and value > to_time:
+            return False
+        return True
+
+    def _stringify_time(self, value: Any) -> str | None:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
+
+    def _dedupe_nodes(self, nodes: list[NodeSearchResult]) -> list[NodeSearchResult]:
+        by_id: dict[str, NodeSearchResult] = {}
+        for node in nodes:
+            by_id[node.properties["id"]] = node
+        return list(by_id.values())
 
     def _normalize_node_properties(self, label: str, properties: dict[str, Any]) -> dict[str, Any]:
         normalized_properties = dict(properties)

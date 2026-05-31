@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest
 
+from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.exceptions import (
     GraphConflictError,
     GraphNotFoundError,
     GraphValidationError,
 )
-from my_digital_brain.graph.models import LifecycleTransitionRequest
+from my_digital_brain.graph.models import LifecycleTransitionRequest, NeighborhoodResult
 from my_digital_brain.graph.service import GraphService
 
 
@@ -196,8 +197,88 @@ class FakeGraphRepository:
             records.append(node)
         return records
 
-    def get_neighborhood(self, *_args: object, **_kwargs: object) -> object:
-        raise NotImplementedError
+    def get_neighborhood(
+        self,
+        node_id: str,
+        depth: int = 1,
+        **_kwargs: object,
+    ) -> NeighborhoodResult:
+        seen_node_ids = {node_id}
+        frontier = {node_id}
+        included_relationships: list[dict[str, object]] = []
+        for _ in range(depth):
+            next_frontier: set[str] = set()
+            for relationship in self.relationships:
+                from_id = str(relationship["from_id"])
+                to_id = str(relationship["to_id"])
+                if from_id not in frontier and to_id not in frontier:
+                    continue
+                if relationship not in included_relationships:
+                    included_relationships.append(relationship)
+                for linked_id in (from_id, to_id):
+                    if linked_id not in seen_node_ids:
+                        seen_node_ids.add(linked_id)
+                        next_frontier.add(linked_id)
+            frontier = next_frontier
+        return NeighborhoodResult(
+            nodes=[self.nodes[node_id] for node_id in seen_node_ids if node_id in self.nodes],
+            relationships=included_relationships,
+        )
+
+    def get_related_records(self, node_id: str, **kwargs: object) -> NeighborhoodResult:
+        return self.get_neighborhood(node_id, **kwargs)
+
+    def find_sources_for_target(
+        self,
+        target_id: str,
+        **_kwargs: object,
+    ) -> list[dict[str, object]]:
+        source_ids = {
+            relationship["from_id"]
+            if self.nodes[str(relationship["from_id"])]["label"] == "Source"
+            else relationship["to_id"]
+            for relationship in self.relationships
+            if relationship["type"] in {"MENTIONED_IN", "SUPPORTED_BY", "DERIVED_FROM"}
+            and (relationship["from_id"] == target_id or relationship["to_id"] == target_id)
+            and (
+                self.nodes.get(str(relationship["from_id"]), {}).get("label") == "Source"
+                or self.nodes.get(str(relationship["to_id"]), {}).get("label") == "Source"
+            )
+        }
+        return [self.nodes[str(source_id)] for source_id in source_ids]
+
+    def find_map_records(
+        self,
+        city: str | None = None,
+        country: str | None = None,
+        **_kwargs: object,
+    ) -> NeighborhoodResult:
+        city = city.lower().strip() if city else None
+        country = country.lower().strip() if country else None
+        place_ids = {
+            str(node["properties"]["id"])
+            for node in self.nodes.values()
+            if node["label"] == "Place"
+            and (city is None or str(node["properties"].get("city", "")).lower() == city)
+            and (country is None or str(node["properties"].get("country", "")).lower() == country)
+            and (
+                node["properties"].get("latitude") is not None
+                or node["properties"].get("longitude") is not None
+                or city is not None
+                or country is not None
+            )
+        }
+        relationships = [
+            relationship
+            for relationship in self.relationships
+            if relationship["type"] == "HAPPENED_AT" and relationship["to_id"] in place_ids
+        ]
+        node_ids = set(place_ids)
+        node_ids.update(str(relationship["from_id"]) for relationship in relationships)
+        return NeighborhoodResult(
+            nodes=[self.nodes[node_id] for node_id in node_ids if node_id in self.nodes],
+            relationships=relationships,
+        )
 
     def find_perceptions_for_target(
         self,
@@ -219,6 +300,71 @@ class FakeGraphRepository:
         **_kwargs: object,
     ) -> list[dict[str, object]]:
         return []
+
+    def count_nodes_by_label(self, include_archived: bool = False) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for node in self.nodes.values():
+            if (
+                not include_archived
+                and node["properties"].get("lifecycle_state") == "archived"
+            ):
+                continue
+            label = str(node["label"])
+            counts[label] = counts.get(label, 0) + 1
+        return counts
+
+    def count_relationships_by_type(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for relationship in self.relationships:
+            relationship_type = str(relationship["type"])
+            counts[relationship_type] = counts.get(relationship_type, 0) + 1
+        return counts
+
+    def top_connected_nodes(
+        self,
+        include_archived: bool = False,
+        **_kwargs: object,
+    ) -> list[dict[str, object]]:
+        items = []
+        for node_id, node in self.nodes.items():
+            if (
+                not include_archived
+                and node["properties"].get("lifecycle_state") == "archived"
+            ):
+                continue
+            count = sum(
+                1
+                for relationship in self.relationships
+                if relationship["from_id"] == node_id or relationship["to_id"] == node_id
+            )
+            if count:
+                items.append({"node": node, "count": count})
+        return sorted(items, key=lambda item: item["count"], reverse=True)
+
+    def top_emotion_tags(
+        self,
+        include_archived: bool = False,
+        **_kwargs: object,
+    ) -> list[dict[str, object]]:
+        counts: dict[str, int] = {}
+        for node in self.nodes.values():
+            if (
+                not include_archived
+                and node["properties"].get("lifecycle_state") == "archived"
+            ):
+                continue
+            for tag in node["properties"].get("emotion_tags", []):
+                counts[str(tag)] = counts.get(str(tag), 0) + 1
+        return [{"tag": tag, "count": count} for tag, count in counts.items()]
+
+    def count_unresolved_contradictions(self) -> int:
+        return sum(
+            1
+            for node in self.nodes.values()
+            if node["label"] == "ContradictionRecord"
+            and node["properties"].get("status", "detected")
+            in {"detected", "needs_clarification"}
+        )
 
 
 def test_upsert_node_validates_and_normalizes_name() -> None:
@@ -488,3 +634,133 @@ def test_canonical_resolution_detects_merge_cycles() -> None:
 
     with pytest.raises(GraphValidationError, match="Merge cycle"):
         service.get_canonical_node(first.properties["id"])
+
+
+def test_wave3_animal_and_social_circle_names_are_normalized() -> None:
+    service = GraphService(FakeGraphRepository())
+
+    animal = service.upsert_node("Animal", {"name": "  Luna  "})
+    circle = service.upsert_node("SocialCircle", {"name": " Close Friends "})
+
+    assert animal.properties["normalized_name"] == "luna"
+    assert circle.properties["normalized_name"] == "close friends"
+
+
+def test_wave3_timeline_uses_locked_time_precedence() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    person = service.upsert_node("Person", {"display_name": "Me"})
+    old_event = service.upsert_node(
+        "Event",
+        {"title": "Old event", "source_time": "2022-01-01T10:00:00"},
+    )
+    precise_event = service.upsert_node(
+        "Event",
+        {
+            "title": "Precise event",
+            "resolved_start": "2021-01-01",
+            "source_time": "2025-01-01T10:00:00",
+        },
+    )
+    service.upsert_relationship("PARTICIPATED_IN", person.properties["id"], old_event.properties["id"], {})
+    service.upsert_relationship(
+        "PARTICIPATED_IN",
+        person.properties["id"],
+        precise_event.properties["id"],
+        {},
+    )
+
+    timeline = service.get_timeline_for_node(person.properties["id"])
+
+    assert [item.title for item in timeline.items[:2]] == ["Precise event", "Old event"]
+    assert timeline.items[0].time_value == "2021-01-01"
+    assert timeline.items[0].time_basis == "resolved_start"
+
+
+def test_wave3_graph_view_hides_archived_and_merged_nodes_by_default() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    seed = service.upsert_node("Person", {"display_name": "Me"})
+    visible = service.upsert_node("Event", {"title": "Visible memory"})
+    archived = service.upsert_node("Event", {"title": "Archived", "lifecycle_state": "archived"})
+    merged = service.upsert_node(
+        "Person",
+        {"display_name": "Duplicate", "merged_into_id": seed.properties["id"]},
+    )
+    service.upsert_relationship("PARTICIPATED_IN", seed.properties["id"], visible.properties["id"], {})
+    service.upsert_relationship("PARTICIPATED_IN", seed.properties["id"], archived.properties["id"], {})
+    service.upsert_relationship("RELATED_TO", seed.properties["id"], merged.properties["id"], {})
+
+    graph_view = service.get_neighborhood_view(seed_id=seed.properties["id"])
+
+    visible_titles = {node.title for node in graph_view.nodes}
+    assert "Visible memory" in visible_titles
+    assert "Archived" not in visible_titles
+    assert "Duplicate" not in visible_titles
+
+
+def test_wave3_context_package_uses_aliases_and_excludes_noisy_metadata() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    person = service.upsert_node(
+        "Person",
+        {
+            "id": new_uuid(),
+            "display_name": "Alessandro",
+            "description": "Old friend.",
+            "emotional_summary": "Warm past bond with distance now.",
+            "metadata": {"raw_score": 0.77},
+        },
+    )
+    source = service.upsert_node(
+        "Source",
+        {"id": new_uuid(), "source_type": "telegram", "external_id": "msg-1"},
+    )
+    service.upsert_relationship(
+        "MENTIONED_IN",
+        person.properties["id"],
+        source.properties["id"],
+        {"id": new_uuid()},
+    )
+
+    package = service.get_context_package(person.properties["id"])
+
+    assert package.target["alias"] == "NODE_000001"
+    assert package.target["title"] == "Alessandro"
+    assert package.alias_map["NODE_000001"] == person.properties["id"]
+    assert "metadata" not in package.target
+    assert any(fact["field"] == "emotional_summary" for fact in package.current_facts)
+
+
+def test_wave3_map_view_and_analytics_summary() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    place = service.upsert_node(
+        "Place",
+        {
+            "name": "Athens",
+            "city": "Athens",
+            "country": "Greece",
+            "latitude": 37.9838,
+            "longitude": 23.7275,
+        },
+    )
+    event = service.upsert_node(
+        "Event",
+        {
+            "title": "Greek vacation",
+            "resolved_start": "2024-08-01",
+            "emotion_tags": ["freedom"],
+        },
+    )
+    service.upsert_relationship("HAPPENED_AT", event.properties["id"], place.properties["id"], {})
+
+    map_view = service.get_map_view(city="Athens", country="Greece")
+    analytics = service.get_analytics_summary()
+
+    assert map_view.places[0].title == "Athens"
+    assert map_view.events[0].title == "Greek vacation"
+    assert map_view.timeline[0].title == "Greek vacation"
+    assert analytics.node_counts["Place"] == 1
+    assert analytics.relationship_counts["HAPPENED_AT"] == 1
+    assert analytics.top_emotion_tags[0].key == "freedom"

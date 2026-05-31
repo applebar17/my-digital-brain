@@ -11,10 +11,20 @@ from my_digital_brain.graph.exceptions import (
 )
 from my_digital_brain.graph.models import (
     AffectiveContextResult,
+    EntityDetailResult,
+    GraphAnalyticsItem,
+    GraphAnalyticsSummary,
+    GraphContextPackage,
+    GraphViewNode,
+    GraphViewRelationship,
+    GraphViewResult,
     NeighborhoodResult,
     NodeSearchResult,
     RelationshipContextDetailResult,
     RelationshipResult,
+    MapViewResult,
+    TimelineItem,
+    TimelineResult,
 )
 
 
@@ -254,6 +264,115 @@ class FakeGraphService:
             properties={"id": "canonical-for-" + node_id},
         )
 
+    def get_entity_detail(self, node_id: str, **_kwargs: object) -> EntityDetailResult:
+        return EntityDetailResult(
+            target=NodeSearchResult(
+                label="Person",
+                labels=["Person"],
+                properties={"id": node_id, "display_name": "Marco"},
+            ),
+            relationships=[],
+            perceptions=[],
+            relationship_contexts=[],
+            sources=[],
+            changes=[],
+            contradictions=[],
+            merges=[],
+        )
+
+    def get_memories_for_node(self, node_id: str, **_kwargs: object) -> GraphViewResult:
+        return GraphViewResult(
+            seed_id=node_id,
+            nodes=[
+                GraphViewNode(
+                    id=node_id,
+                    label="Person",
+                    title="Marco",
+                    lifecycle_state="active",
+                )
+            ],
+            relationships=[],
+        )
+
+    def get_source_evidence(self, target_id: str, **_kwargs: object) -> list[NodeSearchResult]:
+        return [
+            NodeSearchResult(
+                label="Source",
+                labels=["Source"],
+                properties={"id": "source-1", "target_id": target_id},
+            )
+        ]
+
+    def get_timeline_for_node(self, node_id: str, **_kwargs: object) -> TimelineResult:
+        return TimelineResult(
+            seed=NodeSearchResult(label="Person", labels=["Person"], properties={"id": node_id}),
+            items=[
+                TimelineItem(
+                    id="event-1",
+                    label="Event",
+                    title="Vacation",
+                    time_value="2024-08-01",
+                )
+            ],
+        )
+
+    def get_neighborhood_view(self, seed_id: str, **_kwargs: object) -> GraphViewResult:
+        return GraphViewResult(
+            seed_id=seed_id,
+            nodes=[GraphViewNode(id=seed_id, label="Person", title="Marco")],
+            relationships=[
+                GraphViewRelationship(
+                    id="rel-1",
+                    type="RELATED_TO",
+                    from_id=seed_id,
+                    to_id="node-2",
+                )
+            ],
+        )
+
+    def get_map_view(self, **kwargs: object) -> MapViewResult:
+        return MapViewResult(
+            seed_id=kwargs.get("seed_id"),
+            places=[
+                GraphViewNode(
+                    id="place-1",
+                    label="Place",
+                    title="Athens",
+                    latitude=37.9838,
+                    longitude=23.7275,
+                )
+            ],
+            events=[GraphViewNode(id="event-1", label="Event", title="Vacation")],
+            relationships=[],
+            timeline=[
+                TimelineItem(
+                    id="event-1",
+                    label="Event",
+                    title="Vacation",
+                    time_value="2024-08-01",
+                )
+            ],
+        )
+
+    def get_context_package(self, node_id: str, **_kwargs: object) -> GraphContextPackage:
+        return GraphContextPackage(
+            target={"alias": "NODE_000001", "label": "Person", "title": "Marco"},
+            current_facts=[{"field": "description", "value": "Friend"}],
+            relationships=[],
+            alias_map={"NODE_000001": node_id},
+        )
+
+    def get_analytics_summary(self, **_kwargs: object) -> GraphAnalyticsSummary:
+        return GraphAnalyticsSummary(
+            node_counts={"Person": 1},
+            relationship_counts={"RELATED_TO": 1},
+            top_connected_nodes=[
+                GraphAnalyticsItem(key="node-1", count=1, label="Person: Marco")
+            ],
+            top_emotion_tags=[GraphAnalyticsItem(key="warmth", count=1)],
+            unresolved_contradictions=0,
+        )
+
 
 def client_for(service: FakeGraphService) -> TestClient:
     app = FastAPI()
@@ -422,6 +541,28 @@ def test_wave2_conflict_error_mapping() -> None:
     response = client.post("/graph/merges/already-applied/apply")
 
     assert response.status_code == 409
+
+
+def test_wave3_graph_query_endpoints() -> None:
+    client = client_for(FakeGraphService())
+
+    detail = client.get("/graph/nodes/node-1/detail?include_history=true")
+    memories = client.get("/graph/nodes/node-1/memories")
+    evidence = client.get("/graph/targets/node-1/evidence")
+    timeline = client.get("/graph/nodes/node-1/timeline")
+    neighborhood_view = client.get("/graph/views/neighborhood?seed_id=node-1")
+    map_view = client.get("/graph/views/map?city=Athens&country=Greece")
+    context_package = client.get("/graph/nodes/node-1/context-package")
+    analytics = client.get("/graph/analytics/summary")
+
+    assert detail.json()["target"]["properties"]["display_name"] == "Marco"
+    assert memories.json()["nodes"][0]["title"] == "Marco"
+    assert evidence.json()[0]["label"] == "Source"
+    assert timeline.json()["items"][0]["title"] == "Vacation"
+    assert neighborhood_view.json()["relationships"][0]["type"] == "RELATED_TO"
+    assert map_view.json()["places"][0]["title"] == "Athens"
+    assert context_package.json()["target"]["alias"] == "NODE_000001"
+    assert analytics.json()["node_counts"]["Person"] == 1
 
 
 def test_graph_api_error_mapping() -> None:

@@ -65,6 +65,31 @@ class ObjectNode(GraphNodeModel):
     owner_hint: str | None = None
 
 
+class AnimalNode(GraphNodeModel):
+    label: ClassVar[str] = "Animal"
+
+    name: str | None = None
+    normalized_name: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    species: str | None = None
+    breed: str | None = None
+    sex: str | None = None
+    status: str | None = None
+    known_since: str | None = None
+    date_of_birth: str | None = None
+    date_of_death: str | None = None
+    owner_hint: str | None = None
+
+
+class SocialCircleNode(GraphNodeModel):
+    label: ClassVar[str] = "SocialCircle"
+
+    name: str | None = None
+    normalized_name: str | None = None
+    circle_type: str | None = None
+    source_kind: str | None = None
+
+
 class TopicNode(GraphNodeModel):
     label: ClassVar[str] = "Topic"
 
@@ -209,6 +234,8 @@ NODE_MODEL_BY_LABEL: dict[str, type[GraphNodeModel]] = {
     PlaceNode.label: PlaceNode,
     OrganizationNode.label: OrganizationNode,
     ObjectNode.label: ObjectNode,
+    AnimalNode.label: AnimalNode,
+    SocialCircleNode.label: SocialCircleNode,
     TopicNode.label: TopicNode,
     SourceNode.label: SourceNode,
     ClaimNode.label: ClaimNode,
@@ -326,6 +353,102 @@ class RelationshipResult(BaseModel):
     from_id: str
     to_id: str
     properties: dict[str, Any]
+
+
+class TimelineItem(BaseModel):
+    id: str
+    label: str
+    title: str | None = None
+    description: str | None = None
+    time_value: str | None = None
+    time_basis: str | None = None
+    time_precision: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+    emotional_summary: str | None = None
+    original_user_words: str | None = None
+
+
+class TimelineResult(BaseModel):
+    seed: NodeSearchResult
+    items: list[TimelineItem]
+
+
+class EntityDetailResult(BaseModel):
+    target: NodeSearchResult
+    canonical: NodeSearchResult | None = None
+    relationships: list[RelationshipResult] = Field(default_factory=list)
+    perceptions: list[NodeSearchResult] = Field(default_factory=list)
+    relationship_contexts: list[NodeSearchResult] = Field(default_factory=list)
+    sources: list[NodeSearchResult] = Field(default_factory=list)
+    changes: list[NodeSearchResult] = Field(default_factory=list)
+    contradictions: list[NodeSearchResult] = Field(default_factory=list)
+    merges: list[NodeSearchResult] = Field(default_factory=list)
+
+
+class GraphViewNode(BaseModel):
+    id: str
+    label: str
+    title: str | None = None
+    description: str | None = None
+    lifecycle_state: str | None = None
+    privacy_level: str | None = None
+    trust_level: str | None = None
+    emotional_summary: str | None = None
+    temporal_summary: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    display_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphViewRelationship(BaseModel):
+    id: str
+    type: str
+    from_id: str
+    to_id: str
+    description: str | None = None
+    lifecycle_state: str | None = None
+    emotional_summary: str | None = None
+    temporal_summary: str | None = None
+
+
+class GraphViewResult(BaseModel):
+    seed_id: str
+    nodes: list[GraphViewNode]
+    relationships: list[GraphViewRelationship]
+
+
+class MapViewResult(BaseModel):
+    seed_id: str | None = None
+    places: list[GraphViewNode] = Field(default_factory=list)
+    events: list[GraphViewNode] = Field(default_factory=list)
+    relationships: list[GraphViewRelationship] = Field(default_factory=list)
+    timeline: list[TimelineItem] = Field(default_factory=list)
+
+
+class GraphContextPackage(BaseModel):
+    target: dict[str, Any]
+    current_facts: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    relationship_contexts: list[dict[str, Any]] = Field(default_factory=list)
+    perceptions: list[dict[str, Any]] = Field(default_factory=list)
+    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    alias_map: dict[str, str] = Field(default_factory=dict)
+
+
+class GraphAnalyticsItem(BaseModel):
+    key: str
+    count: int
+    label: str | None = None
+
+
+class GraphAnalyticsSummary(BaseModel):
+    node_counts: dict[str, int] = Field(default_factory=dict)
+    relationship_counts: dict[str, int] = Field(default_factory=dict)
+    top_connected_nodes: list[GraphAnalyticsItem] = Field(default_factory=list)
+    top_emotion_tags: list[GraphAnalyticsItem] = Field(default_factory=list)
+    unresolved_contradictions: int = 0
 
 
 class NeighborhoodResult(BaseModel):

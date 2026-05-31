@@ -7,13 +7,18 @@ import pytest
 
 from my_digital_brain.graph.exceptions import GraphValidationError
 from my_digital_brain.graph.models import (
+    AnimalNode,
     ChangeRecordNode,
     ContradictionRecordNode,
+    GraphContextPackage,
     GraphRelationshipModel,
+    GraphViewNode,
     MergeRecordNode,
     PerceptionNode,
     PersonNode,
     RelationshipStateNode,
+    SocialCircleNode,
+    TimelineItem,
 )
 from my_digital_brain.graph.registry import (
     CORE_NODE_LABELS,
@@ -125,6 +130,41 @@ def test_wave2_models_accept_temporal_history_and_audit_fields() -> None:
     assert change.field_path == "lifecycle_state"
     assert contradiction.status == "detected"
     assert merge.status == "proposed"
+
+
+def test_wave3_models_accept_animals_social_circles_and_read_views() -> None:
+    animal = AnimalNode(
+        name="Luna",
+        species="dog",
+        emotional_summary="A comforting presence at home.",
+    )
+    circle = SocialCircleNode(name="Close friends", circle_type="friendship")
+    timeline_item = TimelineItem(
+        id="event-1",
+        label="Event",
+        title="Greek vacation",
+        time_value="2024-08-01",
+        emotional_summary="A memory tied to freedom.",
+    )
+    view_node = GraphViewNode(
+        id="place-1",
+        label="Place",
+        title="Athens",
+        latitude=37.9838,
+        longitude=23.7275,
+        display_metadata={"country": "Greece"},
+    )
+    context_package = GraphContextPackage(
+        target={"alias": "NODE_000001", "label": "Animal", "title": "Luna"},
+        current_facts=[{"field": "species", "value": "dog"}],
+        alias_map={"NODE_000001": animal.id},
+    )
+
+    assert animal.species == "dog"
+    assert circle.circle_type == "friendship"
+    assert timeline_item.time_value == "2024-08-01"
+    assert view_node.display_metadata["country"] == "Greece"
+    assert context_package.target["title"] == "Luna"
 
 
 def test_metadata_serializes_as_deterministic_json_and_round_trips() -> None:
