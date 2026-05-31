@@ -8,18 +8,35 @@ The ingestion flow turns user input into graph updates while preserving source e
 
 1. User sends a message through Telegram or another channel.
 2. System stores the raw message as a `Source`.
-3. LLM extraction proposes structured ingestion objects: candidate entities, relationships, claims, perceptions, relationship contexts, emotional summaries, metadata patches, dates, places, and missing fields.
-4. Validator checks schema, confidence, and required information.
-5. Resolution engine searches for existing graph matches.
-6. Context builder retrieves nearby graph context for proposed writes.
-7. Memory-writing agent reviews the proposal against current state, relevant history, sources, relationship contexts, perceptions, place/time context, and similar entities.
-8. If the agent has a grounded contradiction doubt, it invokes the contradiction judge tool with the proposal, retrieved context, and explanation.
-9. The AI Manager asks a follow-up question if useful.
-10. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
-11. The user's next relevant message is appended to that pending ingestion session.
-12. The AI Manager resumes the ingestion dynamically.
-13. Graph writer persists entities, relationships, evidence links, and embeddings.
-14. User receives a concise ingestion summary when useful.
+3. If the source is audio, speech-to-text creates a transcript source linked to the original audio.
+4. A cheap mention scan extracts shallow mentions from the source text or transcript.
+5. Context retrieval loads compact graph context for the mentions.
+6. The ingestion planner receives source text plus compact context and returns an `ExtractionPlan`.
+7. The plan selects `simple_single_pass`, `focused_extraction`, `needs_context_expansion`, or `needs_clarification_first`.
+8. Focused extractors create structured candidate objects only for required tasks.
+9. The assembler builds a `CandidateMemoryGraph`.
+10. Validator checks schema, required information, evidence, aliases, allowed labels, and allowed relationship types.
+11. Resolution engine searches for obvious existing graph matches.
+12. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
+13. The user's next relevant message is appended to that pending ingestion session.
+14. The AI Manager resumes the ingestion dynamically.
+15. When safe, backend services produce and execute a validated `GraphWritePlan`.
+16. User receives a concise ingestion summary when useful.
+
+Complexity is decided after the mention scan and context retrieval. The system must not classify rich versus simple ingestion from raw text alone.
+
+## LLM Action Boundary
+
+The conversational LLM chooses actions and proposes parameters. Backend services validate and execute.
+
+Allowed top-level conversational actions are intentionally few:
+
+- default answer path: no tool
+- `start_memory_ingestion`
+- `query_memory_context`
+- `propose_memory_correction`
+
+Resume, cancel, expire, clarification handling, validation, and graph write execution are backend process states or internal services. They are not broad top-level tools.
 
 ## Example
 
@@ -51,7 +68,7 @@ Potential graph output:
 
 ## Candidate Graph
 
-Before writing to the canonical graph, extraction should produce a candidate graph:
+Before writing to the canonical graph, extraction should produce a candidate graph. The graph write plan is deterministic backend output after validation and resolution; it is not a separate LLM-authored graph mutation.
 
 - Candidate nodes.
 - Candidate relationships.
@@ -65,6 +82,15 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 - Retrieved context used for write review.
 - Agent contradiction doubts when present.
 - Suggested clarification questions.
+
+Every extraction object should include enough grounding to debug or reject it:
+
+- source references
+- evidence text
+- original user words when present
+- missing fields
+- ambiguity flags
+- clarification need
 
 This allows validation and resolution before permanent graph writes.
 

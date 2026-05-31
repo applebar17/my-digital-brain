@@ -45,6 +45,70 @@ Core fields:
 
 Speech-to-text runs should also be represented as extraction or processing runs, with model/provider information and transcript confidence metadata.
 
+### MentionScan
+
+A cheap shallow pass over source text or transcript. It exists to drive compact graph-context retrieval before the ingestion planner runs.
+
+Core fields:
+
+- `mention_scan_id`
+- `source_id`
+- `mentions`
+- `created_at`
+- `metadata`
+
+The mention scan should not create final entities or relationships. It only identifies likely names, places, events, dates, topics, relationship hints, and affective hints.
+
+### Mention
+
+A shallow mention found in the source.
+
+Core fields:
+
+- `mention_id`
+- `kind`: person, place, event, organization, object, animal, social_circle, topic, date, relationship_context, perception, claim.
+- `text`
+- `evidence_text`
+- `span_start`
+- `span_end`
+- `possible_normalized_value`
+- `ambiguity_hint`
+
+### ExtractionPlan
+
+The context-aware plan produced after mention scan and compact graph-context retrieval.
+
+Core fields:
+
+- `extraction_plan_id`
+- `source_id`
+- `context_package_id`
+- `execution_mode`: simple_single_pass, focused_extraction, needs_context_expansion, needs_clarification_first.
+- `reason`
+- `tasks`
+- `clarification`
+- `context_gaps`
+- `created_at`
+
+The plan proposes extraction tasks. It must not propose direct graph writes.
+
+### ExtractionTask
+
+A focused extraction instruction.
+
+Core fields:
+
+- `task_id`
+- `task_type`
+- `target_ref`
+- `evidence_text`
+- `source_refs`
+- `expected_output`
+- `required_context_refs`
+- `notes`
+
+Task types may include person, place, event, claim, perception, relationship_context, relationship_state, metadata_patch, and link extraction.
+
 ### CandidateEntity
 
 A proposed entity before resolution.
@@ -162,6 +226,28 @@ Core fields:
 - `requires_confirmation`
 
 This is useful for contact details, enriched place data, aliases, profile memory updates, and other incremental changes.
+
+### CandidateMemoryGraph
+
+The assembled candidate graph produced before validation and resolution.
+
+Core fields:
+
+- `candidate_graph_id`
+- `source_id`
+- `extraction_plan_id`
+- `candidate_entities`
+- `candidate_relationships`
+- `candidate_claims`
+- `candidate_perceptions`
+- `candidate_relationship_contexts`
+- `candidate_metadata_patches`
+- `local_ref_map`
+- `evidence_refs`
+- `ambiguity_flags`
+- `missing_fields`
+
+The candidate graph is not a write plan. It is the structured proposal that validation and resolution turn into a `GraphWritePlan` or `ClarificationRequest`.
 
 ### ClarificationRequest
 
@@ -283,10 +369,15 @@ The first implementation does not need every field above, but it should establis
 
 - `SourceRecord`
 - `ExtractionRun`
+- `MentionScan`
+- `Mention`
+- `ExtractionPlan`
+- `ExtractionTask`
 - `CandidateEntity`
 - `CandidateRelationship`
 - `CandidatePerception`
 - `CandidateRelationshipContext`
+- `CandidateMemoryGraph`
 - `ContradictionJudgeRequest`
 - `ContradictionJudgeDecision`
 - `ClarificationRequest`

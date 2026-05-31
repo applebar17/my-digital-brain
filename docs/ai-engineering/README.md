@@ -43,7 +43,9 @@ Large overloaded prompts increase hallucination risk and make failures harder to
 
 Prefer modular steps when useful:
 
-- Intent detection.
+- Cheap mention scanning.
+- Compact context retrieval.
+- Context-aware planning.
 - Context building.
 - Entity extraction.
 - Relationship extraction.
@@ -55,6 +57,13 @@ Prefer modular steps when useful:
 Contradiction handling should prefer a specialized judge call when there is meaningful doubt. The memory-writing agent should not rely on brittle deterministic contradiction rules; it should inspect retrieved graph context and invoke the judge when it can explain the suspected conflict.
 
 Modularity should reduce cognitive load for the model, but it should not add unnecessary latency or cost for trivial tasks.
+
+For ingestion, complexity is decided after lightweight context retrieval. Raw text alone is not enough to know whether a memory is simple or ambiguous. The expected sequence is:
+
+1. Cheap mention scan.
+2. Compact graph-context retrieval.
+3. Context-aware extraction plan.
+4. Focused extraction only when needed.
 
 ### 4. Use AI Dynamically Where It Adds Value
 
@@ -96,6 +105,16 @@ For memory-writing calls, context should include enough nearby graph state for t
 Actions, intent handling, and process management can be dynamic when the AI Manager has well-defined tools and proper context.
 
 The model can infer which tool or pipeline is appropriate, but tools must have clear contracts.
+
+The LLM chooses actions and proposes parameters. Backend services validate parameters and execute state changes. Tools are command surfaces, not authority surfaces.
+
+The top-level conversational tool surface should stay small:
+
+- `start_memory_ingestion`
+- `query_memory_context`
+- `propose_memory_correction`
+
+Default answering is a non-tool path. Resume, cancel, expire, clarification handling, validation, and write execution are backend process states or internal services, not broad conversational tools.
 
 Good tools should:
 

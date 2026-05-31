@@ -24,11 +24,25 @@ In the MVP, model behavior is coordinated by the AI Manager. The AI Manager can 
 
 The LLM should not directly write to the canonical graph. It should produce structured proposals that are validated before persistence.
 
+The conversational LLM chooses which high-level action to invoke and proposes parameters. Backend services validate parameters, own process state, and perform all persistence.
+
+The approved top-level action surface is small:
+
+- default answer path: no tool call
+- `start_memory_ingestion`
+- `query_memory_context`
+- `propose_memory_correction`
+
+Do not expose process-state operations such as resume, cancel, expire, validate write plan, or execute write plan as broad top-level tools. Those are backend orchestration details.
+
 Separate these stages:
 
 - Prompt construction.
 - Model call.
 - Structured output parsing.
+- Cheap mention scan.
+- Compact graph-context retrieval.
+- Context-aware ingestion planning.
 - Schema validation.
 - Resolution and policy checks.
 - Context review for contradiction suspicion.
@@ -65,6 +79,28 @@ The exact schema should be versioned so previous extraction runs remain interpre
 
 LLM extraction should produce structured ingestion objects, not graph database writes. The downstream pipeline owns validation, resolution, clarification, and persistence.
 
+## Context-Aware Ingestion Planning
+
+Ingestion complexity must be determined after the model sees relevant graph context, not from raw source text alone.
+
+Required planning flow:
+
+1. Run a cheap mention scan over source text or transcript.
+2. Retrieve compact graph context for the mentions.
+3. Ask the ingestion planner for an `ExtractionPlan`.
+4. Execute the selected backend flow.
+
+Planner execution modes:
+
+- `simple_single_pass`
+- `focused_extraction`
+- `needs_context_expansion`
+- `needs_clarification_first`
+
+The planner proposes extraction tasks. It does not plan graph writes.
+
+Focused extraction should be used when a source contains affective content, relationship history, temporal nuance, multiple possible targets, or metadata-rich facts. This keeps model calls smaller and reduces hallucination risk.
+
 ## Personality And Profile Extraction
 
 Some model outputs should be routed to a profile memory flow rather than directly into general graph memory. This applies when input reveals stable information about the owner of the brain, such as communication preferences, personality traits, recurring goals, work style, or privacy expectations.
@@ -97,14 +133,18 @@ This makes extraction behavior debuggable and repeatable.
 
 ## Provider Strategy
 
-Open decisions:
+Locked decisions:
 
-- Use a single provider first or create a provider abstraction immediately.
-- Use separate models for extraction, clarification, embeddings, and answer generation.
-- Use a dedicated speech-to-text model for voice messages.
+- Use provider abstractions for LLM, structured generation, embeddings, speech-to-text, and model routing.
+- Support OpenAI and Azure OpenAI behind the same ingestion-facing contracts.
+- Use a dedicated speech-to-text capability for voice messages.
+- Keep `ai/` as infrastructure. Memory extraction business logic lives in ingestion services.
+
+Future decisions:
+
 - Support local models for privacy-sensitive processing.
-- Decide which data can be sent to external providers.
-- Support both local-friendly and cloud-friendly model execution.
+- Decide which data can be sent to external providers by privacy level.
+- Add richer cost/latency routing after the MVP path is working.
 
 ## Validation
 
