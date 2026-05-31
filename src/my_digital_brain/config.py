@@ -72,6 +72,47 @@ class Settings(BaseSettings):
 
     source_media_root: Path = Field(default=Path("data/source-media"), alias="SOURCE_MEDIA_ROOT")
 
+    llm_provider: Literal["openai", "azure_openai"] = Field(
+        default="openai",
+        alias="LLM_PROVIDER",
+    )
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_embed_model: str = Field(
+        default="text-embedding-3-small",
+        alias="OPENAI_EMBED_MODEL",
+    )
+    openai_transcription_model: str = Field(
+        default="gpt-4o-mini-transcribe",
+        alias="OPENAI_TRANSCRIPTION_MODEL",
+    )
+    openai_chat_model_default: str = Field(
+        default="gpt-4o-mini",
+        alias="OPENAI_CHAT_MODEL_DEFAULT",
+    )
+    openai_chat_model_smart: str = Field(
+        default="gpt-4.1",
+        alias="OPENAI_CHAT_MODEL_SMART",
+    )
+    openai_chat_model_reasoning: str = Field(
+        default="o4-mini",
+        alias="OPENAI_CHAT_MODEL_REASONING",
+    )
+    azure_openai_enabled: bool = Field(default=False, alias="AZURE_OPENAI_ENABLED")
+    azure_openai_endpoint: str | None = Field(default=None, alias="AZURE_OPENAI_ENDPOINT")
+    azure_openai_api_key: str | None = Field(default=None, alias="AZURE_OPENAI_API_KEY")
+    azure_openai_api_version: str = Field(
+        default="2024-10-21",
+        alias="AZURE_OPENAI_API_VERSION",
+    )
+    azure_openai_embed_deployment: str | None = Field(
+        default=None,
+        alias="AZURE_OPENAI_EMBED_DEPLOYMENT",
+    )
+    azure_openai_transcription_deployment: str | None = Field(
+        default=None,
+        alias="AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT",
+    )
+
     @property
     def relational_database_url(self) -> str:
         if self.relational_backend == "sqlite":

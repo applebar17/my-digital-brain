@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import time
 from typing import Any, Callable, Iterable
 
@@ -92,17 +93,41 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         texts: Iterable[str],
         *,
         model: str | None = None,
+        dimensions: int | None = None,
     ) -> list[list[float]]:
         model_name = model or self._default_embed_model()
         params: dict[str, Any] = {
             "model": model_name,
             "input": list(texts),
         }
-        dimensions = getattr(self.settings, "embed_dimensions", None)
+        dimensions = dimensions or getattr(self.settings, "embed_dimensions", None)
         if dimensions:
             params["dimensions"] = dimensions
         response = self.client.embeddings.create(**params)
         return [item.embedding for item in response.data]
+
+    @traceable(name="Transcribe Audio", run_type="tool")
+    def transcribe_audio(
+        self,
+        audio_path: str | Path,
+        *,
+        model: str | None = None,
+        language: str | None = None,
+        prompt: str | None = None,
+        response_format: str = "verbose_json",
+    ) -> Any:
+        model_name = model or self._default_transcription_model()
+        params: dict[str, Any] = {
+            "model": model_name,
+            "response_format": response_format,
+        }
+        if language:
+            params["language"] = language
+        if prompt:
+            params["prompt"] = prompt
+        with Path(audio_path).open("rb") as audio_file:
+            params["file"] = audio_file
+            return self.client.audio.transcriptions.create(**params)
 
     @traceable(
         name="Build Chat Params",
@@ -345,6 +370,14 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
             return self.settings.azure_openai_embed_deployment or "text-embedding-3-small"
         return self.settings.openai_embed_model
 
+    def _default_transcription_model(self) -> str:
+        if self.settings.is_azure:
+            return (
+                self.settings.azure_openai_transcription_deployment
+                or self.settings.openai_transcription_model
+            )
+        return self.settings.openai_transcription_model
+
     def _make_client(self):
         try:
             import openai
@@ -423,22 +456,24 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
             self.logger.debug(
                 "GenAI client init: provider=azure endpoint=%s api_version=%s "
                 "chat_default=%s chat_smart=%s chat_reasoning=%s "
-                "embed_deployment=%s responses_api=%s",
+                "embed_deployment=%s transcription_deployment=%s responses_api=%s",
                 self.settings.azure_openai_endpoint or "unset",
                 self.settings.azure_openai_api_version or "unset",
                 self.settings.chat_model_default or "unset",
                 self.settings.chat_model_smart or "unset",
                 self.settings.chat_model_reasoning or "unset",
                 self.settings.azure_openai_embed_deployment or "unset",
+                self.settings.azure_openai_transcription_deployment or "unset",
                 self.use_responses_api,
             )
             return
         self.logger.debug(
             "GenAI client init: provider=openai chat_default=%s chat_smart=%s "
-            "chat_reasoning=%s embed_model=%s responses_api=%s",
+            "chat_reasoning=%s embed_model=%s transcription_model=%s responses_api=%s",
             self.settings.chat_model_default or "unset",
             self.settings.chat_model_smart or "unset",
             self.settings.chat_model_reasoning or "unset",
             self.settings.openai_embed_model or "unset",
+            self.settings.openai_transcription_model or "unset",
             self.use_responses_api,
         )

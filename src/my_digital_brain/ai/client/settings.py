@@ -97,6 +97,7 @@ def _safe_float(value: Any, default: float) -> float:
 class GenAISettings:
     openai_api_key: str | None = None
     openai_embed_model: str = "text-embedding-3-small"
+    openai_transcription_model: str = "gpt-4o-mini-transcribe"
     chat_model_default: str = "gpt-4o-mini"
     chat_model_smart: str = "gpt-4.1"
     chat_model_reasoning: str = "o4-mini"
@@ -115,6 +116,7 @@ class GenAISettings:
     azure_openai_api_key: str | None = None
     azure_openai_api_version: str = "2024-10-21"
     azure_openai_embed_deployment: str | None = None
+    azure_openai_transcription_deployment: str | None = None
     genai_tool_call_limit: int = 8
     genai_tool_call_timeout_seconds: float = 30.0
 
@@ -132,6 +134,10 @@ def get_genai_settings() -> GenAISettings:
     return GenAISettings(
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_embed_model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
+        openai_transcription_model=os.getenv(
+            "OPENAI_TRANSCRIPTION_MODEL",
+            "gpt-4o-mini-transcribe",
+        ),
         chat_model_default=os.getenv("OPENAI_CHAT_MODEL_DEFAULT", "gpt-4o-mini"),
         chat_model_smart=os.getenv("OPENAI_CHAT_MODEL_SMART", "gpt-4.1"),
         chat_model_reasoning=os.getenv("OPENAI_CHAT_MODEL_REASONING", "o4-mini"),
@@ -169,6 +175,9 @@ def get_genai_settings() -> GenAISettings:
             "AZURE_OPENAI_API_VERSION", "2024-10-21"
         ),
         azure_openai_embed_deployment=os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT"),
+        azure_openai_transcription_deployment=os.getenv(
+            "AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT"
+        ),
         genai_tool_call_limit=_env_int("GENAI_TOOL_CALL_LIMIT", 8),
         genai_tool_call_timeout_seconds=_env_float(
             "GENAI_TOOL_CALL_TIMEOUT_SECONDS", 30.0
@@ -191,6 +200,11 @@ def genai_settings_from_app_settings(settings: Any) -> GenAISettings:
             settings,
             "openai_embed_model",
             "text-embedding-3-small",
+        ),
+        openai_transcription_model=getattr(
+            settings,
+            "openai_transcription_model",
+            "gpt-4o-mini-transcribe",
         ),
         chat_model_default=getattr(settings, "openai_chat_model_default", "gpt-4o-mini"),
         chat_model_smart=getattr(settings, "openai_chat_model_smart", "gpt-4.1"),
@@ -243,6 +257,11 @@ def genai_settings_from_app_settings(settings: Any) -> GenAISettings:
         azure_openai_embed_deployment=getattr(
             settings,
             "azure_openai_embed_deployment",
+            None,
+        ),
+        azure_openai_transcription_deployment=getattr(
+            settings,
+            "azure_openai_transcription_deployment",
             None,
         ),
     )
