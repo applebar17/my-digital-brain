@@ -167,10 +167,30 @@ def test_graph_wave3_query_foundation_round_trip() -> None:
                 "resolved_start": "2024-08-01",
             },
         )
-        service.upsert_relationship("LIVES_WITH", animal.properties["id"], person.properties["id"], {})
-        service.upsert_relationship("MEMBER_OF", person.properties["id"], circle.properties["id"], {})
-        service.upsert_relationship("HAPPENED_AT", event.properties["id"], place.properties["id"], {})
-        service.upsert_relationship("PARTICIPATED_IN", person.properties["id"], event.properties["id"], {})
+        service.upsert_relationship(
+            "LIVES_WITH",
+            animal.properties["id"],
+            person.properties["id"],
+            {},
+        )
+        service.upsert_relationship(
+            "MEMBER_OF",
+            person.properties["id"],
+            circle.properties["id"],
+            {},
+        )
+        service.upsert_relationship(
+            "HAPPENED_AT",
+            event.properties["id"],
+            place.properties["id"],
+            {},
+        )
+        service.upsert_relationship(
+            "PARTICIPATED_IN",
+            person.properties["id"],
+            event.properties["id"],
+            {},
+        )
 
         timeline = service.get_timeline_for_node(person.properties["id"])
         map_view = service.get_map_view(city="Athens", country="Greece")

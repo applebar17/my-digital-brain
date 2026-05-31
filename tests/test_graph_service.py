@@ -662,7 +662,12 @@ def test_wave3_timeline_uses_locked_time_precedence() -> None:
             "source_time": "2025-01-01T10:00:00",
         },
     )
-    service.upsert_relationship("PARTICIPATED_IN", person.properties["id"], old_event.properties["id"], {})
+    service.upsert_relationship(
+        "PARTICIPATED_IN",
+        person.properties["id"],
+        old_event.properties["id"],
+        {},
+    )
     service.upsert_relationship(
         "PARTICIPATED_IN",
         person.properties["id"],
@@ -687,8 +692,18 @@ def test_wave3_graph_view_hides_archived_and_merged_nodes_by_default() -> None:
         "Person",
         {"display_name": "Duplicate", "merged_into_id": seed.properties["id"]},
     )
-    service.upsert_relationship("PARTICIPATED_IN", seed.properties["id"], visible.properties["id"], {})
-    service.upsert_relationship("PARTICIPATED_IN", seed.properties["id"], archived.properties["id"], {})
+    service.upsert_relationship(
+        "PARTICIPATED_IN",
+        seed.properties["id"],
+        visible.properties["id"],
+        {},
+    )
+    service.upsert_relationship(
+        "PARTICIPATED_IN",
+        seed.properties["id"],
+        archived.properties["id"],
+        {},
+    )
     service.upsert_relationship("RELATED_TO", seed.properties["id"], merged.properties["id"], {})
 
     graph_view = service.get_neighborhood_view(seed_id=seed.properties["id"])
