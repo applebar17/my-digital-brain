@@ -218,6 +218,8 @@ The backend runs only the focused extractors needed for those tasks.
 
 ## Wave 1: Contracts And Deterministic Skeleton
 
+Status: implemented in `src/my_digital_brain/ingestion/` with unit coverage in `tests/test_ingestion_wave1.py`.
+
 ### Summary
 
 Create the ingestion package, structured contracts, deterministic validation, local-reference assembly, and orchestration boundaries. This wave does not require real LLM calls and does not need to write to Neo4j yet.
