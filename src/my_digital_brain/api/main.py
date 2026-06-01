@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from my_digital_brain.api.routes.chat import router as chat_router
 from my_digital_brain.api.routes.graph import router as graph_router
 from my_digital_brain.api.routes.health import router as health_router
+from my_digital_brain.api.routes.telegram import router as telegram_router
 from my_digital_brain.config import get_settings
 from my_digital_brain.logging import configure_logging
 
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(graph_router)
     app.include_router(chat_router)
+    app.include_router(telegram_router)
     return app
 
 

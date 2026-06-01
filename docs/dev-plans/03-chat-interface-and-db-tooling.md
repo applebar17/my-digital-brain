@@ -133,7 +133,7 @@ Impact:
 
 ### Session Persistence
 
-Wave 1 should define a `ChatSessionStore` protocol and start with an in-memory implementation for local development and unit tests.
+The initial runtime implementation should define a `ChatSessionStore` protocol and start with an in-memory implementation for local development and unit tests.
 
 Relational persistence should follow the same interface and is required before relying on deployed Telegram webhooks, because webhook processes can restart.
 
@@ -433,7 +433,7 @@ Correction behavior needs dedicated design before aggressive mutation is allowed
 
 ## Wave 1: Channel-Neutral Chat Runtime
 
-Status: implemented in `src/my_digital_brain/chat/` with API routes in `src/my_digital_brain/api/routes/chat.py` and unit/API coverage in `tests/test_chat_wave1.py`.
+Status: implemented in `src/my_digital_brain/chat/` with API routes in `src/my_digital_brain/api/routes/chat.py` and unit/API coverage in `tests/test_chat_runtime.py`.
 
 ### Summary
 
@@ -491,6 +491,8 @@ Create the shared chat contracts, conversation runtime, session store interface,
 
 ## Wave 2: Telegram And Web Chat Consumers
 
+Status: implemented with web/Telegram consumer adapters in `src/my_digital_brain/chat/`, Telegram webhook API routes in `src/my_digital_brain/api/routes/telegram.py`, and coverage in `tests/test_chat_consumers.py`.
+
 ### Summary
 
 Add concrete consumer adapters for Telegram and web chat.
@@ -502,7 +504,8 @@ Add concrete consumer adapters for Telegram and web chat.
 - Polling can remain a local development fallback if it is useful.
 - Normalize Telegram text messages.
 - Normalize Telegram voice messages.
-- Store/download voice artifacts.
+- Store or reference Telegram voice artifacts.
+- Actual Telegram Bot API file download can be wired when media storage and transcription are connected.
 - Send text responses and clarification questions.
 - Keep Telegram update payloads outside business logic.
 

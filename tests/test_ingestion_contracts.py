@@ -178,7 +178,7 @@ def test_write_plan_validation_rejects_unknown_labels_types_and_endpoints() -> N
     assert "unknown_write_endpoint" in codes
 
 
-def test_ingestion_service_runs_pluggable_wave1_pipeline() -> None:
+def test_ingestion_service_runs_pluggable_contract_pipeline() -> None:
     source = _source()
     service = IngestionService(
         scanner=StaticScanner(),
@@ -244,7 +244,7 @@ def test_ingestion_service_reports_missing_extractor_as_verbose_tool_error() -> 
     assert "Register a backend extractor" in result.validation_errors[0].message
 
 
-def test_wave1_components_match_runtime_protocols() -> None:
+def test_ingestion_components_match_runtime_protocols() -> None:
     assert isinstance(StaticScanner(), MentionScanner)
     assert isinstance(StaticContextRetriever(), IngestionContextRetriever)
     assert isinstance(StaticPlanner(_plan()), IngestionPlanner)

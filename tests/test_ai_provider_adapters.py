@@ -113,7 +113,9 @@ class StubTranscriptions:
         return {"text": "low-level transcript"}
 
 
-def test_openai_provider_wraps_chat_structured_embeddings_and_stt(tmp_path: Path) -> None:
+def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
+    tmp_path: Path,
+) -> None:
     client = StubGenAIClient()
     provider = OpenAIProvider(
         client=client,

@@ -220,7 +220,7 @@ The backend runs only the focused extractors needed for those tasks.
 
 ## Wave 1: Contracts And Deterministic Skeleton
 
-Status: implemented in `src/my_digital_brain/ingestion/` with unit coverage in `tests/test_ingestion_wave1.py`.
+Status: implemented in `src/my_digital_brain/ingestion/` with unit coverage in `tests/test_ingestion_contracts.py`.
 
 ### Summary
 
@@ -333,7 +333,7 @@ The `GraphWritePlan` must be backend-generated. It is not a direct LLM output sc
 
 ## Wave 2: Context-Aware AI Planning And Focused Extraction
 
-Status: implemented with fake-provider coverage. Graph writes remain out of scope until Wave 3.
+Status: implemented with fake-provider coverage in `tests/test_ingestion_ai_planning.py`. Graph writes remain out of scope until Wave 3.
 
 ### Summary
 
@@ -415,7 +415,7 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 
 ## Wave 3: Resolution, Write Plans, And Execution
 
-Status: implemented with conservative resolution, deterministic write-plan building, graph-service execution, and in-memory source/session snapshots for local/private runs.
+Status: implemented with conservative resolution, deterministic write-plan building, graph-service execution, in-memory source/session snapshots for local/private runs, and coverage in `tests/test_ingestion_write_execution.py`.
 
 ### Summary
 

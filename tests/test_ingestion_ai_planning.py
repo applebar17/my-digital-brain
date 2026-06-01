@@ -193,7 +193,7 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
 
 
-def test_wave2_pipeline_runs_with_ai_services_and_fake_provider() -> None:
+def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
     provider = QueuedStructuredProvider(
         [
             {

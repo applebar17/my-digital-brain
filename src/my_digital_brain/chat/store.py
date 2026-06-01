@@ -54,7 +54,7 @@ class ChatSessionStore(Protocol):
 
 
 class InMemoryChatSessionStore:
-    """Local development store for Wave 1 chat runtime behavior."""
+    """Local development store for chat runtime behavior."""
 
     def __init__(self) -> None:
         self._lock = RLock()
@@ -134,7 +134,11 @@ class InMemoryChatSessionStore:
         session = self.get_session(session_id)
         messages = self.list_messages(session_id, limit=limit)
         pending = self.get_active_pending_process_context(session_id)
-        return ConversationSessionDetail(session=session, messages=messages, pending_process=pending)
+        return ConversationSessionDetail(
+            session=session,
+            messages=messages,
+            pending_process=pending,
+        )
 
     def save_pending_process_context(
         self,

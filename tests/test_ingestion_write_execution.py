@@ -213,7 +213,7 @@ def test_executor_rejects_repeated_application_of_executed_plan() -> None:
     assert "already been executed" in second_result.validation_errors[0].message
 
 
-def test_ingestion_service_can_execute_wave3_fake_path() -> None:
+def test_ingestion_service_can_execute_fake_write_path() -> None:
     graph = FakeGraphService()
     service = IngestionService(
         scanner=StaticScanner(),
@@ -244,7 +244,7 @@ def test_ingestion_service_can_execute_wave3_fake_path() -> None:
     assert graph.upserted_nodes[0].label == "Person"
 
 
-def test_ingestion_service_pauses_wave3_on_resolution_clarification() -> None:
+def test_ingestion_service_pauses_on_resolution_clarification() -> None:
     graph = FakeGraphService(
         nodes=[
             _node("Person", new_uuid(), display_name="Marco Rossi"),

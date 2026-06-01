@@ -57,7 +57,7 @@ class BackendToolFacade(Protocol):
 
 
 class NoopBackendToolFacade:
-    """Safe placeholder facade for Wave 1 runtime wiring.
+    """Safe placeholder facade for chat runtime wiring.
 
     Real ingestion/query/correction behavior is injected behind the same protocol
     as later waves connect the chat runtime to business services.

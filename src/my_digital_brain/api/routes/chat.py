@@ -9,10 +9,10 @@ from my_digital_brain.chat.exceptions import ChatNotFoundError, ChatValidationEr
 from my_digital_brain.chat.models import (
     ChatResponse,
     ConversationSessionDetail,
-    IncomingChatMessage,
 )
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 from my_digital_brain.config import Settings, get_settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -22,6 +22,7 @@ _chat_runtime = ChatRuntime(
     store=InMemoryChatSessionStore(),
     tool_facade=NoopBackendToolFacade(),
 )
+_web_adapter = WebChatAdapter()
 
 
 class CancelChatSessionRequest(BaseModel):
@@ -62,11 +63,11 @@ def chat_http_error(exc: Exception) -> HTTPException:
     dependencies=[Depends(require_web_chat_auth)],
 )
 def post_chat_message(
-    message: IncomingChatMessage,
+    message: WebChatMessageRequest,
     runtime: ChatRuntime = Depends(get_chat_runtime),
 ) -> ChatResponse:
     try:
-        return runtime.handle_message(message)
+        return runtime.handle_message(_web_adapter.normalize(message))
     except Exception as exc:
         raise chat_http_error(exc) from exc
 

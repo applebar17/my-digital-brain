@@ -135,7 +135,9 @@ def test_runtime_attaches_pending_context_without_forcing_route() -> None:
     runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
 
     first_response = runtime.handle_message(_message(text="needs clarification", message_id="m1"))
-    second_response = runtime.handle_message(_message(text="This is a different memory.", message_id="m2"))
+    second_response = runtime.handle_message(
+        _message(text="This is a different memory.", message_id="m2"),
+    )
 
     assert first_response.status == ChatResponseStatus.NEEDS_USER_INPUT
     assert second_response.primary_text == "Memory accepted."
@@ -161,7 +163,7 @@ def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
     ]
 
 
-def test_chat_api_requires_bearer_token_and_posts_message() -> None:
+def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
     facade = RecordingFacade()
     runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
     client = _client(runtime)
@@ -219,7 +221,6 @@ def _message(text: str, message_id: str = "message-1") -> IncomingChatMessage:
 
 def _message_payload(text: str) -> dict[str, object]:
     return {
-        "channel": "web",
         "conversation_id": "conversation-1",
         "sender_id": "sender-1",
         "owner_id": "owner-1",

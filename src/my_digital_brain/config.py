@@ -76,6 +76,15 @@ class Settings(BaseSettings):
         default="change-me-web-chat-token",
         alias="WEB_CHAT_AUTH_TOKEN",
     )
+    telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_webhook_secret_token: str | None = Field(
+        default=None,
+        alias="TELEGRAM_WEBHOOK_SECRET_TOKEN",
+    )
+    telegram_allowed_user_ids: str | None = Field(
+        default=None,
+        alias="TELEGRAM_ALLOWED_USER_IDS",
+    )
 
     llm_provider: Literal["openai", "azure_openai"] = Field(
         default="openai",
@@ -124,6 +133,16 @@ class Settings(BaseSettings):
             self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
             return f"sqlite+pysqlite:///{self.sqlite_path.as_posix()}"
         return self.postgres_dsn
+
+    @property
+    def telegram_allowed_user_id_set(self) -> set[str]:
+        if not self.telegram_allowed_user_ids:
+            return set()
+        return {
+            item.strip()
+            for item in self.telegram_allowed_user_ids.split(",")
+            if item.strip()
+        }
 
 
 @lru_cache(maxsize=1)

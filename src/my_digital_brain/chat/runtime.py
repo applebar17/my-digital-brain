@@ -60,7 +60,10 @@ class ChatRuntime:
         )
 
         pending_context = self.store.get_active_pending_process_context(session.session_id)
-        history_refs = self._history_refs(session.session_id, explicit_refs=message.conversation_history_refs)
+        history_refs = self._history_refs(
+            session.session_id,
+            explicit_refs=message.conversation_history_refs,
+        )
         result = self._call_facade(message, session.session_id, pending_context, history_refs)
 
         if result.pending_process is not None:
