@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 
-from my_digital_brain.chat.facade import NoopBackendToolFacade
+from my_digital_brain.api.routes.graph import get_graph_service
 from my_digital_brain.chat.exceptions import ChatNotFoundError, ChatValidationError
 from my_digital_brain.chat.models import (
     ChatResponse,
@@ -12,16 +12,15 @@ from my_digital_brain.chat.models import (
 )
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.chat.tool_facade import MemoryBackendToolFacade
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 from my_digital_brain.config import Settings, get_settings
+from my_digital_brain.graph.service import GraphService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 security = HTTPBearer(auto_error=False)
 
-_chat_runtime = ChatRuntime(
-    store=InMemoryChatSessionStore(),
-    tool_facade=NoopBackendToolFacade(),
-)
+_chat_store = InMemoryChatSessionStore()
 _web_adapter = WebChatAdapter()
 
 
@@ -32,8 +31,13 @@ class CancelChatSessionRequest(BaseModel):
     reason: str | None = None
 
 
-def get_chat_runtime() -> ChatRuntime:
-    return _chat_runtime
+def get_chat_runtime(
+    graph_service: GraphService = Depends(get_graph_service),
+) -> ChatRuntime:
+    return ChatRuntime(
+        store=_chat_store,
+        tool_facade=MemoryBackendToolFacade(graph_service=graph_service),
+    )
 
 
 def require_web_chat_auth(

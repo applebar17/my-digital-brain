@@ -67,21 +67,21 @@ class NoopBackendToolFacade:
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
             primary_text="I received this memory for processing.",
-            metadata={"operation": "start_memory_ingestion", "wave": "chat_wave_1"},
+            metadata={"operation": "start_memory_ingestion"},
         )
 
     def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
             primary_text="I received your memory question. Query answering is not wired yet.",
-            metadata={"operation": "query_memory_context", "wave": "chat_wave_1"},
+            metadata={"operation": "query_memory_context"},
         )
 
     def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
             primary_text="I received this correction for review.",
-            metadata={"operation": "propose_memory_correction", "wave": "chat_wave_1"},
+            metadata={"operation": "propose_memory_correction"},
         )
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
