@@ -216,66 +216,297 @@ The backend runs only the focused extractors needed for those tasks.
 - Use the provider abstractions from [AI provider foundation](07-ai-provider-foundation.md).
 - Support OpenAI and/or Azure OpenAI behind the provider abstraction rather than coupling ingestion logic to one vendor.
 
-## Wave 1: Transport-Neutral MVP Ingestion Core
+## Wave 1: Contracts And Deterministic Skeleton
 
-Implement the core backend service path:
+### Summary
 
-1. Receive a stored text source or transcript source.
-2. Run cheap mention scan.
-3. Retrieve compact graph context for mentions.
-4. Build an `ExtractionPlan`.
-5. Run the selected extraction path.
-6. Assemble a `CandidateMemoryGraph`.
-7. Run deterministic validation.
-8. Resolve obvious matches.
-9. Produce a `ClarificationRequest` when useful or blocking.
-10. Produce and execute a validated `GraphWritePlan` when safe.
-11. Return concise ingestion result.
+Create the ingestion package, structured contracts, deterministic validation, local-reference assembly, and orchestration boundaries. This wave does not require real LLM calls and does not need to write to Neo4j yet.
 
-Required structured objects:
+The purpose is to make the ingestion pipeline testable before prompts are introduced.
 
-- `SourceRecord`
-- `ExtractionRun`
-- `MentionScan`
-- `Mention`
-- `ExtractionPlan`
-- `ExtractionTask`
-- `CandidateEntity`
-- `CandidateRelationship`
-- `CandidateClaim`
-- `CandidatePerception`
-- `CandidateRelationshipContext`
-- `CandidateMetadataPatch`
-- `CandidateMemoryGraph`
-- `ClarificationRequest`
-- `ResolutionDecision`
-- `GraphWritePlan`
+### Key Changes
 
-Required provider abstractions:
+- Add `src/my_digital_brain/ingestion/`.
+- Add `ingestion/enums.py`:
+  - `SourceType`
+  - `SourceChannel`
+  - `MentionKind`
+  - `ExtractionExecutionMode`
+  - `ExtractionTaskType`
+  - `CandidateRefKind`
+  - `ClarificationStatus`
+  - `ResolutionDecisionType`
+  - `GraphWritePlanStatus`
+  - `IngestionStatus`
+- Add `ingestion/contracts.py`:
+  - `SourceRecordRef`
+  - `ExtractionRunRef`
+  - `Mention`
+  - `MentionScan`
+  - `ExtractionPlan`
+  - `ExtractionTask`
+  - `EvidenceRef`
+  - `TemporalScope`
+  - `AffectiveFields`
+  - `CandidateEntity`
+  - `CandidateRelationship`
+  - `CandidateClaim`
+  - `CandidatePerception`
+  - `CandidateRelationshipContext`
+  - `CandidateMetadataPatch`
+  - `CandidateMemoryGraph`
+  - `ClarificationRequest`
+  - `ResolutionDecision`
+  - `GraphNodeWrite`
+  - `GraphRelationshipWrite`
+  - `GraphWritePlan`
+  - `IngestionResult`
+- Add `ingestion/protocols.py` for internal service contracts:
+  - `MentionScanner`
+  - `IngestionContextRetriever`
+  - `IngestionPlanner`
+  - `FocusedExtractor`
+  - `CandidateMemoryGraphAssembler`
+  - `IngestionValidator`
+  - `ResolutionService`
+  - `GraphWritePlanExecutor`
+- Add `ingestion/assembly.py`:
+  - assemble extractor outputs into a `CandidateMemoryGraph`
+  - validate local candidate references
+  - keep a local reference map such as `CANDIDATE_PERSON_001`
+- Add `ingestion/validation.py`:
+  - validate allowed graph labels against graph registries
+  - validate allowed relationship types against graph registries
+  - reject unknown local references
+  - reject candidate writes without source/evidence references when required
+  - verify clarification requests have a question and reason
+  - verify write plans contain only validated refs
+- Add `ingestion/service.py`:
+  - orchestration skeleton that accepts injected protocol implementations
+  - returns `IngestionResult`
+  - supports fake/no-op services for tests
 
-- `LLMProvider`
-- `StructuredLLMProvider`
-- `SpeechToTextProvider`
-- `EmbeddingProvider`
-- `VectorStore`
-- `ModelRouter`
-- `ProviderRequestLog`
+### Contract Requirements
 
-Provider abstractions should hide OpenAI versus Azure OpenAI differences from the ingestion pipeline. The vector store abstraction should support Chroma locally and Azure AI services in cloud mode.
+All LLM-facing contracts must have concise field descriptions because Pydantic field descriptions are part of the prompt surface.
 
-## Wave 2: Resolution And Contradiction Handling
+Every candidate object that can affect graph state must include:
 
-- Add richer entity resolution using aliases, embeddings, source context, temporal context, and existing graph neighborhoods.
-- Detect likely duplicate people, places, events, and organizations.
-- Detect contradictions during ingestion through agentic suspicion over retrieved context, not brittle deterministic rules.
-- Ask clarification when contradictions matter.
-- Expire or dispute older facts when a new fact clearly supersedes them.
-- Preserve both facts when ambiguity remains.
+- source references
+- evidence text or evidence refs
+- original user words when relevant
+- missing fields
+- ambiguity flags
+- local refs or graph aliases only, never arbitrary raw graph IDs in LLM-facing fields
 
-## Wave 3: Advanced Ingestion
+The `GraphWritePlan` must be backend-generated. It is not a direct LLM output schema.
 
-- Batch reprocessing of sources when prompts or schemas improve.
-- Provider/model routing by task difficulty, privacy level, latency budget, and cost budget.
+### Out Of Scope
+
+- Real LLM mention scanning.
+- Real LLM extraction.
+- Graph context retrieval.
+- Entity resolution beyond stub decisions.
+- Neo4j write execution.
+- Telegram/chat integration.
+- Contradiction judge invocation.
+
+### Tests
+
+- Contract validation for minimal and rich payloads.
+- Enum values match the docs and graph registries.
+- Candidate reference validation rejects unknown local refs.
+- Candidate entity labels and relationship types reject unknown values.
+- Candidate graph assembly preserves source/evidence refs.
+- Ingestion service can run with fake dependencies.
+- Invalid plans return structured validation errors.
+
+### Completion Criteria
+
+- A developer can import `my_digital_brain.ingestion` and construct a valid `CandidateMemoryGraph`.
+- A fake ingestion run can pass through service orchestration without touching providers or Neo4j.
+- Validation can reject bad labels, relationship types, local refs, and missing evidence.
+
+## Wave 2: Context-Aware AI Planning And Focused Extraction
+
+### Summary
+
+Add the AI-backed services that produce mention scans, compact context-driven extraction plans, and focused candidate objects. This wave introduces model calls through the provider protocols, but graph writes still remain disabled or mocked.
+
+### Key Changes
+
+- Add `ingestion/mention_scanner.py`.
+  - Uses `StructuredLLMProvider`.
+  - Produces `MentionScan`.
+  - Performs shallow extraction only.
+  - Must not create final candidate entities or relationships.
+- Add `ingestion/context_retriever.py`.
+  - Uses graph query services.
+  - Returns compact context packages for planner use.
+  - Uses LLM-facing aliases through `IdAliasMapper`.
+  - Excludes noisy metadata by default.
+- Add `ingestion/planner.py`.
+  - Uses `StructuredLLMProvider`.
+  - Receives source text plus compact graph context.
+  - Produces `ExtractionPlan`.
+  - Selects one of:
+    - `simple_single_pass`
+    - `focused_extraction`
+    - `needs_context_expansion`
+    - `needs_clarification_first`
+  - Proposes extraction tasks, not graph writes.
+- Add `ingestion/extractors/`.
+  - `entity.py`
+  - `relationship.py`
+  - `claim.py`
+  - `perception.py`
+  - `relationship_context.py`
+  - `metadata_patch.py`
+- Add `ingestion/prompts.py` or `ingestion/prompt_builders.py`.
+  - Keeps prompt text close to structured contracts.
+  - Builds low-noise context for each extractor.
+  - Keeps focused tasks small.
+- Add model routing integration.
+  - Use `ModelRouter` for mention scan, planning, and extraction model selection.
+  - Use cheap models for mention scan where possible.
+  - Use stronger models for focused extraction when affective or relationship-history content is present.
+
+### Prompt And Schema Rules
+
+- Mention scanner prompt must ask for shallow mentions only.
+- Planner prompt must classify complexity only after reading compact context.
+- Planner must not invent aliases that were not present in context.
+- Focused extractors must only extract the requested task.
+- Extractors must preserve evidence text and original user wording.
+- Extractors should use `unknown`, `missing_fields`, or `ambiguity_flags` instead of guessing.
+- Tool/provider errors must be verbose enough for orchestration to retry, ask clarification, or fail cleanly.
+
+### Out Of Scope
+
+- Real graph mutation.
+- Rich duplicate resolution.
+- Contradiction judge flow.
+- Telegram pending-session integration.
+- Batch reprocessing.
+- Evaluation set automation.
+
+### Tests
+
+- Mention scanner with fake structured provider returns a valid `MentionScan`.
+- Planner returns each execution mode from controlled fake outputs.
+- Planner rejects unknown aliases and unsupported task types.
+- Context retriever returns low-noise packages with aliases.
+- Focused extractors produce only their target candidate types.
+- Focused extractors preserve evidence and original user words.
+- Service orchestration chooses simple versus focused extraction based on `ExtractionPlan`.
+- No test uses a real OpenAI/Azure call.
+
+### Completion Criteria
+
+- A stored text source can produce a mention scan, context-aware extraction plan, and candidate graph using fake or stubbed providers.
+- Planner and extractor outputs validate against contracts.
+- The code path remains transport-neutral and does not depend on Telegram.
+
+## Wave 3: Resolution, Write Plans, And Execution
+
+### Summary
+
+Turn validated candidate graphs into deterministic graph write plans, resolve obvious existing matches, create clarification requests for ambiguity, and execute safe plans through graph services.
+
+This wave makes the first useful ingestion path possible.
+
+### Key Changes
+
+- Add `ingestion/resolution.py`.
+  - Exact name matching.
+  - Alias matching.
+  - Existing graph alias resolution.
+  - Obvious source-backed matches.
+  - Ambiguous matches produce `ClarificationRequest`.
+  - No aggressive merge logic in MVP.
+- Add `ingestion/write_plan.py`.
+  - Converts validated candidates plus resolution decisions into `GraphWritePlan`.
+  - Uses deterministic idempotency keys.
+  - Preserves source and extraction run references.
+  - Maps candidate-local refs to graph IDs or planned node IDs.
+- Add `ingestion/executor.py`.
+  - Executes `GraphWritePlan` through graph service/repository APIs.
+  - Creates nodes, relationships, claims, perceptions, relationship contexts, and evidence links.
+  - Does not accept raw LLM output.
+  - Produces an auditable `IngestionResult`.
+- Add basic source/session integration.
+  - Read existing `source_records`.
+  - Create/update `ingestion_sessions` where needed.
+  - Store pending clarification snapshots.
+  - Expire pending sessions through existing lifecycle fields or timestamps.
+- Add provider request-log integration at the service boundary.
+  - Store model, provider, prompt/schema version, latency, status, and source refs when available.
+
+### Resolution Policy
+
+Wave 3 resolution is conservative.
+
+Allowed automatic decisions:
+
+- Create new node when no plausible existing match exists.
+- Match existing node when an exact alias/name match is unambiguous.
+- Link to existing context when the planner used a provided alias.
+
+Clarification is required when:
+
+- one mention maps to multiple plausible people/places/events
+- a relationship endpoint is unresolved
+- a risky merge would be needed
+- a required source/evidence link is missing
+
+Merges, split/revert flows, and rich duplicate reasoning remain later work.
+
+### Write Execution Policy
+
+The executor must:
+
+- validate write plan status before execution
+- resolve all local refs before mutation
+- reject unknown graph labels or relationship types
+- use graph services instead of raw arbitrary Cypher
+- preserve source and extraction run provenance
+- create idempotency keys for source-derived writes
+- return structured success, partial, or failure results
+
+### Out Of Scope
+
+- Contradiction judge implementation.
+- Advanced merge application from ingestion.
+- Embedding/vector writes unless already needed for obvious resolution.
+- Telegram bot state handling.
+- User-facing answer generation.
+- Frontend review UI.
+
+### Tests
+
+- Exact/alias resolution matches one existing node.
+- Ambiguous resolution returns clarification.
+- Write plan builder maps candidate refs to planned graph writes.
+- Write plan builder rejects unresolved refs.
+- Executor calls graph service methods with validated payloads.
+- Executor preserves evidence/source refs.
+- Reprocessing the same source does not create duplicate planned writes.
+- End-to-end fake ingestion path returns written, clarification, and validation-failed results.
+
+### Completion Criteria
+
+- Text memories can create graph nodes and relationships through a validated write plan.
+- A voice transcript can enter the same ingestion path as text.
+- Ambiguous references can pause ingestion with a structured clarification request.
+- Every persisted fact has source or extraction provenance.
+- Reprocessing the same source is idempotent at the write-plan level.
+
+## Later Waves
+
+- Agentic contradiction judge invocation.
+- Rich entity resolution with embeddings and graph-neighborhood comparison.
+- Batch reprocessing when prompts or schemas improve.
+- Provider/model routing by difficulty, privacy level, latency budget, and cost budget.
 - Extraction evaluation set using personal synthetic examples.
 - Multi-source ingestion from documents, images, links, and calendar exports.
 - Automatic enrichment requests for places or contacts when useful.
