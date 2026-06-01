@@ -24,9 +24,11 @@ from my_digital_brain.ingestion.contracts import (
     GraphWritePlan,
     IngestionContextPackage,
     IngestionResult,
+    IngestionSessionSnapshot,
     Mention,
     MentionScan,
     ResolutionDecision,
+    ResolutionResult,
     SourceRecordRef,
     TemporalScope,
     ValidationIssue,
@@ -47,8 +49,12 @@ from my_digital_brain.ingestion.enums import (
 )
 from my_digital_brain.ingestion.mention_scanner import LLMMentionScanner
 from my_digital_brain.ingestion.planner import LLMIngestionPlanner
+from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
+from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.validation import IngestionValidator
+from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
+from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
 
 __all__ = [
     "AffectiveFields",
@@ -69,6 +75,7 @@ __all__ = [
     "CandidateRelationshipContextBatch",
     "ClarificationRequest",
     "ClarificationStatus",
+    "ConservativeResolutionService",
     "EvidenceRef",
     "ExtractionExecutionMode",
     "ExtractionPlan",
@@ -81,8 +88,12 @@ __all__ = [
     "GraphWritePlanStatus",
     "GraphIngestionContextRetriever",
     "IngestionContextPackage",
+    "GraphWritePlanBuilder",
+    "GraphWritePlanExecutor",
+    "InMemoryIngestionProcessStore",
     "IngestionResult",
     "IngestionService",
+    "IngestionSessionSnapshot",
     "IngestionStatus",
     "IngestionValidator",
     "LLMIngestionPlanner",
@@ -91,6 +102,7 @@ __all__ = [
     "MentionKind",
     "MentionScan",
     "ResolutionDecision",
+    "ResolutionResult",
     "ResolutionDecisionType",
     "SourceChannel",
     "SourceRecordRef",

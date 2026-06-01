@@ -413,6 +413,8 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 
 ## Wave 3: Resolution, Write Plans, And Execution
 
+Status: implemented with conservative resolution, deterministic write-plan building, graph-service execution, and in-memory source/session snapshots for local/private runs.
+
 ### Summary
 
 Turn validated candidate graphs into deterministic graph write plans, resolve obvious existing matches, create clarification requests for ambiguity, and execute safe plans through graph services.
@@ -439,12 +441,13 @@ This wave makes the first useful ingestion path possible.
   - Does not accept raw LLM output.
   - Produces an auditable `IngestionResult`.
 - Add basic source/session integration.
-  - Read existing `source_records`.
-  - Create/update `ingestion_sessions` where needed.
-  - Store pending clarification snapshots.
-  - Expire pending sessions through existing lifecycle fields or timestamps.
-- Add provider request-log integration at the service boundary.
-  - Store model, provider, prompt/schema version, latency, status, and source refs when available.
+  - Store source refs before processing when a process store is injected.
+  - Record ingestion result snapshots, candidate graph snapshots, write-plan snapshots, and pending clarification questions.
+  - Expire pending clarification snapshots through explicit timestamps.
+  - Use `InMemoryIngestionProcessStore` for local/private runs; relational persistence can map the same snapshots to existing operational tables.
+- Preserve provider request context at the service boundary.
+  - AI-backed services pass source id, purpose, schema id, route metadata, and source/channel metadata into provider requests.
+  - Durable provider request-log persistence remains owned by the AI/operational logging layer.
 
 ### Resolution Policy
 

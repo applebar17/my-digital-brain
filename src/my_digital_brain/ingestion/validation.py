@@ -100,6 +100,7 @@ class IngestionValidator:
             *write_plan.relationship_contexts_to_create,
         ]
         local_refs = {write.local_ref for write in node_writes}
+        local_refs.update((write_plan.metadata or {}).get("local_ref_resolution", {}))
 
         self._validate_write_ref_uniqueness(node_writes, issues)
 
@@ -129,7 +130,7 @@ class IngestionValidator:
         except GraphValidationError as exc:
             issues.append(
                 _issue(
-                    f"{field_path}.entity_type",
+                    f"{field_path}.label",
                     str(exc),
                     "unsupported_node_label",
                     {"label": label},

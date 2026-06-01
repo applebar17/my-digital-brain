@@ -58,6 +58,7 @@ class GraphRelationshipBase(BaseModel):
     id: str = Field(default_factory=new_uuid)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    description: str | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     resolved_start: str | None = None

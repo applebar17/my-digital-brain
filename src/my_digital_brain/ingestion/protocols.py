@@ -11,8 +11,9 @@ from my_digital_brain.ingestion.contracts import (
     GraphWritePlan,
     IngestionContextPackage,
     IngestionResult,
+    IngestionSessionSnapshot,
     MentionScan,
-    ResolutionDecision,
+    ResolutionResult,
     SourceRecordRef,
     ValidationResult,
 )
@@ -81,11 +82,35 @@ class IngestionValidatorProtocol(Protocol):
 
 @runtime_checkable
 class ResolutionService(Protocol):
-    def resolve(self, candidate_graph: CandidateMemoryGraph) -> Sequence[ResolutionDecision]:
+    def resolve(
+        self,
+        candidate_graph: CandidateMemoryGraph,
+        context: IngestionContextPackage | None = None,
+    ) -> ResolutionResult:
         """Resolve candidates against existing graph records."""
+
+
+@runtime_checkable
+class GraphWritePlanBuilder(Protocol):
+    def build(
+        self,
+        candidate_graph: CandidateMemoryGraph,
+        resolution: ResolutionResult,
+        context: IngestionContextPackage | None = None,
+    ) -> GraphWritePlan:
+        """Build deterministic graph write commands from validated candidates."""
 
 
 @runtime_checkable
 class GraphWritePlanExecutor(Protocol):
     def execute(self, write_plan: GraphWritePlan) -> IngestionResult:
         """Apply a validated graph write plan to storage."""
+
+
+@runtime_checkable
+class IngestionProcessStore(Protocol):
+    def save_source(self, source: SourceRecordRef) -> SourceRecordRef:
+        """Persist or remember a source before processing."""
+
+    def record_result(self, result: IngestionResult) -> IngestionSessionSnapshot:
+        """Persist or remember the latest ingestion process snapshot."""

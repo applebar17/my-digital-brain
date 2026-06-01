@@ -14,19 +14,23 @@ from my_digital_brain.ingestion.enums import ExtractionExecutionMode, IngestionS
 from my_digital_brain.ingestion.protocols import (
     CandidateGraphAssembler,
     FocusedExtractor,
+    GraphWritePlanBuilder,
+    GraphWritePlanExecutor,
     IngestionContextRetriever,
     IngestionPlanner,
+    IngestionProcessStore,
     MentionScanner,
+    ResolutionService,
 )
 from my_digital_brain.ingestion.validation import IngestionValidator
 
 
 @dataclass(slots=True)
 class IngestionService:
-    """Deterministic Wave 1 ingestion skeleton.
+    """Transport-neutral ingestion orchestrator.
 
     The service coordinates pluggable scanner, context, planner, and extractor
-    components. It does not call LLMs directly and does not execute graph writes.
+    components. Graph writes only happen when write-plan components are injected.
     """
 
     scanner: MentionScanner
@@ -35,8 +39,16 @@ class IngestionService:
     extractors: Sequence[FocusedExtractor] = field(default_factory=list)
     assembler: CandidateGraphAssembler = field(default_factory=CandidateMemoryGraphAssembler)
     validator: IngestionValidator = field(default_factory=IngestionValidator)
+    resolution_service: ResolutionService | None = None
+    write_plan_builder: GraphWritePlanBuilder | None = None
+    write_plan_executor: GraphWritePlanExecutor | None = None
+    execute_write_plan: bool = False
+    process_store: IngestionProcessStore | None = None
 
     def process_source(self, source: SourceRecordRef) -> IngestionResult:
+        if self.process_store is not None:
+            self.process_store.save_source(source)
+
         mention_scan = self.scanner.scan(source)
         context = self.context_retriever.retrieve(source, mention_scan)
         extraction_plan = self.planner.plan(source, mention_scan, context)
@@ -46,21 +58,25 @@ class IngestionService:
             == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
             and extraction_plan.clarification is not None
         ):
-            return IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                mention_scan=mention_scan,
-                extraction_plan=extraction_plan,
-                clarification=extraction_plan.clarification,
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.NEEDS_CLARIFICATION,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    clarification=extraction_plan.clarification,
+                ),
             )
 
         if extraction_plan.execution_mode == ExtractionExecutionMode.NEEDS_CONTEXT_EXPANSION:
-            return IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.PLANNED,
-                mention_scan=mention_scan,
-                extraction_plan=extraction_plan,
-                metadata={"reason": "context expansion requested by planner"},
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.PLANNED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    metadata={"reason": "context expansion requested by planner"},
+                ),
             )
 
         candidates: list[CandidateOutput] = []
@@ -84,32 +100,85 @@ class IngestionService:
             candidates.extend(extractor.extract(source, task, context))
 
         if missing_extractor_issues:
-            return IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                mention_scan=mention_scan,
-                extraction_plan=extraction_plan,
-                validation_errors=missing_extractor_issues,
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    validation_errors=missing_extractor_issues,
+                ),
             )
 
         candidate_graph = self.assembler.assemble(source, extraction_plan, candidates)
         validation_result = self.validator.validate_candidate_graph(candidate_graph)
         if not validation_result.is_valid:
-            return IngestionResult(
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                    validation_errors=validation_result.issues,
+                ),
+            )
+
+        if self.resolution_service is None or self.write_plan_builder is None:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.CANDIDATE_READY,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                ),
+            )
+
+        resolution = self.resolution_service.resolve(candidate_graph, context)
+        if resolution.clarification is not None:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.NEEDS_CLARIFICATION,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                    clarification=resolution.clarification,
+                ),
+            )
+
+        write_plan = self.write_plan_builder.build(candidate_graph, resolution, context)
+        write_validation = self.validator.validate_write_plan(write_plan)
+        if not write_validation.is_valid:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                    write_plan=write_plan,
+                    validation_errors=write_validation.issues,
+                ),
+            )
+
+        if self.write_plan_executor is not None and self.execute_write_plan:
+            result = self.write_plan_executor.execute(write_plan)
+            result.mention_scan = mention_scan
+            result.extraction_plan = extraction_plan
+            result.candidate_graph = candidate_graph
+            return self._finish(result)
+
+        return self._finish(
+            IngestionResult(
                 source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
+                status=IngestionStatus.WRITE_PLAN_READY,
                 mention_scan=mention_scan,
                 extraction_plan=extraction_plan,
                 candidate_graph=candidate_graph,
-                validation_errors=validation_result.issues,
-            )
-
-        return IngestionResult(
-            source_id=source.source_id,
-            status=IngestionStatus.CANDIDATE_READY,
-            mention_scan=mention_scan,
-            extraction_plan=extraction_plan,
-            candidate_graph=candidate_graph,
+                write_plan=write_plan,
+            ),
         )
 
     def _find_extractor(self, task) -> FocusedExtractor | None:
@@ -117,3 +186,8 @@ class IngestionService:
             if extractor.supports(task):
                 return extractor
         return None
+
+    def _finish(self, result: IngestionResult) -> IngestionResult:
+        if self.process_store is not None:
+            self.process_store.record_result(result)
+        return result
