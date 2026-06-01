@@ -40,6 +40,8 @@ Free-form messages can still be supported, but explicit commands may reduce ambi
 
 Telegram must not own clarification semantics. It only transports messages and renders responses from the backend.
 
+Default rendering should send the backend `primary_text` as one Telegram message. Structured response sidecars such as actions, evidence, pending process metadata, and diagnostics are backend/web UI metadata unless a later Telegram-specific renderer explicitly supports them.
+
 ## Identity And Security
 
 The integration should:

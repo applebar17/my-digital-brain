@@ -44,6 +44,8 @@ Principles:
 - Persist only the minimal state needed to resume pending work.
 - Treat pending process state as context for the next processing step, not as a strict route that consumes the next message automatically.
 - Keep conversation history available for context building while keeping model-facing context scoped and low-noise.
+- Keep chat sessions separate from process sessions such as ingestion sessions, linked only through pending process identifiers.
+- Render one primary assistant message by default; structured response metadata should support the runtime and web UI without making chat feel mechanical.
 - Let edge cases exist until they are common or harmful enough to justify explicit handling.
 - Prefer useful memory capture over complete process coverage.
 
@@ -73,6 +75,21 @@ Minimal persisted state:
 - `updated_at`
 
 This is state for continuity, not a separate clarification subsystem or rigid workflow engine.
+
+## Chat Runtime Baseline
+
+Chat runtime state should be channel-neutral.
+
+Baseline decisions:
+
+- Telegram and web chat both map into internal `ChatSession` and `ConversationMessage` records.
+- Chat messages/history are stored separately from chat session state.
+- Chat sessions and ingestion sessions are separate, linked through pending process ids.
+- `ChatResponse` has a single `primary_text` for normal rendering.
+- Optional structured sidecars such as pending process metadata, actions, evidence, and diagnostics may be returned for web UI or runtime use.
+- Telegram renders the normal response as one message.
+- Web chat renders the normal response as one assistant message and may add UI affordances around it.
+- MVP web chat uses a static bearer token, not a full user account system.
 
 ## Agent Tools
 

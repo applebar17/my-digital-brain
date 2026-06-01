@@ -53,6 +53,10 @@ The conversational LLM chooses actions and proposes parameters. Backend services
 
 Pending process state should be treated as context for future runtime or agent calls, not as a rigid route that consumes the next message automatically. Conversation history should be available for context building, while the model-facing context remains scoped and low-noise.
 
+Chat responses should optimize for natural conversation. The default response shape should expose one `primary_text` message plus structured sidecars for pending process metadata, actions, evidence, diagnostics, and rendering hints. Telegram can render the primary text only, while web chat can use the sidecars for richer UI.
+
+Chat sessions, conversation messages, and process sessions should remain separate concepts. Link them through explicit process identifiers instead of mixing ingestion state into the chat runtime.
+
 ## Idempotent Ingestion
 
 Ingestion should be resumable and idempotent. Reprocessing the same source should not create duplicate entities or relationships.

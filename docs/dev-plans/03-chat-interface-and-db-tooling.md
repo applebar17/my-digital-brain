@@ -61,6 +61,117 @@ By the end of this plan:
 - Resume, cancel, expire, validation, write-plan execution, and session persistence are backend process operations. They may be callable by the runtime, but they are not broad agent tools.
 - Full agentic behavior design is out of scope for this plan and should be handled separately.
 
+## Locked Implementation Decisions
+
+### Session Model
+
+Chat sessions are channel-neutral. Telegram chats and web chat sessions map into the same internal session contract.
+
+Recommended session fields:
+
+- `session_id`
+- `channel`: `telegram` or `web`
+- `external_conversation_id`
+- `owner_id`
+- `status`: `active` or `archived`
+- `active_pending_process_id`
+- `last_message_at`
+- `created_at`
+- `updated_at`
+- `metadata`
+
+Conversation messages are stored separately from session state.
+
+Recommended message fields:
+
+- `message_id`
+- `session_id`
+- `channel_message_id`
+- `role`: `user`, `assistant`, or `system`
+- `text`
+- `media_refs`
+- `source_ref`
+- `pending_process_id`
+- `created_at`
+- `metadata`
+
+Impact:
+
+- Chat history can be used for context building without bloating the session record.
+- Telegram and web chat remain equivalent.
+- Pending process state can be linked without making chat sessions ingestion-specific.
+
+### Response Shape And Rendering
+
+Use one primary assistant message by default. Do not model normal chat replies as a list of visible response parts.
+
+Recommended response fields:
+
+- `response_id`
+- `session_id`
+- `status`
+- `primary_text`
+- `pending_process`
+- `actions`
+- `evidence`
+- `diagnostics`
+- `metadata`
+
+Rendering policy:
+
+- Telegram renders `primary_text` as one message in the normal case.
+- Web chat renders `primary_text` as the main assistant message and may optionally render `actions`, `evidence`, or status as UI affordances.
+- Multiple visible messages are only used when explicitly requested by the response, for example a long answer plus an evidence summary.
+- Clarification requests are normal assistant messages with pending process metadata attached.
+- Diagnostics are for tooling, debug, and verbose error handling; they are not normally user-visible.
+
+Impact:
+
+- The chat remains natural and low-friction.
+- The backend still has enough structure for pending processes, web UI actions, evidence display, and future agent recovery.
+- Telegram integration stays simple.
+
+### Session Persistence
+
+Wave 1 should define a `ChatSessionStore` protocol and start with an in-memory implementation for local development and unit tests.
+
+Relational persistence should follow the same interface and is required before relying on deployed Telegram webhooks, because webhook processes can restart.
+
+Impact:
+
+- The runtime can be implemented and tested without a database migration blocker.
+- Durable storage can be added without changing runtime behavior.
+
+### Web Chat Authentication
+
+The MVP web chat should use a static bearer token:
+
+```text
+Authorization: Bearer <token>
+```
+
+This is not a full user system. It is a private-project guardrail so local or private deployments do not expose personal memories by accident.
+
+Impact:
+
+- Low implementation cost.
+- Enough protection for a personal MVP.
+- Can be replaced by proper authentication later.
+
+### Chat Sessions And Ingestion Sessions
+
+Do not merge chat sessions and ingestion sessions.
+
+- `ChatSession` owns conversation/message runtime state.
+- `IngestionSession` owns memory-ingestion process state.
+- They are linked by `active_pending_process_id` or message-level `pending_process_id`.
+
+Impact:
+
+- Chat UX remains separate from ingestion business logic.
+- Query and correction processes can reuse the same chat runtime later.
+- A pending ingestion can be resumed without forcing the next chat message to be interpreted as the clarification answer.
+
 ## Relationship To Existing Work
 
 ### Uses The Ingestion Pipeline
@@ -143,6 +254,8 @@ Expected fields:
 - `metadata`
 
 These contracts are transport contracts, not memory extraction contracts.
+
+`ChatResponse` should use `primary_text` as the normal visible assistant message. Structured sidecars such as `pending_process`, `actions`, `evidence`, and `diagnostics` support runtime behavior and richer web UI rendering without fragmenting the chat into mechanical message parts.
 
 ### Chat Consumer Adapters
 
@@ -332,8 +445,11 @@ Create the shared chat contracts, conversation runtime, session store interface,
   - `IncomingChatMessage`
   - `IncomingMediaRef`
   - `ChatResponse`
-  - `ChatResponsePart`
+  - `ChatAction`
+  - `ChatEvidenceRef`
+  - `ChatDiagnostic`
   - `ConversationSession`
+  - `ConversationMessage`
   - `PendingProcessRef`
   - `PendingProcessContext`
   - `ConversationHistoryItem`
@@ -348,10 +464,12 @@ Create the shared chat contracts, conversation runtime, session store interface,
   - `query_memory_context`
   - `propose_memory_correction`
 - Add minimal in-memory session store for local development.
+- Define `ChatSessionStore` protocol so relational persistence can be added without changing runtime behavior.
 - Add API routes for web chat:
   - `POST /chat/messages`
   - `GET /chat/sessions/{session_id}`
   - `POST /chat/sessions/{session_id}/cancel`
+- Add static bearer-token dependency for web chat endpoints.
 
 ### Out Of Scope
 
@@ -365,8 +483,9 @@ Create the shared chat contracts, conversation runtime, session store interface,
 
 - A normalized text message can call the runtime.
 - The runtime can call the ingestion facade.
-- The runtime can return a structured response.
+- The runtime can return a structured response with one default `primary_text`.
 - Pending process context can be represented, attached to a later message, resumed when appropriate, cancelled, and expired.
+- Chat sessions and ingestion sessions remain separate and linked by process IDs.
 
 ## Wave 2: Telegram And Web Chat Consumers
 
@@ -391,12 +510,12 @@ Add concrete consumer adapters for Telegram and web chat.
 - Add frontend-ready response schema.
 - Support text messages.
 - Support audio upload when local media storage and speech-to-text are configured.
-- Return structured response parts:
-  - assistant text
-  - status
-  - clarification request
-  - evidence summary
-  - error details
+- Render `primary_text` as the main assistant message.
+- Optionally render structured sidecars:
+  - actions
+  - evidence
+  - pending process status
+  - error or diagnostic details when appropriate
 
 The web chat should be a perfect substitute for Telegram for core workflows:
 
