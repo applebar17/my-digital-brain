@@ -13,6 +13,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [External API integrations](05-external-api-integrations.md)
 - [Miscellaneous add-ons](06-miscellaneous-add-ons.md)
 - [AI provider foundation](07-ai-provider-foundation.md)
+- [Agentic process design and definition](08-agentic-process-design.md)
 
 ## Wave Meaning
 
@@ -26,6 +27,7 @@ These plans break the project into multi-wave development topics. They are not r
 The listed topic areas are enough for now. The main cross-cutting concerns are:
 
 - AI provider boundaries, model/tool orchestration, and speech-to-text.
+- Agentic behavioral protocols, toolboxes, and process guardrails.
 - Local deployment and containerization.
 - Observability and debugging.
 - Privacy, trust, and provider boundaries.
