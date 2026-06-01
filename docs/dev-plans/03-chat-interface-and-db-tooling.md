@@ -433,6 +433,8 @@ Correction behavior needs dedicated design before aggressive mutation is allowed
 
 ## Wave 1: Channel-Neutral Chat Runtime
 
+Status: implemented in `src/my_digital_brain/chat/` with API routes in `src/my_digital_brain/api/routes/chat.py` and unit/API coverage in `tests/test_chat_wave1.py`.
+
 ### Summary
 
 Create the shared chat contracts, conversation runtime, session store interface, and tool facade skeleton.

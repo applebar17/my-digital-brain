@@ -72,6 +72,11 @@ class Settings(BaseSettings):
 
     source_media_root: Path = Field(default=Path("data/source-media"), alias="SOURCE_MEDIA_ROOT")
 
+    web_chat_auth_token: str | None = Field(
+        default="change-me-web-chat-token",
+        alias="WEB_CHAT_AUTH_TOKEN",
+    )
+
     llm_provider: Literal["openai", "azure_openai"] = Field(
         default="openai",
         alias="LLM_PROVIDER",
