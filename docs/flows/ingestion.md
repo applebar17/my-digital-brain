@@ -17,9 +17,9 @@ The ingestion flow turns user input into graph updates while preserving source e
 9. The assembler builds a `CandidateMemoryGraph`.
 10. Validator checks schema, required information, evidence, aliases, allowed labels, and allowed relationship types.
 11. Resolution engine searches for obvious existing graph matches.
-12. If clarification is needed, the latest ingestion session for the Telegram chat is marked as waiting.
-13. The user's next relevant message is appended to that pending ingestion session.
-14. The AI Manager resumes the ingestion dynamically.
+12. If clarification is needed, the ingestion session stores a pending process context.
+13. Later chat messages are processed with that pending context and conversation history available.
+14. The AI Manager can classify a later message as a clarification answer, new memory, question, cancellation, correction, or normal chat, then resume ingestion only when appropriate.
 15. When safe, backend services produce and execute a validated `GraphWritePlan`.
 16. User receives a concise ingestion summary when useful.
 
@@ -64,7 +64,7 @@ Potential graph output:
 - Topic: new project.
 - Relationships: people participated in event, event happened at place, event was about topic.
 - Affective memory: emotional tone, user-stated perceptions, original wording, or relationship context for any memory-bearing target if present in the source.
-- Source: original Telegram message plus clarification replies.
+- Source: original chat message plus relevant clarification replies.
 
 ## Candidate Graph
 
@@ -178,14 +178,17 @@ The MVP should persist only the state needed to resume an interrupted or waiting
 Minimal state:
 
 - `ingestion_session_id`
-- `telegram_chat_id`
+- `conversation_id`
+- `channel`
 - `status`
 - `pending_question`
+- `pending_process_context`
+- `conversation_history_refs`
 - `candidate_graph_snapshot`
 - `expires_at`
 - `updated_at`
 
-When a new Telegram message arrives, the AI Manager checks whether the chat has a waiting ingestion. If yes, the message can be interpreted as the clarification answer and appended to that session. If not, the message starts a new ingestion or query flow.
+When a new chat message arrives, the AI Manager can load pending process context for that conversation and pass it into the next runtime or agent call. The pending context does not force the message to be a clarification answer. It gives the system enough context to decide whether to resume the pending ingestion, start a new ingestion, answer a question, apply a cancellation, or route to another process.
 
 The AI Manager can still decide that a message is not a valid clarification answer and can use tools such as skip, restart, expire, or ask another clarification. The MVP does not need to handle every edge case explicitly before it appears in real usage.
 

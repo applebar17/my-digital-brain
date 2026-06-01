@@ -20,7 +20,7 @@ Chat consumer adapters and normalizers
       |
       v
 Conversation runtime
-sessions, pending clarification state, response formatting
+sessions, conversation history, pending process context, response formatting
       |
       v
 Backend tool facade
@@ -37,7 +37,7 @@ By the end of this plan:
 - A user can send voice/audio through Telegram or web chat when supported by the channel.
 - Chat inputs become normalized backend messages.
 - Normalized messages can start ingestion, query memory context, or propose corrections through a stable backend facade.
-- Pending clarification state can be stored, resumed, cancelled, and expired.
+- Pending process context can be stored, attached to later messages, resumed when appropriate, cancelled, and expired.
 - Telegram and web chat remain thin adapters with no memory business logic.
 - The tool facade mirrors backend service capabilities without exposing raw graph CRUD or arbitrary database access.
 
@@ -45,7 +45,9 @@ By the end of this plan:
 
 - Chat channels are adapters, not business logic owners.
 - Telegram and web chat must call the same backend runtime.
-- The conversation runtime owns channel-neutral message handling, session state, pending clarification routing, and response shaping.
+- The conversation runtime owns channel-neutral message handling, conversation history references, lightweight session state, pending process context, and response shaping.
+- Pending process state is context, not a rigid workflow route. It must help the runtime or future agents resume work when useful without forcing the next user message into a form-like path.
+- A pending clarification should not automatically consume the next message. The next message should be handled with the pending context attached so runtime or agent configuration can classify it as clarification answer, new memory, question, cancellation, correction, or normal chat.
 - The ingestion package owns memory ingestion business logic.
 - The graph services own graph reads, graph writes, context packages, timelines, views, and analytics.
 - The AI provider layer owns model calls, routing, speech-to-text, and provider abstraction.
@@ -119,8 +121,10 @@ Create channel-neutral contracts for:
 - normalized incoming audio/voice message
 - normalized attachment reference
 - outgoing chat response
-- pending clarification reference
+- pending process reference
+- pending process context
 - conversation/session state
+- conversation history item/reference
 - channel metadata
 
 Expected fields:
@@ -133,7 +137,8 @@ Expected fields:
 - `text`
 - `media_refs`
 - `reply_to_message_id`
-- `pending_session_id`
+- `pending_process_id`
+- `conversation_history_refs`
 - `received_at`
 - `metadata`
 
@@ -160,7 +165,7 @@ Web chat adapter responsibilities:
 - Support text messages.
 - Support audio upload or recorded audio when implemented.
 - Return frontend-friendly response payloads.
-- Support pending clarification UI.
+- Display pending clarification prompts and process status when provided by the backend.
 - Avoid memory business logic in frontend code.
 
 Future mobile or desktop clients should reuse the same normalized contracts.
@@ -173,11 +178,13 @@ Responsibilities:
 
 - Receive normalized messages from adapters.
 - Store or reference source input before processing.
-- Detect pending clarification sessions.
-- Route clarification answers to the correct pending process.
+- Store conversation history references for context building.
+- Load and attach pending process context when present.
+- Let runtime configuration or later agentic process design classify the message as a clarification answer, new memory, question, cancellation, correction, or normal chat.
 - Call the backend tool facade.
 - Return channel-neutral response objects.
 - Keep session state minimal and expiring.
+- Avoid rigid form-like flows that block natural conversation.
 - Avoid direct graph writes.
 - Avoid direct provider SDK calls.
 
@@ -197,7 +204,7 @@ Runtime-only operations:
 
 - `get_conversation_status`
 - `cancel_pending_process`
-- `resume_pending_clarification`
+- `resume_pending_process`
 - `expire_pending_sessions`
 
 Runtime-only operations are backend process controls. They should not be treated as broad top-level agent tools unless a later agentic design explicitly allows it.
@@ -226,7 +233,8 @@ Inputs:
 - channel
 - conversation id
 - source/media references
-- optional pending-session metadata
+- optional pending process context
+- optional conversation history references
 
 Outputs:
 
@@ -307,6 +315,7 @@ Correction behavior needs dedicated design before aggressive mutation is allowed
 - Agentic process behavior is not fully designed here.
 - The web chat surface is a product interface, not just a developer debug console.
 - The backend tool facade mirrors service capabilities through stable, narrow operations.
+- Pending process state must stay lean and contextual. It supports resumption and expiry, but does not own a strict deterministic conversation flow.
 - Tool exposure to agents and subprocesses requires separate discussion.
 
 ## Wave 1: Channel-Neutral Chat Runtime
@@ -326,9 +335,12 @@ Create the shared chat contracts, conversation runtime, session store interface,
   - `ChatResponsePart`
   - `ConversationSession`
   - `PendingProcessRef`
+  - `PendingProcessContext`
+  - `ConversationHistoryItem`
 - Add conversation runtime service:
   - receive normalized messages
-  - detect pending clarification state
+  - store conversation history references
+  - attach pending process context when present
   - call tool facade operations
   - return channel-neutral responses
 - Add tool facade skeleton:
@@ -354,7 +366,7 @@ Create the shared chat contracts, conversation runtime, session store interface,
 - A normalized text message can call the runtime.
 - The runtime can call the ingestion facade.
 - The runtime can return a structured response.
-- Pending clarification state can be represented and resumed by id.
+- Pending process context can be represented, attached to a later message, resumed when appropriate, cancelled, and expired.
 
 ## Wave 2: Telegram And Web Chat Consumers
 
@@ -365,7 +377,8 @@ Add concrete consumer adapters for Telegram and web chat.
 ### Telegram Changes
 
 - Add Telegram settings.
-- Add webhook or polling adapter decision.
+- Use webhook delivery for deployed Telegram integration.
+- Polling can remain a local development fallback if it is useful.
 - Normalize Telegram text messages.
 - Normalize Telegram voice messages.
 - Store/download voice artifacts.
@@ -402,7 +415,7 @@ The web chat should be a perfect substitute for Telegram for core workflows:
 
 - Telegram and web chat both use the same conversation runtime.
 - A user can submit a text memory from both channels.
-- A user can answer a clarification from both channels.
+- A user can answer a clarification from both channels without the channel owning the clarification logic.
 - Channel-specific formatting is isolated to adapters.
 
 ## Wave 3: Query, Answer, And Correction Facade Integration
@@ -462,6 +475,8 @@ Wire the tool facade to graph query/context services and create the baseline for
 - LLM-facing tools must have concise, explicit schemas and descriptions.
 - Mutating operations must be auditable.
 - Pending processes must expire.
+- Pending process context must enrich the next processing step; it must not force the next user message into a rigid route.
+- Conversation history should be available for context building, but raw history should not be dumped into every model call.
 - Tool loops must have limits when agentic behavior is introduced.
 - Channel-specific payloads must not leak into ingestion or graph services.
 - Web chat and Telegram should remain behaviorally equivalent for core workflows.

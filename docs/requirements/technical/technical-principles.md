@@ -51,6 +51,8 @@ Not every edge case needs explicit deterministic handling in v1. The system shou
 
 The conversational LLM chooses actions and proposes parameters. Backend services validate parameters, own process state, and perform all state changes. Top-level tools should remain few and stable: start memory ingestion, query memory context, and propose memory correction. Resume, cancel, expire, validation, clarification handling, and write execution are backend process operations, not broad conversational tools.
 
+Pending process state should be treated as context for future runtime or agent calls, not as a rigid route that consumes the next message automatically. Conversation history should be available for context building, while the model-facing context remains scoped and low-noise.
+
 ## Idempotent Ingestion
 
 Ingestion should be resumable and idempotent. Reprocessing the same source should not create duplicate entities or relationships.
@@ -59,7 +61,7 @@ This requires stable source identifiers, extraction run identifiers, deduplicati
 
 Structured ingestion objects should sit between extraction and graph writes. The graph writer should consume validated write plans, not raw LLM output.
 
-Clarification state should be minimal. It exists so the AI Manager can resume a pending ingestion after a later Telegram message, not as a separate clarification subsystem.
+Clarification state should be minimal. It exists so the AI Manager can resume a pending ingestion after a later chat message when appropriate, not as a separate clarification subsystem or strict workflow engine.
 
 Ingestion complexity should be decided after a cheap mention scan and compact graph-context retrieval. Raw text alone is not enough to know whether an ingestion is simple, ambiguous, contradictory, or relationship-heavy. The ingestion planner should propose extraction tasks, not graph writes.
 

@@ -6,25 +6,26 @@ This document captures the practical first implementation target. The project is
 
 ## MVP Shape
 
-The first version is a Telegram-based backend container that manages a local graph database of personal memories and uses cloud or external AI services for model capabilities.
+The first version is a private backend container that manages a local graph database of personal memories and uses cloud or external AI services for model capabilities. Telegram is the first likely chat consumer, but a simple web chat must be able to act as a substitute over the same backend runtime.
 
 High-level shape:
 
 ```text
-Telegram Bot
-  -> AI Manager
-      -> OpenAI / Azure OpenAI / speech-to-text / tools
-      -> Network API
-          -> Neo4j Graph Database
-          -> Relational operational database
-          -> Vector database
-          -> source and media storage
+Telegram Bot / Web Chat
+  -> Conversation Runtime
+      -> AI Manager / backend tool facade
+          -> OpenAI / Azure OpenAI / speech-to-text / tools
+          -> Network API
+              -> Neo4j Graph Database
+              -> Relational operational database
+              -> Vector database
+              -> source and media storage
 ```
 
 ## Core Flow
 
-1. The user interacts with a Telegram chatbot.
-2. The bot sends text or voice inputs to the backend.
+1. The user interacts through Telegram or web chat.
+2. The chat consumer sends normalized text or voice inputs to the backend.
 3. Voice messages are transcribed when speech-to-text is configured.
 4. The AI Manager decides whether the input is a memory ingestion, clarification answer, query, correction, or tool request.
 5. The AI Manager extracts candidate graph updates or query plans.
@@ -41,6 +42,8 @@ Principles:
 - Give the AI Manager tools to interact with the graph and sources.
 - Keep graph writes validated and auditable.
 - Persist only the minimal state needed to resume pending work.
+- Treat pending process state as context for the next processing step, not as a strict route that consumes the next message automatically.
+- Keep conversation history available for context building while keeping model-facing context scoped and low-noise.
 - Let edge cases exist until they are common or harmful enough to justify explicit handling.
 - Prefer useful memory capture over complete process coverage.
 
@@ -50,23 +53,26 @@ Clarification is part of the AI Manager ingestion loop. It is not a standalone p
 
 MVP behavior:
 
-- If an ingestion needs clarification, mark the latest ingestion session for that Telegram chat as waiting.
-- The next user message in that chat is treated as the clarification answer unless the AI Manager decides otherwise.
-- The answer is appended to the pending ingestion session.
-- The AI Manager resumes extraction, resolution, and graph update.
+- If an ingestion needs clarification, store a pending process context for the conversation.
+- Later chat messages are processed with that pending context and conversation history available.
+- The AI Manager can classify the later message as a clarification answer, new memory, question, correction, cancellation, or normal chat.
+- The AI Manager resumes extraction, resolution, and graph update only when that classification makes resumption appropriate.
 - Pending sessions have expiration.
 
 Minimal persisted state:
 
 - `ingestion_session_id`
-- `telegram_chat_id`
+- `conversation_id`
+- `channel`
 - `status`
 - `pending_question`
+- `pending_process_context`
+- `conversation_history_refs`
 - `candidate_graph_snapshot`
 - `expires_at`
 - `updated_at`
 
-This is state for continuity, not a separate clarification subsystem.
+This is state for continuity, not a separate clarification subsystem or rigid workflow engine.
 
 ## Agent Tools
 

@@ -42,15 +42,18 @@ Separate these stages:
 - Structured output parsing.
 - Cheap mention scan.
 - Compact graph-context retrieval.
+- Conversation history and pending process context attachment.
 - Context-aware ingestion planning.
 - Schema validation.
 - Resolution and policy checks.
 - Context review for contradiction suspicion.
 - Contradiction judge invocation when the memory-writing agent has grounded doubt.
-- Clarification.
+- Clarification or pending process resumption when appropriate.
 - Graph write.
 
-Clarification style and flow can be model-guided. Persistence is limited to pending ingestion state so the AI Manager can resume the conversation after the next Telegram message.
+Clarification style and flow can be model-guided. Persistence is limited to pending process context and conversation history references so the AI Manager can resume the conversation after a later chat message from any consumer.
+
+Pending state should enrich the next model or process call. It should not force a rigid deterministic route for the next message.
 
 ## Structured Outputs
 

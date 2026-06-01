@@ -54,7 +54,7 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 
 - The graph is the canonical memory store.
 - The first target user is the owner of the brain, not a public multi-user SaaS product.
-- The MVP is a Telegram-based backend container using Neo4j, a relational operational database, a separate vector database, and cloud/external AI services.
+- The MVP is a private backend container using Neo4j, a relational operational database, a separate vector database, and cloud/external AI services, with Telegram as the first likely chat consumer and web chat as an equivalent substitute.
 - The backend should be split conceptually between an AI Manager layer and a Network API layer.
 - AI features should follow the documented AI engineering principles: structured outputs, explicit context building, clear tool contracts, and deterministic guardrails.
 - Internal IDs should be app-generated UUIDs, while LLM contexts should use short temporary aliases such as `NODE_000001`.
@@ -68,6 +68,8 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Current state should be stored directly for simple queries, while meaningful updates are preserved through history records such as `ChangeRecord` and `RelationshipState`.
 - Time must be modeled explicitly, including fuzzy time, valid time, observed time, and source time.
 - Clarification is an agentic ingestion behavior, not a standalone workflow engine or public API.
+- Pending process state should enrich context and enable resumption, not force rigid form-like chat flows.
+- Telegram and web chat should be first-class chat consumers over the same backend runtime.
 - Ambiguity should trigger clarification where useful, especially for people, locations, dates, and event boundaries.
 - Contradictions should trigger a friendly clarification path when they matter.
 - Natural language answers must be grounded in retrieved graph facts and source evidence.

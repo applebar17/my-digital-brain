@@ -35,7 +35,7 @@ Telegram, web chat, future mobile
         |
         v
 Conversation runtime
-normalization, sessions, pending state
+normalization, history refs, pending process context
         |
         v
 Agentic process layer
@@ -84,6 +84,9 @@ This plan defines how agents and subprocesses behave when using those pieces.
 - Context packages must be low-noise and task-specific.
 - Internal UUIDs should be replaced with scoped aliases in model-facing contexts.
 - Tool errors must be verbose enough to guide model recovery.
+- Conversation history is part of context building, but it should be scoped or summarized instead of copied blindly into every call.
+- Pending process state is contextual guidance, not deterministic routing. It should help agents resume work when appropriate without blocking a natural conversation.
+- Clarification handling should preserve a normal chat feel. A later user message can be classified as clarification answer, new memory, question, correction, cancellation, or normal chat based on context.
 - Clarifications should be user-friendly and sparse enough to avoid fatigue.
 - Risky graph mutations require confirmation or conservative fallback.
 
@@ -99,7 +102,6 @@ Possible actions:
 
 - default answer path
 - start memory ingestion
-- answer pending clarification
 - query memory context
 - propose memory correction
 - report status or failure
@@ -107,7 +109,7 @@ Possible actions:
 Design questions:
 
 - Should routing be deterministic first, LLM-based, or hybrid?
-- What context does routing need beyond the current message?
+- What context does routing need beyond the current message, conversation history summary, and pending process context?
 - When should a message be treated as a clarification answer instead of a new memory?
 - Which commands remain deterministic shortcuts?
 
@@ -144,15 +146,17 @@ Open design questions:
 
 Purpose:
 
-Handle pending questions and route user replies to the right process.
+Store pending questions and provide enough context for the runtime or agent to decide whether a later user message should resume the process.
 
 Responsibilities:
 
 - Store pending clarification context.
-- Decide whether the next user message answers the question.
-- Resume the pending process.
+- Attach pending context to the next relevant runtime or agent call.
+- Support classification of the next user message as clarification answer, new memory, question, correction, cancellation, or normal chat.
+- Resume the pending process only when classification indicates that resumption is appropriate.
 - Expire old pending states.
 - Let the user cancel or skip when appropriate.
+- Avoid turning chat into a rigid form flow.
 
 Open design questions:
 
@@ -160,6 +164,7 @@ Open design questions:
 - Can multiple pending clarifications exist at once?
 - If a user ignores a clarification and sends a new memory, should the old one stay pending?
 - How should ambiguous clarification answers be handled?
+- Which parts of message classification should be deterministic versus model-guided?
 
 ### Memory Query Process
 
@@ -367,13 +372,17 @@ Expected design outputs:
 - Clarification manager protocol.
 - Router input context shape.
 - Router output schema.
-- Clarification state transitions.
+- Pending process context shape.
+- Clarification classification outputs.
+- Minimal clarification state transitions.
 - Evaluation examples for:
   - new memory
   - direct question
   - clarification answer
   - correction attempt
   - user changes topic while clarification is pending
+  - user sends a different memory while clarification is pending
+  - user cancels or skips a pending clarification
 
 Implementation should wait until these protocols are stable enough.
 

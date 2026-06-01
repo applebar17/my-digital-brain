@@ -19,6 +19,7 @@ This plan does not define the Telegram bot or the user-facing chat loop. The cha
   - `query_memory_context`
   - `propose_memory_correction`
 - Resume, cancel, expire, clarification handling, write-plan validation, and write execution are process states or backend service operations. They are not broad top-level LLM tools.
+- Pending ingestion state is context for resumption, not a rigid chat workflow. The chat/runtime layer decides whether a later message resumes the pending process.
 - Complexity is not classified from raw user text alone. Complexity is decided after a cheap mention scan and compact graph-context retrieval.
 - Graph writes are always deterministic backend operations applied from a validated `GraphWritePlan`.
 - Voice messages are first transcribed into text through the AI provider layer. The transcript then enters the same ingestion path as typed text while preserving evidence links to the original audio.
@@ -35,6 +36,7 @@ Responsibilities:
 - Pass strict parameters to ingestion/query/correction tools.
 - Display clarification questions and summaries to the user.
 - Keep conversational behavior dynamic without owning graph mutations.
+- Attach pending process context and conversation history when invoking subprocesses.
 
 The orchestrator is not an ingestion extractor and must not produce graph writes.
 
@@ -390,7 +392,7 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 - Real graph mutation.
 - Rich duplicate resolution.
 - Contradiction judge flow.
-- Telegram pending-session integration.
+- Chat pending-process integration.
 - Batch reprocessing.
 - Evaluation set automation.
 
@@ -442,8 +444,8 @@ This wave makes the first useful ingestion path possible.
   - Produces an auditable `IngestionResult`.
 - Add basic source/session integration.
   - Store source refs before processing when a process store is injected.
-  - Record ingestion result snapshots, candidate graph snapshots, write-plan snapshots, and pending clarification questions.
-  - Expire pending clarification snapshots through explicit timestamps.
+  - Record ingestion result snapshots, candidate graph snapshots, write-plan snapshots, and pending clarification context.
+  - Expire pending process snapshots through explicit timestamps.
   - Use `InMemoryIngestionProcessStore` for local/private runs; relational persistence can map the same snapshots to existing operational tables.
 - Preserve provider request context at the service boundary.
   - AI-backed services pass source id, purpose, schema id, route metadata, and source/channel metadata into provider requests.
@@ -526,6 +528,7 @@ The executor must:
 - Graph write plans must validate before persistence.
 - Sensitive facts require privacy-aware handling.
 - Pending ingestion sessions expire.
+- Pending ingestion sessions do not force the next chat message into a deterministic clarification route.
 - Tool-call loops have limits.
 - Every persisted fact has source provenance.
 - Provider calls are logged with model, prompt/schema version, latency, cost estimate where available, and privacy level.

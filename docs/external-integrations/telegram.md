@@ -36,7 +36,9 @@ Free-form messages can still be supported, but explicit commands may reduce ambi
 5. Voice messages are stored as audio sources and sent to the transcription pipeline.
 6. Ingestion flow starts from text or transcript.
 7. Clarification questions are sent back through Telegram if needed.
-8. User replies are correlated to the pending ingestion session.
+8. Later replies are sent through the shared conversation runtime with pending process context attached when available.
+
+Telegram must not own clarification semantics. It only transports messages and renders responses from the backend.
 
 ## Identity And Security
 
