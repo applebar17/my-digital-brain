@@ -2,12 +2,18 @@ from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     AffectiveFields,
     CandidateClaim,
+    CandidateClaimBatch,
     CandidateEntity,
+    CandidateEntityBatch,
     CandidateMemoryGraph,
     CandidateMetadataPatch,
+    CandidateMetadataPatchBatch,
     CandidatePerception,
+    CandidatePerceptionBatch,
     CandidateRelationship,
+    CandidateRelationshipBatch,
     CandidateRelationshipContext,
+    CandidateRelationshipContextBatch,
     ClarificationRequest,
     EvidenceRef,
     ExtractionPlan,
@@ -26,6 +32,7 @@ from my_digital_brain.ingestion.contracts import (
     ValidationIssue,
     ValidationResult,
 )
+from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
     ClarificationStatus,
@@ -38,20 +45,28 @@ from my_digital_brain.ingestion.enums import (
     SourceChannel,
     SourceType,
 )
+from my_digital_brain.ingestion.mention_scanner import LLMMentionScanner
+from my_digital_brain.ingestion.planner import LLMIngestionPlanner
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.validation import IngestionValidator
 
 __all__ = [
     "AffectiveFields",
     "CandidateClaim",
+    "CandidateClaimBatch",
     "CandidateEntity",
+    "CandidateEntityBatch",
     "CandidateMemoryGraph",
     "CandidateMemoryGraphAssembler",
     "CandidateMetadataPatch",
+    "CandidateMetadataPatchBatch",
     "CandidatePerception",
+    "CandidatePerceptionBatch",
     "CandidateRefKind",
     "CandidateRelationship",
+    "CandidateRelationshipBatch",
     "CandidateRelationshipContext",
+    "CandidateRelationshipContextBatch",
     "ClarificationRequest",
     "ClarificationStatus",
     "EvidenceRef",
@@ -64,11 +79,14 @@ __all__ = [
     "GraphRelationshipWrite",
     "GraphWritePlan",
     "GraphWritePlanStatus",
+    "GraphIngestionContextRetriever",
     "IngestionContextPackage",
     "IngestionResult",
     "IngestionService",
     "IngestionStatus",
     "IngestionValidator",
+    "LLMIngestionPlanner",
+    "LLMMentionScanner",
     "Mention",
     "MentionKind",
     "MentionScan",

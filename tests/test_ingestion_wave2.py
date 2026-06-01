@@ -1,0 +1,319 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
+import pytest
+from pydantic import ValidationError
+
+from my_digital_brain.ai.schemas import (
+    AIRequestContext,
+    ModelRoute,
+    ProviderCallMetadata,
+    StructuredGenerationRequest,
+    StructuredGenerationResult,
+)
+from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.graph.models import NodeSearchResult
+from my_digital_brain.ingestion.ai_services import LLMIngestionPlanner, LLMMentionScanner
+from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
+from my_digital_brain.ingestion.contracts import (
+    CandidateEntity,
+    CandidateEntityBatch,
+    CandidateOutput,
+    ExtractionPlan,
+    ExtractionTask,
+    IngestionContextPackage,
+    SourceRecordRef,
+)
+from my_digital_brain.ingestion.enums import (
+    ExtractionExecutionMode,
+    ExtractionTaskType,
+    IngestionStatus,
+    MentionKind,
+    SourceChannel,
+    SourceType,
+)
+from my_digital_brain.ingestion.exceptions import IngestionValidationError
+from my_digital_brain.ingestion.extractors import EntityExtractor, PerceptionExtractor
+from my_digital_brain.ingestion.prompt_builders import (
+    INGESTION_ENTITY_EXTRACTION_TASK,
+    INGESTION_MENTION_SCAN_TASK,
+    INGESTION_PLANNING_TASK,
+    IngestionPromptBuilder,
+)
+from my_digital_brain.ingestion.service import IngestionService
+
+
+def test_llm_mention_scanner_uses_structured_provider_and_router() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "source_id": "source-1",
+                "mentions": [{"kind": "person", "text": "Marco"}],
+            },
+        ],
+    )
+    router = RecordingRouter()
+
+    scan = LLMMentionScanner(provider, router=router).scan(_source())
+
+    assert scan.mentions[0].kind == MentionKind.PERSON
+    assert router.calls[0][0] == INGESTION_MENTION_SCAN_TASK
+    assert provider.requests[0].output_schema.__name__ == "MentionScan"
+    assert provider.requests[0].context.source_id == "source-1"
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
+        ExtractionExecutionMode.FOCUSED_EXTRACTION,
+        ExtractionExecutionMode.NEEDS_CONTEXT_EXPANSION,
+        ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST,
+    ],
+)
+def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMode) -> None:
+    payload: dict[str, Any] = {
+        "source_id": "source-1",
+        "execution_mode": mode,
+        "tasks": [],
+    }
+    if mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST:
+        payload["clarification"] = {
+            "question": "Which Marco?",
+            "reason": "Multiple existing people match.",
+        }
+    provider = QueuedStructuredProvider([payload])
+    router = RecordingRouter()
+
+    plan = LLMIngestionPlanner(provider, router=router).plan(
+        _source(),
+        _empty_scan(),
+        IngestionContextPackage(source_id="source-1"),
+    )
+
+    assert plan.execution_mode == mode
+    assert router.calls[0][0] == INGESTION_PLANNING_TASK
+
+
+def test_llm_planner_rejects_aliases_not_present_in_context() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "person", "target_ref": "NODE_999"}],
+            },
+        ],
+    )
+    context = IngestionContextPackage(
+        source_id="source-1",
+        aliases={"NODE_001": new_uuid()},
+    )
+
+    with pytest.raises(IngestionValidationError, match="not present in compact context"):
+        LLMIngestionPlanner(provider).plan(_source(), _empty_scan(), context)
+
+
+def test_llm_planner_rejects_unsupported_task_types() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "relationship_link"}],
+            },
+        ],
+    )
+
+    with pytest.raises(ValidationError, match="relationship_link"):
+        LLMIngestionPlanner(provider).plan(
+            _source(),
+            _empty_scan(),
+            IngestionContextPackage(source_id="source-1"),
+        )
+
+
+def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:
+    person_id = new_uuid()
+    service = FakeGraphService(
+        [
+            NodeSearchResult(
+                label="Person",
+                labels=["Person"],
+                properties={
+                    "id": person_id,
+                    "display_name": "Marco Rossi",
+                    "description": "University friend.",
+                    "emotional_summary": "Warm but distant.",
+                    "metadata": {"debug": "do not expose"},
+                },
+            ),
+        ],
+    )
+    mention_scan = _empty_scan()
+    mention_scan.mentions.append(
+        mention_scan.mentions[0].model_copy(update={"kind": "person", "text": "Marco"})
+    )
+
+    context = GraphIngestionContextRetriever(service).retrieve(_source(), mention_scan)
+
+    assert context.entities[0]["alias"] == "NODE_000001"
+    assert context.entities[0]["title"] == "Marco Rossi"
+    assert context.entities[0]["emotional_summary"] == "Warm but distant."
+    assert "metadata" not in context.entities[0]
+    assert context.aliases == {"NODE_000001": person_id}
+
+
+def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                        "source_refs": ["source-1"],
+                    },
+                ],
+            },
+        ],
+    )
+    extractor = EntityExtractor(provider)
+    task = ExtractionTask(task_type=ExtractionTaskType.PERSON, source_refs=["source-1"])
+
+    candidates = extractor.extract(_source(), task, IngestionContextPackage(source_id="source-1"))
+
+    assert extractor.supports(task) is True
+    assert isinstance(candidates[0], CandidateEntity)
+    assert not PerceptionExtractor(provider).supports(task)
+    assert provider.requests[0].output_schema is CandidateEntityBatch
+    assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
+
+
+def test_wave2_pipeline_runs_with_ai_services_and_fake_provider() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "source_id": "source-1",
+                "mentions": [{"kind": "person", "text": "Marco"}],
+            },
+            {
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                        "source_refs": ["source-1"],
+                    },
+                ],
+            },
+        ],
+    )
+    service = IngestionService(
+        scanner=LLMMentionScanner(provider),
+        context_retriever=StaticContextRetriever(),
+        planner=LLMIngestionPlanner(provider),
+        extractors=[EntityExtractor(provider)],
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.CANDIDATE_READY
+    assert result.candidate_graph is not None
+    assert result.candidate_graph.candidate_entities[0].display_name == "Marco"
+    assert len(provider.requests) == 3
+
+
+def test_prompt_builder_excludes_noisy_source_metadata() -> None:
+    source = _source(metadata={"debug": "noisy", "provider_payload": {"nested": True}})
+
+    payload = IngestionPromptBuilder().mention_scan_input(source)
+
+    assert "metadata" not in payload["source"]
+    assert payload["source"]["raw_text"] == source.raw_text
+
+
+class QueuedStructuredProvider:
+    provider_name = "fake"
+
+    def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
+        self.payloads = list(payloads)
+        self.requests: list[StructuredGenerationRequest] = []
+
+    def generate_structured(
+        self,
+        request: StructuredGenerationRequest,
+    ) -> StructuredGenerationResult:
+        self.requests.append(request)
+        payload = self.payloads.pop(0)
+        parsed = request.output_schema.model_validate(payload)
+        return StructuredGenerationResult(
+            parsed=parsed,
+            metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
+        )
+
+
+class RecordingRouter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, AIRequestContext | None]] = []
+
+    def route(
+        self,
+        task: str,
+        context: AIRequestContext | None = None,
+    ) -> ModelRoute:
+        self.calls.append((task, context))
+        return ModelRoute(task=task, provider="fake", model=f"{task}-model")
+
+
+class FakeGraphService:
+    def __init__(self, nodes: list[NodeSearchResult]) -> None:
+        self.nodes = nodes
+        self.calls: list[dict[str, Any]] = []
+
+    def search_nodes(
+        self,
+        *,
+        label: str | None = None,
+        query: str | None = None,
+        limit: int = 25,
+        **_: Any,
+    ) -> list[NodeSearchResult]:
+        self.calls.append({"label": label, "query": query, "limit": limit})
+        return [node for node in self.nodes if label is None or node.label == label][:limit]
+
+
+class StaticContextRetriever:
+    def retrieve(
+        self,
+        source: SourceRecordRef,
+        mention_scan,
+    ) -> IngestionContextPackage:
+        return IngestionContextPackage(source_id=source.source_id)
+
+
+def _source(metadata: dict[str, Any] | None = None) -> SourceRecordRef:
+    return SourceRecordRef(
+        source_id="source-1",
+        source_type=SourceType.TEXT,
+        channel=SourceChannel.MANUAL,
+        raw_text="I met Marco in Milan and felt happy.",
+        metadata=metadata or {},
+    )
+
+
+def _empty_scan():
+    from my_digital_brain.ingestion.contracts import Mention, MentionScan
+
+    return MentionScan(
+        source_id="source-1",
+        mentions=[Mention(kind=MentionKind.PERSON, text="placeholder")],
+    )

@@ -393,6 +393,30 @@ CandidateOutput: TypeAlias = (
 )
 
 
+class CandidateEntityBatch(IngestionModel):
+    candidates: list[CandidateEntity] = Field(default_factory=list)
+
+
+class CandidateRelationshipBatch(IngestionModel):
+    candidates: list[CandidateRelationship] = Field(default_factory=list)
+
+
+class CandidateClaimBatch(IngestionModel):
+    candidates: list[CandidateClaim] = Field(default_factory=list)
+
+
+class CandidatePerceptionBatch(IngestionModel):
+    candidates: list[CandidatePerception] = Field(default_factory=list)
+
+
+class CandidateRelationshipContextBatch(IngestionModel):
+    candidates: list[CandidateRelationshipContext] = Field(default_factory=list)
+
+
+class CandidateMetadataPatchBatch(IngestionModel):
+    candidates: list[CandidateMetadataPatch] = Field(default_factory=list)
+
+
 class CandidateMemoryGraph(IngestionModel):
     candidate_graph_id: str = Field(default_factory=new_uuid)
     source_id: str = Field(description="Source record used to create this candidate graph.")

@@ -331,6 +331,8 @@ The `GraphWritePlan` must be backend-generated. It is not a direct LLM output sc
 
 ## Wave 2: Context-Aware AI Planning And Focused Extraction
 
+Status: implemented with fake-provider coverage. Graph writes remain out of scope until Wave 3.
+
 ### Summary
 
 Add the AI-backed services that produce mention scans, compact context-driven extraction plans, and focused candidate objects. This wave introduces model calls through the provider protocols, but graph writes still remain disabled or mocked.
