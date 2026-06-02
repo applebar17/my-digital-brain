@@ -777,6 +777,9 @@ src/my_digital_brain/prompts/
     conversation_entry/v1.system.md
     pending_process_review/v1.system.md
     clarification_classifier/v1.system.md
+    memory_query/v1.system.md
+    query_retrieval_planning/v1.system.md
+    answer_generation/v1.system.md
     ingestion_planner/v1.system.md
     focused_extraction/person/v1.system.md
     focused_extraction/place/v1.system.md
@@ -784,7 +787,6 @@ src/my_digital_brain/prompts/
     focused_extraction/perception/v1.system.md
     focused_extraction/relationship_context/v1.system.md
     contradiction_judge/v1.system.md
-    answer_generation/v1.system.md
     correction_proposal/v1.system.md
 ```
 

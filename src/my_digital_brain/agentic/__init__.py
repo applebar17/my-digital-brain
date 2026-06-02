@@ -13,6 +13,9 @@ from my_digital_brain.agentic.contexts import (
     MentionScanContext,
     PendingProcessContext,
     PlanningContext,
+    QueryRetrievalPlan,
+    QueryRetrievalPlanningContext,
+    QueryRetrievalResultContext,
     ResolutionContext,
     SourceContext,
     ToolResultContext,
@@ -34,6 +37,10 @@ from my_digital_brain.agentic.messages import (
 from my_digital_brain.agentic.router import (
     AgenticRoute,
     DeterministicAgenticRouter,
+)
+from my_digital_brain.agentic.query import (
+    MemoryQueryFoundationResult,
+    MemoryQueryFoundationService,
 )
 from my_digital_brain.agentic.state import (
     AgenticStateConfig,
@@ -57,11 +64,16 @@ __all__ = [
     "GraphContextPackage",
     "MentionContextItem",
     "MentionScanContext",
+    "MemoryQueryFoundationResult",
+    "MemoryQueryFoundationService",
     "NeutralConversationMessage",
     "NeutralMessageKind",
     "PendingMessageIntent",
     "PendingProcessContext",
     "PlanningContext",
+    "QueryRetrievalPlan",
+    "QueryRetrievalPlanningContext",
+    "QueryRetrievalResultContext",
     "ResolutionContext",
     "ResponseRenderStyle",
     "SourceContext",

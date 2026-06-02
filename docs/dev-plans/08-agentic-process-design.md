@@ -149,23 +149,31 @@ Implemented foundation artifacts:
   - state ids and agentic enums
   - Wave 1 state configuration
   - deterministic fallback router
+  - Wave 2 memory query state configuration
+  - deterministic memory query foundation service
 - `src/my_digital_brain/prompts/`
   - file-backed prompt registry
-  - initial templates for `conversation_entry`, `pending_process_review`, and
-    optional `clarification_classifier`
+  - templates for `conversation_entry`, `pending_process_review`, optional
+    `clarification_classifier`, `memory_query`, `query_retrieval_planning`, and
+    `answer_generation`
 - `tests/test_agentic_foundation.py`
   - neutral message validation
   - context payload safety
   - default state toolbox checks
   - prompt registry loading/rendering
   - deterministic router behavior
+- `tests/test_agentic_query_foundation.py`
+  - memory query state configuration
+  - query prompt template loading
+  - no-graph fallback behavior
+  - graph seed resolution
+  - `AnswerContext` and `ToolResultContext` construction
 
 Implemented but intentionally not wired yet:
 
 - Real OpenAI/Azure tool-call routing.
 - Agentic runtime integration into `ChatRuntime`.
 - Model-backed intent classification.
-- Query/answer agentic protocols.
 - Correction/judge/profile/maintenance protocols.
 
 This is intentional. The current code provides stable contracts and fake/test
@@ -622,7 +630,7 @@ Out of scope for Wave 1:
 
 ## Wave 2: Query And Answer Foundation
 
-Status: Pending.
+Status: Complete.
 
 ### Summary
 
@@ -645,7 +653,7 @@ Focus:
 - Uncertainty handling.
 - No-memory answer behavior.
 
-Expected implementation outputs:
+Implemented outputs:
 
 - Query process protocol.
 - `memory_query` state configuration.
@@ -661,12 +669,17 @@ Expected implementation outputs:
   where available.
 - Answer-generation prompt contract.
 - Evidence presentation rules.
-- Evaluation examples for:
+- Tests/evaluation examples for:
   - person memories
   - timeline questions
   - place questions
   - affective relationship questions
   - missing memories
+
+Verification:
+
+- `tests/test_agentic_query_foundation.py`
+- Full suite: `122 passed, 3 skipped`
 
 Out of scope for Wave 2:
 

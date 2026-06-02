@@ -185,3 +185,38 @@ class AnswerContext(AgenticModel):
     answer_style_hints: list[str] = Field(default_factory=list)
     uncertainty_notes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryRetrievalPlanningContext(AgenticModel):
+    question: str
+    conversation: ConversationContext
+    entity_hints: list[str] = Field(default_factory=list)
+    time_hints: list[str] = Field(default_factory=list)
+    place_hints: list[str] = Field(default_factory=list)
+    seed_aliases: dict[str, str] = Field(default_factory=dict)
+    desired_view: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryRetrievalPlan(AgenticModel):
+    question: str
+    seed_id: str | None = None
+    query_text: str | None = None
+    view_type: str = "context_package"
+    include_history: bool = True
+    timeline_limit: int = Field(default=20, ge=1, le=200)
+    relationship_limit: int = Field(default=50, ge=1, le=200)
+    evidence_requirements: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryRetrievalResultContext(AgenticModel):
+    question: str
+    plan: QueryRetrievalPlan
+    seed_id: str | None = None
+    seed_title: str | None = None
+    context_package: dict[str, Any] | None = None
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    no_memory_reason: str | None = None
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
