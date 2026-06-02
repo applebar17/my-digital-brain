@@ -140,40 +140,57 @@ def test_llm_planner_rejects_unsupported_task_types() -> None:
         )
 
 
-def test_agentic_ingestion_planner_requires_submit_extraction_plan() -> None:
-    provider = QueuedToolCallingProvider([{"content": "I have a plan."}])
+def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool() -> None:
+    provider = QueuedToolCallingProvider(
+        [{"content": "Ready for structured plan."}],
+        structured_payloads=[
+            {
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+            },
+        ],
+    )
     planner = AgenticIngestionPlanner(AgenticStateRunner(provider=provider))
 
-    with pytest.raises(IngestionValidationError, match="submit_extraction_plan"):
-        planner.plan(_source(), _empty_scan(), IngestionContextPackage(source_id="source-1"))
+    plan = planner.plan(
+        _source(),
+        _empty_scan(),
+        IngestionContextPackage(source_id="source-1"),
+    )
 
+    assert plan.tasks[0].task_type == ExtractionTaskType.PERSON
     assert provider.requests[0]["tool_names"] == [
         "request_contradiction_review",
         "request_graph_context_expansion",
-        "submit_extraction_plan",
     ]
+    assert provider.structured_requests[0].output_schema.__name__ == "ExtractionPlan"
 
 
-def test_agentic_ingestion_planner_returns_valid_submitted_plan() -> None:
+def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured_plan() -> None:
     provider = QueuedToolCallingProvider(
         [
             {
-                "content": "Plan submitted.",
-                "tool": "submit_extraction_plan",
-                "arguments": {
-                    "plan": {
-                        "source_id": "source-1",
-                        "execution_mode": "focused_extraction",
-                        "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
-                    }
-                },
+                "content": "Expanded context.",
+                "tool": "request_graph_context_expansion",
+                "arguments": {"query": "Marco", "limit": 5},
+            },
+        ],
+        structured_payloads=[
+            {
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
             },
         ],
     )
     execution_contexts: list[AgenticToolExecutionContext] = []
 
     def context_factory(source: SourceRecordRef) -> AgenticToolExecutionContext:
-        context = AgenticToolExecutionContext(metadata={"source_id": source.source_id})
+        context = AgenticToolExecutionContext(
+            graph_service=FakeGraphService([]),
+            metadata={"source_id": source.source_id},
+        )
         execution_contexts.append(context)
         return context
 
@@ -184,22 +201,23 @@ def test_agentic_ingestion_planner_returns_valid_submitted_plan() -> None:
 
     assert plan.source_id == "source-1"
     assert plan.tasks[0].task_type == ExtractionTaskType.PERSON
-    assert execution_contexts[0].tool_events[0].tool_name == "submit_extraction_plan"
+    assert execution_contexts[0].tool_events[0].tool_name == (
+        "request_graph_context_expansion"
+    )
+    structured_context = provider.structured_requests[0].input_message["context"]
+    assert structured_context["prior_tool_outputs"][0]["tool_name"] == (
+        "request_graph_context_expansion"
+    )
 
 
-def test_agentic_ingestion_planner_reports_invalid_submitted_plan() -> None:
+def test_agentic_ingestion_planner_reports_invalid_structured_plan() -> None:
     provider = QueuedToolCallingProvider(
-        [
+        [{"content": "Ready for structured plan."}],
+        structured_payloads=[
             {
-                "content": "Plan submitted.",
-                "tool": "submit_extraction_plan",
-                "arguments": {
-                    "plan": {
-                        "source_id": "wrong-source",
-                        "execution_mode": "focused_extraction",
-                        "tasks": [{"task_type": "person"}],
-                    }
-                },
+                "source_id": "wrong-source",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "person"}],
             },
         ],
     )
@@ -226,16 +244,13 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
                 },
             },
             {"content": "Treat this as a temporal nuance and continue."},
+            {"content": "Ready for structured plan."},
+        ],
+        structured_payloads=[
             {
-                "content": "Plan submitted.",
-                "tool": "submit_extraction_plan",
-                "arguments": {
-                    "plan": {
-                        "source_id": "source-1",
-                        "execution_mode": "focused_extraction",
-                        "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
-                    }
-                },
+                "source_id": "source-1",
+                "execution_mode": "focused_extraction",
+                "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
             },
         ],
     )
@@ -258,6 +273,11 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
         "get_relationship_state_history",
         "get_target_evidence",
     ]
+    assert provider.requests[2]["tool_names"] == [
+        "request_contradiction_review",
+        "request_graph_context_expansion",
+    ]
+    assert provider.structured_requests[0].output_schema is ExtractionPlan
 
 
 def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:
@@ -389,9 +409,16 @@ class QueuedStructuredProvider:
 class QueuedToolCallingProvider:
     provider_name = "fake"
 
-    def __init__(self, steps: Sequence[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        steps: Sequence[dict[str, Any]],
+        *,
+        structured_payloads: Sequence[dict[str, Any]] | None = None,
+    ) -> None:
         self.steps = list(steps)
         self.requests: list[dict[str, Any]] = []
+        self.structured_payloads = list(structured_payloads or [])
+        self.structured_requests: list[StructuredGenerationRequest] = []
 
     def generate_chat_with_tools(
         self,
@@ -416,6 +443,18 @@ class QueuedToolCallingProvider:
             tools_mapping[tool_call["tool"]](**dict(tool_call.get("arguments") or {}))
         return ChatResult(
             content=str(step.get("content") or ""),
+            metadata=ProviderCallMetadata.fake(model=request.model),
+        )
+
+    def generate_structured(
+        self,
+        request: StructuredGenerationRequest,
+    ) -> StructuredGenerationResult:
+        self.structured_requests.append(request)
+        payload = self.structured_payloads.pop(0)
+        parsed = request.output_schema.model_validate(payload)
+        return StructuredGenerationResult(
+            parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 

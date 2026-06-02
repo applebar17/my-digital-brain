@@ -87,7 +87,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             allowed_tools=[
                 "request_graph_context_expansion",
                 "request_contradiction_review",
-                "submit_extraction_plan",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",

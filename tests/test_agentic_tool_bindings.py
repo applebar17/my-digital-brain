@@ -224,7 +224,6 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
     assert planning.allowed_tools == [
         "request_graph_context_expansion",
         "request_contradiction_review",
-        "submit_extraction_plan",
     ]
     assert "Plan extraction tasks" in PromptRegistry().load("ingestion_planner").template
 
@@ -327,26 +326,17 @@ def test_memory_planning_context_expansion_uses_graph_service() -> None:
     assert sorted(toolbox.tools_by_name) == [
         "request_contradiction_review",
         "request_graph_context_expansion",
-        "submit_extraction_plan",
     ]
     assert result.status == "ok"
     assert result.data["matches"][0]["properties"]["id"] == "node-marco"
     assert ("search_nodes", "Marco") in graph.calls
 
 
-def test_memory_planning_submit_plan_and_contradiction_handoff() -> None:
+def test_memory_planning_contradiction_handoff_without_submit_tool() -> None:
     config = default_state_configs()[AgenticStateId.MEMORY_INGESTION_PLANNING]
     execution_context = _execution_context()
-    execution_context.metadata["source_id"] = "source-1"
     mapping = build_agentic_tool_mapping(config, execution_context)
 
-    submitted = mapping["submit_extraction_plan"](
-        plan={
-            "source_id": "source-1",
-            "execution_mode": "focused_extraction",
-            "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
-        },
-    )
     contradiction = mapping["request_contradiction_review"](
         agent_doubt="The new place conflicts with existing event context.",
         proposed_write_ref="WRITE_000001",
@@ -354,8 +344,7 @@ def test_memory_planning_submit_plan_and_contradiction_handoff() -> None:
         source_refs=["source-1"],
     )
 
-    assert submitted.status == "ok"
-    assert submitted.data["extraction_plan"]["source_id"] == "source-1"
+    assert "submit_extraction_plan" not in mapping
     assert contradiction.status == "ok"
     assert contradiction.data["handoff_target"] == "contradiction_review"
     assert contradiction.data["handoff_arguments"]["agent_doubt"].startswith("The new place")

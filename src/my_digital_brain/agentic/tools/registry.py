@@ -200,17 +200,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             },
             required=["agent_doubt"],
         ),
-        _definition(
-            "submit_extraction_plan",
-            "Submit the final validated ExtractionPlan for backend ingestion execution.",
-            states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
-            properties={
-                "plan": object_property(
-                    "ExtractionPlan payload matching the ingestion contract.",
-                ),
-            },
-            required=["plan"],
-        ),
         *_graph_read_definitions(memory_query_states, correction_states, contradiction_states),
         _definition(
             "resolve_correction_target",

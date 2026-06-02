@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import ValidationError
+
 from my_digital_brain.agentic.contexts import (
     ConversationContext,
     EvidenceSpan,
@@ -18,6 +20,8 @@ from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.runtime_models import AgenticStateInvocation, AgenticStateRunResult
 from my_digital_brain.agentic.runtime import AgenticStateRunner
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
+from my_digital_brain.ai.protocols import StructuredLLMProvider
+from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
 from my_digital_brain.ingestion.ai_services import _is_graph_alias
 from my_digital_brain.ingestion.contracts import (
     ExtractionPlan,
@@ -34,19 +38,21 @@ ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContex
 class AgenticIngestionPlanner:
     """Tool-enabled ingestion planner backed by the agentic runtime foundation.
 
-    The planner state must call `submit_extraction_plan`. The submitted plan is
-    still validated by backend code before this class returns it to the
-    ingestion service.
+    The planner state may call planning support tools, then this class requests
+    a provider-structured `ExtractionPlan`. Backend code validates that plan
+    before the ingestion service continues.
     """
 
     def __init__(
         self,
         state_runner: AgenticStateRunner,
         *,
+        structured_provider: StructuredLLMProvider | None = None,
         execution_context_factory: ExecutionContextFactory | None = None,
         max_planning_rounds: int = 2,
     ) -> None:
         self.state_runner = state_runner
+        self.structured_provider = structured_provider
         self.execution_context_factory = execution_context_factory
         self.max_planning_rounds = max(1, max_planning_rounds)
 
@@ -67,16 +73,7 @@ class AgenticIngestionPlanner:
                     execution_context=execution_context,
                 ),
             )
-            submitted = _submitted_plan(state_result)
-            if submitted is not None:
-                self._validate_plan(submitted, source, context)
-                return submitted
-            submission_error = _submitted_plan_error(state_result)
-            if submission_error is not None:
-                raise IngestionValidationError(
-                    "memory_ingestion_planning submitted an invalid "
-                    f"ExtractionPlan: {submission_error}"
-                )
+            _append_state_tool_outputs(planning_context, state_result)
 
             if state_result.handoff_target == "contradiction_review":
                 judge_result = self.state_runner.run_state(
@@ -103,15 +100,77 @@ class AgenticIngestionPlanner:
                 )
                 continue
 
-            raise IngestionValidationError(
-                "memory_ingestion_planning completed without calling "
-                "submit_extraction_plan."
-            )
+            plan = self._structured_plan(source, planning_context)
+            self._validate_plan(plan, source, context)
+            return plan
 
         raise IngestionValidationError(
             "memory_ingestion_planning exceeded the allowed planning rounds "
-            "without submitting an ExtractionPlan."
+            "without returning a structured ExtractionPlan."
         )
+
+    def _structured_plan(
+        self,
+        source: SourceRecordRef,
+        planning_context: PlanningContext,
+    ) -> ExtractionPlan:
+        provider = self.structured_provider or self.state_runner.provider
+        if not hasattr(provider, "generate_structured"):
+            raise IngestionValidationError(
+                "memory_ingestion_planning requires a provider that implements "
+                "generate_structured so the final output can be a validated "
+                "ExtractionPlan."
+            )
+
+        state_config = self.state_runner.state_configs[
+            AgenticStateId.MEMORY_INGESTION_PLANNING
+        ]
+        state_value = str(state_config.state_id)
+        model_task = state_config.model_task or state_value
+        request_context = AIRequestContext(
+            purpose=model_task,
+            source_id=source.source_id,
+            prompt_id=state_config.prompt_id,
+            prompt_version=state_config.prompt_version,
+            schema_id=ExtractionPlan.__name__,
+            metadata={
+                "state_id": state_value,
+                "source_type": str(source.source_type),
+                "channel": str(source.channel),
+            },
+        )
+        route = self.state_runner.model_router.route(model_task, request_context)
+        prompt = self.state_runner.prompt_registry.load(
+            state_config.prompt_id,
+            state_config.prompt_version,
+        ).template
+        try:
+            result = provider.generate_structured(  # type: ignore[attr-defined]
+                StructuredGenerationRequest(
+                    schema=ExtractionPlan,
+                    system_prompt=prompt,
+                    input_message={
+                        "state_id": state_value,
+                        "context": planning_context.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        ),
+                        "final_output_contract": "ExtractionPlan",
+                    },
+                    model=route.model,
+                    temperature=self.state_runner.temperature,
+                    max_tokens=self.state_runner.max_tokens,
+                    context=request_context,
+                    metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+                ),
+            )
+        except ValidationError as exc:
+            raise IngestionValidationError(
+                "memory_ingestion_planning returned an invalid structured "
+                f"ExtractionPlan: {exc}"
+            ) from exc
+        plan = ExtractionPlan.model_validate(result.parsed)
+        return plan
 
     def _execution_context(self, source: SourceRecordRef) -> AgenticToolExecutionContext:
         if self.execution_context_factory is not None:
@@ -217,30 +276,42 @@ def _planning_context(
     )
 
 
-def _submitted_plan(state_result: AgenticStateRunResult) -> ExtractionPlan | None:
-    for event in reversed(state_result.tool_events):
+def _append_state_tool_outputs(
+    planning_context: PlanningContext,
+    state_result: AgenticStateRunResult,
+) -> None:
+    for event in state_result.tool_events:
         data = event.data or {}
-        if data.get("operation") != "submit_extraction_plan":
+        if data.get("handoff_target") == "contradiction_review":
             continue
-        payload = data.get("extraction_plan")
-        if isinstance(payload, dict):
-            return ExtractionPlan.model_validate(payload)
-    return None
+        planning_context.prior_tool_outputs.append(
+            ToolResultContext(
+                tool_name=event.tool_name,
+                status=(
+                    ToolResultStatus.FAILED
+                    if event.status != "ok"
+                    else ToolResultStatus.OK
+                ),
+                summary=_tool_event_summary(event),
+                data={
+                    **data,
+                    **({"error": event.error} if event.error else {}),
+                },
+            ),
+        )
 
 
-def _submitted_plan_error(state_result: AgenticStateRunResult) -> str | None:
-    for event in reversed(state_result.tool_events):
-        if event.tool_name != "submit_extraction_plan" or event.status == "ok":
-            continue
-        error = event.error or {}
-        message = error.get("message")
-        hint = error.get("hint")
-        if message and hint:
-            return f"{message} Hint: {hint}"
-        if message:
-            return str(message)
-        return "submit_extraction_plan failed without a tool error message."
-    return None
+def _tool_event_summary(event) -> str:
+    if event.output:
+        return event.output
+    error = event.error or {}
+    message = error.get("message")
+    hint = error.get("hint")
+    if message and hint:
+        return f"{message} Hint: {hint}"
+    if message:
+        return str(message)
+    return f"{event.tool_name} completed with status {event.status}."
 
 
 def _contradiction_context(arguments: dict[str, Any]):

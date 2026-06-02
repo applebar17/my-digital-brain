@@ -259,46 +259,6 @@ class AgenticToolBindings:
             output="Contradiction review handoff requested.",
         )
 
-    def _handle_submit_extraction_plan(self, plan: dict[str, Any]) -> ToolResult:
-        from my_digital_brain.ingestion.contracts import ExtractionPlan
-
-        try:
-            extraction_plan = ExtractionPlan.model_validate(plan)
-        except ValidationError as exc:
-            return _tool_error(
-                "submit_extraction_plan",
-                "invalid_extraction_plan",
-                "Submitted extraction plan failed validation.",
-                "Fix the plan fields to match the ExtractionPlan contract and call submit_extraction_plan again.",
-                retryable=True,
-                details={"errors": exc.errors()},
-            )
-        expected_source_id = self.context.metadata.get("source_id")
-        if expected_source_id and extraction_plan.source_id != expected_source_id:
-            return _tool_error(
-                "submit_extraction_plan",
-                "source_id_mismatch",
-                (
-                    "Submitted extraction plan source_id "
-                    f"'{extraction_plan.source_id}' does not match expected source_id "
-                    f"'{expected_source_id}'."
-                ),
-                "Use the source_id from the provided planning context.",
-                retryable=True,
-                details={
-                    "expected_source_id": expected_source_id,
-                    "actual_source_id": extraction_plan.source_id,
-                },
-            )
-        return ToolResult(
-            status="ok",
-            output="Extraction plan submitted for backend validation.",
-            data={
-                "operation": "submit_extraction_plan",
-                "extraction_plan": extraction_plan.model_dump(mode="json", exclude_none=True),
-            },
-        )
-
     def _handle_get_context_package(
         self,
         node_id: str,
