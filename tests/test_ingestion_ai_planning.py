@@ -248,6 +248,15 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
         ],
         structured_payloads=[
             {
+                "judge_request_id": "judge-1",
+                "intent": "emit_verdict",
+                "decision": "nuance",
+                "severity": "low",
+                "reason": "Treat this as a temporal nuance and continue.",
+                "graph_action": "allow_write",
+                "inspected_context_refs": ["NODE_000001"],
+            },
+            {
                 "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
@@ -277,7 +286,10 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
         "request_contradiction_review",
         "request_graph_context_expansion",
     ]
-    assert provider.structured_requests[0].output_schema is ExtractionPlan
+    assert provider.structured_requests[0].output_schema.__name__ == (
+        "ContradictionJudgeResultContext"
+    )
+    assert provider.structured_requests[1].output_schema is ExtractionPlan
 
 
 def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:

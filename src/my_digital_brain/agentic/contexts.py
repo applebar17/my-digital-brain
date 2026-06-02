@@ -11,6 +11,7 @@ from my_digital_brain.agentic.enums import (
     ConfirmationRiskLevel,
     ContradictionDecision,
     ContradictionGraphAction,
+    ContradictionResultIntent,
     ContradictionSeverity,
     CorrectionAction,
     MaintenanceSuggestionType,
@@ -286,6 +287,7 @@ class ContradictionReviewContext(AgenticModel):
     source_refs: list[str] = Field(default_factory=list)
     agent_doubt: str
     requested_at: datetime = Field(default_factory=utc_now)
+    prior_tool_outputs: list["ToolResultContext"] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -300,26 +302,46 @@ class ContradictionReviewContext(AgenticModel):
 class ContradictionJudgeResultContext(AgenticModel):
     judge_decision_id: str = Field(default_factory=new_uuid)
     judge_request_id: str
+    intent: ContradictionResultIntent = Field(
+        description=(
+            "Workflow intent: needs_context, needs_clarification, "
+            "emit_verdict, or fail_safe."
+        ),
+    )
     decision: ContradictionDecision
     severity: ContradictionSeverity = ContradictionSeverity.LOW
     reason: str
     graph_action: ContradictionGraphAction
     clarification_question: str | None = None
+    affected_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
     inspected_context_refs: list[str] = Field(default_factory=list)
     requires_user_input: bool = False
+    blocking: bool = False
+    recommended_next_action: str | None = None
+    resume_context: dict[str, Any] = Field(default_factory=dict)
     decided_at: datetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_clarification(self) -> "ContradictionJudgeResultContext":
+    def _validate_intent_coherence(self) -> "ContradictionJudgeResultContext":
         needs_question = (
-            self.decision == ContradictionDecision.NEEDS_CLARIFICATION.value
+            self.intent == ContradictionResultIntent.NEEDS_CLARIFICATION.value
+            or self.decision == ContradictionDecision.NEEDS_CLARIFICATION.value
             or self.graph_action == ContradictionGraphAction.ASK_USER.value
         )
+        if self.intent == ContradictionResultIntent.EMIT_VERDICT.value and needs_question:
+            raise ValueError("emit_verdict cannot ask the user for clarification.")
         if needs_question and not self.clarification_question:
             raise ValueError("Clarification decisions require clarification_question.")
         if needs_question:
+            self.intent = ContradictionResultIntent.NEEDS_CLARIFICATION
+            self.decision = ContradictionDecision.NEEDS_CLARIFICATION
+            self.graph_action = ContradictionGraphAction.ASK_USER
             self.requires_user_input = True
+            self.blocking = True
+        if self.intent == ContradictionResultIntent.FAIL_SAFE.value:
+            self.requires_user_input = False
         return self
 
 

@@ -881,6 +881,9 @@ Implemented outputs:
 - Final assistant-message ownership is enforced for normal completion paths:
   specialist outputs are compacted back to the conversational owner, and the
   owner state writes the user-visible final message with tools disabled.
+- Contradiction review final output is structurally enforced through
+  `ContradictionJudgeResultContext`; runtime behavior is driven by explicit
+  intents rather than free-form assistant text.
 - Active pending process context starts the runtime from
   `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.
@@ -898,9 +901,9 @@ Implemented outputs:
   summary.
 - Contradiction review is agent-invoked through tool handoff. No deterministic
   contradiction-detection rules were added.
-- The locked target is a structured contradiction result with intents:
+- Contradiction review returns a structured result with intents:
   `needs_context`, `needs_clarification`, `emit_verdict`, and `fail_safe`.
-  Clarification rendering must come from that structured result.
+  Clarification rendering comes from that structured result.
 - `AgenticRunResult` is rendered into `ChatResponse` without exposing raw tool
   traces, UUID-heavy graph payloads, or backend internals.
 

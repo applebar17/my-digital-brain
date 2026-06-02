@@ -21,6 +21,7 @@ class AgenticToolEvent(AgenticModel):
 class AgenticStateRunResult(AgenticModel):
     state_id: AgenticStateId
     assistant_text: str | None = None
+    structured_output: dict[str, Any] | None = None
     tool_events: list[AgenticToolEvent] = Field(default_factory=list)
     handoff_target: str | None = None
     handoff_arguments: dict[str, Any] = Field(default_factory=dict)

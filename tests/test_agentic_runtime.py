@@ -16,6 +16,7 @@ from my_digital_brain.agentic import (
     QueryRetrievalPlanningContext,
 )
 from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
+from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatResponseStatus
 from my_digital_brain.chat.facade import ChatToolRequest, ChatToolResult
@@ -24,9 +25,16 @@ from my_digital_brain.chat.facade import ChatToolRequest, ChatToolResult
 class ScriptedToolCallingProvider:
     provider_name = "scripted"
 
-    def __init__(self, steps: list[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        steps: list[dict[str, Any]],
+        *,
+        structured_payloads: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.steps = list(steps)
+        self.structured_payloads = list(structured_payloads or [])
         self.calls: list[dict[str, Any]] = []
+        self.structured_calls: list[StructuredGenerationRequest] = []
 
     def generate_chat_with_tools(
         self,
@@ -57,6 +65,18 @@ class ScriptedToolCallingProvider:
     def generate_chat(self, request: ChatRequest) -> ChatResult:
         return ChatResult(
             content="plain chat",
+            metadata=ProviderCallMetadata.fake(model=request.model),
+        )
+
+    def generate_structured(
+        self,
+        request: StructuredGenerationRequest,
+    ) -> StructuredGenerationResult:
+        self.structured_calls.append(request)
+        payload = self.structured_payloads.pop(0)
+        parsed = request.output_schema.model_validate(payload)
+        return StructuredGenerationResult(
+            parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
@@ -358,7 +378,20 @@ def test_state_runner_accepts_specialist_context_and_records_tool_events() -> No
 
 def test_contradiction_review_question_becomes_pending_process_hint() -> None:
     provider = ScriptedToolCallingProvider(
-        [{"content": "This conflicts with the earlier place. Which city was correct?"}]
+        [{"content": "Review support complete."}],
+        structured_payloads=[
+            {
+                "judge_request_id": "judge-1",
+                "intent": "needs_clarification",
+                "decision": "needs_clarification",
+                "severity": "high",
+                "reason": "The same event appears to have two mutually exclusive places.",
+                "graph_action": "ask_user",
+                "clarification_question": "Was the meeting in Milan or Turin?",
+                "affected_refs": ["NODE_000001"],
+                "source_refs": ["SOURCE_000001"],
+            }
+        ],
     )
     runtime = AgenticRuntime(_runner(provider))
 
@@ -368,6 +401,40 @@ def test_contradiction_review_question_becomes_pending_process_hint() -> None:
         start_state=AgenticStateId.CONTRADICTION_REVIEW,
     )
 
-    assert result.visited_states == [AgenticStateId.CONTRADICTION_REVIEW.value]
+    assert result.visited_states == [
+        AgenticStateId.CONTRADICTION_REVIEW.value,
+        AgenticStateId.CONTRADICTION_REVIEW.value,
+    ]
     assert result.pending_process_hints[0]["kind"] == "memory_ingestion"
-    assert result.pending_process_hints[0]["question"].endswith("Which city was correct?")
+    assert result.pending_process_hints[0]["question"] == "Was the meeting in Milan or Turin?"
+    assert result.metadata["contradiction_intent"] == "needs_clarification"
+    assert provider.structured_calls[0].output_schema.__name__ == (
+        "ContradictionJudgeResultContext"
+    )
+
+
+def test_contradiction_review_free_form_question_without_structured_intent_is_not_pending() -> None:
+    provider = ScriptedToolCallingProvider(
+        [{"content": "This looks suspicious. Which city was correct?"}],
+        structured_payloads=[
+            {
+                "judge_request_id": "judge-1",
+                "intent": "emit_verdict",
+                "decision": "nuance",
+                "severity": "low",
+                "reason": "The wording can be stored as nuance rather than a blocking conflict.",
+                "graph_action": "allow_write",
+            }
+        ],
+    )
+    runtime = AgenticRuntime(_runner(provider))
+
+    result = runtime.run(
+        _conversation("I met Marco in Milan."),
+        AgenticToolExecutionContext(),
+        start_state=AgenticStateId.CONTRADICTION_REVIEW,
+    )
+
+    assert result.pending_process_hints == []
+    assert result.status == "ok"
+    assert result.metadata["contradiction_intent"] == "emit_verdict"

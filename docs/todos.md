@@ -82,9 +82,10 @@ Status: implemented in the planner foundation.
 
 ### Structured Contradiction Review Output
 
-- Replace contradiction clarification heuristics with a structured judge result.
-- The judge should return a validated context such as
-  `ContradictionJudgeResultContext` or a dedicated wrapper that includes a
+- Status: implemented for the runtime and ingestion-planner detour.
+- Contradiction clarification heuristics have been replaced with a structured
+  judge result.
+- The judge returns a validated `ContradictionJudgeResultContext` with a
   result intent.
 - Supported contradiction result intents:
   - `needs_context`: continue the judge state with additional read-only graph or
@@ -110,6 +111,14 @@ Status: implemented in the planner foundation.
 - User-facing contradiction clarification should be rendered only from the
   structured result, not by checking whether assistant text contains a question
   mark.
+- Runtime intent application:
+  - `needs_context` returns a context-needed branch for the caller/owner to
+    handle;
+  - `needs_clarification` creates pending process context with the structured
+    clarification question;
+  - `emit_verdict` returns a compact verdict upward to the conversational
+    owner;
+  - `fail_safe` becomes a safe error branch.
 
 ### Final Assistant Message Ownership
 

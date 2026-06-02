@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from my_digital_brain.agentic.contexts import (
+    ContradictionJudgeResultContext,
+    ContradictionReviewContext,
     EvidenceSpan,
     GraphContextPackage,
     MentionContextItem,
@@ -86,14 +88,39 @@ class AgenticIngestionPlanner:
             )
 
             if state_result.handoff_target == "contradiction_review":
-                judge_result = self.state_runner.run_state(
+                contradiction_context = _contradiction_context(
+                    state_result.handoff_arguments,
+                )
+                support_result = self.state_runner.run_state(
                     AgenticStateInvocation(
                         state_id=AgenticStateId.CONTRADICTION_REVIEW,
-                        context_payload=_contradiction_context(
-                            state_result.handoff_arguments,
-                        ),
+                        context_payload=contradiction_context,
                         execution_context=execution_context,
                     ),
+                )
+                if isinstance(contradiction_context, ContradictionReviewContext):
+                    contradiction_context = contradiction_context.model_copy(
+                        update={
+                            "prior_tool_outputs": [
+                                *contradiction_context.prior_tool_outputs,
+                                *self.history_service.tool_result_contexts_from_events(
+                                    support_result.tool_events,
+                                ),
+                            ],
+                        },
+                        deep=True,
+                    )
+                judge_result = self.state_runner.run_structured_state(
+                    AgenticStateInvocation(
+                        state_id=AgenticStateId.CONTRADICTION_REVIEW,
+                        context_payload=contradiction_context,
+                        execution_context=execution_context,
+                        metadata={
+                            "structured_final_output": True,
+                            "support_state_status": support_result.status,
+                        },
+                    ),
+                    output_schema=ContradictionJudgeResultContext,
                 )
                 planning_context.prior_tool_outputs.append(
                     ToolResultContext(

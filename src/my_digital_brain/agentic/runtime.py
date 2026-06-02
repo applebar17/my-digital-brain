@@ -4,7 +4,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, ValidationError
+
 from my_digital_brain.agentic.contexts import (
+    ContradictionJudgeResultContext,
     ContradictionReviewContext,
     ConversationContext,
     CorrectionIntakeContext,
@@ -28,7 +31,12 @@ from my_digital_brain.agentic.tools import (
 )
 from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
 from my_digital_brain.ai.router import StaticModelRouter
-from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
+from my_digital_brain.ai.schemas import (
+    AIRequestContext,
+    ChatMessage,
+    ChatRequest,
+    StructuredGenerationRequest,
+)
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.prompts import PromptRegistry
@@ -128,6 +136,96 @@ class AgenticStateRunner:
             },
         )
 
+    def run_structured_state(
+        self,
+        invocation: AgenticStateInvocation,
+        *,
+        output_schema: type[BaseModel],
+    ) -> AgenticStateRunResult:
+        state_id = AgenticStateId(invocation.state_id)
+        state_config = self.state_configs[state_id]
+        state_value = _state_value(state_config.state_id)
+        model_task = state_config.model_task or state_value
+        context = AIRequestContext(
+            purpose=model_task,
+            prompt_id=state_config.prompt_id,
+            prompt_version=state_config.prompt_version,
+            schema_id=output_schema.__name__,
+            metadata={"state_id": state_value, "structured_output": True},
+        )
+        route = self.model_router.route(model_task, context)
+        prompt = self.prompt_registry.load(
+            state_config.prompt_id,
+            state_config.prompt_version,
+        ).template
+        provider = self.provider
+        if not hasattr(provider, "generate_structured"):
+            return AgenticStateRunResult(
+                state_id=state_id,
+                assistant_text=(
+                    f"{state_value} requires structured output provider support "
+                    f"for {output_schema.__name__}."
+                ),
+                status="error",
+                metadata={
+                    "provider": getattr(provider, "provider_name", "unknown"),
+                    "model": route.model,
+                    "route": route.model_dump(mode="json", exclude_none=True),
+                    "error": "missing_generate_structured",
+                },
+            )
+        try:
+            result = provider.generate_structured(  # type: ignore[attr-defined]
+                StructuredGenerationRequest(
+                    schema=output_schema,
+                    system_prompt=prompt,
+                    input_message={
+                        "state_id": state_value,
+                        "runtime": {
+                            **invocation.metadata,
+                            "structured_output": True,
+                            "output_schema": output_schema.__name__,
+                        },
+                        "context": self.history_service.model_payload_for_state(
+                            state_id,
+                            invocation.context_payload,
+                        ),
+                    },
+                    model=route.model,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    context=context,
+                    metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+                ),
+            )
+        except ValidationError as exc:
+            return AgenticStateRunResult(
+                state_id=state_id,
+                assistant_text=f"{state_value} returned invalid structured output: {exc}",
+                status="error",
+                metadata={
+                    "provider": getattr(provider, "provider_name", "unknown"),
+                    "model": route.model,
+                    "route": route.model_dump(mode="json", exclude_none=True),
+                    "error": "invalid_structured_output",
+                },
+            )
+        parsed = result.parsed
+        structured_output = parsed.model_dump(mode="json", exclude_none=True)
+        return AgenticStateRunResult(
+            state_id=state_id,
+            assistant_text=_structured_summary(parsed),
+            structured_output=structured_output,
+            terminal=True,
+            status="ok",
+            metadata={
+                "provider": result.metadata.provider,
+                "model": result.metadata.model,
+                "route": route.model_dump(mode="json", exclude_none=True),
+                "structured_output_schema": output_schema.__name__,
+            },
+        )
+
 
 @dataclass(slots=True)
 class AgenticRuntime:
@@ -192,6 +290,75 @@ class AgenticRuntime:
                 )
                 continue
 
+            if current_state == AgenticStateId.CONTRADICTION_REVIEW:
+                structured_result = self._run_contradiction_structured_result(
+                    current_payload,
+                    state_result,
+                    execution_context,
+                )
+                state_results.append(structured_result)
+                compact_trace.append(_compact_state_trace(structured_result))
+                pending_hints = _contradiction_pending_process_hints(structured_result)
+                if pending_hints:
+                    return AgenticRunResult(
+                        final_text=(
+                            structured_result.structured_output or {}
+                        ).get("clarification_question")
+                        or structured_result.assistant_text,
+                        visited_states=[result.state_id for result in state_results],
+                        state_results=state_results,
+                        status="needs_user_input",
+                        pending_process_hints=pending_hints,
+                        compact_trace=compact_trace,
+                        metadata={
+                            "contradiction_intent": "needs_clarification",
+                            "user_visible_owner": AgenticStateId.CONTRADICTION_REVIEW.value,
+                        },
+                    )
+                contradiction_status = _contradiction_runtime_status(structured_result)
+                if current_state != owner_state and contradiction_status != "error":
+                    final_result = self._finalize_with_owner(
+                        owner_state,
+                        conversation_context,
+                        execution_context,
+                        structured_result,
+                    )
+                    state_results.append(final_result)
+                    compact_trace.append(_compact_state_trace(final_result))
+                    return AgenticRunResult(
+                        final_text=(
+                            final_result.assistant_text
+                            or self.state_runner.history_service.state_result_summary(
+                                structured_result,
+                            )
+                        ),
+                        visited_states=[result.state_id for result in state_results],
+                        state_results=state_results,
+                        status=final_result.status,
+                        pending_process_hints=_pending_process_hints(state_results),
+                        compact_trace=compact_trace,
+                        metadata={
+                            "user_visible_owner": owner_state.value,
+                            "completed_process": current_state.value,
+                            "contradiction_intent": (
+                                structured_result.structured_output or {}
+                            ).get("intent"),
+                        },
+                    )
+                return AgenticRunResult(
+                    final_text=structured_result.assistant_text,
+                    visited_states=[result.state_id for result in state_results],
+                    state_results=state_results,
+                    status=contradiction_status,
+                    pending_process_hints=_pending_process_hints(state_results),
+                    compact_trace=compact_trace,
+                    metadata={
+                        "contradiction_intent": (
+                            structured_result.structured_output or {}
+                        ).get("intent"),
+                    },
+                )
+
             if current_state != owner_state and not _requires_direct_user_visibility(
                 state_result,
                 state_results,
@@ -228,10 +395,7 @@ class AgenticRuntime:
                 visited_states=[result.state_id for result in state_results],
                 state_results=state_results,
                 status=state_result.status,
-                pending_process_hints=[
-                    *_pending_process_hints(state_results),
-                    *_implicit_pending_process_hints(state_result),
-                ],
+                pending_process_hints=_pending_process_hints(state_results),
                 compact_trace=compact_trace,
             )
 
@@ -297,6 +461,38 @@ class AgenticRuntime:
                     "disable_tools": True,
                 },
             ),
+        )
+
+    def _run_contradiction_structured_result(
+        self,
+        context_payload: Any,
+        support_result: AgenticStateRunResult,
+        execution_context: AgenticToolExecutionContext,
+    ) -> AgenticStateRunResult:
+        if isinstance(context_payload, ContradictionReviewContext):
+            tool_outputs = self.state_runner.history_service.tool_result_contexts_from_events(
+                support_result.tool_events,
+            )
+            context_payload = context_payload.model_copy(
+                update={
+                    "prior_tool_outputs": [
+                        *context_payload.prior_tool_outputs,
+                        *tool_outputs,
+                    ],
+                },
+                deep=True,
+            )
+        return self.state_runner.run_structured_state(
+            AgenticStateInvocation(
+                state_id=AgenticStateId.CONTRADICTION_REVIEW,
+                context_payload=context_payload,
+                execution_context=execution_context,
+                metadata={
+                    "structured_final_output": True,
+                    "support_state_status": support_result.status,
+                },
+            ),
+            output_schema=ContradictionJudgeResultContext,
         )
 
     def _entry_state(self, conversation_context: ConversationContext) -> AgenticStateId:
@@ -452,33 +648,54 @@ def _pending_process_hints(
     return hints
 
 
-def _implicit_pending_process_hints(
+def _contradiction_pending_process_hints(
     state_result: AgenticStateRunResult,
 ) -> list[dict[str, Any]]:
-    if state_result.state_id != AgenticStateId.CONTRADICTION_REVIEW:
+    output = state_result.structured_output or {}
+    if output.get("intent") != "needs_clarification":
         return []
-    text = (state_result.assistant_text or "").strip()
-    if not text or "?" not in text:
+    question = str(output.get("clarification_question") or "").strip()
+    if not question:
         return []
     return [
         {
             "process_id": new_uuid(),
             "kind": "memory_ingestion",
             "status": "pending",
-            "question": text,
+            "question": question,
             "metadata": {
                 "source": "contradiction_review",
                 "state_id": AgenticStateId.CONTRADICTION_REVIEW.value,
+                "judge_request_id": output.get("judge_request_id"),
+                "judge_decision_id": output.get("judge_decision_id"),
+                "intent": output.get("intent"),
+                "decision": output.get("decision"),
+                "severity": output.get("severity"),
+                "affected_refs": output.get("affected_refs") or [],
+                "source_refs": output.get("source_refs") or [],
+                "resume_context": output.get("resume_context") or {},
             },
         }
     ]
+
+
+def _contradiction_runtime_status(state_result: AgenticStateRunResult) -> str:
+    if state_result.status == "error":
+        return "error"
+    output = state_result.structured_output or {}
+    intent = output.get("intent")
+    if intent == "fail_safe":
+        return "error"
+    if intent == "needs_context":
+        return "needs_context"
+    return "ok"
 
 
 def _requires_direct_user_visibility(
     state_result: AgenticStateRunResult,
     state_results: list[AgenticStateRunResult],
 ) -> bool:
-    if _pending_process_hints(state_results) or _implicit_pending_process_hints(state_result):
+    if _pending_process_hints(state_results):
         return True
     for event in state_result.tool_events:
         data = event.data or {}
@@ -496,6 +713,7 @@ def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:
         "state_id": _state_value(state_result.state_id),
         "status": state_result.status,
         "assistant_text": state_result.assistant_text,
+        "structured_output": state_result.structured_output,
         "handoff_target": state_result.handoff_target,
         "tools": [
             {
@@ -511,3 +729,15 @@ def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:
 
 def _state_value(state_id: AgenticStateId | str) -> str:
     return state_id.value if isinstance(state_id, AgenticStateId) else str(state_id)
+
+
+def _structured_summary(parsed: BaseModel) -> str:
+    if isinstance(parsed, ContradictionJudgeResultContext):
+        if parsed.clarification_question:
+            return parsed.clarification_question
+        return parsed.reason
+    for field_name in ("summary", "reason", "question"):
+        value = getattr(parsed, field_name, None)
+        if isinstance(value, str) and value.strip():
+            return value
+    return json.dumps(parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True)

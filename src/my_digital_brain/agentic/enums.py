@@ -84,6 +84,13 @@ class ContradictionGraphAction(StrEnum):
     ASK_USER = "ask_user"
 
 
+class ContradictionResultIntent(StrEnum):
+    NEEDS_CONTEXT = "needs_context"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    EMIT_VERDICT = "emit_verdict"
+    FAIL_SAFE = "fail_safe"
+
+
 class CorrectionAction(StrEnum):
     NO_CHANGE = "no_change"
     PATCH_NODE = "patch_node"

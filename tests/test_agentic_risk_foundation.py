@@ -10,6 +10,7 @@ from my_digital_brain.agentic import (
     ContradictionDecision,
     ContradictionGraphAction,
     ContradictionJudgeResultContext,
+    ContradictionResultIntent,
     ContradictionReviewContext,
     ContradictionSeverity,
     CorrectionAction,
@@ -114,6 +115,7 @@ def test_contradiction_review_requires_grounded_doubt_and_clarification_question
     )
     result = ContradictionJudgeResultContext(
         judge_request_id=review.judge_request_id,
+        intent=ContradictionResultIntent.NEEDS_CLARIFICATION,
         decision=ContradictionDecision.NEEDS_CLARIFICATION,
         severity=ContradictionSeverity.HIGH,
         reason="Two mutually exclusive places are attached to what appears to be the same event.",
@@ -123,6 +125,7 @@ def test_contradiction_review_requires_grounded_doubt_and_clarification_question
     )
 
     assert result.requires_user_input is True
+    assert result.intent == ContradictionResultIntent.NEEDS_CLARIFICATION.value
     assert result.decision == ContradictionDecision.NEEDS_CLARIFICATION.value
 
     with pytest.raises(ValidationError, match="proposed write"):
@@ -131,10 +134,22 @@ def test_contradiction_review_requires_grounded_doubt_and_clarification_question
     with pytest.raises(ValidationError, match="clarification_question"):
         ContradictionJudgeResultContext(
             judge_request_id=review.judge_request_id,
+            intent=ContradictionResultIntent.NEEDS_CLARIFICATION,
             decision=ContradictionDecision.NEEDS_CLARIFICATION,
             severity=ContradictionSeverity.MEDIUM,
             reason="Needs the user.",
             graph_action=ContradictionGraphAction.ASK_USER,
+        )
+
+    with pytest.raises(ValidationError, match="emit_verdict"):
+        ContradictionJudgeResultContext(
+            judge_request_id=review.judge_request_id,
+            intent=ContradictionResultIntent.EMIT_VERDICT,
+            decision=ContradictionDecision.NEEDS_CLARIFICATION,
+            severity=ContradictionSeverity.MEDIUM,
+            reason="This cannot be both final and clarification-seeking.",
+            graph_action=ContradictionGraphAction.ASK_USER,
+            clarification_question="Which place was correct?",
         )
 
 

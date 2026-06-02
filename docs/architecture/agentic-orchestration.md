@@ -879,6 +879,10 @@ Assistant message ownership:
 - A contradiction-review clarification is rendered from a structured
   `needs_clarification` result, not from unstructured assistant text or a
   question-mark heuristic.
+- `contradiction_review` final output is a validated
+  `ContradictionJudgeResultContext` with one intent: `needs_context`,
+  `needs_clarification`, `emit_verdict`, or `fail_safe`. The runtime applies
+  that intent explicitly instead of inferring behavior from assistant wording.
 - `memory_query`, `correction_intake`, ingestion planning, contradiction
   review, and backend processes are not final public-message owners in normal
   completion paths.
