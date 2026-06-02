@@ -777,6 +777,57 @@ Rules:
 - `AgenticToolExecutionContext` is the dependency boundary for backend services,
   session metadata, pending process context, and history refs.
 
+## Agentic Runtime Layer
+
+The agentic runtime is the execution bridge between static state configuration
+and provider calls.
+
+Runtime flow:
+
+```text
+ConversationContext + AgenticToolExecutionContext
+-> choose start AS
+-> load AgenticStateConfig
+-> load prompt template
+-> build model-facing context payload
+-> route model for the state
+-> build state-specific ToolBox and tool mapping
+-> call provider.generate_chat_with_tools(...)
+-> collect compact tool events
+-> inspect handoff tool output
+-> continue to the next allowed state or terminate
+```
+
+Start-state rule:
+
+- If a pending process context exists, start from `pending_process_review`.
+- Otherwise start from `conversation_entry`.
+
+Top-level handoff semantics:
+
+- In `conversation_entry` and `pending_process_review`, `start_memory_ingestion`,
+  `query_memory_context`, and `propose_memory_correction` are routing commands.
+  They return a handoff target and arguments.
+- `query_memory_context` hands off to `memory_query`.
+- `propose_memory_correction` hands off to `correction_intake`.
+- `start_memory_ingestion` hands off to the ingestion backend process path.
+- Specialist states execute read-only graph tools, proposal tools, or backend
+  facade calls according to their state toolbox.
+
+The runtime does not duplicate provider tool-loop mechanics. It passes the
+generated `ToolBox` and tool mapping into the AI provider, and the provider uses
+the existing generic tool-call loop. Runtime responsibility is state setup,
+context shaping, transition inspection, and bounded execution.
+
+Boundaries:
+
+- `ChatRuntime` may invoke this runtime later as an opt-in mode, but normal chat
+  behavior can stay deterministic while tests mature.
+- The runtime executes `AS` nodes. `BP`, `LP`, and `RS` nodes are invoked through
+  backend services, structured generation services, or persisted process state.
+- Nested tool/provider traces are compacted into runtime results. Parent prompts
+  should receive concise tool outputs, not raw internal traces.
+
 ## State And Tool Matrix
 
 | Node | Kind | Model Role | Allowed Tools / Services | Forbidden |

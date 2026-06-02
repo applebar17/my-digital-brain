@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
 
+from ..models import ToolResult
 from ..schemas import (
     ChatRequest,
     ChatResult,
@@ -18,6 +20,7 @@ from ..schemas import (
     TranscriptionRequest,
     TranscriptionResult,
 )
+from ..tools import ToolBox
 
 
 class FakeLLMProvider:
@@ -47,6 +50,16 @@ class FakeLLMProvider:
             ),
             metadata=ProviderCallMetadata.fake(model=request.model or self.model),
         )
+
+    def generate_chat_with_tools(
+        self,
+        request: ChatRequest,
+        *,
+        toolbox: ToolBox,
+        tools_mapping: dict[str, Callable[..., ToolResult]],
+        max_tool_calls: int | None = None,
+    ) -> ChatResult:
+        return self.generate_chat(request)
 
     def generate_structured(
         self,

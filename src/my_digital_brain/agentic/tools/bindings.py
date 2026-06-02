@@ -7,13 +7,15 @@ from pydantic import BaseModel, ValidationError
 
 from my_digital_brain.ai.models import ToolError, ToolResult
 from my_digital_brain.agentic.contexts import CorrectionProposalContext
-from my_digital_brain.agentic.enums import ConfirmationRiskLevel, CorrectionAction
+from my_digital_brain.agentic.enums import AgenticStateId, ConfirmationRiskLevel, CorrectionAction
+from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.chat.facade import CancelPendingProcessRequest, ChatToolRequest
 from my_digital_brain.core.ids import new_uuid
 
 
 @dataclass(slots=True)
 class AgenticToolExecutionContext:
+    state_id: str | None = None
     backend_facade: Any | None = None
     graph_service: Any | None = None
     ingestion_service: Any | None = None
@@ -27,6 +29,7 @@ class AgenticToolExecutionContext:
     current_text: str | None = None
     pending_process_context: Any | None = None
     conversation_history_refs: list[str] = field(default_factory=list)
+    tool_events: list[AgenticToolEvent] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -47,6 +50,18 @@ class AgenticToolBindings:
         pending_process_policy: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
+        if self._is_handoff_state():
+            return _handoff_result(
+                "start_memory_ingestion",
+                "memory_ingestion_precheck",
+                {
+                    "source_text": source_text,
+                    "source_refs": source_refs or [],
+                    "pending_process_policy": pending_process_policy,
+                    "metadata": metadata or {},
+                },
+                output="Memory ingestion handoff requested.",
+            )
         request = self._chat_request(
             source_text,
             metadata={
@@ -66,6 +81,18 @@ class AgenticToolBindings:
         desired_view: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
+        if self._is_handoff_state():
+            return _handoff_result(
+                "query_memory_context",
+                "memory_query",
+                {
+                    "question": question,
+                    "seed_id": seed_id,
+                    "desired_view": desired_view,
+                    "metadata": metadata or {},
+                },
+                output="Memory query handoff requested.",
+            )
         request = self._chat_request(
             question,
             metadata={
@@ -84,6 +111,17 @@ class AgenticToolBindings:
         target_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
+        if self._is_handoff_state():
+            return _handoff_result(
+                "propose_memory_correction",
+                "correction_intake",
+                {
+                    "correction_text": correction_text,
+                    "target_id": target_id,
+                    "metadata": metadata or {},
+                },
+                output="Memory correction handoff requested.",
+            )
         request = self._chat_request(
             correction_text,
             metadata={"target_id": target_id, **(metadata or {})},
@@ -515,6 +553,12 @@ class AgenticToolBindings:
             return getattr(process_ref, "process_id", None)
         return getattr(pending, "process_id", None)
 
+    def _is_handoff_state(self) -> bool:
+        return self.context.state_id in {
+            AgenticStateId.CONVERSATION_ENTRY.value,
+            AgenticStateId.PENDING_PROCESS_REVIEW.value,
+        }
+
 
 def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
     payload = _serialize(result)
@@ -535,6 +579,28 @@ def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
             if is_error
             else None
         ),
+    )
+
+
+def _handoff_result(
+    operation: str,
+    handoff_target: str,
+    handoff_arguments: dict[str, Any],
+    *,
+    output: str,
+) -> ToolResult:
+    return ToolResult(
+        status="ok",
+        output=output,
+        data={
+            "operation": operation,
+            "handoff_target": handoff_target,
+            "handoff_arguments": {
+                key: value
+                for key, value in handoff_arguments.items()
+                if value not in (None, "", [])
+            },
+        },
     )
 
 

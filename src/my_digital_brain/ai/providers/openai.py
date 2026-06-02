@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import time
+from collections.abc import Callable
 from typing import Any
 
 from ..client import GenAIClient
 from ..client.settings import GenAISettings, get_genai_settings
+from ..models import ToolResult
 from ..schemas import (
     ChatRequest,
     ChatResult,
@@ -21,6 +23,7 @@ from ..schemas import (
     TranscriptionResult,
     TranscriptionSegment,
 )
+from ..tools import ToolBox
 
 
 class OpenAIProvider:
@@ -38,18 +41,40 @@ class OpenAIProvider:
     def generate_chat(self, request: ChatRequest) -> ChatResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()
-        params: dict[str, Any] = {
-            "model": request.model or self.settings.chat_model_default,
-            "messages": [_chat_message_to_dict(message) for message in request.messages],
-        }
-        if request.temperature is not None:
-            params["temperature"] = request.temperature
-        if request.max_tokens is not None:
-            params["max_tokens"] = request.max_tokens
-        if request.tools:
-            params["tools"] = request.tools
+        params = self._chat_params(request)
 
         response = self.client.call_openai(params)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return ChatResult(
+            content=_response_content(response),
+            usage=_usage_from_response(response),
+            metadata=self._metadata(
+                model=params["model"],
+                started_at=started_at,
+                latency_ms=latency_ms,
+                raw_response=response,
+            ),
+            raw_response=_dump_response(response),
+        )
+
+    def generate_chat_with_tools(
+        self,
+        request: ChatRequest,
+        *,
+        toolbox: ToolBox,
+        tools_mapping: dict[str, Callable[..., ToolResult]],
+        max_tool_calls: int | None = None,
+    ) -> ChatResult:
+        started_at = datetime.now(UTC)
+        start = time.monotonic()
+        params = self._chat_params(request)
+
+        response = self.client.call_openai(
+            params,
+            tools_mapping=tools_mapping,
+            toolbox=toolbox,
+            max_tool_calls=max_tool_calls,
+        )
         latency_ms = int((time.monotonic() - start) * 1000)
         return ChatResult(
             content=_response_content(response),
@@ -160,6 +185,19 @@ class OpenAIProvider:
         ):
             return self.settings.azure_openai_transcription_deployment
         return self.settings.openai_transcription_model
+
+    def _chat_params(self, request: ChatRequest) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "model": request.model or self.settings.chat_model_default,
+            "messages": [_chat_message_to_dict(message) for message in request.messages],
+        }
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        if request.max_tokens is not None:
+            params["max_tokens"] = request.max_tokens
+        if request.tools:
+            params["tools"] = request.tools
+        return params
 
 
 def _chat_message_to_dict(message: Any) -> dict[str, Any]:

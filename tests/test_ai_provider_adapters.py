@@ -11,6 +11,8 @@ from my_digital_brain.ai.client.settings import (
     GenAISettings,
     genai_settings_from_app_settings,
 )
+from my_digital_brain.ai.models import ToolResult
+from my_digital_brain.ai.protocols import ToolCallingLLMProvider
 from my_digital_brain.ai.providers import AzureOpenAIProvider, OpenAIProvider
 from my_digital_brain.ai.router import (
     EMBEDDING_TASK,
@@ -25,6 +27,7 @@ from my_digital_brain.ai.schemas import (
     StructuredGenerationRequest,
     TranscriptionRequest,
 )
+from my_digital_brain.ai.tools import ToolBox, build_tool_index
 from my_digital_brain.config import Settings
 
 
@@ -35,11 +38,24 @@ class ExampleStructuredOutput(BaseModel):
 class StubGenAIClient:
     def __init__(self) -> None:
         self.chat_params: dict[str, Any] | None = None
+        self.toolbox: ToolBox | None = None
+        self.tools_mapping: dict[str, Any] | None = None
+        self.max_tool_calls: int | None = None
         self.embed_call: dict[str, Any] | None = None
         self.transcribe_call: dict[str, Any] | None = None
 
-    def call_openai(self, params: dict[str, Any]):
+    def call_openai(
+        self,
+        params: dict[str, Any],
+        *,
+        tools_mapping: dict[str, Any] | None = None,
+        toolbox: ToolBox | None = None,
+        max_tool_calls: int | None = None,
+    ):
         self.chat_params = params
+        self.tools_mapping = tools_mapping
+        self.toolbox = toolbox
+        self.max_tool_calls = max_tool_calls
         return SimpleNamespace(
             id="chat-request-1",
             choices=[
@@ -167,6 +183,50 @@ def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
     assert client.transcribe_call["model"] == "transcribe-model"
 
 
+def test_openai_provider_passes_toolbox_and_mapping_to_genai_client() -> None:
+    client = StubGenAIClient()
+    provider = OpenAIProvider(
+        client=client,
+        settings=GenAISettings(openai_api_key="test"),
+    )
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "example_tool",
+            "description": "Example tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }
+    toolbox = ToolBox(
+        name="test",
+        tools=[tool],
+        tools_by_name=build_tool_index([tool]),
+    )
+    mapping = {"example_tool": lambda: ToolResult(status="ok", output="done")}
+
+    chat = provider.generate_chat_with_tools(
+        ChatRequest(
+            messages=[ChatMessage(role="user", content="hello")],
+            model="chat-model",
+        ),
+        toolbox=toolbox,
+        tools_mapping=mapping,
+        max_tool_calls=2,
+    )
+
+    assert isinstance(provider, ToolCallingLLMProvider)
+    assert chat.content == "chat response"
+    assert client.toolbox is toolbox
+    assert client.tools_mapping is mapping
+    assert client.max_tool_calls == 2
+
+
 def test_azure_provider_marks_provider_and_deployment(tmp_path: Path) -> None:
     provider = AzureOpenAIProvider(
         client=StubGenAIClient(),
@@ -183,6 +243,7 @@ def test_azure_provider_marks_provider_and_deployment(tmp_path: Path) -> None:
 
     assert transcript.metadata.provider == "azure_openai"
     assert transcript.metadata.deployment == "whisper-deploy"
+    assert isinstance(provider, ToolCallingLLMProvider)
 
 
 def test_static_model_router_uses_default_and_azure_routes() -> None:

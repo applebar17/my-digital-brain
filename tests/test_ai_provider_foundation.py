@@ -14,6 +14,7 @@ from my_digital_brain.ai.protocols import (
     LLMProvider,
     SpeechToTextProvider,
     StructuredLLMProvider,
+    ToolCallingLLMProvider,
 )
 from my_digital_brain.ai.providers import FakeAIProvider
 from my_digital_brain.ai.request_log import build_provider_request_log_payload
@@ -86,6 +87,7 @@ def test_fake_provider_implements_all_wave1_protocols(tmp_path: Path) -> None:
     assert isinstance(provider, StructuredLLMProvider)
     assert isinstance(provider, EmbeddingProvider)
     assert isinstance(provider, SpeechToTextProvider)
+    assert isinstance(provider, ToolCallingLLMProvider)
 
     chat = provider.generate_chat(
         ChatRequest(messages=[ChatMessage(role="user", content="hello")])

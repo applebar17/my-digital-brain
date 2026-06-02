@@ -157,6 +157,14 @@ Implemented foundation artifacts:
   - agentic tool registry, state-specific toolbox factory, and backend binding
     layer under `src/my_digital_brain/agentic/tools/`
   - `memory_ingestion_planning` state configuration
+  - provider-neutral runtime contracts:
+    - `AgenticToolEvent`
+    - `AgenticStateRunResult`
+    - `AgenticRunResult`
+    - `AgenticStateInvocation`
+  - `AgenticStateRunner` for executing one configured `AS` state with prompt,
+    model route, model-facing context payload, state toolbox, and tool mapping
+  - `AgenticRuntime` for bounded multi-state execution and handoff inspection
 - `src/my_digital_brain/prompts/`
   - file-backed prompt registry
   - templates for `conversation_entry`, `pending_process_review`, optional
@@ -187,19 +195,33 @@ Implemented foundation artifacts:
 - `tests/test_agentic_tool_bindings.py`
   - every configured state tool has a registered spec
   - state-specific toolboxes expose only allowed tools
-  - facade-backed chat tools
+  - top-level chat tools return handoff commands
   - read-only graph tools
   - proposal-only correction tools
   - verbose missing-dependency errors
+- `tests/test_agentic_runtime.py`
+  - direct assistant response from `conversation_entry`
+  - query handoff into `memory_query`
+  - correction handoff into `correction_intake`
+  - pending context starts from `pending_process_review`
+  - missing dependency tool errors do not crash the state
+  - ingestion handoff delegates to backend facade
+  - transition limit stops runaway handoffs
+- `src/my_digital_brain/ai/`
+  - `ToolCallingLLMProvider`
+  - OpenAI/Azure provider support for `generate_chat_with_tools(...)`
+  - fake provider support for runtime tests
+  - agentic model routing defaults for smart/reasoning states
 
 Implemented but intentionally not wired yet:
 
-- Real OpenAI/Azure tool-call routing.
 - Agentic runtime integration into `ChatRuntime`.
 - Model-backed intent classification.
 
-This is intentional. The current code provides stable contracts and fake/test
-provider-compatible behavior before production model behavior is connected.
+This is intentional. The runtime can be invoked directly, and OpenAI/Azure
+provider adapters can run state-specific tool loops, but the deterministic chat
+runtime remains unchanged until behavior tests are stable enough for opt-in
+chat integration.
 
 ## Agent And Process Catalog
 

@@ -13,6 +13,12 @@ STRUCTURED_EXTRACTION_TASK = "structured_extraction"
 SUMMARIZATION_TASK = "summarization"
 EMBEDDING_TASK = "embedding"
 SPEECH_TO_TEXT_TASK = "speech_to_text"
+AGENTIC_SMART_TASKS = {
+    "memory_query",
+    "correction_intake",
+    "memory_ingestion_planning",
+}
+AGENTIC_REASONING_TASKS = {"contradiction_review"}
 
 
 @dataclass(slots=True)
@@ -41,8 +47,10 @@ class StaticModelRouter:
         provider: str,
         context: AIRequestContext | None,
     ) -> ModelRoute:
-        if task == STRUCTURED_EXTRACTION_TASK:
+        if task == STRUCTURED_EXTRACTION_TASK or task in AGENTIC_SMART_TASKS:
             model = self.settings.chat_model_smart or self.settings.chat_model_default
+        elif task in AGENTIC_REASONING_TASKS:
+            model = self.settings.chat_model_reasoning or self.settings.chat_model_default
         elif task == SUMMARIZATION_TASK:
             model = self.settings.chat_model_default
         elif task == EMBEDDING_TASK:

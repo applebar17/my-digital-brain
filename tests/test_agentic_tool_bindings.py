@@ -236,17 +236,22 @@ def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> N
         assert not names.intersection(state_config.forbidden_tools)
 
 
-def test_top_level_tools_call_backend_facade() -> None:
+def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> None:
     facade = FakeFacade()
+    execution_context = _execution_context(backend_facade=facade)
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
-    mapping = build_agentic_tool_mapping(config, _execution_context(backend_facade=facade))
+    mapping = build_agentic_tool_mapping(config, execution_context)
 
     result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
 
     assert result.status == "ok"
-    assert result.output == "Memory accepted."
-    assert facade.calls[0][0] == "start_memory_ingestion"
-    assert facade.calls[0][1].text == "Yesterday I met Marco."
+    assert result.output == "Memory ingestion handoff requested."
+    assert result.data["handoff_target"] == "memory_ingestion_precheck"
+    assert result.data["handoff_arguments"]["source_text"] == "Yesterday I met Marco."
+    assert execution_context.tool_events[0].data["handoff_target"] == (
+        "memory_ingestion_precheck"
+    )
+    assert facade.calls == []
 
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
