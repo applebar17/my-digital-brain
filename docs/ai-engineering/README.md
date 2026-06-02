@@ -149,6 +149,12 @@ For contradiction handling, the behavioral protocol is:
 - The judge returns a structured decision and recommended action.
 - The judge does not mutate the graph directly.
 
+For correction, maintenance, contradiction, and profile-memory flows, risky model
+outputs are proposals or review results, not authority to mutate persistent
+state. The backend must convert approved proposals into validated graph service
+calls, and confirmation-aware contexts must make the required user approval
+explicit.
+
 ### 8. Guardrails Protect Against Bad Loops
 
 Agentic flows need deterministic guardrails to prevent unstable behavior.

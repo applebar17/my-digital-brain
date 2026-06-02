@@ -3,11 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from my_digital_brain.agentic.base import AgenticModel, utc_now
 from my_digital_brain.agentic.enums import (
     ChannelModality,
+    ConfirmationRiskLevel,
+    ContradictionDecision,
+    ContradictionGraphAction,
+    ContradictionSeverity,
+    CorrectionAction,
+    MaintenanceSuggestionType,
+    ProfileMemoryCategory,
+    ProfileMemoryStability,
+    ProfileMemoryVisibility,
     ResponseRenderStyle,
     ToolResultStatus,
 )
@@ -220,3 +229,167 @@ class QueryRetrievalResultContext(AgenticModel):
     no_memory_reason: str | None = None
     uncertainty_notes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorrectionIntakeContext(AgenticModel):
+    correction_text: str
+    conversation: ConversationContext
+    target_hints: list[str] = Field(default_factory=list)
+    graph_context: GraphContextPackage | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorrectionProposalContext(AgenticModel):
+    proposal_id: str = Field(default_factory=new_uuid)
+    correction_text: str
+    action: CorrectionAction = CorrectionAction.NEEDS_TARGET
+    target_id: str | None = None
+    target_label: str | None = None
+    field_path: str | None = None
+    current_value: Any | None = None
+    proposed_value: Any | None = None
+    reason: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    requires_confirmation: bool = True
+    risk_level: ConfirmationRiskLevel = ConfirmationRiskLevel.MEDIUM
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_targeted_action(self) -> "CorrectionProposalContext":
+        if self.action != CorrectionAction.NEEDS_TARGET.value and not self.target_id:
+            raise ValueError("Correction proposals with an action require target_id.")
+        if self.action != CorrectionAction.NO_CHANGE.value and not self.reason.strip():
+            raise ValueError("Correction proposals require a reason.")
+        return self
+
+
+class ConfirmationHandoffContext(AgenticModel):
+    confirmation_id: str = Field(default_factory=new_uuid)
+    proposal: CorrectionProposalContext
+    question: str
+    target_refs: list[str] = Field(default_factory=list)
+    required_user_action: str = "confirm_or_cancel"
+    expires_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContradictionReviewContext(AgenticModel):
+    judge_request_id: str = Field(default_factory=new_uuid)
+    proposed_write_ref: str | None = None
+    proposed_write: dict[str, Any] = Field(default_factory=dict)
+    graph_context: GraphContextPackage | None = None
+    affected_entity_refs: list[str] = Field(default_factory=list)
+    affected_relationship_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    agent_doubt: str
+    requested_at: datetime = Field(default_factory=utc_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_grounded_doubt(self) -> "ContradictionReviewContext":
+        if not self.agent_doubt.strip():
+            raise ValueError("Contradiction review requires an agent_doubt explanation.")
+        if not (self.proposed_write_ref or self.proposed_write):
+            raise ValueError("Contradiction review requires proposed write context.")
+        return self
+
+
+class ContradictionJudgeResultContext(AgenticModel):
+    judge_decision_id: str = Field(default_factory=new_uuid)
+    judge_request_id: str
+    decision: ContradictionDecision
+    severity: ContradictionSeverity = ContradictionSeverity.LOW
+    reason: str
+    graph_action: ContradictionGraphAction
+    clarification_question: str | None = None
+    inspected_context_refs: list[str] = Field(default_factory=list)
+    requires_user_input: bool = False
+    decided_at: datetime = Field(default_factory=utc_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_clarification(self) -> "ContradictionJudgeResultContext":
+        needs_question = (
+            self.decision == ContradictionDecision.NEEDS_CLARIFICATION.value
+            or self.graph_action == ContradictionGraphAction.ASK_USER.value
+        )
+        if needs_question and not self.clarification_question:
+            raise ValueError("Clarification decisions require clarification_question.")
+        if needs_question:
+            self.requires_user_input = True
+        return self
+
+
+class ProfileExtractionContext(AgenticModel):
+    source: SourceContext
+    conversation: ConversationContext | None = None
+    owner_person_id: str | None = None
+    current_profile_summary: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfileMemoryCandidateContext(AgenticModel):
+    candidate_id: str = Field(default_factory=new_uuid)
+    profile_key: str
+    category: ProfileMemoryCategory
+    value: str
+    description: str
+    original_user_words: str | None = None
+    source_refs: list[str] = Field(default_factory=list)
+    evidence_text: str | None = None
+    stability: ProfileMemoryStability = ProfileMemoryStability.TEMPORARY
+    visibility: ProfileMemoryVisibility = ProfileMemoryVisibility.HIDDEN
+    requires_confirmation: bool = False
+    reason: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfileExtractionResultContext(AgenticModel):
+    extraction_id: str = Field(default_factory=new_uuid)
+    source_id: str
+    candidates: list[ProfileMemoryCandidateContext] = Field(default_factory=list)
+    rejected_observations: list[str] = Field(default_factory=list)
+    summary: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MaintenanceReviewContext(AgenticModel):
+    review_id: str = Field(default_factory=new_uuid)
+    trigger: str
+    graph_context: GraphContextPackage | None = None
+    target_refs: list[str] = Field(default_factory=list)
+    pending_processes: list[PendingProcessContext] = Field(default_factory=list)
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MaintenanceSuggestionContext(AgenticModel):
+    suggestion_id: str = Field(default_factory=new_uuid)
+    suggestion_type: MaintenanceSuggestionType
+    target_refs: list[str] = Field(default_factory=list)
+    reason: str
+    recommended_action: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    requires_confirmation: bool = True
+    risk_level: ConfirmationRiskLevel = ConfirmationRiskLevel.MEDIUM
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MaintenanceReviewResultContext(AgenticModel):
+    review_id: str
+    suggestions: list[MaintenanceSuggestionContext] = Field(default_factory=list)
+    no_action_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_result_has_signal(self) -> "MaintenanceReviewResultContext":
+        if not self.suggestions and not self.no_action_reason:
+            raise ValueError("Maintenance review requires suggestions or no_action_reason.")
+        return self

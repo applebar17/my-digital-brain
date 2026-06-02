@@ -60,3 +60,79 @@ class ResponseRenderStyle(StrEnum):
     PLAIN_TEXT = "plain_text"
     SHORT_CHAT = "short_chat"
     RICH_WEB = "rich_web"
+
+
+class ContradictionDecision(StrEnum):
+    NO_CONFLICT = "no_conflict"
+    NUANCE = "nuance"
+    TEMPORAL_UPDATE = "temporal_update"
+    CONTRADICTION = "contradiction"
+    NEEDS_CLARIFICATION = "needs_clarification"
+
+
+class ContradictionSeverity(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ContradictionGraphAction(StrEnum):
+    ALLOW_WRITE = "allow_write"
+    WRITE_AS_DISPUTED = "write_as_disputed"
+    CREATE_CONTRADICTION_RECORD = "create_contradiction_record"
+    CREATE_RELATIONSHIP_STATE = "create_relationship_state"
+    ASK_USER = "ask_user"
+
+
+class CorrectionAction(StrEnum):
+    NO_CHANGE = "no_change"
+    PATCH_NODE = "patch_node"
+    PATCH_RELATIONSHIP = "patch_relationship"
+    UPDATE_RELATIONSHIP_CONTEXT = "update_relationship_context"
+    UPDATE_CONTACT_POINT = "update_contact_point"
+    MARK_DISPUTED = "mark_disputed"
+    ARCHIVE_MEMORY = "archive_memory"
+    NEEDS_TARGET = "needs_target"
+
+
+class ConfirmationRiskLevel(StrEnum):
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ProfileMemoryCategory(StrEnum):
+    COMMUNICATION = "communication"
+    PERSONALITY = "personality"
+    GOALS = "goals"
+    PREFERENCES = "preferences"
+    PRIVACY = "privacy"
+    WORK_STYLE = "work_style"
+    INTERESTS = "interests"
+    EMOTIONAL_PATTERN = "emotional_pattern"
+
+
+class ProfileMemoryStability(StrEnum):
+    TEMPORARY = "temporary"
+    RECURRING = "recurring"
+    STABLE = "stable"
+    USER_CONFIRMED = "user_confirmed"
+
+
+class ProfileMemoryVisibility(StrEnum):
+    HIDDEN = "hidden"
+    RETRIEVABLE = "retrievable"
+    PROMPT_ALLOWED = "prompt_allowed"
+
+
+class MaintenanceSuggestionType(StrEnum):
+    REVIEW_CONTRADICTION = "review_contradiction"
+    MARK_STALE = "mark_stale"
+    MARK_EXPIRED = "mark_expired"
+    MARK_CONFIRMED = "mark_confirmed"
+    ARCHIVE_MEMORY = "archive_memory"
+    UPDATE_CONTACT_POINT = "update_contact_point"
+    ATTACH_EVIDENCE = "attach_evidence"
+    PROMOTE_METADATA = "promote_metadata"
+    PROPOSE_MERGE = "propose_merge"

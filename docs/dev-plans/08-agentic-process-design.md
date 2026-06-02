@@ -151,11 +151,17 @@ Implemented foundation artifacts:
   - deterministic fallback router
   - Wave 2 memory query state configuration
   - deterministic memory query foundation service
+  - Wave 3 correction and contradiction state configuration
+  - correction, confirmation, contradiction judge, profile memory, and
+    maintenance context contracts
 - `src/my_digital_brain/prompts/`
   - file-backed prompt registry
   - templates for `conversation_entry`, `pending_process_review`, optional
     `clarification_classifier`, `memory_query`, `query_retrieval_planning`, and
     `answer_generation`
+  - templates for `correction_intake`, `correction_proposal`,
+    `contradiction_review`, `profile_memory_extraction`, and
+    `maintenance_review`
 - `tests/test_agentic_foundation.py`
   - neutral message validation
   - context payload safety
@@ -168,13 +174,18 @@ Implemented foundation artifacts:
   - no-graph fallback behavior
   - graph seed resolution
   - `AnswerContext` and `ToolResultContext` construction
+- `tests/test_agentic_risk_foundation.py`
+  - correction and contradiction state toolbox checks
+  - Wave 3 prompt template loading
+  - confirmation-aware correction proposals
+  - grounded contradiction judge results
+  - profile memory and maintenance review contracts
 
 Implemented but intentionally not wired yet:
 
 - Real OpenAI/Azure tool-call routing.
 - Agentic runtime integration into `ChatRuntime`.
 - Model-backed intent classification.
-- Correction/judge/profile/maintenance protocols.
 
 This is intentional. The current code provides stable contracts and fake/test
 provider-compatible behavior before production model behavior is connected.
@@ -690,7 +701,7 @@ Out of scope for Wave 2:
 
 ## Wave 3: Correction, Judge, Profile, And Maintenance Foundation
 
-Status: Pending.
+Status: Complete.
 
 ### Summary
 
@@ -704,7 +715,7 @@ Focus:
 - Profile/personality memory process.
 - Maintenance process.
 
-Expected implementation outputs:
+Implemented outputs:
 
 - Correction protocol.
 - Correction context objects and confirmation handoff context.
@@ -722,6 +733,42 @@ Expected implementation outputs:
 - Maintenance review context object.
 - Maintenance review prompt template.
 - Confirmation rules for risky changes.
+
+Implemented files:
+
+- `src/my_digital_brain/agentic/enums.py`
+  - contradiction decisions, severity, and graph actions
+  - correction actions
+  - confirmation risk levels
+  - profile memory category, stability, and visibility
+  - maintenance suggestion types
+- `src/my_digital_brain/agentic/contexts.py`
+  - `CorrectionIntakeContext`
+  - `CorrectionProposalContext`
+  - `ConfirmationHandoffContext`
+  - `ContradictionReviewContext`
+  - `ContradictionJudgeResultContext`
+  - `ProfileExtractionContext`
+  - `ProfileMemoryCandidateContext`
+  - `ProfileExtractionResultContext`
+  - `MaintenanceReviewContext`
+  - `MaintenanceSuggestionContext`
+  - `MaintenanceReviewResultContext`
+- `src/my_digital_brain/agentic/state.py`
+  - `correction_intake` state configuration
+  - `contradiction_review` state configuration
+- Prompt templates:
+  - `correction_intake/v1.system.md`
+  - `correction_proposal/v1.system.md`
+  - `contradiction_review/v1.system.md`
+  - `profile_memory_extraction/v1.system.md`
+  - `maintenance_review/v1.system.md`
+- `tests/test_agentic_risk_foundation.py`
+
+Verification:
+
+- `python -B -m pytest tests/test_agentic_risk_foundation.py`
+- Full suite: `128 passed, 3 skipped`
 
 Out of scope for Wave 3:
 

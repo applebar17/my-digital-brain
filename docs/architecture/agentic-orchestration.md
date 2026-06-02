@@ -240,6 +240,8 @@ General context rules:
 | `LP: correction_proposal` | Resolved target, current state/history/evidence, correction text, allowed mutation policy. | Human-readable correction proposal and confirmation request when mutation is risky. |
 | `RS: confirmation_waiting` | Proposal, target refs, required confirmation text/action, expiration timestamp. | Confirmation/cancel context for the next chat turn. |
 | `BP: correction_execution` | Confirmed correction proposal, target refs, graph service handles, audit context. | Applied correction result, change records, correction summary input. |
+| `LP: profile_memory_extraction` | Source context, optional conversation context, owner profile summary, evidence refs, current time/timezone. | Profile memory candidates with category, value, original user words, stability, visibility, confirmation flag, or rejected observations. |
+| `LP: maintenance_review` | Trigger, compact graph context, target refs, pending process summaries, current time/timezone. | Maintenance suggestions or explicit no-action reason; risky suggestions require confirmation. |
 
 ## Ingestion Orchestration
 
@@ -759,6 +761,8 @@ The agent cannot:
 | `memory_query` | `AS` | Retrieve and answer | query context, graph views, answer provider | mutation |
 | `correction_intake` | `AS` | Propose safe correction | correction proposal, graph reads | direct mutation |
 | `confirmation_waiting` | `RS` | Wait for explicit user approval | confirm/cancel/status | implicit mutation |
+| `profile_memory_extraction` | `LP` | Extract durable user profile candidates | fixed schema input only | personality-cloning behavior, writes |
+| `maintenance_review` | `LP` | Suggest memory maintenance actions | fixed review context only | proactive interruption, writes |
 
 ## Prompt Scaffolding
 
@@ -786,8 +790,11 @@ src/my_digital_brain/prompts/
     focused_extraction/event/v1.system.md
     focused_extraction/perception/v1.system.md
     focused_extraction/relationship_context/v1.system.md
-    contradiction_judge/v1.system.md
+    correction_intake/v1.system.md
     correction_proposal/v1.system.md
+    contradiction_review/v1.system.md
+    profile_memory_extraction/v1.system.md
+    maintenance_review/v1.system.md
 ```
 
 Prompt registry metadata:
