@@ -2,13 +2,28 @@
 
 ## Goal
 
-Define the behavioral protocols, toolboxes, context packages, and guardrails for the AI-driven processes that operate on top of the backend services.
+Implement the agentic process foundation that sits between chat consumers and
+backend domain services.
 
-This plan is mostly a design placeholder for now. It exists because the product cannot be reduced to "chat input goes to ingestion." The core product behavior depends on how agents reason, choose tools, ask clarifications, interpret graph context, recover from failures, and coordinate subprocesses.
+The canonical behavior model lives in
+[Agentic orchestration architecture](../architecture/agentic-orchestration.md).
+This file is the implementation roadmap derived from that architecture and from
+the [AI engineering principles](../ai-engineering/README.md).
+
+The implementation direction is foundations first, wiring last:
+
+1. Typed context objects.
+2. Neutral conversation message protocol.
+3. Prompt registry and prompt templates.
+4. Agentic state configuration.
+5. Tool-call/message routing protocols.
+6. Query, correction, judge, profile, and maintenance process protocols.
+7. Runtime wiring into chat once contracts are stable.
 
 ## Expected Output
 
-This plan should produce agent/process specifications before heavy implementation.
+This plan produces implementation artifacts and process specifications that can
+be tested before full autonomous behavior is enabled.
 
 Expected artifacts:
 
@@ -18,7 +33,7 @@ Expected artifacts:
 - Input context requirements.
 - Tool argument/result contracts and structured output contracts for focused
   LLM procedures.
-- State transition diagrams or tables.
+- State handoff tables aligned with the canonical architecture.
 - Clarification rules.
 - Confirmation rules.
 - Error and retry policies.
@@ -26,7 +41,9 @@ Expected artifacts:
 - Privacy and provider-boundary rules.
 - Evaluation examples for each process.
 
-The final output is not just code. The most important output is a clear behavioral contract that future implementation can follow.
+The final output is both code and behavioral contracts. Code should implement
+stable contracts first; model-backed behavior can then be layered on top without
+changing the domain services.
 
 ## Architecture Position
 
@@ -36,7 +53,7 @@ Telegram, web chat, future mobile
         |
         v
 Conversation runtime
-normalization, history refs, pending process context
+normalization, full usable history, pending process context
         |
         v
 Agentic process layer
@@ -68,7 +85,8 @@ It decides how to use those capabilities in a controlled conversational flow.
 - [LLM integration](../external-integrations/llm-integration.md) defines model usage boundaries and structured-output principles.
 - [AI engineering principles](../ai-engineering/README.md) define the engineering rules this plan must follow.
 
-This plan defines how agents and subprocesses behave when using those pieces.
+This plan defines how agents and subprocesses behave when using those pieces,
+and which implementation artifacts must exist for each wave.
 
 ## Locked Principles
 
@@ -121,28 +139,73 @@ architecture document. The implementation sequence is foundations first, wiring
 last: build typed contracts and prompt/state infrastructure before connecting
 real model behavior into the chat runtime.
 
+## Current Implementation State
+
+Implemented foundation artifacts:
+
+- `src/my_digital_brain/agentic/`
+  - neutral conversation messages
+  - context objects
+  - state ids and agentic enums
+  - Wave 1 state configuration
+  - deterministic fallback router
+- `src/my_digital_brain/prompts/`
+  - file-backed prompt registry
+  - initial templates for `conversation_entry`, `pending_process_review`, and
+    optional `clarification_classifier`
+- `tests/test_agentic_foundation.py`
+  - neutral message validation
+  - context payload safety
+  - default state toolbox checks
+  - prompt registry loading/rendering
+  - deterministic router behavior
+
+Implemented but intentionally not wired yet:
+
+- Real OpenAI/Azure tool-call routing.
+- Agentic runtime integration into `ChatRuntime`.
+- Model-backed intent classification.
+- Query/answer agentic protocols.
+- Correction/judge/profile/maintenance protocols.
+
+This is intentional. The current code provides stable contracts and fake/test
+provider-compatible behavior before production model behavior is connected.
+
 ## Agent And Process Catalog
 
 ### Conversation Router
 
 Purpose:
 
-Decide whether a user message should be answered directly or routed into a process.
+Decide whether a user message should be answered directly or routed into a
+top-level process.
 
 Possible actions:
 
 - default answer path
-- start memory ingestion
-- query memory context
-- propose memory correction
-- report status or failure
+- `start_memory_ingestion`
+- `query_memory_context`
+- `propose_memory_correction`
+- `get_conversation_status`
+- `cancel_pending_process`
 
-Design questions:
+Locked behavior:
 
-- Should routing be deterministic first, LLM-based, or hybrid?
-- What context does routing need beyond the current message, conversation history summary, and pending process context?
-- When should a message be treated as a clarification answer instead of a new memory?
-- Which commands remain deterministic shortcuts?
+- When no active pending process exists, `conversation_entry` is the default
+  entry state.
+- When an active pending process exists, `pending_process_review` is the
+  preferred entry state.
+- Orchestrator-like states return either an assistant message or a model-visible
+  tool call.
+- The tool call is the structured routing decision.
+- The deterministic fallback router is already implemented for Wave 1.
+
+Deferred decisions:
+
+- When to enable real model-backed routing in the chat runtime.
+- Whether model-backed routing should run before or after deterministic command
+  shortcuts.
+- Which evaluation examples are sufficient before enabling model-backed routing.
 
 ### Memory Ingestion Process
 
@@ -166,7 +229,7 @@ Available backend capabilities:
 - ingestion services
 - graph write-plan execution through backend services
 
-Open design questions:
+Deferred decisions:
 
 - When should ingestion execute writes automatically?
 - When should the user confirm a write plan?
@@ -185,17 +248,29 @@ Responsibilities:
 - Attach pending context to the next relevant runtime or agent call.
 - Support classification of the next user message as clarification answer, new memory, question, correction, cancellation, or normal chat.
 - Resume the pending process only when classification indicates that resumption is appropriate.
-- Expire old pending states.
+- Pause, cancel, or expire old pending states.
 - Let the user cancel or skip when appropriate.
 - Avoid turning chat into a rigid form flow.
 
-Open design questions:
+Locked behavior:
+
+- Clarification questions are normal assistant messages, not broad
+  model-visible tools.
+- Pending process state is contextual guidance, not deterministic routing.
+- Optional lightweight classification may be used only when it helps decide
+  whether to resume a pending process.
+- Paused pending processes are distinct from cancelled pending processes.
+- Proactive resurfacing of paused questions is deferred.
+
+Deferred decisions:
 
 - What is the default expiration duration?
-- Can multiple pending clarifications exist at once?
-- If a user ignores a clarification and sends a new memory, should the old one stay pending?
+- Can multiple paused pending clarifications exist at once?
+- If a user ignores a clarification and sends a new memory, should the old one
+  always pause, or can some cases cancel immediately?
 - How should ambiguous clarification answers be handled?
-- Which parts of message classification should be deterministic versus model-guided?
+- Which parts of message classification should be deterministic versus
+  model-guided once real routing is enabled?
 
 ### Memory Query Process
 
@@ -220,7 +295,7 @@ Available backend capabilities:
 - vector retrieval later
 - answer generation through AI provider later
 
-Open design questions:
+Deferred decisions:
 
 - How much retrieval should happen before answer generation?
 - When should semantic/vector retrieval be used?
@@ -249,7 +324,7 @@ Available backend capabilities:
 - change records
 - merge services later
 
-Open design questions:
+Deferred decisions:
 
 - Which corrections can be applied automatically?
 - Which corrections require confirmation?
@@ -273,7 +348,7 @@ Important boundary:
 
 The judge does not mutate the graph directly.
 
-Open design questions:
+Deferred decisions:
 
 - What severity levels are useful?
 - When is the judge invoked automatically?
@@ -294,7 +369,7 @@ Responsibilities:
 - Store evidence and lifecycle state.
 - Make approved profile memory retrievable during prompt construction.
 
-Open design questions:
+Deferred decisions:
 
 - Which profile keys are allowed?
 - What requires explicit confirmation?
@@ -316,7 +391,7 @@ Potential responsibilities:
 - Low-confidence extraction review.
 - Merge/split suggestions.
 
-Open design questions:
+Deferred decisions:
 
 - Which maintenance tasks are proactive versus user-triggered?
 - How much automation is acceptable for a personal project?
@@ -336,6 +411,8 @@ Required context:
 Produced context:
 Context object type:
 Context handoff policy:
+History policy:
+Tool trace policy:
 Allowed tools:
 Forbidden tools:
 Tool/output contracts:
@@ -370,10 +447,9 @@ Examples:
 
 ## Context Object Design
 
-Agentic implementation should introduce typed context objects for state inputs
-and handoffs. These are not the same as raw chat messages, raw tool traces, or
-database records. They are deliberate packages assembled after each action
-finishes.
+Wave 1 introduced baseline typed context objects for state inputs and handoffs.
+They are not the same as raw chat messages, raw tool traces, or database
+records. They are deliberate packages assembled after each action finishes.
 
 Purpose:
 
@@ -385,7 +461,7 @@ Purpose:
 - Make prompt rendering stable because each prompt receives a known context
   object shape.
 
-Expected baseline object families:
+Implemented baseline object families:
 
 - `ConversationContext`: usable conversation history, compacted older summary,
   current message, current time/timezone, and pending-process summary.
@@ -414,6 +490,10 @@ Expected baseline object families:
   its caller, including result status, important refs, unresolved questions,
   errors, and recommended next action.
 - `AnswerContext`: LLM-ready context package for grounded answer generation.
+
+Future waves may extend these contracts, but they should not replace the core
+handoff rule: every action boundary produces an explicit context object for the
+next state.
 
 Handoff rule:
 
@@ -449,11 +529,12 @@ Status: Complete.
 
 ### Summary
 
-Lock the agent/process catalog, process template, top-level action surface, and open questions.
+Lock the agent/process catalog, process template, top-level action surface, and
+deferred decisions.
 
 ### Outputs
 
-- This placeholder plan.
+- Canonical roadmap and baseline implementation plan.
 - Initial process catalog.
 - Initial tool design template.
 - Initial context object catalog and handoff rule.
@@ -488,10 +569,10 @@ Focus:
 - Status/cancel behavior.
 - Start-ingestion behavior from text and transcript inputs.
 
-Expected design outputs:
+Implemented outputs:
 
-- Router protocol.
-- Clarification manager protocol.
+- Deterministic router protocol.
+- Pending process review protocol skeleton.
 - `conversation_entry` state configuration.
 - `pending_process_review` state configuration.
 - Router input context shape.
@@ -515,7 +596,7 @@ Expected design outputs:
 - Pending process context shape.
 - Optional lightweight pending-message intent classification.
 - Minimal clarification state transitions.
-- Evaluation examples for:
+- Tests/evaluation examples for:
   - new memory
   - direct question
   - clarification answer
@@ -524,9 +605,13 @@ Expected design outputs:
   - user sends a different memory while clarification is pending
   - user cancels or skips a pending clarification
 
-Implementation should use fake/test provider behavior first. Real OpenAI/Azure
-tool-call routing can be wired after the contracts, prompts, and deterministic
-fallback router are stable.
+Verification:
+
+- `tests/test_agentic_foundation.py`
+- Full suite: `117 passed, 3 skipped`
+
+Real OpenAI/Azure tool-call routing can be wired after the contracts, prompts,
+and deterministic fallback router are stable.
 
 Out of scope for Wave 1:
 
@@ -535,14 +620,24 @@ Out of scope for Wave 1:
 - Proactive resurfacing of paused pending processes.
 - Full agent-to-chat runtime wiring beyond clear interfaces and tests.
 
-## Wave 2: Query And Answer Protocols
+## Wave 2: Query And Answer Foundation
+
+Status: Pending.
 
 ### Summary
 
-Design how the assistant answers memory questions from graph context.
+Implement the agentic query and answer foundation on top of existing graph
+query/context package services. This wave should make memory questions flow
+through explicit context objects and prompt contracts without yet enabling a
+fully autonomous assistant.
 
 Focus:
 
+- `memory_query` state configuration.
+- Query retrieval planning contract.
+- Query context retrieval handoff.
+- `AnswerContext`.
+- Answer-generation prompt template.
 - Query intent interpretation.
 - Retrieval plan.
 - Evidence package construction.
@@ -550,13 +645,20 @@ Focus:
 - Uncertainty handling.
 - No-memory answer behavior.
 
-Expected design outputs:
+Expected implementation outputs:
 
 - Query process protocol.
-- Query context package shape.
+- `memory_query` state configuration.
+- Query retrieval planning context object.
+- Query retrieval result context object.
 - `AnswerContext`.
-- Query retrieval context object.
 - Query tool result context object.
+- Prompt templates:
+  - `memory_query`
+  - `query_retrieval_planning`
+  - `answer_generation`
+- Deterministic query fallback path using existing graph query/context helpers
+  where available.
 - Answer-generation prompt contract.
 - Evidence presentation rules.
 - Evaluation examples for:
@@ -566,11 +668,21 @@ Expected design outputs:
   - affective relationship questions
   - missing memories
 
-## Wave 3: Correction, Judge, Profile, And Maintenance Protocols
+Out of scope for Wave 2:
+
+- Semantic text-to-node retrieval beyond existing graph query helpers.
+- Real autonomous multi-tool query loops.
+- Public product-grade citation UI.
+- Frontend graph/dashboard behavior.
+
+## Wave 3: Correction, Judge, Profile, And Maintenance Foundation
+
+Status: Pending.
 
 ### Summary
 
-Design the higher-risk and later-stage agentic processes.
+Implement the contracts and prompt scaffolding for higher-risk and later-stage
+agentic processes. Mutation still remains backend-owned and confirmation-aware.
 
 Focus:
 
@@ -579,18 +691,31 @@ Focus:
 - Profile/personality memory process.
 - Maintenance process.
 
-Expected design outputs:
+Expected implementation outputs:
 
 - Correction protocol.
 - Correction context objects and confirmation handoff context.
+- `correction_intake` state configuration.
+- Correction proposal prompt template.
 - Judge invocation rules.
 - Judge review context object and judge result context object.
+- `contradiction_review` state configuration.
+- Contradiction judge prompt template.
 - Judge output schema.
 - Profile memory extraction policy.
 - Profile extraction context object.
+- Profile memory prompt template.
 - Maintenance suggestion policy.
 - Maintenance review context object.
+- Maintenance review prompt template.
 - Confirmation rules for risky changes.
+
+Out of scope for Wave 3:
+
+- Direct graph mutation by models.
+- Fully autonomous maintenance prompts.
+- Personality-cloning behavior in normal MVP flows.
+- Public multi-user policy.
 
 ## Out Of Scope For Now
 
