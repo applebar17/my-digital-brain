@@ -47,6 +47,8 @@ Owns the agentic behavior of the system. It decides whether an incoming message 
 
 The AI Manager coordinates model calls, speech-to-text, source storage, extraction, clarification, resolution, and calls to the Network API. It should remain dynamic and tool-driven rather than fully deterministic.
 
+The detailed state model for this layer is defined in [Agentic orchestration architecture](agentic-orchestration.md). Agentic behavior should be modeled as purpose-oriented states with explicit prompts, context packages, allowed tools, forbidden tools, output schemas, and handoff paths.
+
 ### Network API
 
 Provides the stable interface to the memory network and graph database.

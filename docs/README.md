@@ -7,7 +7,8 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
 - [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
-- [Agentic process design](dev-plans/08-agentic-process-design.md): behavioral protocols, toolboxes, and guardrails for AI-driven processes.
+- [Agentic orchestration architecture](architecture/agentic-orchestration.md): purpose-oriented agentic states, state handoffs, toolboxes, and prompt scaffolding.
+- [Agentic process implementation plan](dev-plans/08-agentic-process-design.md): implementation roadmap derived from the architecture design.
 - [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.

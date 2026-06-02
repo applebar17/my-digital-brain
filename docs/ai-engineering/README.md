@@ -174,8 +174,10 @@ Token budget is a product and engineering constraint.
 
 The system should:
 
-- Keep recent context available when relevant.
-- Summarize older context.
+- Keep full usable conversation history available to top-level conversational
+  states, including user messages, assistant messages, tool calls, and tool
+  outputs.
+- Summarize or compact older history when the message sequence becomes too long.
 - Retrieve only relevant graph/source evidence.
 - Avoid stuffing entire histories into prompts.
 - Preserve durable facts in graph/profile memory instead of relying on chat history.
@@ -183,7 +185,86 @@ The system should:
 
 Summaries should preserve decisions, unresolved questions, entity references, and important user preferences.
 
-### 10. Route Tasks To Appropriate Models
+### 10. Propagate History Down, Compact Tool Traces Up
+
+Agentic history should preserve continuity without polluting later states with
+noisy internal tool details.
+
+When an agentic state calls a tool or subprocess, the callee receives the parent
+history plus the tool-call context it needs. As the execution moves deeper,
+internal steps may append tool calls, tool outputs, diagnostics, and intermediate
+results to the local trace.
+
+When control returns to the caller, the caller's future model-facing history
+should receive one compact tool output summary, not the full internal trace.
+
+Rules:
+
+- Moving deeper: pass the relevant parent history and append local tool status as
+  needed.
+- Moving upward: compact internal activity into a concise tool output result.
+- Persist full internal traces for audit, debugging, and replay when useful.
+- Do not expose noisy nested tool chatter to future top-level prompts unless a
+  state explicitly needs it.
+- Tool output summaries must preserve the achieved result, unresolved questions,
+  important errors, created/updated refs, and recommended next action.
+
+This gives the model enough state to reason while avoiding history bloat and
+hallucination pressure from irrelevant implementation details.
+
+### 11. Pass Minimum Sufficient Context Per State
+
+Every LLM-related state or procedure should receive the minimum collectable
+context required to achieve its purpose.
+
+This does not mean "little context." It means complete context for the task and
+aggressive filtering of noise.
+
+Each state configuration should define:
+
+- Required context.
+- Optional context.
+- Forbidden or noisy context.
+- History policy.
+- Tool-trace policy.
+- Prompt guidelines.
+- Tool-call or structured-output contract.
+
+For example, memory ingestion planning needs the user source text, usable
+conversation history, mention scan, compact graph context, current time/timezone,
+and pending clarification answer when resuming. It should not receive raw
+database records, unrelated metadata blobs, or internal transport details.
+
+### 12. Keep Channel Metadata Backend-Owned By Default
+
+Channel and session metadata should be modeled, stored, and available to backend
+runtime code, but it should not be passed directly to the LLM by default.
+
+The agent should receive only a minimal projection when the metadata changes its
+behavior.
+
+Potentially useful projections:
+
+- Current time and timezone.
+- Modality: text, voice transcript, image-derived text, or other source type.
+- Transcript uncertainty when voice or media was involved.
+- Rendering constraints such as short Telegram-style response versus richer web
+  chat response.
+- Source or attachment references when relevant.
+
+Usually noisy or forbidden:
+
+- Raw chat IDs.
+- Webhook payloads.
+- HTTP headers.
+- Internal session identifiers.
+- Transport-specific debug fields.
+
+The backend can keep a `ChannelSessionMetadata` object for routing, auditing,
+storage, and UI behavior. The context builder decides whether any projected
+field belongs in a model prompt.
+
+### 13. Route Tasks To Appropriate Models
 
 Model choice should depend on task difficulty.
 
@@ -206,7 +287,7 @@ Use stronger models for:
 
 The AI Manager should eventually support model routing by task type, expected difficulty, privacy level, latency budget, and cost budget.
 
-### 11. Prompt Guardrails Should Be Restrictive But Natural
+### 14. Prompt Guardrails Should Be Restrictive But Natural
 
 Prompts should restrict hallucination and unsafe behavior without making the model rigid or unnatural.
 
@@ -221,7 +302,7 @@ Good guardrails:
 
 Overly rigid prompts can make the agent brittle. Under-specified prompts invite hallucination.
 
-### 12. Simplify IDs In Model Context
+### 15. Simplify IDs In Model Context
 
 Long opaque database IDs are bad prompt material. They increase token usage, are hard for humans to inspect, and are easy for models to copy incorrectly.
 
@@ -245,7 +326,7 @@ Rules:
 - Failed alias resolution should fail validation.
 - The model should never invent aliases that were not provided.
 
-### 13. Build Low-Noise Context Packages
+### 16. Build Low-Noise Context Packages
 
 LLM context should be prepared as a task-specific package, not as a raw dump of
 database records.
@@ -277,7 +358,7 @@ Avoid including:
 The question is not "what can we fit in the prompt?" The question is "what does
 the model need to produce the best grounded output for this task?"
 
-### 14. Tool Errors Must Guide The Model
+### 17. Tool Errors Must Guide The Model
 
 Tool errors are part of the agent loop. The LLM will see them, so they should be
 verbose enough to redirect the model toward a valid next action.

@@ -16,7 +16,8 @@ Expected artifacts:
 - Behavioral protocols.
 - Allowed and forbidden tools per agent/process.
 - Input context requirements.
-- Structured output contracts.
+- Tool argument/result contracts and structured output contracts for focused
+  LLM procedures.
 - State transition diagrams or tables.
 - Clarification rules.
 - Confirmation rules.
@@ -82,13 +83,43 @@ This plan defines how agents and subprocesses behave when using those pieces.
 - Tool descriptions, schemas, enum values, and errors are prompt surface.
 - Agent behavior must be dynamic, but bounded by deterministic guardrails.
 - Context packages must be low-noise and task-specific.
+- Context objects must be explicit implementation contracts. After an action,
+  tool, or subprocess finishes, it should produce the context object required by
+  the next state or process instead of passing raw internal execution data.
 - Internal UUIDs should be replaced with scoped aliases in model-facing contexts.
 - Tool errors must be verbose enough to guide model recovery.
 - Conversation history is part of context building, but it should be scoped or summarized instead of copied blindly into every call.
 - Pending process state is contextual guidance, not deterministic routing. It should help agents resume work when appropriate without blocking a natural conversation.
 - Clarification handling should preserve a normal chat feel. A later user message can be classified as clarification answer, new memory, question, correction, cancellation, or normal chat based on context.
+- Orchestrator-like agentic states should return either a normal assistant
+  message or a model-visible tool call. The tool call is the structured routing
+  decision; no separate router decision object is required in the baseline.
+- Clarification questions are normal assistant messages. Optional lightweight
+  intent classification may be used to decide whether a later reply resumes the
+  pending process, but this must not become a heavy clarification workflow.
 - Clarifications should be user-friendly and sparse enough to avoid fatigue.
 - Risky graph mutations require confirmation or conservative fallback.
+- Foundation waves should implement contracts, context objects, prompt
+  scaffolding, state configuration, and protocols before real autonomous
+  behavior. Runtime wiring comes after these pieces are stable.
+- The neutral conversation message protocol for this product is:
+  user message, assistant message, assistant tool call, tool output, and
+  compacted summary.
+- `ChannelSessionMetadata` may be passed to backend states as optional runtime
+  context, but model-facing prompts should not receive it for now. If a model
+  needs channel details later, the backend must create a deliberate
+  `ChannelContextProjection`.
+
+## Canonical Architecture Design
+
+The agentic state architecture, Mermaid handoff diagrams, state/tool matrix, and
+prompt scaffolding baseline live in
+[Agentic orchestration architecture](../architecture/agentic-orchestration.md).
+
+This development plan should only track implementation waves derived from that
+architecture document. The implementation sequence is foundations first, wiring
+last: build typed contracts and prompt/state infrastructure before connecting
+real model behavior into the chat runtime.
 
 ## Agent And Process Catalog
 
@@ -302,9 +333,12 @@ Owner:
 Trigger conditions:
 Inputs:
 Required context:
+Produced context:
+Context object type:
+Context handoff policy:
 Allowed tools:
 Forbidden tools:
-Structured outputs:
+Tool/output contracts:
 State transitions:
 Clarification policy:
 Confirmation policy:
@@ -334,6 +368,81 @@ Verbose tool errors:
 Examples:
 ```
 
+## Context Object Design
+
+Agentic implementation should introduce typed context objects for state inputs
+and handoffs. These are not the same as raw chat messages, raw tool traces, or
+database records. They are deliberate packages assembled after each action
+finishes.
+
+Purpose:
+
+- Make every state input explicit and testable.
+- Avoid leaking noisy internal tool traces into future prompts.
+- Keep previous-step outputs available without passing whole implementation
+  details.
+- Support deterministic validation before a state or subprocess starts.
+- Make prompt rendering stable because each prompt receives a known context
+  object shape.
+
+Expected baseline object families:
+
+- `ConversationContext`: usable conversation history, compacted older summary,
+  current message, current time/timezone, and pending-process summary.
+- `PendingProcessContext`: active or paused process refs, original question,
+  unresolved targets, expiration, and compact process summary.
+- `ChannelSessionMetadata`: backend-owned transport/session object; not passed
+  to the LLM by default.
+- `ChannelContextProjection`: minimal model-facing projection when channel
+  details matter, such as modality or response rendering constraints.
+- `SourceContext`: normalized source text/transcript, media refs, source timing,
+  and source/evidence refs.
+- `MentionScanContext`: shallow mentions, evidence spans, and rough hints for
+  context retrieval.
+- `GraphContextPackage`: compact graph context with aliases, candidate matches,
+  relationship contexts, evidence summaries, and known ambiguities.
+- `PlanningContext`: source context, conversation context, mention scan, graph
+  context, current time/timezone, and pending clarification answer when
+  resuming.
+- `ExtractionTaskContext`: focused evidence span, selected schema, graph aliases,
+  and local candidate refs needed by a single extractor.
+- `CandidateGraphContext`: assembled candidates, local refs, source refs, and
+  evidence refs.
+- `ResolutionContext`: candidate graph, graph context, registries, resolver
+  constraints, and pending-answer context.
+- `ToolResultContext`: compact output summary returned from a tool/subprocess to
+  its caller, including result status, important refs, unresolved questions,
+  errors, and recommended next action.
+- `AnswerContext`: LLM-ready context package for grounded answer generation.
+
+Handoff rule:
+
+Every action boundary should produce one explicit context object for the next
+state. Internal traces can be persisted for audit/debugging, but parent states
+should receive compact `ToolResultContext` objects unless deeper details are
+explicitly requested.
+
+Example:
+
+```text
+AS: memory_ingestion_planning
+  receives PlanningContext
+  calls LP: focused_extraction
+
+LP: focused_extraction
+  receives ExtractionTaskContext
+  appends internal provider/tool diagnostics locally
+  returns FocusedExtractionResult
+
+BP: candidate_assembly
+  receives focused extraction results
+  returns CandidateGraphContext
+
+AS parent history
+  receives one compact ToolResultContext summarizing the subprocess result,
+  not every internal provider call.
+```
+
 ## Wave 0: Design Baseline
 
 ### Summary
@@ -345,6 +454,9 @@ Lock the agent/process catalog, process template, top-level action surface, and 
 - This placeholder plan.
 - Initial process catalog.
 - Initial tool design template.
+- Initial context object catalog and handoff rule.
+- Canonical state architecture maintained in [Agentic orchestration architecture](../architecture/agentic-orchestration.md).
+- Implementation waves derived from the architecture design.
 - Agreement that full agent behavior is separate from chat adapter implementation.
 
 ### Completion Criteria
@@ -357,10 +469,16 @@ Lock the agent/process catalog, process template, top-level action surface, and 
 
 ### Summary
 
-Design the first behavioral protocols needed for a usable chat loop.
+Implement the first foundation slice for agentic runtime behavior. This wave is
+mostly contracts and scaffolding, not full autonomous behavior.
 
 Focus:
 
+- Typed context objects.
+- Neutral conversation message protocol.
+- Prompt registry and prompt template loading.
+- Agentic state configuration models.
+- Tool-call/message protocol contracts.
 - Conversation router.
 - Pending clarification handling.
 - Status/cancel behavior.
@@ -370,10 +488,28 @@ Expected design outputs:
 
 - Router protocol.
 - Clarification manager protocol.
+- `conversation_entry` state configuration.
+- `pending_process_review` state configuration.
 - Router input context shape.
-- Router output schema.
+- `ConversationContext`.
+- `PendingProcessContext`.
+- `ChannelSessionMetadata`.
+- `ChannelContextProjection`.
+- `ToolResultContext` for router/pending-process actions.
+- Neutral message models:
+  - user message
+  - assistant message
+  - assistant tool call
+  - tool output
+  - compacted summary
+- Prompt registry and initial templates:
+  - `conversation_entry`
+  - `pending_process_review`
+  - optional `clarification_classifier`
+- Agentic state configuration model.
+- Router tool-call/message protocol.
 - Pending process context shape.
-- Clarification classification outputs.
+- Optional lightweight pending-message intent classification.
 - Minimal clarification state transitions.
 - Evaluation examples for:
   - new memory
@@ -384,7 +520,16 @@ Expected design outputs:
   - user sends a different memory while clarification is pending
   - user cancels or skips a pending clarification
 
-Implementation should wait until these protocols are stable enough.
+Implementation should use fake/test provider behavior first. Real OpenAI/Azure
+tool-call routing can be wired after the contracts, prompts, and deterministic
+fallback router are stable.
+
+Out of scope for Wave 1:
+
+- Real autonomous routing in production.
+- Complex prompt tuning.
+- Proactive resurfacing of paused pending processes.
+- Full agent-to-chat runtime wiring beyond clear interfaces and tests.
 
 ## Wave 2: Query And Answer Protocols
 
@@ -405,6 +550,9 @@ Expected design outputs:
 
 - Query process protocol.
 - Query context package shape.
+- `AnswerContext`.
+- Query retrieval context object.
+- Query tool result context object.
 - Answer-generation prompt contract.
 - Evidence presentation rules.
 - Evaluation examples for:
@@ -430,10 +578,14 @@ Focus:
 Expected design outputs:
 
 - Correction protocol.
+- Correction context objects and confirmation handoff context.
 - Judge invocation rules.
+- Judge review context object and judge result context object.
 - Judge output schema.
 - Profile memory extraction policy.
+- Profile extraction context object.
 - Maintenance suggestion policy.
+- Maintenance review context object.
 - Confirmation rules for risky changes.
 
 ## Out Of Scope For Now
