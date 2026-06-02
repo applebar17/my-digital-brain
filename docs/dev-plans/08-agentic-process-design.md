@@ -228,13 +228,18 @@ Implemented focused MVP integration artifacts:
 - Pending process persistence when agentic execution returns a clarification or
   pending-process hint.
 - `AgenticIngestionPlanner`, which runs the tool-enabled
-  `memory_ingestion_planning` state and requires `submit_extraction_plan`.
-- Planning-time tools:
+  `memory_ingestion_planning` support state and then requires a structured
+  `ExtractionPlan` final output.
+- Current planning-time support tools:
   - `request_graph_context_expansion`
   - `request_contradiction_review`
-  - `submit_extraction_plan`
 - Agent-invoked contradiction review handoff from planning contexts without
   deterministic contradiction detection rules.
+- Locked target refactors still required:
+  - contradiction review should return structured result intents instead of
+    relying on free-form assistant text for clarification handling.
+  - `conversation_entry` model-visible tools should be limited to
+    memory ingestion, memory query, and memory correction.
 
 Still intentionally deferred:
 
@@ -261,8 +266,11 @@ Possible actions:
 - `start_memory_ingestion`
 - `query_memory_context`
 - `propose_memory_correction`
-- `get_conversation_status`
-- `cancel_pending_process`
+
+Deterministic chat-runtime shortcuts:
+
+- `/status`
+- `/cancel`
 
 Locked behavior:
 
@@ -273,6 +281,10 @@ Locked behavior:
 - Orchestrator-like states return either an assistant message or a model-visible
   tool call.
 - The tool call is the structured routing decision.
+- `conversation_entry` model-visible tools are limited to memory ingestion,
+  memory query, and memory correction.
+- `cancel_pending_process` belongs to `pending_process_review` when a pending
+  process exists and cancellation/skip is inferred.
 - The deterministic fallback router is already implemented for Wave 1.
 
 Deferred decisions:
@@ -867,22 +879,22 @@ Implemented outputs:
   `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.
 - `AgenticIngestionPlanner` runs the `memory_ingestion_planning` state through
-  the existing provider tool-call loop.
+  the existing provider tool-call loop for support tools, then requires a
+  structured `ExtractionPlan` final output.
 - The planner toolbox includes:
   - `request_graph_context_expansion`
   - `request_contradiction_review`
-  - `submit_extraction_plan`
-- `submit_extraction_plan` is required as the final planner output path and is
-  validated before the ingestion pipeline continues.
+- After the structured `ExtractionPlan` is returned and validated, backend code
+  deterministically routes the next ingestion step from the plan fields.
 - Full ingestion remains owned by `IngestionService`: mention scan, graph
   context retrieval, planning, focused extraction, assembly, validation,
   resolution, write-plan creation, optional graph execution, clarification, and
   summary.
 - Contradiction review is agent-invoked through tool handoff. No deterministic
   contradiction-detection rules were added.
-- A contradiction-review state that returns a user-facing clarification
-  question is rendered as pending memory-ingestion context so the next chat turn
-  can resume naturally.
+- The locked target is a structured contradiction result with intents:
+  `needs_context`, `needs_clarification`, `emit_verdict`, and `fail_safe`.
+  Clarification rendering must come from that structured result.
 - `AgenticRunResult` is rendered into `ChatResponse` without exposing raw tool
   traces, UUID-heavy graph payloads, or backend internals.
 

@@ -101,6 +101,12 @@ Dedicated structured outputs belong to tool arguments, tool results, focused
 objects. This keeps conversation natural while keeping state-changing behavior
 structured and auditable.
 
+Some `AS` states may use tools during execution and still end with a required
+structured output. In that case, tools are side-effect-bounded support actions,
+while the final state result is a validated schema. `memory_ingestion_planning`
+is the canonical example: it may request context expansion or contradiction
+review, but it must finish by producing an `ExtractionPlan` structured output.
+
 ## Execution Node Labels
 
 The handoff graph uses explicit labels so future implementation sessions do not
@@ -320,7 +326,6 @@ Interaction shape:
 - `tool_call: start_memory_ingestion`
 - `tool_call: query_memory_context`
 - `tool_call: propose_memory_correction`
-- runtime status/cancel tool call when explicit
 
 Forbidden:
 
@@ -328,6 +333,7 @@ Forbidden:
 - raw graph CRUD
 - focused extraction tools
 - contradiction judge mutation
+- status/cancel handling as general model-visible tools
 
 Routing contract:
 
@@ -445,13 +451,15 @@ Allowed tools:
 
 - `request_graph_context_expansion`
 - `request_contradiction_review`
-- `submit_extraction_plan`
 
 Final output rule:
 
-- `submit_extraction_plan` is the only accepted final planner output path for
-  the tool-enabled planner runtime. The backend validates the submitted
-  `ExtractionPlan` before extraction continues.
+- `ExtractionPlan` is the only accepted final planner output. The planner may
+  call tools while reasoning, but the final state result must be a structured
+  `ExtractionPlan` validated by backend code before extraction continues.
+- Backend code deterministically routes the next process step from
+  `execution_mode`, `tasks`, `clarification`, and `context_gaps`.
+- Free-form assistant text alone is not a valid planning result.
 
 Clarification behavior:
 
@@ -565,12 +573,15 @@ Forbidden:
 
 Outputs:
 
-- no_conflict
-- nuance
-- temporal_update
-- contradiction
-- needs_clarification
-- recommended_action
+- result intent: `needs_context`, `needs_clarification`, `emit_verdict`, or
+  `fail_safe`
+- decision when a verdict is emitted: `no_conflict`, `nuance`,
+  `temporal_update`, `contradiction`, or `needs_clarification`
+- severity
+- reason
+- recommended graph action
+- inspected context refs
+- clarification question and resume context when user input is needed
 
 ### `memory_query` (`AS`)
 
@@ -647,8 +658,6 @@ The agent can:
   desired view type, and answer style
 - call `propose_memory_correction` with correction text and optional target
   hints
-- call `cancel_pending_process` only when the user explicitly cancels, skips, or
-  abandons a pending process
 
 The agent cannot:
 
@@ -656,6 +665,7 @@ The agent cannot:
 - call focused extractors directly
 - execute write plans
 - apply merges or lifecycle transitions directly
+- call status/cancel process tools in the baseline
 
 ### `AS: pending_process_review`
 
@@ -687,12 +697,11 @@ The agent can:
   plan
 - call `request_contradiction_review` when source text plus graph context raises
   a grounded ambiguity or conflict that needs judgment
-- call `submit_extraction_plan` as the final accepted planner output path
 - return a clarification request in the planning result when ambiguity blocks
   safe extraction
 - choose the extraction mode: `simple_single_pass`, `focused_extraction`,
   `needs_context_expansion`, or `needs_clarification_first`
-- submit an `ExtractionPlan` with focused tasks and evidence spans
+- return a structured `ExtractionPlan` with focused tasks and evidence spans
 
 The agent cannot:
 
@@ -826,6 +835,17 @@ Top-level handoff semantics:
 - Specialist states execute read-only graph tools, proposal tools, or backend
   facade calls according to their state toolbox.
 
+Tool surface ownership:
+
+- `/status` and `/cancel` are deterministic chat-runtime shortcuts.
+- `conversation_entry` model-visible tools are limited to
+  `start_memory_ingestion`, `query_memory_context`, and
+  `propose_memory_correction`.
+- `cancel_pending_process` belongs to `pending_process_review`, where a pending
+  process exists and the model can infer explicit cancellation or skip.
+- `get_conversation_status` remains deterministic backend/chat behavior unless
+  a later design explicitly promotes it to a model-visible tool.
+
 The runtime does not duplicate provider tool-loop mechanics. It passes the
 generated `ToolBox` and tool mapping into the AI provider, and the provider uses
 the existing generic tool-call loop. Runtime responsibility is state setup,
@@ -843,9 +863,12 @@ Assistant message ownership:
 - These deeper clarification exchanges are inner process conversations. They
   must still be rendered and stored by the chat layer, but they remain attached
   to the active process rather than treated as a completed top-level answer.
-- A contradiction-review clarification question is rendered as pending
-  memory-ingestion context. This rendering rule does not detect contradictions;
-  it only preserves a question the judge already decided to ask.
+- A contradiction-review clarification is rendered from a structured
+  `needs_clarification` result, not from unstructured assistant text or a
+  question-mark heuristic.
+- `memory_query` and `correction_intake` may produce terminal user-visible
+  output in the MVP only through the safe renderer. They must not expose raw
+  graph payloads, UUID-heavy traces, or backend internals.
 
 Boundaries:
 
@@ -874,7 +897,7 @@ Boundaries:
 | --- | --- | --- | --- | --- |
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
-| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, contradiction review request, plan submission | graph writes |
+| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, contradiction review request, structured `ExtractionPlan` output | graph writes |
 | `focused_extraction` | `LP` | Produce structured candidates | focused schema input only | resolution, writes, tools |
 | `validation_resolution` | `BP` | Deterministic validation and write-plan construction | validator, resolver, write-plan builder | LLM-authored writes |
 | `contradiction_review` | `AS` | Judge grounded doubt | read-only graph/source tools | direct mutation |

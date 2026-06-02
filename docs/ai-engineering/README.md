@@ -14,6 +14,13 @@ Information is extracted from unstructured text, transcripts, media-derived text
 
 When asking a model to extract information, the request should include the expected structured output contract, preferably as a Pydantic object or equivalent schema. The model should produce structured proposals, not direct database mutations.
 
+If a state needs a structured artifact as its final useful result, that artifact
+should be the state's validated structured output, not a fake "submit" tool
+used only to smuggle the schema back to the backend. Tools may still be used
+inside the state for support actions such as context expansion or contradiction
+review. After the structured output is returned, backend code deterministically
+routes the next process step from that schema.
+
 Examples:
 
 - Candidate entities.
