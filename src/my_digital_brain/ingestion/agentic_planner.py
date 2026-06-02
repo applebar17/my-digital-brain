@@ -6,7 +6,6 @@ from typing import Any
 from pydantic import ValidationError
 
 from my_digital_brain.agentic.contexts import (
-    ConversationContext,
     EvidenceSpan,
     GraphContextPackage,
     MentionContextItem,
@@ -16,8 +15,8 @@ from my_digital_brain.agentic.contexts import (
     ToolResultContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId, ToolResultStatus
-from my_digital_brain.agentic.messages import NeutralConversationMessage
-from my_digital_brain.agentic.runtime_models import AgenticStateInvocation, AgenticStateRunResult
+from my_digital_brain.agentic.history import AgenticHistoryService
+from my_digital_brain.agentic.runtime_models import AgenticStateInvocation
 from my_digital_brain.agentic.runtime import AgenticStateRunner
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.protocols import StructuredLLMProvider
@@ -49,11 +48,13 @@ class AgenticIngestionPlanner:
         *,
         structured_provider: StructuredLLMProvider | None = None,
         execution_context_factory: ExecutionContextFactory | None = None,
+        history_service: AgenticHistoryService | None = None,
         max_planning_rounds: int = 2,
     ) -> None:
         self.state_runner = state_runner
         self.structured_provider = structured_provider
         self.execution_context_factory = execution_context_factory
+        self.history_service = history_service or state_runner.history_service
         self.max_planning_rounds = max(1, max_planning_rounds)
 
     def plan(
@@ -63,7 +64,12 @@ class AgenticIngestionPlanner:
         context: IngestionContextPackage,
     ) -> ExtractionPlan:
         execution_context = self._execution_context(source)
-        planning_context = _planning_context(source, mention_scan, context)
+        planning_context = _planning_context(
+            source,
+            mention_scan,
+            context,
+            self.history_service,
+        )
 
         for _ in range(self.max_planning_rounds):
             state_result = self.state_runner.run_state(
@@ -73,7 +79,11 @@ class AgenticIngestionPlanner:
                     execution_context=execution_context,
                 ),
             )
-            _append_state_tool_outputs(planning_context, state_result)
+            self.history_service.append_tool_events_to_planning_context(
+                planning_context,
+                state_result,
+                skip_handoff_targets={"contradiction_review"},
+            )
 
             if state_result.handoff_target == "contradiction_review":
                 judge_result = self.state_runner.run_state(
@@ -151,9 +161,9 @@ class AgenticIngestionPlanner:
                     system_prompt=prompt,
                     input_message={
                         "state_id": state_value,
-                        "context": planning_context.model_dump(
-                            mode="json",
-                            exclude_none=True,
+                        "context": self.history_service.model_payload_for_state(
+                            AgenticStateId.MEMORY_INGESTION_PLANNING,
+                            planning_context,
                         ),
                         "final_output_contract": "ExtractionPlan",
                     },
@@ -219,6 +229,7 @@ def _planning_context(
     source: SourceRecordRef,
     mention_scan: MentionScan,
     context: IngestionContextPackage,
+    history_service: AgenticHistoryService,
 ) -> PlanningContext:
     text = source.raw_text or source.content_ref or ""
     return PlanningContext(
@@ -239,8 +250,9 @@ def _planning_context(
             ],
             metadata={"source_type": str(source.source_type), "channel": str(source.channel)},
         ),
-        conversation=ConversationContext(
-            current_message=NeutralConversationMessage.user(text or "Memory source"),
+        conversation=history_service.source_conversation_context(
+            source_text=text or "Memory source",
+            timezone=str(source.metadata.get("timezone") or "UTC"),
         ),
         mention_scan=MentionScanContext(
             source_id=source.source_id,
@@ -274,45 +286,6 @@ def _planning_context(
         timezone=str(source.metadata.get("timezone") or "UTC"),
         metadata={"context_package_id": context.context_package_id},
     )
-
-
-def _append_state_tool_outputs(
-    planning_context: PlanningContext,
-    state_result: AgenticStateRunResult,
-) -> None:
-    for event in state_result.tool_events:
-        data = event.data or {}
-        if data.get("handoff_target") == "contradiction_review":
-            continue
-        planning_context.prior_tool_outputs.append(
-            ToolResultContext(
-                tool_name=event.tool_name,
-                status=(
-                    ToolResultStatus.FAILED
-                    if event.status != "ok"
-                    else ToolResultStatus.OK
-                ),
-                summary=_tool_event_summary(event),
-                data={
-                    **data,
-                    **({"error": event.error} if event.error else {}),
-                },
-            ),
-        )
-
-
-def _tool_event_summary(event) -> str:
-    if event.output:
-        return event.output
-    error = event.error or {}
-    message = error.get("message")
-    hint = error.get("hint")
-    if message and hint:
-        return f"{message} Hint: {hint}"
-    if message:
-        return str(message)
-    return f"{event.tool_name} completed with status {event.status}."
-
 
 def _contradiction_context(arguments: dict[str, Any]):
     from my_digital_brain.agentic.contexts import ContradictionReviewContext

@@ -54,6 +54,10 @@ from my_digital_brain.agentic.messages import (
     ToolCall,
     ToolOutput,
 )
+from my_digital_brain.agentic.history import (
+    AgenticHistoryService,
+    HistoryProjectionPolicy,
+)
 from my_digital_brain.agentic.router import (
     AgenticRoute,
     DeterministicAgenticRouter,
@@ -89,6 +93,7 @@ __all__ = [
     "AgenticNodeKind",
     "AgenticRoute",
     "AgenticRunResult",
+    "AgenticHistoryService",
     "AgenticStateConfig",
     "AgenticStateId",
     "AgenticStateInvocation",
@@ -119,6 +124,7 @@ __all__ = [
     "EvidenceSpan",
     "ExtractionTaskContext",
     "GraphContextPackage",
+    "HistoryProjectionPolicy",
     "MaintenanceReviewContext",
     "MaintenanceReviewResultContext",
     "MaintenanceSuggestionContext",

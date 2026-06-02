@@ -11,6 +11,7 @@ from my_digital_brain.agentic.contexts import (
     QueryRetrievalPlanningContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime_models import (
     AgenticRunResult,
     AgenticStateInvocation,
@@ -41,6 +42,7 @@ class AgenticStateRunner:
         default_factory=default_state_configs,
     )
     tool_registry: AgenticToolRegistry = field(default_factory=default_agentic_tool_registry)
+    history_service: AgenticHistoryService = field(default_factory=AgenticHistoryService)
     temperature: float = 0.2
     max_tokens: int = 800
 
@@ -78,7 +80,10 @@ class AgenticStateRunner:
                     content=json.dumps(
                         {
                             "state_id": state_value,
-                            "context": _model_facing_payload(invocation.context_payload),
+                            "context": self.history_service.model_payload_for_state(
+                                state_id,
+                                invocation.context_payload,
+                            ),
                         },
                         ensure_ascii=True,
                         sort_keys=True,
@@ -145,6 +150,7 @@ class AgenticRuntime:
                 current_payload = _query_context_from_handoff(
                     conversation_context,
                     state_result.handoff_arguments,
+                    self.state_runner.history_service,
                 )
                 continue
 
@@ -153,6 +159,7 @@ class AgenticRuntime:
                 current_payload = _correction_context_from_handoff(
                     conversation_context,
                     state_result.handoff_arguments,
+                    self.state_runner.history_service,
                 )
                 continue
 
@@ -259,6 +266,7 @@ class AgenticRuntime:
 def _query_context_from_handoff(
     conversation_context: ConversationContext,
     arguments: dict[str, Any],
+    history_service: AgenticHistoryService,
 ) -> QueryRetrievalPlanningContext:
     metadata = dict(arguments.get("metadata") or {})
     seed_id = arguments.get("seed_id")
@@ -268,7 +276,7 @@ def _query_context_from_handoff(
         question=arguments.get("question")
         or conversation_context.current_message.content
         or "",
-        conversation=conversation_context.model_copy(update={"channel_metadata": None}, deep=True),
+        conversation=history_service.child_conversation_context(conversation_context),
         desired_view=arguments.get("desired_view"),
         metadata=metadata,
     )
@@ -277,13 +285,14 @@ def _query_context_from_handoff(
 def _correction_context_from_handoff(
     conversation_context: ConversationContext,
     arguments: dict[str, Any],
+    history_service: AgenticHistoryService,
 ) -> CorrectionIntakeContext:
     target_id = arguments.get("target_id")
     return CorrectionIntakeContext(
         correction_text=arguments.get("correction_text")
         or conversation_context.current_message.content
         or "",
-        conversation=conversation_context.model_copy(update={"channel_metadata": None}, deep=True),
+        conversation=history_service.child_conversation_context(conversation_context),
         target_hints=[target_id] if target_id else [],
         metadata=dict(arguments.get("metadata") or {}),
     )
@@ -299,28 +308,6 @@ def _contradiction_context_from_handoff(arguments: dict[str, Any]) -> Contradict
         agent_doubt=arguments.get("agent_doubt") or "The agent requested contradiction review.",
         metadata=dict(arguments.get("metadata") or {}),
     )
-
-
-def _model_facing_payload(payload: Any) -> Any:
-    if hasattr(payload, "model_facing_payload"):
-        dumped = payload.model_facing_payload()
-    elif hasattr(payload, "model_dump"):
-        dumped = payload.model_dump(mode="json", exclude_none=True)
-    else:
-        dumped = payload
-    return _drop_backend_only_keys(dumped)
-
-
-def _drop_backend_only_keys(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: _drop_backend_only_keys(item)
-            for key, item in value.items()
-            if key != "channel_metadata"
-        }
-    if isinstance(value, list):
-        return [_drop_backend_only_keys(item) for item in value]
-    return value
 
 
 def _last_handoff(events: list[AgenticToolEvent]) -> tuple[str | None, dict[str, Any]]:

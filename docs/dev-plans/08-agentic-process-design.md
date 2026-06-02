@@ -875,6 +875,9 @@ Implemented outputs:
   `ConversationContext` construction, `AgenticToolExecutionContext`
   construction, `AgenticRuntime.run(...)`, response rendering, assistant
   persistence, and pending-process persistence when needed.
+- `AgenticHistoryService` centralizes state-aware history construction,
+  model-facing payload projection, backend-only metadata exclusion, and compact
+  nested tool-output summaries.
 - Active pending process context starts the runtime from
   `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.

@@ -41,21 +41,25 @@ implemented agentic runtime aligned with the locked architecture.
 
 ### State-Aware History Builder
 
-- Create a dedicated history/context-building service instead of assembling
-  model-facing history directly in `ChatRuntime` or individual process classes.
-- Separate user-visible chat history from internal agentic history.
-- Preserve neutral internal messages: user messages, assistant messages,
+Status: implemented as a reusable foundation.
+
+- `AgenticHistoryService` is the dedicated history/context-building service;
+  `ChatRuntime`, `AgenticStateRunner`, and `AgenticIngestionPlanner` use it
+  instead of assembling model-facing history locally.
+- User-visible chat persistence remains separate from internal agentic
+  `ConversationContext` and neutral message history.
+- Neutral internal messages are supported for user messages, assistant messages,
   assistant tool calls, tool outputs, compacted summaries, process handoffs, and
   pending-process summaries.
-- Build state-specific history projections:
+- State-specific history projections are centralized:
   - top-level states get full usable conversation history or compacted history;
   - specialist states get only the relevant parent history and process context;
   - nested tool/provider traces are compacted upward into concise tool outputs.
-- Ensure memory ingestion planning receives source text, usable conversation
-  context, mention scan, compact graph context, current time/timezone, pending
+- Memory ingestion planning receives source text, usable conversation context,
+  mention scan, compact graph context, current time/timezone, pending
   clarification answer when present, and prior relevant tool outputs.
-- Keep backend-only channel/session metadata out of model-facing history unless
-  a deliberate `ChannelContextProjection` is built.
+- Backend-only channel/session metadata is removed from model-facing payloads
+  unless a deliberate `ChannelContextProjection` is built.
 
 ### Planner Structured Output Refactor
 

@@ -7,7 +7,7 @@ from my_digital_brain.agentic.contexts import (
     ConversationContext as AgenticConversationContext,
     PendingProcessContext as AgenticPendingProcessContext,
 )
-from my_digital_brain.agentic.messages import NeutralConversationMessage
+from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
@@ -43,6 +43,7 @@ class ChatRuntime:
         agentic_runtime: AgenticRuntime | None = None,
         graph_service: object | None = None,
         ingestion_service: object | None = None,
+        history_service: AgenticHistoryService | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
         self.tool_facade = tool_facade or NoopBackendToolFacade()
@@ -50,6 +51,7 @@ class ChatRuntime:
         self.agentic_runtime = agentic_runtime
         self.graph_service = graph_service
         self.ingestion_service = ingestion_service
+        self.history_service = history_service or AgenticHistoryService()
 
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
         if not (message.text and message.text.strip()) and not message.media_refs:
@@ -288,14 +290,9 @@ class ChatRuntime:
         pending_context: PendingProcessContext | None,
     ) -> AgenticConversationContext:
         text = (message.text or "").strip()
-        history = [
-            self._agentic_message_from_chat(message_item)
-            for message_item in self.store.list_messages(session_id, limit=30)
-            if message_item.channel_message_id != message.message_id
-        ]
-        return AgenticConversationContext(
-            current_message=NeutralConversationMessage.user(text or "Media message"),
-            history=[item for item in history if item is not None],
+        return self.history_service.build_conversation_context(
+            current_text=text,
+            history_records=self.store.list_messages(session_id, limit=100),
             current_time=message.received_at,
             timezone=str(message.metadata.get("timezone") or "UTC"),
             pending_process=self._agentic_pending_context(pending_context),
@@ -313,19 +310,9 @@ class ChatRuntime:
                 },
             ),
             metadata={"runtime_mode": "agentic"},
+            fallback_current_text="Media message",
+            exclude_record_ids={message.message_id},
         )
-
-    def _agentic_message_from_chat(
-        self,
-        message: ConversationMessage,
-    ) -> NeutralConversationMessage | None:
-        if not message.text:
-            return None
-        if message.role == ConversationMessageRole.USER:
-            return NeutralConversationMessage.user(message.text)
-        if message.role == ConversationMessageRole.ASSISTANT:
-            return NeutralConversationMessage.assistant(message.text)
-        return NeutralConversationMessage.compacted_summary(message.text)
 
     def _agentic_pending_context(
         self,
