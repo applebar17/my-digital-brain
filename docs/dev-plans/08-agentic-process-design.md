@@ -217,11 +217,20 @@ Implemented but intentionally not wired yet:
 
 - Agentic runtime integration into `ChatRuntime`.
 - Model-backed intent classification.
+- Full LLM-backed ingestion workflow from source text/transcript to validated
+  graph write or clarification.
+- Agent-driven contradiction review invocation from ambiguous ingestion or
+  resolution contexts.
+- Conversation rendering rules for final assistant messages and inner
+  clarification questions.
+- LangSmith/trace integration for agentic state runs and tool events.
 
 This is intentional. The runtime can be invoked directly, and OpenAI/Azure
 provider adapters can run state-specific tool loops, but the deterministic chat
 runtime remains unchanged until behavior tests are stable enough for opt-in
 chat integration.
+
+Deferred follow-ups are tracked in [Project TODOs](../todos.md).
 
 ## Agent And Process Catalog
 
@@ -287,6 +296,18 @@ Deferred decisions:
 - When should the user confirm a write plan?
 - How much detail should the user see after successful ingestion?
 - How should partial ingestion failures be explained?
+
+Locked integration direction:
+
+- The complete ingestion workflow must be LLM-backed where appropriate:
+  mention scan, graph-context-aware planning, focused extraction,
+  contradiction-sensitive reasoning, and user-friendly clarification.
+- Contradiction doubts should be inferred by the active agent/process from the
+  provided source and graph context, not detected through brittle deterministic
+  rules.
+- If an ingestion/planning/resolution state sees ambiguity or conflict that
+  requires judgment, it may invoke `contradiction_review` through its configured
+  tooling/handoff path.
 
 ### Clarification Manager
 
@@ -830,3 +851,6 @@ Out of scope for Wave 3:
 - Sensitive or identity-changing actions need confirmation.
 - Context must be scoped and low-noise.
 - Raw metadata and raw UUIDs should not be dumped into prompts.
+- Final assistant-message rendering is owned by the upper conversational layer,
+  with the exception of deeper-state clarification questions that need to be
+  shown to the user before the process can continue.

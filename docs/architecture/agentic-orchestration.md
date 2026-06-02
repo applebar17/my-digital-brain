@@ -819,6 +819,19 @@ generated `ToolBox` and tool mapping into the AI provider, and the provider uses
 the existing generic tool-call loop. Runtime responsibility is state setup,
 context shaping, transition inspection, and bounded execution.
 
+Assistant message ownership:
+
+- `conversation_entry` owns the final user-visible assistant message after a
+  full process completes.
+- Deeper states normally return compact tool outputs or context objects upward,
+  not final public text.
+- The main exception is clarification: a deeper state may produce a natural
+  user-facing clarification question when it cannot safely continue without
+  user input.
+- These deeper clarification exchanges are inner process conversations. They
+  must still be rendered and stored by the chat layer, but they remain attached
+  to the active process rather than treated as a completed top-level answer.
+
 Boundaries:
 
 - `ChatRuntime` may invoke this runtime later as an opt-in mode, but normal chat
@@ -827,6 +840,16 @@ Boundaries:
   backend services, structured generation services, or persisted process state.
 - Nested tool/provider traces are compacted into runtime results. Parent prompts
   should receive concise tool outputs, not raw internal traces.
+- The full LLM ingestion workflow is still a required integration: source
+  normalization, mention scan, graph context retrieval, planning, extraction,
+  candidate assembly, validation/resolution, write execution, clarification,
+  and summary.
+- Ambiguity and contradiction handling are agentic behaviors. They are inferred
+  from context by the relevant agentic state; the baseline should avoid brittle
+  deterministic contradiction-detection rules.
+- `contradiction_review` is invoked through configured tools/handoffs when
+  another state or service sees an ambiguous or conflicting memory context. It
+  is not a globally automatic deterministic hook.
 
 ## State And Tool Matrix
 

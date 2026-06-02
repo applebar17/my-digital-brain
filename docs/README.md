@@ -9,6 +9,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
 - [Agentic orchestration architecture](architecture/agentic-orchestration.md): purpose-oriented agentic states, state handoffs, toolboxes, and prompt scaffolding.
 - [Agentic process implementation plan](dev-plans/08-agentic-process-design.md): implementation roadmap derived from the architecture design.
+- [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
 - [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
