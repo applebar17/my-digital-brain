@@ -748,6 +748,35 @@ The agent cannot:
 - apply merges directly
 - bypass lifecycle/change-record creation
 
+## Agentic Tool Binding Layer
+
+State toolboxes are now backed by product-specific bindings under
+`src/my_digital_brain/agentic/tools/`. The generic `ai/tools` package remains
+provider-neutral and should not globally register memory-management tools.
+
+Binding flow:
+
+```text
+AgenticStateConfig.allowed_tools
+-> AgenticToolRegistry
+-> build_agentic_toolbox(state_config)
+-> build_agentic_tool_mapping(state_config, AgenticToolExecutionContext)
+-> provider tool call
+-> backend facade / graph service / proposal-only handler
+-> ToolResult
+```
+
+Rules:
+
+- A state-specific toolbox exposes only tools listed in that state's
+  `allowed_tools`.
+- Forbidden tools are never included in the generated toolbox.
+- Missing backend dependencies return verbose `ToolResult` errors with hints.
+- Mutation-like tools produce proposals, pending handoffs, or confirmation
+  requests; they do not execute graph writes directly.
+- `AgenticToolExecutionContext` is the dependency boundary for backend services,
+  session metadata, pending process context, and history refs.
+
 ## State And Tool Matrix
 
 | Node | Kind | Model Role | Allowed Tools / Services | Forbidden |

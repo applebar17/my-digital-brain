@@ -154,6 +154,9 @@ Implemented foundation artifacts:
   - Wave 3 correction and contradiction state configuration
   - correction, confirmation, contradiction judge, profile memory, and
     maintenance context contracts
+  - agentic tool registry, state-specific toolbox factory, and backend binding
+    layer under `src/my_digital_brain/agentic/tools/`
+  - `memory_ingestion_planning` state configuration
 - `src/my_digital_brain/prompts/`
   - file-backed prompt registry
   - templates for `conversation_entry`, `pending_process_review`, optional
@@ -162,6 +165,7 @@ Implemented foundation artifacts:
   - templates for `correction_intake`, `correction_proposal`,
     `contradiction_review`, `profile_memory_extraction`, and
     `maintenance_review`
+  - template for `ingestion_planner`
 - `tests/test_agentic_foundation.py`
   - neutral message validation
   - context payload safety
@@ -180,6 +184,13 @@ Implemented foundation artifacts:
   - confirmation-aware correction proposals
   - grounded contradiction judge results
   - profile memory and maintenance review contracts
+- `tests/test_agentic_tool_bindings.py`
+  - every configured state tool has a registered spec
+  - state-specific toolboxes expose only allowed tools
+  - facade-backed chat tools
+  - read-only graph tools
+  - proposal-only correction tools
+  - verbose missing-dependency errors
 
 Implemented but intentionally not wired yet:
 

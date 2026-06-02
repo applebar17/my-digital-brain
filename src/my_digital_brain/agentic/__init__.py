@@ -66,12 +66,23 @@ from my_digital_brain.agentic.state import (
     AgenticStateConfig,
     default_state_configs,
 )
+from my_digital_brain.agentic.tools import (
+    AgenticToolDefinition,
+    AgenticToolExecutionContext,
+    AgenticToolRegistry,
+    build_agentic_tool_mapping,
+    build_agentic_toolbox,
+    default_agentic_tool_registry,
+)
 
 __all__ = [
     "AgenticNodeKind",
     "AgenticRoute",
     "AgenticStateConfig",
     "AgenticStateId",
+    "AgenticToolDefinition",
+    "AgenticToolExecutionContext",
+    "AgenticToolRegistry",
     "AnswerContext",
     "CandidateGraphContext",
     "ChannelContextProjection",
@@ -121,5 +132,8 @@ __all__ = [
     "ToolOutput",
     "ToolResultContext",
     "ToolResultStatus",
+    "build_agentic_tool_mapping",
+    "build_agentic_toolbox",
     "default_state_configs",
+    "default_agentic_tool_registry",
 ]

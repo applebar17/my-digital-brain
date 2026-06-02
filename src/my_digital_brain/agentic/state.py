@@ -78,6 +78,29 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             model_task="pending_process_review",
         ),
+        AgenticStateId.MEMORY_INGESTION_PLANNING: AgenticStateConfig(
+            state_id=AgenticStateId.MEMORY_INGESTION_PLANNING,
+            purpose="Plan memory extraction tasks from source context and compact graph context.",
+            prompt_id="ingestion_planner",
+            required_context_type="PlanningContext",
+            produced_context_type="ExtractionPlan",
+            allowed_tools=[
+                "request_graph_context_expansion",
+            ],
+            forbidden_tools=[
+                "execute_graph_write_plan",
+                "raw_graph_query",
+                "apply_merge",
+                "execute_memory_correction",
+            ],
+            handoff_targets=[
+                "simple_extraction",
+                "focused_extraction",
+                "graph_context_retrieval",
+                "clarification_waiting",
+            ],
+            model_task="memory_ingestion_planning",
+        ),
         AgenticStateId.MEMORY_QUERY: AgenticStateConfig(
             state_id=AgenticStateId.MEMORY_QUERY,
             purpose="Retrieve memory graph context and produce a grounded answer.",
