@@ -213,22 +213,36 @@ Implemented foundation artifacts:
   - fake provider support for runtime tests
   - agentic model routing defaults for smart/reasoning states
 
-Implemented but intentionally not wired yet:
+Implemented focused MVP integration artifacts:
 
-- Agentic runtime integration into `ChatRuntime`.
-- Model-backed intent classification.
-- Full LLM-backed ingestion workflow from source text/transcript to validated
-  graph write or clarification.
-- Agent-driven contradiction review invocation from ambiguous ingestion or
-  resolution contexts.
-- Conversation rendering rules for final assistant messages and inner
-  clarification questions.
-- LangSmith/trace integration for agentic state runs and tool events.
+- Opt-in `agentic` mode in `ChatRuntime`.
+- Deterministic `/status` and `/cancel` shortcuts still bypass the agentic
+  runtime.
+- `ConversationContext` construction from persisted chat history, current
+  message, current time/timezone, and active pending process context.
+- `AgenticToolExecutionContext` construction from backend facade, graph
+  service, ingestion service, chat store, session metadata, history refs, and
+  pending process context.
+- User-visible rendering from `AgenticRunResult` to `ChatResponse`.
+- Assistant message persistence for agentic responses.
+- Pending process persistence when agentic execution returns a clarification or
+  pending-process hint.
+- `AgenticIngestionPlanner`, which runs the tool-enabled
+  `memory_ingestion_planning` state and requires `submit_extraction_plan`.
+- Planning-time tools:
+  - `request_graph_context_expansion`
+  - `request_contradiction_review`
+  - `submit_extraction_plan`
+- Agent-invoked contradiction review handoff from planning contexts without
+  deterministic contradiction detection rules.
 
-This is intentional. The runtime can be invoked directly, and OpenAI/Azure
-provider adapters can run state-specific tool loops, but the deterministic chat
-runtime remains unchanged until behavior tests are stable enough for opt-in
-chat integration.
+Still intentionally deferred:
+
+- Real OpenAI/Azure smoke tests.
+- Prompt tuning and evaluation beyond local scripted behavior tests.
+- LangSmith/remote tracing for agentic state runs and tool events.
+- Post-UAT hardening of confirmation, clarification, and default runtime
+  policies.
 
 Deferred follow-ups are tracked in [Project TODOs](../todos.md).
 
@@ -830,6 +844,61 @@ Out of scope for Wave 3:
 - Fully autonomous maintenance prompts.
 - Personality-cloning behavior in normal MVP flows.
 - Public multi-user policy.
+
+## Focused MVP Integration Slice
+
+Status: Complete.
+
+### Summary
+
+Implement only the missing features needed to make the current agentic product
+flow usable without pulling in future hardening work.
+
+Implemented outputs:
+
+- Opt-in `agentic` mode in `ChatRuntime`; deterministic mode remains the
+  default.
+- Explicit `/status` and `/cancel` deterministic shortcuts are preserved.
+- Incoming agentic chat messages now flow through message persistence,
+  `ConversationContext` construction, `AgenticToolExecutionContext`
+  construction, `AgenticRuntime.run(...)`, response rendering, assistant
+  persistence, and pending-process persistence when needed.
+- Active pending process context starts the runtime from
+  `pending_process_review` instead of forcing the next message through a
+  deterministic clarification route.
+- `AgenticIngestionPlanner` runs the `memory_ingestion_planning` state through
+  the existing provider tool-call loop.
+- The planner toolbox includes:
+  - `request_graph_context_expansion`
+  - `request_contradiction_review`
+  - `submit_extraction_plan`
+- `submit_extraction_plan` is required as the final planner output path and is
+  validated before the ingestion pipeline continues.
+- Full ingestion remains owned by `IngestionService`: mention scan, graph
+  context retrieval, planning, focused extraction, assembly, validation,
+  resolution, write-plan creation, optional graph execution, clarification, and
+  summary.
+- Contradiction review is agent-invoked through tool handoff. No deterministic
+  contradiction-detection rules were added.
+- A contradiction-review state that returns a user-facing clarification
+  question is rendered as pending memory-ingestion context so the next chat turn
+  can resume naturally.
+- `AgenticRunResult` is rendered into `ChatResponse` without exposing raw tool
+  traces, UUID-heavy graph payloads, or backend internals.
+
+Verification:
+
+- `tests/test_chat_runtime.py`
+- `tests/test_agentic_runtime.py`
+- `tests/test_agentic_tool_bindings.py`
+- `tests/test_ingestion_ai_planning.py`
+
+Deferred by design:
+
+- Real OpenAI/Azure smoke tests.
+- LangSmith/remote tracing.
+- Prompt tuning and broad eval suites.
+- Post-UAT hardening.
 
 ## Out Of Scope For Now
 

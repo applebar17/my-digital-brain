@@ -175,6 +175,42 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "limit": integer_property("Maximum records to retrieve.", default=10, maximum=50),
             },
         ),
+        _definition(
+            "request_contradiction_review",
+            "Ask the contradiction review state to inspect an agent-inferred ambiguity or conflict.",
+            states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
+            properties={
+                "agent_doubt": string_property(
+                    "Grounded explanation of the ambiguity or contradiction the agent sees.",
+                ),
+                "proposed_write_ref": optional_string_property(
+                    "Optional proposed write or candidate reference involved in the doubt.",
+                ),
+                "proposed_write": object_property(
+                    "Optional proposed write or candidate payload involved in the doubt.",
+                ),
+                "affected_entity_refs": array_property(
+                    "Entity aliases or ids involved in the doubt.",
+                ),
+                "affected_relationship_refs": array_property(
+                    "Relationship aliases or ids involved in the doubt.",
+                ),
+                "source_refs": array_property("Source refs supporting the doubt."),
+                "metadata": object_property("Additional low-noise contradiction metadata."),
+            },
+            required=["agent_doubt"],
+        ),
+        _definition(
+            "submit_extraction_plan",
+            "Submit the final validated ExtractionPlan for backend ingestion execution.",
+            states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
+            properties={
+                "plan": object_property(
+                    "ExtractionPlan payload matching the ingestion contract.",
+                ),
+            },
+            required=["plan"],
+        ),
         *_graph_read_definitions(memory_query_states, correction_states, contradiction_states),
         _definition(
             "resolve_correction_target",

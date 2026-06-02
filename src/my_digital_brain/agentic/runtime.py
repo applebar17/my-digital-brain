@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from my_digital_brain.agentic.contexts import (
+    ContradictionReviewContext,
     ConversationContext,
     CorrectionIntakeContext,
     QueryRetrievalPlanningContext,
@@ -27,7 +28,7 @@ from my_digital_brain.agentic.tools import (
 from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
 from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
-from my_digital_brain.chat.facade import ChatToolRequest
+from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.prompts import PromptRegistry
 
 
@@ -164,12 +165,22 @@ class AgenticRuntime:
                     state_result.handoff_arguments,
                 )
 
+            if state_result.handoff_target == "contradiction_review":
+                current_state = AgenticStateId.CONTRADICTION_REVIEW
+                current_payload = _contradiction_context_from_handoff(
+                    state_result.handoff_arguments,
+                )
+                continue
+
             return AgenticRunResult(
                 final_text=state_result.assistant_text,
                 visited_states=[result.state_id for result in state_results],
                 state_results=state_results,
                 status=state_result.status,
-                pending_process_hints=_pending_process_hints(state_results),
+                pending_process_hints=[
+                    *_pending_process_hints(state_results),
+                    *_implicit_pending_process_hints(state_result),
+                ],
                 compact_trace=compact_trace,
             )
 
@@ -199,7 +210,10 @@ class AgenticRuntime:
         if facade is None:
             final_text = "Memory ingestion cannot run because backend_facade is not configured."
             status = "error"
+            pending_hints = _pending_process_hints(state_results)
         else:
+            from my_digital_brain.chat.facade import ChatToolRequest
+
             request = ChatToolRequest(
                 session_id=execution_context.session_id or conversation_context.context_id,
                 channel=execution_context.channel,
@@ -222,6 +236,9 @@ class AgenticRuntime:
             result = facade.start_memory_ingestion(request)
             final_text = result.primary_text
             status = "ok" if str(result.status) != "failed" else "error"
+            pending_hints = _pending_process_hints(state_results)
+            if result.pending_process is not None:
+                pending_hints.append(result.pending_process.model_dump(mode="json"))
             compact_trace.append(
                 {
                     "backend_process": "memory_ingestion_precheck",
@@ -234,7 +251,7 @@ class AgenticRuntime:
             visited_states=[result.state_id for result in state_results],
             state_results=state_results,
             status=status,
-            pending_process_hints=_pending_process_hints(state_results),
+            pending_process_hints=pending_hints,
             compact_trace=compact_trace,
         )
 
@@ -268,6 +285,18 @@ def _correction_context_from_handoff(
         or "",
         conversation=conversation_context.model_copy(update={"channel_metadata": None}, deep=True),
         target_hints=[target_id] if target_id else [],
+        metadata=dict(arguments.get("metadata") or {}),
+    )
+
+
+def _contradiction_context_from_handoff(arguments: dict[str, Any]) -> ContradictionReviewContext:
+    return ContradictionReviewContext(
+        proposed_write_ref=arguments.get("proposed_write_ref"),
+        proposed_write=dict(arguments.get("proposed_write") or {}),
+        affected_entity_refs=list(arguments.get("affected_entity_refs") or []),
+        affected_relationship_refs=list(arguments.get("affected_relationship_refs") or []),
+        source_refs=list(arguments.get("source_refs") or []),
+        agent_doubt=arguments.get("agent_doubt") or "The agent requested contradiction review.",
         metadata=dict(arguments.get("metadata") or {}),
     )
 
@@ -317,6 +346,28 @@ def _pending_process_hints(
             if isinstance(result_payload, dict) and result_payload.get("pending_process"):
                 hints.append(result_payload["pending_process"])
     return hints
+
+
+def _implicit_pending_process_hints(
+    state_result: AgenticStateRunResult,
+) -> list[dict[str, Any]]:
+    if state_result.state_id != AgenticStateId.CONTRADICTION_REVIEW:
+        return []
+    text = (state_result.assistant_text or "").strip()
+    if not text or "?" not in text:
+        return []
+    return [
+        {
+            "process_id": new_uuid(),
+            "kind": "memory_ingestion",
+            "status": "pending",
+            "question": text,
+            "metadata": {
+                "source": "contradiction_review",
+                "state_id": AgenticStateId.CONTRADICTION_REVIEW.value,
+            },
+        }
+    ]
 
 
 def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:

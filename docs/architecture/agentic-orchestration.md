@@ -443,7 +443,15 @@ Allowed outputs:
 
 Allowed tools:
 
-- request context expansion
+- `request_graph_context_expansion`
+- `request_contradiction_review`
+- `submit_extraction_plan`
+
+Final output rule:
+
+- `submit_extraction_plan` is the only accepted final planner output path for
+  the tool-enabled planner runtime. The backend validates the submitted
+  `ExtractionPlan` before extraction continues.
 
 Clarification behavior:
 
@@ -677,11 +685,14 @@ The agent can:
   clarification answers
 - call `request_graph_context_expansion` when context is insufficient for a safe
   plan
+- call `request_contradiction_review` when source text plus graph context raises
+  a grounded ambiguity or conflict that needs judgment
+- call `submit_extraction_plan` as the final accepted planner output path
 - return a clarification request in the planning result when ambiguity blocks
   safe extraction
 - choose the extraction mode: `simple_single_pass`, `focused_extraction`,
   `needs_context_expansion`, or `needs_clarification_first`
-- produce an `ExtractionPlan` with focused tasks and evidence spans
+- submit an `ExtractionPlan` with focused tasks and evidence spans
 
 The agent cannot:
 
@@ -689,6 +700,7 @@ The agent cannot:
 - decide non-destructive merges
 - mutate graph state
 - run arbitrary graph queries outside the context-expansion tool
+- finish planning through unstructured assistant text alone
 
 ### `AS: contradiction_review`
 
@@ -831,19 +843,24 @@ Assistant message ownership:
 - These deeper clarification exchanges are inner process conversations. They
   must still be rendered and stored by the chat layer, but they remain attached
   to the active process rather than treated as a completed top-level answer.
+- A contradiction-review clarification question is rendered as pending
+  memory-ingestion context. This rendering rule does not detect contradictions;
+  it only preserves a question the judge already decided to ask.
 
 Boundaries:
 
-- `ChatRuntime` may invoke this runtime later as an opt-in mode, but normal chat
-  behavior can stay deterministic while tests mature.
+- `ChatRuntime` can invoke this runtime as an opt-in `agentic` mode.
+  Deterministic mode remains the default and deterministic `/status` and
+  `/cancel` shortcuts are preserved.
 - The runtime executes `AS` nodes. `BP`, `LP`, and `RS` nodes are invoked through
   backend services, structured generation services, or persisted process state.
 - Nested tool/provider traces are compacted into runtime results. Parent prompts
   should receive concise tool outputs, not raw internal traces.
-- The full LLM ingestion workflow is still a required integration: source
-  normalization, mention scan, graph context retrieval, planning, extraction,
-  candidate assembly, validation/resolution, write execution, clarification,
-  and summary.
+- The full LLM ingestion workflow runs through the ingestion service when
+  configured: source normalization/transcript handling, mention scan, graph
+  context retrieval, tool-enabled planning, extraction, candidate assembly,
+  validation/resolution, write-plan creation, optional write execution,
+  clarification, and summary.
 - Ambiguity and contradiction handling are agentic behaviors. They are inferred
   from context by the relevant agentic state; the baseline should avoid brittle
   deterministic contradiction-detection rules.
@@ -857,7 +874,7 @@ Boundaries:
 | --- | --- | --- | --- | --- |
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
-| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, planning-time clarification result | graph writes |
+| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, contradiction review request, plan submission | graph writes |
 | `focused_extraction` | `LP` | Produce structured candidates | focused schema input only | resolution, writes, tools |
 | `validation_resolution` | `BP` | Deterministic validation and write-plan construction | validator, resolver, write-plan builder | LLM-authored writes |
 | `contradiction_review` | `AS` | Judge grounded doubt | read-only graph/source tools | direct mutation |

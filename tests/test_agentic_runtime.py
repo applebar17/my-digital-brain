@@ -344,3 +344,20 @@ def test_state_runner_accepts_specialist_context_and_records_tool_events() -> No
     assert result.status == "ok"
     assert result.tool_events[0].tool_name == "build_correction_proposal"
     assert result.tool_events[0].data["proposal"]["requires_confirmation"] is True
+
+
+def test_contradiction_review_question_becomes_pending_process_hint() -> None:
+    provider = ScriptedToolCallingProvider(
+        [{"content": "This conflicts with the earlier place. Which city was correct?"}]
+    )
+    runtime = AgenticRuntime(_runner(provider))
+
+    result = runtime.run(
+        _conversation("I met Marco in Milan."),
+        AgenticToolExecutionContext(),
+        start_state=AgenticStateId.CONTRADICTION_REVIEW,
+    )
+
+    assert result.visited_states == [AgenticStateId.CONTRADICTION_REVIEW.value]
+    assert result.pending_process_hints[0]["kind"] == "memory_ingestion"
+    assert result.pending_process_hints[0]["question"].endswith("Which city was correct?")

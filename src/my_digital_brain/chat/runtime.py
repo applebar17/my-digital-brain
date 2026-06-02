@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+from typing import Literal
+
+from my_digital_brain.agentic.contexts import (
+    ChannelSessionMetadata,
+    ConversationContext as AgenticConversationContext,
+    PendingProcessContext as AgenticPendingProcessContext,
+)
+from my_digital_brain.agentic.messages import NeutralConversationMessage
+from my_digital_brain.agentic.runtime import AgenticRuntime
+from my_digital_brain.agentic.tools import AgenticToolExecutionContext
+from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
@@ -27,9 +38,18 @@ class ChatRuntime:
         self,
         store: ChatSessionStore | None = None,
         tool_facade: BackendToolFacade | None = None,
+        *,
+        runtime_mode: Literal["deterministic", "agentic"] = "deterministic",
+        agentic_runtime: AgenticRuntime | None = None,
+        graph_service: object | None = None,
+        ingestion_service: object | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
         self.tool_facade = tool_facade or NoopBackendToolFacade()
+        self.runtime_mode = runtime_mode
+        self.agentic_runtime = agentic_runtime
+        self.graph_service = graph_service
+        self.ingestion_service = ingestion_service
 
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
         if not (message.text and message.text.strip()) and not message.media_refs:
@@ -64,13 +84,32 @@ class ChatRuntime:
             session.session_id,
             explicit_refs=message.conversation_history_refs,
         )
-        result = self._call_facade(message, session.session_id, pending_context, history_refs)
+        if self._uses_agentic_runtime(message):
+            response = self._call_agentic(
+                message,
+                session.session_id,
+                pending_context,
+                history_refs,
+            )
+            result = None
+        else:
+            result = self._call_facade(message, session.session_id, pending_context, history_refs)
+            response = ChatResponse(
+                session_id=session.session_id,
+                status=result.status,
+                primary_text=result.primary_text,
+                pending_process=result.pending_process,
+                actions=result.actions,
+                evidence=result.evidence,
+                diagnostics=result.diagnostics,
+                metadata=result.metadata,
+            )
 
-        if result.pending_process is not None:
+        if response.pending_process is not None:
             self.store.save_pending_process_context(
                 session.session_id,
                 PendingProcessContext(
-                    process_ref=result.pending_process,
+                    process_ref=response.pending_process,
                     conversation_history_refs=history_refs,
                     context={
                         "source_message_id": message.message_id,
@@ -78,19 +117,9 @@ class ChatRuntime:
                     },
                 ),
             )
-        elif result.metadata.get("clear_pending_process"):
+        elif response.metadata.get("clear_pending_process"):
             self.store.clear_active_pending_process(session.session_id)
 
-        response = ChatResponse(
-            session_id=session.session_id,
-            status=result.status,
-            primary_text=result.primary_text,
-            pending_process=result.pending_process,
-            actions=result.actions,
-            evidence=result.evidence,
-            diagnostics=result.diagnostics,
-            metadata=result.metadata,
-        )
         self.store.append_message(
             ConversationMessage(
                 session_id=session.session_id,
@@ -203,6 +232,121 @@ class ChatRuntime:
                 ),
             )
         return self.tool_facade.start_memory_ingestion(request)
+
+    def _uses_agentic_runtime(self, message: IncomingChatMessage) -> bool:
+        if self.runtime_mode != "agentic":
+            return False
+        text = (message.text or "").strip().lower()
+        if text == "/status" or text.startswith("/status "):
+            return False
+        if text == "/cancel" or text.startswith("/cancel "):
+            return False
+        if self.agentic_runtime is None:
+            raise ChatValidationError("Agentic runtime mode requires an AgenticRuntime.")
+        return True
+
+    def _call_agentic(
+        self,
+        message: IncomingChatMessage,
+        session_id: str,
+        pending_context: PendingProcessContext | None,
+        history_refs: list[str],
+    ) -> ChatResponse:
+        if self.agentic_runtime is None:
+            raise ChatValidationError("Agentic runtime mode requires an AgenticRuntime.")
+        conversation_context = self._agentic_conversation_context(
+            message,
+            session_id,
+            pending_context,
+        )
+        execution_context = AgenticToolExecutionContext(
+            backend_facade=self.tool_facade,
+            graph_service=self.graph_service,
+            ingestion_service=self.ingestion_service,
+            chat_store=self.store,
+            session_id=session_id,
+            channel=str(ChatChannel(message.channel)),
+            conversation_id=message.conversation_id,
+            owner_id=message.owner_id,
+            sender_id=message.sender_id,
+            message_id=message.message_id,
+            current_text=(message.text or "").strip(),
+            pending_process_context=pending_context,
+            conversation_history_refs=history_refs,
+            metadata={
+                "media_refs": [media.model_dump(mode="json") for media in message.media_refs],
+                **message.metadata,
+            },
+        )
+        result = self.agentic_runtime.run(conversation_context, execution_context)
+        return render_agentic_chat_response(result, session_id=session_id)
+
+    def _agentic_conversation_context(
+        self,
+        message: IncomingChatMessage,
+        session_id: str,
+        pending_context: PendingProcessContext | None,
+    ) -> AgenticConversationContext:
+        text = (message.text or "").strip()
+        history = [
+            self._agentic_message_from_chat(message_item)
+            for message_item in self.store.list_messages(session_id, limit=30)
+            if message_item.channel_message_id != message.message_id
+        ]
+        return AgenticConversationContext(
+            current_message=NeutralConversationMessage.user(text or "Media message"),
+            history=[item for item in history if item is not None],
+            current_time=message.received_at,
+            timezone=str(message.metadata.get("timezone") or "UTC"),
+            pending_process=self._agentic_pending_context(pending_context),
+            channel_metadata=ChannelSessionMetadata(
+                channel=str(ChatChannel(message.channel)),
+                conversation_id=message.conversation_id,
+                owner_id=message.owner_id,
+                session_id=session_id,
+                sender_id=message.sender_id,
+                message_id=message.message_id,
+                received_at=message.received_at,
+                metadata={
+                    "reply_to_message_id": message.reply_to_message_id,
+                    "media_count": len(message.media_refs),
+                },
+            ),
+            metadata={"runtime_mode": "agentic"},
+        )
+
+    def _agentic_message_from_chat(
+        self,
+        message: ConversationMessage,
+    ) -> NeutralConversationMessage | None:
+        if not message.text:
+            return None
+        if message.role == ConversationMessageRole.USER:
+            return NeutralConversationMessage.user(message.text)
+        if message.role == ConversationMessageRole.ASSISTANT:
+            return NeutralConversationMessage.assistant(message.text)
+        return NeutralConversationMessage.compacted_summary(message.text)
+
+    def _agentic_pending_context(
+        self,
+        pending_context: PendingProcessContext | None,
+    ) -> AgenticPendingProcessContext | None:
+        if pending_context is None:
+            return None
+        process = pending_context.process_ref
+        return AgenticPendingProcessContext(
+            process_id=process.process_id,
+            kind=str(process.kind),
+            status=str(process.status),
+            question=process.question,
+            expires_at=process.expires_at,
+            compact_summary=pending_context.context.get("summary"),
+            metadata={
+                **process.metadata,
+                "context": pending_context.context,
+                "conversation_history_refs": pending_context.conversation_history_refs,
+            },
+        )
 
     def _history_refs(self, session_id: str, explicit_refs: list[str]) -> list[str]:
         if explicit_refs:

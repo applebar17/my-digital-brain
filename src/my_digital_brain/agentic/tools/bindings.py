@@ -9,7 +9,6 @@ from my_digital_brain.ai.models import ToolError, ToolResult
 from my_digital_brain.agentic.contexts import CorrectionProposalContext
 from my_digital_brain.agentic.enums import AgenticStateId, ConfirmationRiskLevel, CorrectionAction
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
-from my_digital_brain.chat.facade import CancelPendingProcessRequest, ChatToolRequest
 from my_digital_brain.core.ids import new_uuid
 
 
@@ -151,6 +150,8 @@ class AgenticToolBindings:
                 "cancel_pending_process",
                 ["session_id", "owner_id"],
             )
+        from my_digital_brain.chat.facade import CancelPendingProcessRequest
+
         request = CancelPendingProcessRequest(
             session_id=self.context.session_id,
             owner_id=self.context.owner_id,
@@ -224,6 +225,79 @@ class AgenticToolBindings:
             return ToolResult(status="ok", output="Graph context expanded.", data=data)
         except Exception as exc:
             return _exception_result("request_graph_context_expansion", exc)
+
+    def _handle_request_contradiction_review(
+        self,
+        agent_doubt: str,
+        proposed_write_ref: str | None = None,
+        proposed_write: dict[str, Any] | None = None,
+        affected_entity_refs: list[str] | None = None,
+        affected_relationship_refs: list[str] | None = None,
+        source_refs: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        if not (proposed_write_ref or proposed_write):
+            return _tool_error(
+                "request_contradiction_review",
+                "missing_contradiction_write_context",
+                "Contradiction review requires a proposed write reference or payload.",
+                "Pass proposed_write_ref or proposed_write so the judge can inspect the conflict.",
+                retryable=True,
+            )
+        return _handoff_result(
+            "request_contradiction_review",
+            "contradiction_review",
+            {
+                "agent_doubt": agent_doubt,
+                "proposed_write_ref": proposed_write_ref,
+                "proposed_write": proposed_write or {},
+                "affected_entity_refs": affected_entity_refs or [],
+                "affected_relationship_refs": affected_relationship_refs or [],
+                "source_refs": source_refs or [],
+                "metadata": metadata or {},
+            },
+            output="Contradiction review handoff requested.",
+        )
+
+    def _handle_submit_extraction_plan(self, plan: dict[str, Any]) -> ToolResult:
+        from my_digital_brain.ingestion.contracts import ExtractionPlan
+
+        try:
+            extraction_plan = ExtractionPlan.model_validate(plan)
+        except ValidationError as exc:
+            return _tool_error(
+                "submit_extraction_plan",
+                "invalid_extraction_plan",
+                "Submitted extraction plan failed validation.",
+                "Fix the plan fields to match the ExtractionPlan contract and call submit_extraction_plan again.",
+                retryable=True,
+                details={"errors": exc.errors()},
+            )
+        expected_source_id = self.context.metadata.get("source_id")
+        if expected_source_id and extraction_plan.source_id != expected_source_id:
+            return _tool_error(
+                "submit_extraction_plan",
+                "source_id_mismatch",
+                (
+                    "Submitted extraction plan source_id "
+                    f"'{extraction_plan.source_id}' does not match expected source_id "
+                    f"'{expected_source_id}'."
+                ),
+                "Use the source_id from the provided planning context.",
+                retryable=True,
+                details={
+                    "expected_source_id": expected_source_id,
+                    "actual_source_id": extraction_plan.source_id,
+                },
+            )
+        return ToolResult(
+            status="ok",
+            output="Extraction plan submitted for backend validation.",
+            data={
+                "operation": "submit_extraction_plan",
+                "extraction_plan": extraction_plan.model_dump(mode="json", exclude_none=True),
+            },
+        )
 
     def _handle_get_context_package(
         self,
@@ -516,7 +590,7 @@ class AgenticToolBindings:
         text: str,
         *,
         metadata: dict[str, Any],
-    ) -> ChatToolRequest | ToolResult:
+    ) -> Any | ToolResult:
         missing = [
             key
             for key, value in {
@@ -528,6 +602,8 @@ class AgenticToolBindings:
         ]
         if missing:
             return _missing_runtime_context("chat_tool_request", missing)
+        from my_digital_brain.chat.facade import ChatToolRequest
+
         return ChatToolRequest(
             session_id=str(self.context.session_id),
             channel=self.context.channel,

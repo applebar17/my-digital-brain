@@ -6,15 +6,20 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from my_digital_brain.agentic import AgenticStateRunner, AgenticToolExecutionContext
 from my_digital_brain.ai.schemas import (
     AIRequestContext,
+    ChatRequest,
+    ChatResult,
     ModelRoute,
     ProviderCallMetadata,
     StructuredGenerationRequest,
     StructuredGenerationResult,
 )
+from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.models import NodeSearchResult
+from my_digital_brain.ingestion.agentic_planner import AgenticIngestionPlanner
 from my_digital_brain.ingestion.ai_services import LLMIngestionPlanner, LLMMentionScanner
 from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
 from my_digital_brain.ingestion.contracts import (
@@ -133,6 +138,126 @@ def test_llm_planner_rejects_unsupported_task_types() -> None:
             _empty_scan(),
             IngestionContextPackage(source_id="source-1"),
         )
+
+
+def test_agentic_ingestion_planner_requires_submit_extraction_plan() -> None:
+    provider = QueuedToolCallingProvider([{"content": "I have a plan."}])
+    planner = AgenticIngestionPlanner(AgenticStateRunner(provider=provider))
+
+    with pytest.raises(IngestionValidationError, match="submit_extraction_plan"):
+        planner.plan(_source(), _empty_scan(), IngestionContextPackage(source_id="source-1"))
+
+    assert provider.requests[0]["tool_names"] == [
+        "request_contradiction_review",
+        "request_graph_context_expansion",
+        "submit_extraction_plan",
+    ]
+
+
+def test_agentic_ingestion_planner_returns_valid_submitted_plan() -> None:
+    provider = QueuedToolCallingProvider(
+        [
+            {
+                "content": "Plan submitted.",
+                "tool": "submit_extraction_plan",
+                "arguments": {
+                    "plan": {
+                        "source_id": "source-1",
+                        "execution_mode": "focused_extraction",
+                        "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+                    }
+                },
+            },
+        ],
+    )
+    execution_contexts: list[AgenticToolExecutionContext] = []
+
+    def context_factory(source: SourceRecordRef) -> AgenticToolExecutionContext:
+        context = AgenticToolExecutionContext(metadata={"source_id": source.source_id})
+        execution_contexts.append(context)
+        return context
+
+    plan = AgenticIngestionPlanner(
+        AgenticStateRunner(provider=provider),
+        execution_context_factory=context_factory,
+    ).plan(_source(), _empty_scan(), IngestionContextPackage(source_id="source-1"))
+
+    assert plan.source_id == "source-1"
+    assert plan.tasks[0].task_type == ExtractionTaskType.PERSON
+    assert execution_contexts[0].tool_events[0].tool_name == "submit_extraction_plan"
+
+
+def test_agentic_ingestion_planner_reports_invalid_submitted_plan() -> None:
+    provider = QueuedToolCallingProvider(
+        [
+            {
+                "content": "Plan submitted.",
+                "tool": "submit_extraction_plan",
+                "arguments": {
+                    "plan": {
+                        "source_id": "wrong-source",
+                        "execution_mode": "focused_extraction",
+                        "tasks": [{"task_type": "person"}],
+                    }
+                },
+            },
+        ],
+    )
+
+    with pytest.raises(IngestionValidationError, match="source_id"):
+        AgenticIngestionPlanner(AgenticStateRunner(provider=provider)).plan(
+            _source(),
+            _empty_scan(),
+            IngestionContextPackage(source_id="source-1"),
+        )
+
+
+def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> None:
+    provider = QueuedToolCallingProvider(
+        [
+            {
+                "content": "Need contradiction review.",
+                "tool": "request_contradiction_review",
+                "arguments": {
+                    "agent_doubt": "The event place conflicts with retrieved context.",
+                    "proposed_write_ref": "WRITE_000001",
+                    "affected_entity_refs": ["NODE_000001"],
+                    "source_refs": ["source-1"],
+                },
+            },
+            {"content": "Treat this as a temporal nuance and continue."},
+            {
+                "content": "Plan submitted.",
+                "tool": "submit_extraction_plan",
+                "arguments": {
+                    "plan": {
+                        "source_id": "source-1",
+                        "execution_mode": "focused_extraction",
+                        "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
+                    }
+                },
+            },
+        ],
+    )
+    context = IngestionContextPackage(
+        source_id="source-1",
+        aliases={"NODE_000001": new_uuid()},
+    )
+
+    plan = AgenticIngestionPlanner(
+        AgenticStateRunner(provider=provider),
+        max_planning_rounds=2,
+    ).plan(_source(), _empty_scan(), context)
+
+    assert plan.tasks[0].task_type == ExtractionTaskType.EVENT
+    assert len(provider.requests) == 3
+    assert provider.requests[1]["tool_names"] == [
+        "get_change_records",
+        "get_neighborhood_view",
+        "get_node_detail",
+        "get_relationship_state_history",
+        "get_target_evidence",
+    ]
 
 
 def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:
@@ -258,6 +383,40 @@ class QueuedStructuredProvider:
         return StructuredGenerationResult(
             parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
+        )
+
+
+class QueuedToolCallingProvider:
+    provider_name = "fake"
+
+    def __init__(self, steps: Sequence[dict[str, Any]]) -> None:
+        self.steps = list(steps)
+        self.requests: list[dict[str, Any]] = []
+
+    def generate_chat_with_tools(
+        self,
+        request: ChatRequest,
+        *,
+        toolbox: ToolBox,
+        tools_mapping: dict[str, Any],
+        max_tool_calls: int | None = None,
+    ) -> ChatResult:
+        step = self.steps.pop(0)
+        self.requests.append(
+            {
+                "request": request,
+                "tool_names": sorted(toolbox.tools_by_name),
+                "max_tool_calls": max_tool_calls,
+            }
+        )
+        tool_name = step.get("tool")
+        if isinstance(tool_name, str):
+            tools_mapping[tool_name](**dict(step.get("arguments") or {}))
+        for tool_call in step.get("tool_calls") or []:
+            tools_mapping[tool_call["tool"]](**dict(tool_call.get("arguments") or {}))
+        return ChatResult(
+            content=str(step.get("content") or ""),
+            metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
 

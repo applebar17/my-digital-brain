@@ -4,49 +4,22 @@ This file tracks deferred work that is intentionally not part of the current
 implementation slice. It should hold product-level follow-ups, not detailed
 wave plans.
 
-## Agentic Runtime And Chat Integration
+## Focused Agentic MVP Follow-Up
 
-- Wire `AgenticRuntime` into `ChatRuntime` as an opt-in mode.
-- Build `ConversationContext` from persisted chat history, compacted summaries,
-  current time/timezone, pending process refs, and channel metadata.
-- Build `AgenticToolExecutionContext` from backend services, graph service,
-  ingestion service, chat store, session ids, owner ids, and pending context.
-- Keep deterministic chat behavior available until agentic behavior passes UAT.
+The first focused MVP slice has implemented the core agentic chat wiring,
+tool-enabled ingestion planning, pending-process review entry point,
+agent-invoked contradiction review handoff, and safe chat response rendering.
 
-## Full LLM Ingestion Workflow
+Remaining work in this file is intentionally future-facing and should not be
+mixed into that MVP slice.
 
-- Implement the complete LLM-backed ingestion path:
-  - source/transcript normalization
-  - mention scan
-  - compact graph context retrieval
-  - `memory_ingestion_planning`
-  - simple or focused extraction
-  - candidate assembly
-  - validation and resolution
-  - write-plan creation
-  - graph execution or clarification
-  - ingestion summary
-- Contradiction doubts should be inferred by the relevant agentic state from
-  context, not deterministically detected by brittle hard-coded rules.
-- Let ingestion/planning/resolution agents invoke `contradiction_review` through
-  configured tooling when they see ambiguous or conflicting memory context.
+Potential follow-ups after hands-on usage:
 
-## Assistant Message Rendering
-
-- Conversation entry remains the owner of the final user-visible assistant
-  message after a full process completes.
-- Deeper states may render user-visible clarification questions when the
-  process cannot safely continue without user input.
-- Tool traces, graph payloads, and raw backend diagnostics must stay internal
-  unless explicitly transformed into a user-facing summary.
-- Define rendering rules for:
-  - normal direct answers
-  - ingestion summaries
-  - memory query answers
-  - correction proposals
-  - confirmation questions
-  - clarification questions from deeper states
-  - failed or partially completed processes
+- Decide whether `agentic` chat mode becomes the default runtime mode.
+- Add richer resume behavior for paused or unresolved pending processes.
+- Improve user-facing summaries after write-plan execution based on real UAT
+  feedback.
+- Add more evaluation examples for contradiction clarification wording.
 
 ## Real Provider Smoke Tests
 

@@ -4,6 +4,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from my_digital_brain.api.routes import chat as chat_routes
+from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
+from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
+from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
@@ -69,6 +72,32 @@ class RecordingFacade:
         return ChatToolResult(
             status=ChatResponseStatus.CANCELLED,
             primary_text="Cancelled.",
+        )
+
+
+class ScriptedToolProvider:
+    provider_name = "scripted"
+
+    def __init__(self, steps: list[dict[str, object]]) -> None:
+        self.steps = list(steps)
+        self.calls: list[dict[str, object]] = []
+
+    def generate_chat_with_tools(
+        self,
+        request: ChatRequest,
+        *,
+        toolbox: ToolBox,
+        tools_mapping: dict[str, object],
+        max_tool_calls: int | None = None,
+    ) -> ChatResult:
+        step = self.steps.pop(0) if self.steps else {"content": ""}
+        self.calls.append({"tool_names": sorted(toolbox.tools_by_name)})
+        tool_name = step.get("tool")
+        if isinstance(tool_name, str):
+            tools_mapping[tool_name](**step.get("arguments", {}))
+        return ChatResult(
+            content=str(step.get("content") or ""),
+            metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
 
@@ -161,6 +190,81 @@ def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
         "propose_memory_correction",
         "cancel_pending_process",
     ]
+
+
+def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it() -> None:
+    provider = ScriptedToolProvider([{"content": "I can help with that."}])
+    store = InMemoryChatSessionStore()
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+
+    response = runtime.handle_message(_message(text="hello"))
+    detail = store.get_session_detail(response.session_id)
+
+    assert response.primary_text == "I can help with that."
+    assert response.metadata["runtime_mode"] == "agentic"
+    assert response.metadata["visited_states"] == ["conversation_entry"]
+    assert detail.messages[-1].role == "assistant"
+    assert detail.messages[-1].text == "I can help with that."
+
+
+def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
+    provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
+    store = InMemoryChatSessionStore()
+    facade = RecordingFacade()
+    deterministic = ChatRuntime(store=store, tool_facade=facade)
+    first = deterministic.handle_message(_message(text="needs clarification", message_id="m1"))
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=facade,
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+
+    response = runtime.handle_message(_message(text="I'm not sure", message_id="m2"))
+
+    assert first.status == ChatResponseStatus.NEEDS_USER_INPUT
+    assert response.metadata["visited_states"] == ["pending_process_review"]
+    assert provider.calls[0]["tool_names"] == [
+        "cancel_pending_process",
+        "pause_pending_process",
+        "propose_memory_correction",
+        "query_memory_context",
+        "resume_pending_process",
+        "start_memory_ingestion",
+    ]
+
+
+def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> None:
+    provider = ScriptedToolProvider(
+        [
+            {
+                "content": "Routing to ingestion.",
+                "tool": "start_memory_ingestion",
+                "arguments": {"source_text": "needs clarification"},
+            }
+        ]
+    )
+    store = InMemoryChatSessionStore()
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+
+    response = runtime.handle_message(_message(text="needs clarification"))
+    detail = store.get_session_detail(response.session_id)
+
+    assert response.status == ChatResponseStatus.NEEDS_USER_INPUT
+    assert response.primary_text == "Which Marco do you mean?"
+    assert response.pending_process is not None
+    assert detail.pending_process.process_ref.process_id == response.pending_process.process_id
+    assert "compact_trace" not in response.metadata
 
 
 def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
