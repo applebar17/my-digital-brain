@@ -19,6 +19,7 @@ from my_digital_brain.agentic.enums import (
 )
 from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult, AgenticToolEvent
+from my_digital_brain.core.ids import new_uuid
 
 
 BACKEND_ONLY_KEYS = {
@@ -234,6 +235,63 @@ class AgenticHistoryService:
                 skip_handoff_targets=skip_handoff_targets,
             ),
         )
+
+    def owner_finalization_context(
+        self,
+        conversation: ConversationContext,
+        *,
+        completed_state: AgenticStateRunResult,
+    ) -> ConversationContext:
+        return self.owner_finalization_context_from_output(
+            conversation,
+            process_name=_enum_value(completed_state.state_id),
+            summary=self.state_result_summary(completed_state),
+            data=completed_state.model_dump(mode="json", exclude_none=True),
+        )
+
+    def owner_finalization_context_from_output(
+        self,
+        conversation: ConversationContext,
+        *,
+        process_name: str,
+        summary: str,
+        data: dict[str, Any] | None = None,
+    ) -> ConversationContext:
+        compact_output = NeutralConversationMessage.tool_output_message(
+            tool_call_id=new_uuid(),
+            name=process_name,
+            status=ToolResultStatus.OK,
+            content=summary,
+            data=self._compact_tool_data(data or {"summary": summary}),
+            owner_visible=False,
+        )
+        compacted_summary, history = self.compact_history(
+            [*conversation.history, compact_output],
+            compacted_summary=conversation.compacted_summary,
+        )
+        return conversation.model_copy(
+            update={
+                "history": history,
+                "compacted_summary": compacted_summary,
+                "channel_metadata": None,
+                "metadata": {
+                    **conversation.metadata,
+                    "owner_finalization": True,
+                    "completed_process": process_name,
+                    "compact_process_output": summary,
+                },
+            },
+            deep=True,
+        )
+
+    def state_result_summary(self, state_result: AgenticStateRunResult) -> str:
+        if state_result.assistant_text:
+            return state_result.assistant_text
+        for event in reversed(state_result.tool_events):
+            summary = self.tool_event_summary(event)
+            if summary:
+                return summary
+        return f"{_enum_value(state_result.state_id)} completed."
 
     def tool_event_summary(self, event: AgenticToolEvent) -> str:
         if event.output:

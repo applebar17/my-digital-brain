@@ -148,6 +148,7 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
                 "tool": "get_context_package",
                 "arguments": {"node_id": "node-marco"},
             },
+            {"content": "Marco is stored as your university friend."},
         ]
     )
     graph = FakeGraphService()
@@ -163,11 +164,15 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     assert result.visited_states == [
         AgenticStateId.CONVERSATION_ENTRY.value,
         AgenticStateId.MEMORY_QUERY.value,
+        AgenticStateId.CONVERSATION_ENTRY.value,
     ]
     assert result.state_results[0].handoff_target == "memory_query"
     assert result.state_results[1].tool_events[0].tool_name == "get_context_package"
     assert graph.calls == [("get_context_package", "node-marco")]
     assert provider.calls[0]["max_tool_calls"] == 3
+    assert provider.calls[2]["tool_names"] == []
+    assert provider.calls[2]["max_tool_calls"] == 0
+    assert '"owner_finalization": true' in provider.calls[2]["request"].messages[1].content
 
 
 def test_correction_handoff_reaches_confirmation_aware_specialist_state() -> None:
@@ -272,7 +277,8 @@ def test_ingestion_handoff_delegates_to_backend_facade() -> None:
                 "content": "Routing to ingestion.",
                 "tool": "start_memory_ingestion",
                 "arguments": {"source_text": "Yesterday I met Marco."},
-            }
+            },
+            {"content": "I stored that memory."},
         ]
     )
     facade = FakeBackendFacade()
@@ -289,9 +295,13 @@ def test_ingestion_handoff_delegates_to_backend_facade() -> None:
     )
 
     assert result.status == "ok"
-    assert result.final_text == "Memory accepted by backend."
+    assert result.final_text == "I stored that memory."
     assert facade.calls[0][1].text == "Yesterday I met Marco."
-    assert result.compact_trace[-1]["backend_process"] == "memory_ingestion_precheck"
+    assert result.compact_trace[-2]["backend_process"] == "memory_ingestion_precheck"
+    assert result.visited_states == [
+        AgenticStateId.CONVERSATION_ENTRY.value,
+        AgenticStateId.CONVERSATION_ENTRY.value,
+    ]
 
 
 def test_max_state_transition_limit_prevents_runaway_handoffs() -> None:

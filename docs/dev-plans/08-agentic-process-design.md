@@ -878,6 +878,9 @@ Implemented outputs:
 - `AgenticHistoryService` centralizes state-aware history construction,
   model-facing payload projection, backend-only metadata exclusion, and compact
   nested tool-output summaries.
+- Final assistant-message ownership is enforced for normal completion paths:
+  specialist outputs are compacted back to the conversational owner, and the
+  owner state writes the user-visible final message with tools disabled.
 - Active pending process context starts the runtime from
   `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.

@@ -111,6 +111,27 @@ Status: implemented in the planner foundation.
   structured result, not by checking whether assistant text contains a question
   mark.
 
+### Final Assistant Message Ownership
+
+Status: implemented for normal completion paths.
+
+- User-visible final replies are owned by:
+  - `conversation_entry` for normal completed processes;
+  - `pending_process_review` when the conversation starts from an active pending
+    process;
+  - deterministic chat runtime handlers for explicit `/status` and `/cancel`.
+- `memory_query`, `correction_intake`, contradiction review, ingestion planning,
+  and backend subprocesses return compact process/tool outputs upward by
+  default instead of owning final public text.
+- After non-interrupting specialist completion, the runtime appends one compact
+  tool-output summary to the owner context and reruns the owner state with tools
+  disabled.
+- Deeper states may still produce user-visible clarification or confirmation
+  questions when the process cannot continue safely without user input. Those
+  are process interruptions, not completed top-level answers.
+- Raw tool traces, graph payloads, UUID-heavy internals, and backend diagnostics
+  remain hidden from user-visible responses.
+
 ### Tool Surface Ownership
 
 - Keep explicit `/status` and `/cancel` as deterministic chat-runtime

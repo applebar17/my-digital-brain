@@ -816,7 +816,9 @@ ConversationContext + AgenticToolExecutionContext
 -> call provider.generate_chat_with_tools(...)
 -> collect compact tool events
 -> inspect handoff tool output
--> continue to the next allowed state or terminate
+-> continue to the next allowed state
+-> compact non-interrupting specialist output back to the conversational owner
+-> owner state writes the final user-visible assistant message with tools disabled
 ```
 
 Start-state rule:
@@ -853,22 +855,33 @@ context shaping, transition inspection, and bounded execution.
 
 Assistant message ownership:
 
-- `conversation_entry` owns the final user-visible assistant message after a
-  full process completes.
+- User-visible owner states are:
+  - `conversation_entry` for normal conversations and completed delegated
+    processes;
+  - `pending_process_review` when an active pending process is the entry state;
+  - deterministic chat runtime handlers for explicit `/status` and `/cancel`
+    shortcuts.
 - Deeper states normally return compact tool outputs or context objects upward,
   not final public text.
+- After `memory_query`, `correction_intake`, or a successful ingestion backend
+  process completes without requiring user input, the runtime appends one
+  compact tool-output summary to the owner context and runs the owner state
+  again with tools disabled. The owner then writes the final assistant message.
 - The main exception is clarification: a deeper state may produce a natural
   user-facing clarification question when it cannot safely continue without
   user input.
+- Confirmation requests are also user-visible process interruptions. They are
+  rendered by the chat layer and remain attached to the active process instead
+  of being rewritten as completed top-level answers.
 - These deeper clarification exchanges are inner process conversations. They
   must still be rendered and stored by the chat layer, but they remain attached
   to the active process rather than treated as a completed top-level answer.
 - A contradiction-review clarification is rendered from a structured
   `needs_clarification` result, not from unstructured assistant text or a
   question-mark heuristic.
-- `memory_query` and `correction_intake` may produce terminal user-visible
-  output in the MVP only through the safe renderer. They must not expose raw
-  graph payloads, UUID-heavy traces, or backend internals.
+- `memory_query`, `correction_intake`, ingestion planning, contradiction
+  review, and backend processes are not final public-message owners in normal
+  completion paths.
 
 Boundaries:
 

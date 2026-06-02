@@ -29,6 +29,7 @@ from my_digital_brain.agentic.tools import (
 from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
 from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
+from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.prompts import PromptRegistry
 
@@ -58,12 +59,21 @@ class AgenticStateRunner:
             metadata={"state_id": state_value},
         )
         route = self.model_router.route(model_task, context)
-        toolbox = build_agentic_toolbox(state_config, self.tool_registry)
+        tools_disabled = bool(invocation.metadata.get("disable_tools"))
+        toolbox = (
+            ToolBox(name=f"agentic:{state_config.state_id}:disabled", tools=[], tools_by_name={})
+            if tools_disabled
+            else build_agentic_toolbox(state_config, self.tool_registry)
+        )
         event_start = len(invocation.execution_context.tool_events)
-        tools_mapping = build_agentic_tool_mapping(
-            state_config,
-            invocation.execution_context,
-            self.tool_registry,
+        tools_mapping = (
+            {}
+            if tools_disabled
+            else build_agentic_tool_mapping(
+                state_config,
+                invocation.execution_context,
+                self.tool_registry,
+            )
         )
         prompt = self.prompt_registry.load(
             state_config.prompt_id,
@@ -80,6 +90,7 @@ class AgenticStateRunner:
                     content=json.dumps(
                         {
                             "state_id": state_value,
+                            "runtime": invocation.metadata,
                             "context": self.history_service.model_payload_for_state(
                                 state_id,
                                 invocation.context_payload,
@@ -97,7 +108,7 @@ class AgenticStateRunner:
             request,
             toolbox=toolbox,
             tools_mapping=tools_mapping,
-            max_tool_calls=state_config.max_tool_calls,
+            max_tool_calls=0 if tools_disabled else state_config.max_tool_calls,
         )
         tool_events = invocation.execution_context.tool_events[event_start:]
         handoff_target, handoff_arguments = _last_handoff(tool_events)
@@ -130,6 +141,7 @@ class AgenticRuntime:
         start_state: AgenticStateId | None = None,
     ) -> AgenticRunResult:
         current_state = start_state or self._entry_state(conversation_context)
+        owner_state = current_state
         current_payload: Any = conversation_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
@@ -170,6 +182,7 @@ class AgenticRuntime:
                     state_results,
                     compact_trace,
                     state_result.handoff_arguments,
+                    owner_state,
                 )
 
             if state_result.handoff_target == "contradiction_review":
@@ -179,8 +192,39 @@ class AgenticRuntime:
                 )
                 continue
 
+            if current_state != owner_state and not _requires_direct_user_visibility(
+                state_result,
+                state_results,
+            ):
+                final_result = self._finalize_with_owner(
+                    owner_state,
+                    conversation_context,
+                    execution_context,
+                    state_result,
+                )
+                state_results.append(final_result)
+                compact_trace.append(_compact_state_trace(final_result))
+                return AgenticRunResult(
+                    final_text=(
+                        final_result.assistant_text
+                        or self.state_runner.history_service.state_result_summary(
+                            state_result,
+                        )
+                    ),
+                    visited_states=[result.state_id for result in state_results],
+                    state_results=state_results,
+                    status=final_result.status,
+                    pending_process_hints=_pending_process_hints(state_results),
+                    compact_trace=compact_trace,
+                    metadata={
+                        "user_visible_owner": owner_state.value,
+                        "completed_process": current_state.value,
+                    },
+                )
+
             return AgenticRunResult(
-                final_text=state_result.assistant_text,
+                final_text=state_result.assistant_text
+                or self.state_runner.history_service.state_result_summary(state_result),
                 visited_states=[result.state_id for result in state_results],
                 state_results=state_results,
                 status=state_result.status,
@@ -200,6 +244,61 @@ class AgenticRuntime:
             compact_trace=compact_trace,
         )
 
+    def _finalize_with_owner(
+        self,
+        owner_state: AgenticStateId,
+        conversation_context: ConversationContext,
+        execution_context: AgenticToolExecutionContext,
+        completed_state_result: AgenticStateRunResult,
+    ) -> AgenticStateRunResult:
+        owner_context = self.state_runner.history_service.owner_finalization_context(
+            conversation_context,
+            completed_state=completed_state_result,
+        )
+        return self.state_runner.run_state(
+            AgenticStateInvocation(
+                state_id=owner_state,
+                context_payload=owner_context,
+                execution_context=execution_context,
+                metadata={
+                    "owner_finalization": True,
+                    "completed_state": _state_value(completed_state_result.state_id),
+                    "disable_tools": True,
+                },
+            ),
+        )
+
+    def _finalize_backend_process_with_owner(
+        self,
+        owner_state: AgenticStateId,
+        conversation_context: ConversationContext,
+        execution_context: AgenticToolExecutionContext,
+        *,
+        process_name: str,
+        summary: str,
+        data: dict[str, Any],
+    ) -> AgenticStateRunResult:
+        owner_context = (
+            self.state_runner.history_service.owner_finalization_context_from_output(
+                conversation_context,
+                process_name=process_name,
+                summary=summary,
+                data=data,
+            )
+        )
+        return self.state_runner.run_state(
+            AgenticStateInvocation(
+                state_id=owner_state,
+                context_payload=owner_context,
+                execution_context=execution_context,
+                metadata={
+                    "owner_finalization": True,
+                    "completed_state": process_name,
+                    "disable_tools": True,
+                },
+            ),
+        )
+
     def _entry_state(self, conversation_context: ConversationContext) -> AgenticStateId:
         if conversation_context.pending_process is not None:
             return AgenticStateId.PENDING_PROCESS_REVIEW
@@ -212,6 +311,7 @@ class AgenticRuntime:
         state_results: list[AgenticStateRunResult],
         compact_trace: list[dict[str, Any]],
         handoff_arguments: dict[str, Any],
+        owner_state: AgenticStateId,
     ) -> AgenticRunResult:
         facade = execution_context.backend_facade
         if facade is None:
@@ -253,6 +353,19 @@ class AgenticRuntime:
                     "summary": result.primary_text,
                 },
             )
+            if status == "ok" and result.pending_process is None:
+                final_result = self._finalize_backend_process_with_owner(
+                    owner_state,
+                    conversation_context,
+                    execution_context,
+                    process_name="memory_ingestion_precheck",
+                    summary=result.primary_text,
+                    data=result.model_dump(mode="json", exclude_none=True),
+                )
+                state_results.append(final_result)
+                compact_trace.append(_compact_state_trace(final_result))
+                final_text = final_result.assistant_text or result.primary_text
+                status = final_result.status
         return AgenticRunResult(
             final_text=final_text,
             visited_states=[result.state_id for result in state_results],
@@ -260,6 +373,10 @@ class AgenticRuntime:
             status=status,
             pending_process_hints=pending_hints,
             compact_trace=compact_trace,
+            metadata={
+                "user_visible_owner": owner_state.value,
+                "completed_process": "memory_ingestion_precheck",
+            },
         )
 
 
@@ -355,6 +472,23 @@ def _implicit_pending_process_hints(
             },
         }
     ]
+
+
+def _requires_direct_user_visibility(
+    state_result: AgenticStateRunResult,
+    state_results: list[AgenticStateRunResult],
+) -> bool:
+    if _pending_process_hints(state_results) or _implicit_pending_process_hints(state_result):
+        return True
+    for event in state_result.tool_events:
+        data = event.data or {}
+        if data.get("operation") == "request_user_confirmation":
+            return True
+        if "confirmation" in data:
+            return True
+        if "pending_process" in data:
+            return True
+    return False
 
 
 def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:
