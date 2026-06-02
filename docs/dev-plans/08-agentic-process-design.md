@@ -445,6 +445,8 @@ AS parent history
 
 ## Wave 0: Design Baseline
 
+Status: Complete.
+
 ### Summary
 
 Lock the agent/process catalog, process template, top-level action surface, and open questions.
@@ -466,6 +468,8 @@ Lock the agent/process catalog, process template, top-level action surface, and 
 - The team understands which behavior is not yet designed.
 
 ## Wave 1: Router And Clarification Protocols
+
+Status: Complete.
 
 ### Summary
 
