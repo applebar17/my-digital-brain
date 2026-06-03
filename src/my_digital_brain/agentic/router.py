@@ -25,12 +25,12 @@ class DeterministicAgenticRouter:
     """
 
     def route(self, context: ConversationContext) -> AgenticRoute:
-        if context.pending_process is not None:
+        if self._selected_pending_process(context) is not None:
             return self._route_pending_process_review(context)
         return self._route_conversation_entry(context)
 
     def select_entry_state(self, context: ConversationContext) -> AgenticStateId:
-        if context.pending_process is not None:
+        if self._selected_pending_process(context) is not None:
             return AgenticStateId.PENDING_PROCESS_REVIEW
         return AgenticStateId.CONVERSATION_ENTRY
 
@@ -75,13 +75,20 @@ class DeterministicAgenticRouter:
     def _route_pending_process_review(self, context: ConversationContext) -> AgenticRoute:
         text = (context.current_message.content or "").strip()
         lower_text = text.lower()
+        pending_process = self._selected_pending_process(context)
+        if pending_process is None:
+            return self._assistant_route(
+                context,
+                "There is no pending process to review.",
+                reason="Pending process review was requested without pending context.",
+            )
 
         if self._is_cancel(lower_text):
             return self._tool_route(
                 context,
                 tool_name="cancel_pending_process",
                 arguments={
-                    "pending_process_id": context.pending_process.process_id,
+                    "pending_process_id": pending_process.process_id,
                     "reason": self._command_payload(text, "/cancel"),
                 },
                 reason="Explicit cancellation while pending process is active.",
@@ -92,7 +99,7 @@ class DeterministicAgenticRouter:
                 context,
                 tool_name="pause_pending_process",
                 arguments={
-                    "pending_process_id": context.pending_process.process_id,
+                    "pending_process_id": pending_process.process_id,
                     "reason": text,
                 },
                 reason="User does not want or cannot complete the pending process now.",
@@ -137,8 +144,7 @@ class DeterministicAgenticRouter:
             context,
             tool_name="resume_pending_process",
             arguments={
-                "pending_process_id": context.pending_process.process_id,
-                "user_reply": text,
+                "pending_process_id": pending_process.process_id,
             },
             reason="Default pending-process path treats the message as a possible answer.",
             pending_intent=PendingMessageIntent.CLARIFICATION_ANSWER,
@@ -197,3 +203,10 @@ class DeterministicAgenticRouter:
         if not text.lower().startswith(command):
             return ""
         return text[len(command) :].strip()
+
+    def _selected_pending_process(self, context: ConversationContext):
+        if context.pending_process is not None:
+            return context.pending_process
+        if context.pending_processes:
+            return context.pending_processes[0]
+        return None

@@ -13,12 +13,18 @@ from my_digital_brain.agentic import (
     default_agentic_tool_registry,
     default_state_configs,
 )
-from my_digital_brain.chat.enums import ChatResponseStatus
+from my_digital_brain.chat.enums import (
+    ChatResponseStatus,
+    PendingProcessKind,
+    PendingProcessStatus,
+)
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
     ChatToolRequest,
     ChatToolResult,
 )
+from my_digital_brain.chat.models import PendingProcessContext, PendingProcessRef
+from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
@@ -68,7 +74,23 @@ class FakeFacade:
         return ChatToolResult(
             status=ChatResponseStatus.CANCELLED,
             primary_text="Cancelled.",
-            metadata={"operation": "cancel_pending_process"},
+            metadata={"operation": "cancel_pending_process", "clear_pending_process": True},
+        )
+
+    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
+        self.calls.append(("pause_pending_process", request))
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="Paused.",
+            metadata={"operation": "pause_pending_process", "clear_pending_process": True},
+        )
+
+    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
+        self.calls.append(("resume_pending_process", request))
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="Resumed.",
+            metadata={"operation": "resume_pending_process", "clear_pending_process": True},
         )
 
 
@@ -204,13 +226,34 @@ class FakeGraphService:
 
 
 def _execution_context(**kwargs: Any) -> AgenticToolExecutionContext:
-    return AgenticToolExecutionContext(
-        session_id="session-1",
-        conversation_id="conversation-1",
-        owner_id="owner-1",
-        channel="web",
-        current_text="Yesterday I met Marco.",
-        **kwargs,
+    defaults = {
+        "session_id": "session-1",
+        "conversation_id": "conversation-1",
+        "owner_id": "owner-1",
+        "channel": "web",
+        "current_text": "Yesterday I met Marco.",
+    }
+    return AgenticToolExecutionContext(**{**defaults, **kwargs})
+
+
+def _pending_context(
+    process_id: str,
+    *,
+    question: str = "Which Marco?",
+) -> PendingProcessContext:
+    return PendingProcessContext(
+        process_ref=PendingProcessRef(
+            process_id=process_id,
+            kind=PendingProcessKind.MEMORY_INGESTION,
+            question=question,
+        ),
+        context={
+            "summary": f"Pending memory clarification: {question}",
+            "source_text": "Yesterday I met Marco in Milan.",
+            "checkpoint_schema_version": "v1",
+            "resume_step": "source_reprocess",
+            "unresolved_targets": ["person: Marco"],
+        },
     )
 
 
@@ -281,6 +324,97 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
         "memory_ingestion_precheck"
     )
     assert facade.calls == []
+
+
+def test_resume_pending_process_uses_current_text_without_user_reply_argument() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    pending = _pending_context("process-1")
+    store.save_pending_process_context(session.session_id, pending)
+    facade = FakeFacade()
+    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
+    mapping = build_agentic_tool_mapping(
+        config,
+        _execution_context(
+            backend_facade=facade,
+            chat_store=store,
+            session_id=session.session_id,
+            current_text="Marco from university",
+            pending_process_context=pending,
+            pending_process_contexts=[pending],
+        ),
+    )
+
+    schema = config.allowed_tools
+    assert "resume_pending_process" in schema
+    result = mapping["resume_pending_process"](pending_process_id="process-1")
+
+    assert result.status == "ok"
+    assert result.data["pending_process_id"] == "process-1"
+    assert facade.calls[0][0] == "resume_pending_process"
+    request = facade.calls[0][1]
+    assert isinstance(request, ChatToolRequest)
+    assert request.text == "Marco from university"
+    assert request.pending_process_context.process_ref.process_id == "process-1"
+    assert store.get_pending_process_context("process-1").process_ref.status == (
+        PendingProcessStatus.COMPLETED
+    )
+
+
+def test_pause_pending_process_clears_active_and_preserves_resumable_context() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    pending = _pending_context("process-1")
+    store.save_pending_process_context(session.session_id, pending)
+    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
+    mapping = build_agentic_tool_mapping(
+        config,
+        _execution_context(
+            chat_store=store,
+            session_id=session.session_id,
+            pending_process_context=pending,
+            pending_process_contexts=[pending],
+        ),
+    )
+
+    result = mapping["pause_pending_process"](
+        pending_process_id="process-1",
+        reason="I don't remember",
+    )
+
+    paused = store.get_pending_process_context("process-1")
+    assert result.status == "ok"
+    assert result.data["clear_pending_process"] is True
+    assert paused.process_ref.status == PendingProcessStatus.PAUSED
+    assert paused.context["resumable"] is True
+    assert store.get_active_pending_process_context(session.session_id) is None
+
+
+def test_pending_tool_requires_process_id_when_multiple_processes_exist() -> None:
+    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
+    mapping = build_agentic_tool_mapping(
+        config,
+        _execution_context(
+            pending_process_contexts=[
+                _pending_context("process-1"),
+                _pending_context("process-2", question="Which Giovanni?"),
+            ],
+        ),
+    )
+
+    result = mapping["resume_pending_process"]()
+
+    assert result.status == "error"
+    assert result.error.code == "ambiguous_pending_process"
+    assert result.error.details["available_process_ids"] == ["process-1", "process-2"]
 
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:

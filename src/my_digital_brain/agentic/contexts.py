@@ -73,6 +73,7 @@ class ConversationContext(AgenticModel):
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     pending_process: PendingProcessContext | None = None
+    pending_processes: list[PendingProcessContext] = Field(default_factory=list)
     channel_metadata: ChannelSessionMetadata | None = None
     channel_projection: ChannelContextProjection | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

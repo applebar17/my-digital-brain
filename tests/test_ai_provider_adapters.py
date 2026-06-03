@@ -294,6 +294,24 @@ def test_genai_settings_from_app_settings_includes_transcription_settings() -> N
     assert settings.azure_openai_transcription_deployment == "stt-deployment"
 
 
+def test_genai_settings_accepts_azure_provider_alias_and_chat_models() -> None:
+    app_settings = Settings(
+        _env_file=None,
+        LLM_PROVIDER="azure",
+        AZURE_CHAT_MODEL_DEFAULT="azure-default",
+        AZURE_CHAT_MODEL_SMART="azure-smart",
+        AZURE_CHAT_MODEL_REASONING="azure-reasoning",
+    )
+
+    settings = genai_settings_from_app_settings(app_settings)
+
+    assert app_settings.normalized_llm_provider == "azure_openai"
+    assert settings.is_azure is True
+    assert settings.chat_model_default == "azure-default"
+    assert settings.chat_model_smart == "azure-smart"
+    assert settings.chat_model_reasoning == "azure-reasoning"
+
+
 def test_genai_client_transcribe_audio_passes_normalized_params(tmp_path: Path) -> None:
     audio_path = tmp_path / "voice.ogg"
     audio_path.write_bytes(b"audio")

@@ -53,6 +53,10 @@ class BackendToolFacade(Protocol):
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult: ...
 
+    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult: ...
+
+    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult: ...
+
     def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult: ...
 
 
@@ -96,6 +100,40 @@ class NoopBackendToolFacade:
             primary_text="There is a pending process for this conversation.",
             pending_process=request.pending_process_context.process_ref,
             metadata={"operation": "get_conversation_status"},
+        )
+
+    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
+        if request.pending_process_context is None:
+            return ChatToolResult(
+                status=ChatResponseStatus.FAILED,
+                primary_text="There is no pending process to resume.",
+                metadata={"operation": "resume_pending_process"},
+            )
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="I received the clarification and will continue the pending process.",
+            metadata={
+                "operation": "resume_pending_process",
+                "pending_process_id": request.pending_process_context.process_ref.process_id,
+                "clear_pending_process": True,
+            },
+        )
+
+    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
+        if request.pending_process_id is None:
+            return ChatToolResult(
+                status=ChatResponseStatus.OK,
+                primary_text="There is no pending process to pause.",
+                metadata={"operation": "pause_pending_process"},
+            )
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="I paused the pending process and can come back to it later.",
+            metadata={
+                "operation": "pause_pending_process",
+                "clear_pending_process": True,
+                "pending_process_id": request.pending_process_id,
+            },
         )
 
     def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:

@@ -36,8 +36,8 @@ Hard boundaries:
 ```mermaid
 flowchart TD
     C[Chat consumers<br/>Telegram / web chat] --> R[Conversation runtime<br/>normalize, store history, attach pending context]
-    R -->|no active pending process| E[conversation_entry<br/>state selection]
-    R -->|active pending process| PR[pending_process_review<br/>pending-aware entry]
+    R -->|no pending overview| E[conversation_entry<br/>state selection]
+    R -->|active or paused pending overview| PR[pending_process_review<br/>pending-aware entry]
     PR --> A[Agentic process state<br/>purpose + prompt + context + tools]
     E --> A[Agentic process state<br/>purpose + prompt + context + tools]
     A --> T[Backend tool facade<br/>narrow application commands]
@@ -51,11 +51,11 @@ The conversation runtime is not the agentic brain. It normalizes chat input,
 stores conversation history, attaches pending process context, and calls the
 agentic orchestration layer.
 
-`conversation_entry` is the default entry state when no active process is
-pending. When an active pending process exists, `pending_process_review` becomes
-the preferred entry state. It can resume the pending process, keep it pending,
-pause it, cancel it, or initiate a new process with the current conversation
-context.
+`conversation_entry` is the default entry state when no pending process context
+is relevant. When an active pending process or paused pending backlog exists,
+`pending_process_review` becomes the preferred entry state. It can resume a
+selected process, keep it pending, pause it, cancel it, or initiate a new
+process with the current conversation context.
 
 The agentic layer decides which state handles the message and which tools are
 allowed inside that state.
@@ -130,7 +130,7 @@ process context.
 flowchart TD
     M[Incoming chat message] --> CE{AS: conversation_entry}
 
-    CE -->|pending context exists| PPR[AS: pending_process_review]
+    CE -->|active or paused pending context exists| PPR[AS: pending_process_review]
     CE -->|new memory| MIP[BP: memory_ingestion_precheck]
     CE -->|memory question| MQ[AS: memory_query]
     CE -->|correction| CI[AS: correction_intake]
@@ -192,6 +192,43 @@ runtime stores minimal `RS: clarification_waiting` context. A later user
 message can resume the process only if the current state, tool call, or optional
 lightweight classification indicates that it is actually a clarification answer.
 
+## Pending Process Lifecycle
+
+Pending state is a conversational aid, not a form engine. The backend stores
+enough state to resume safely, while the model sees only compact summaries that
+help it decide what the user is trying to do.
+
+Storage layers:
+
+- **Model-facing summary**: `process_id`, `kind`, `status`, `question`,
+  `compact_summary`, and `unresolved_targets`. This is the only pending-process
+  shape that belongs in prompts.
+- **Backend-only snapshot**: original source refs/text, ingestion id, resume
+  step, pending question, checkpoint schema version, process-specific refs, and
+  other state required to resume. This must not be passed raw to the model.
+
+Lifecycle semantics:
+
+- `cancel_pending_process` is final for that pending process. It marks the
+  process cancelled, clears it as active, marks its checkpoint non-resumable, and
+  keeps only compact audit/chat summary.
+- `pause_pending_process` temporarily suspends the process. It marks the process
+  paused, clears it as active, preserves the backend snapshot, and keeps a
+  compact model-facing summary in the paused backlog.
+- `resume_pending_process` selects a process to resume. Its tool input is only
+  `pending_process_id`, and that argument may be omitted only when there is one
+  unambiguous active process. The current user message and recent history come
+  from runtime context, not from a copied `user_reply` argument.
+- Resume must refresh graph context and rerun validation/resolution before any
+  graph write. A paused checkpoint can be stale because another conversation may
+  already have created the person, place, event, or relationship while the
+  process was waiting.
+
+`pending_process_review` receives active pending context plus up to five newest
+paused summaries. If several processes are visible and the model cannot choose a
+safe `process_id`, tool errors must guide it to ask the user naturally instead
+of guessing.
+
 ## Context Handoff Matrix
 
 Each state receives a deliberately shaped context package from the previous
@@ -223,11 +260,11 @@ General context rules:
 | Node | Receives From Previous Steps | Produces For Next Steps |
 | --- | --- | --- |
 | `AS: conversation_entry` | Normalized message, full usable conversation history with older compacted summaries when needed, current time/timezone, pending process summary only if relevant, optional backend-only channel metadata; no raw channel metadata in the model-facing prompt. | Assistant reply or top-level tool call with handoff parameters; may preserve, clear, pause, or defer pending process context. |
-| `AS: pending_process_review` | Current message, full usable conversation history with older compacted summaries when needed, active pending process context, original pending question, pending process type/status, last relevant assistant message, current time/timezone. | Tool call to resume/start/query/correct/cancel/pause, normal assistant reply, or optional lightweight intent classification sidecar. |
-| `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification answer if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
+| `AS: pending_process_review` | Current message, full usable conversation history with older compacted summaries when needed, active pending process summary if any, up to five newest paused pending summaries, original pending question, pending process type/status, last relevant assistant message, current time/timezone. Backend-only pending snapshots are excluded. | Tool call to resume/start/query/correct/cancel/pause, normal assistant reply, or optional lightweight intent classification sidecar. |
+| `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification context if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
 | `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
-| `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
-| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification answer if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlan`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or clarification request. |
+| `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
+| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlan`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or clarification request. |
 | `LP: simple_extraction` | Source context, full but compact evidence payload, task schemas selected by the plan, relevant graph aliases, temporal basis. | Candidate objects for simple low-ambiguity memories. |
 | `LP: focused_extraction` | Source context, selected evidence span, one focused Pydantic contract per task, relevant graph aliases only, prior candidate refs if needed for local linking. | Focused candidate objects with evidence, original user words, missing fields, ambiguity flags, and local refs. |
 | `BP: candidate_assembly` | Extraction plan, focused/simple candidates, local candidate refs, source refs, evidence refs. | `CandidateMemoryGraph` with resolved local references and grouped entity/relationship/perception candidates. |
@@ -351,13 +388,33 @@ not call a tool, the response is a normal assistant message.
 
 Purpose:
 
-Classify a new message when a pending process exists.
+Classify a new message when an active pending process or paused pending backlog
+exists.
 
 Entry rule:
 
-When an active pending process exists, `pending_process_review` is the preferred
-entry `AS` instead of `conversation_entry`. It decides whether the user is
-continuing, abandoning, pausing, or replacing the pending process.
+When an active pending process exists, or when paused pending summaries are
+available and may be relevant, `pending_process_review` is the preferred entry
+`AS` instead of `conversation_entry`. It decides whether the user is continuing,
+abandoning, pausing, resuming, or replacing pending work.
+
+Model-facing pending overview:
+
+```json
+[
+  {
+    "process_id": "process-123",
+    "kind": "memory_ingestion",
+    "status": "pending",
+    "question": "Which Marco do you mean?",
+    "compact_summary": "Trying to store a memory: yesterday I met Marco in Milan. Ambiguity: multiple people named Marco.",
+    "unresolved_targets": ["person: Marco"]
+  }
+]
+```
+
+The model does not receive backend-only snapshots, raw graph payloads, raw source
+records, transport metadata, or checkpoint internals.
 
 Interaction shape:
 
@@ -401,6 +458,19 @@ Possible handoffs:
 - `pause_pending_process`
 - `cancel_pending_process`
 
+Tool contracts:
+
+- `resume_pending_process` accepts `pending_process_id` only. It must not accept
+  a copied `user_reply`; the current message and recent history come from the
+  runtime context.
+- `pause_pending_process` marks the selected process paused, clears it as
+  active, and preserves its backend-only resumable snapshot.
+- `cancel_pending_process` marks the selected process cancelled, clears it as
+  active, and marks the checkpoint non-resumable.
+- If multiple visible pending processes exist and no `process_id` is selected,
+  the tool returns a verbose error so the model can ask the user which one to
+  resume, pause, or cancel.
+
 The optional intent classification is a small guardrail, not a heavy workflow
 engine. It exists only to help the assistant decide whether to resume a pending
 process or let the conversation continue naturally.
@@ -414,9 +484,13 @@ Paused pending process notes:
 
 - Pausing is different from cancellation. Cancellation means the process should
   not be resumed unless the user restarts it. Pausing preserves a lightweight
-  unresolved question for later context.
-- Paused items should be compacted into conversation history or a small pending
-  backlog summary, not kept as full active workflows.
+  unresolved question for later context and a backend-only snapshot for safe
+  resume.
+- Paused items should be shown to the model as compact backlog summaries capped
+  to the newest useful items, not kept as full active workflows.
+- Resuming a paused memory-ingestion process refreshes graph context and reruns
+  validation/resolution before any write, because the graph may have changed
+  while the process was paused.
 - Future proactive messages can surface paused questions gently, for example:
   "I still have one unresolved detail: when you had dinner with Marco in Milan,
   do you remember which place it was?"
@@ -823,7 +897,8 @@ ConversationContext + AgenticToolExecutionContext
 
 Start-state rule:
 
-- If a pending process context exists, start from `pending_process_review`.
+- If active pending context or a paused pending overview exists, start from
+  `pending_process_review`.
 - Otherwise start from `conversation_entry`.
 
 Top-level handoff semantics:
@@ -848,6 +923,9 @@ Tool surface ownership:
   `propose_memory_correction`.
 - `cancel_pending_process` belongs to `pending_process_review`, where a pending
   process exists and the model can infer explicit cancellation or skip.
+- `pause_pending_process` and `resume_pending_process` also belong to
+  `pending_process_review`; they operate on visible compact pending summaries
+  and never require a copied user-reply argument.
 - `get_conversation_status` remains deterministic backend/chat behavior unless
   a later design explicitly promotes it to a model-visible tool.
 
@@ -905,6 +983,9 @@ Boundaries:
   context retrieval, tool-enabled planning, extraction, candidate assembly,
   validation/resolution, write-plan creation, optional write execution,
   clarification, and summary.
+- Resume for memory ingestion enters that same ingestion service path with the
+  current message and recent history as clarification context. It must refresh
+  graph context and rerun validation/resolution before write execution.
 - Ambiguity and contradiction handling are agentic behaviors. They are inferred
   from context by the relevant agentic state; the baseline should avoid brittle
   deterministic contradiction-detection rules.

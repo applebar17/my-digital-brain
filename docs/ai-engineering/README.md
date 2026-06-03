@@ -115,13 +115,17 @@ The model can infer which tool or pipeline is appropriate, but tools must have c
 
 The LLM chooses actions and proposes parameters. Backend services validate parameters and execute state changes. Tools are command surfaces, not authority surfaces.
 
-The top-level conversational tool surface should stay small:
+The default `conversation_entry` tool surface should stay small:
 
 - `start_memory_ingestion`
 - `query_memory_context`
 - `propose_memory_correction`
 
-Default answering is a non-tool path. Resume, cancel, expire, clarification handling, validation, and write execution are backend process states or internal services, not broad conversational tools.
+Default answering is a non-tool path. Resume, pause, cancel, expire,
+clarification handling, validation, and write execution are not broad
+conversation-entry tools. Resume, pause, and cancel are state-specific tools for
+`pending_process_review`, where compact pending context exists and the model can
+infer the user's intent naturally.
 
 Good tools should:
 
@@ -248,7 +252,28 @@ conversation history, mention scan, compact graph context, current time/timezone
 and pending clarification answer when resuming. It should not receive raw
 database records, unrelated metadata blobs, or internal transport details.
 
-### 12. Keep Channel Metadata Backend-Owned By Default
+### 12. Separate Pending Summaries From Resumable Snapshots
+
+Pending processes have two context layers:
+
+- Model-facing summaries explain what is waiting in compact terms:
+  `process_id`, `kind`, `status`, `question`, `compact_summary`, and
+  `unresolved_targets`.
+- Backend-only snapshots preserve resumable state: source refs, ingestion ids,
+  resume step, checkpoint schema version, pending question, and
+  process-specific snapshot refs.
+
+The model should never receive the raw backend snapshot. It should choose
+between resume, pause, cancel, a new memory, a query, a correction, or normal
+chat from the compact summary plus current conversation history.
+
+Resume does not pass a `user_reply` tool argument. The current user message and
+recent history are already part of runtime context and must be used from there.
+Before any resumed memory write, the backend must refresh graph context and rerun
+validation/resolution so stale checkpoints do not duplicate memories created by
+another process.
+
+### 13. Keep Channel Metadata Backend-Owned By Default
 
 Channel and session metadata should be modeled, stored, and available to backend
 runtime code, but it should not be passed directly to the LLM by default.
@@ -277,7 +302,7 @@ The backend can keep a `ChannelSessionMetadata` object for routing, auditing,
 storage, and UI behavior. The context builder decides whether any projected
 field belongs in a model prompt.
 
-### 13. Route Tasks To Appropriate Models
+### 14. Route Tasks To Appropriate Models
 
 Model choice should depend on task difficulty.
 
@@ -300,7 +325,7 @@ Use stronger models for:
 
 The AI Manager should eventually support model routing by task type, expected difficulty, privacy level, latency budget, and cost budget.
 
-### 14. Prompt Guardrails Should Be Restrictive But Natural
+### 15. Prompt Guardrails Should Be Restrictive But Natural
 
 Prompts should restrict hallucination and unsafe behavior without making the model rigid or unnatural.
 
@@ -315,7 +340,7 @@ Good guardrails:
 
 Overly rigid prompts can make the agent brittle. Under-specified prompts invite hallucination.
 
-### 15. Simplify IDs In Model Context
+### 16. Simplify IDs In Model Context
 
 Long opaque database IDs are bad prompt material. They increase token usage, are hard for humans to inspect, and are easy for models to copy incorrectly.
 
@@ -339,7 +364,7 @@ Rules:
 - Failed alias resolution should fail validation.
 - The model should never invent aliases that were not provided.
 
-### 16. Build Low-Noise Context Packages
+### 17. Build Low-Noise Context Packages
 
 LLM context should be prepared as a task-specific package, not as a raw dump of
 database records.
@@ -371,7 +396,7 @@ Avoid including:
 The question is not "what can we fit in the prompt?" The question is "what does
 the model need to produce the best grounded output for this task?"
 
-### 17. Tool Errors Must Guide The Model
+### 18. Tool Errors Must Guide The Model
 
 Tool errors are part of the agent loop. The LLM will see them, so they should be
 verbose enough to redirect the model toward a valid next action.
@@ -441,5 +466,6 @@ For the MVP, these principles imply:
 - Use cloud AI services initially, with provider boundaries documented.
 - Support voice transcription as a first-class ingestion path.
 - Use LLM-facing ID aliases for graph context and tool calls.
-- Keep pending ingestion state minimal and expiring.
+- Keep pending ingestion state compact, expiring, and split between
+  model-facing summaries and backend-only resumable snapshots.
 - Add richer deterministic handling only when real usage shows the need.

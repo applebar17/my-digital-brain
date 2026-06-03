@@ -3,11 +3,14 @@ from __future__ import annotations
 from my_digital_brain.ai.schemas import ChatResult, ProviderCallMetadata
 from my_digital_brain.chat.enums import ChatResponseStatus, PendingProcessKind
 from my_digital_brain.chat.facade import ChatToolRequest
+from my_digital_brain.chat.models import PendingProcessContext, PendingProcessRef
 from my_digital_brain.chat.tool_facade import (
     LLMGraphContextAnswerGenerator,
     MemoryBackendToolFacade,
 )
 from my_digital_brain.graph.models import GraphContextPackage, NodeSearchResult
+from my_digital_brain.ingestion.contracts import IngestionResult
+from my_digital_brain.ingestion.enums import IngestionStatus
 
 
 class FakeGraphService:
@@ -88,6 +91,18 @@ class FakeLLMProvider:
         )
 
 
+class FakeIngestionService:
+    def __init__(self) -> None:
+        self.sources = []
+
+    def process_source(self, source):
+        self.sources.append(source)
+        return IngestionResult(
+            source_id=source.source_id,
+            status=IngestionStatus.WRITE_PLAN_READY,
+        )
+
+
 def test_graph_backed_query_returns_context_answer_and_evidence() -> None:
     graph = FakeGraphService()
     facade = MemoryBackendToolFacade(graph_service=graph)
@@ -146,6 +161,40 @@ def test_llm_answer_generator_uses_provider_neutral_chat_request() -> None:
     assert answer == "Generated grounded answer."
     assert provider.request.model == "fake-answer-model"
     assert provider.request.context.purpose == "memory_question_answer"
+
+
+def test_resume_pending_memory_ingestion_uses_current_text_and_refreshes_pipeline() -> None:
+    ingestion = FakeIngestionService()
+    facade = MemoryBackendToolFacade(ingestion_service=ingestion)
+    pending = PendingProcessContext(
+        process_ref=PendingProcessRef(
+            process_id="process-1",
+            kind=PendingProcessKind.MEMORY_INGESTION,
+            question="Which Marco?",
+            metadata={"source_id": "source-original"},
+        ),
+        context={
+            "source_text": "Yesterday I met Marco in Milan.",
+            "checkpoint_schema_version": "v1",
+            "resume_step": "source_reprocess",
+        },
+    )
+
+    result = facade.resume_pending_process(
+        _request("Marco from university").model_copy(
+            update={"pending_process_context": pending},
+            deep=True,
+        ),
+    )
+
+    assert result.status == ChatResponseStatus.ACCEPTED
+    assert result.metadata["clear_pending_process"] is True
+    assert result.metadata["resume_policy"] == "refresh_context_before_write"
+    assert ingestion.sources[0].raw_text == (
+        "Yesterday I met Marco in Milan.\n\n"
+        "Clarification answer: Marco from university"
+    )
+    assert ingestion.sources[0].metadata["original_source_id"] == "source-original"
 
 
 def _request(text: str) -> ChatToolRequest:

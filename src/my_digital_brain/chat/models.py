@@ -151,3 +151,4 @@ class ConversationSessionDetail(ChatModel):
     session: ConversationSession
     messages: list[ConversationMessage] = Field(default_factory=list)
     pending_process: PendingProcessContext | None = None
+    pending_processes: list[PendingProcessContext] = Field(default_factory=list)

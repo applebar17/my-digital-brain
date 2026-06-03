@@ -35,6 +35,7 @@ class PendingProcessKind(StrEnum):
 
 class PendingProcessStatus(StrEnum):
     PENDING = "pending"
+    PAUSED = "paused"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     EXPIRED = "expired"

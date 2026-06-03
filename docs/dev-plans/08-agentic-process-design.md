@@ -107,7 +107,7 @@ and which implementation artifacts must exist for each wave.
 - Internal UUIDs should be replaced with scoped aliases in model-facing contexts.
 - Tool errors must be verbose enough to guide model recovery.
 - Conversation history is part of context building, but it should be scoped or summarized instead of copied blindly into every call.
-- Pending process state is contextual guidance, not deterministic routing. It should help agents resume work when appropriate without blocking a natural conversation.
+- Pending process state is contextual guidance, not deterministic routing. It should help agents resume, pause, or cancel work when appropriate without blocking a natural conversation.
 - Clarification handling should preserve a normal chat feel. A later user message can be classified as clarification answer, new memory, question, correction, cancellation, or normal chat based on context.
 - Orchestrator-like agentic states should return either a normal assistant
   message or a model-visible tool call. The tool call is the structured routing
@@ -220,14 +220,16 @@ Implemented focused MVP integration artifacts:
   still bypass the agentic runtime. They are not normal user-facing product
   flows.
 - `ConversationContext` construction from persisted chat history, current
-  message, current time/timezone, and active pending process context.
+  message, current time/timezone, active pending process context, and capped
+  paused pending summaries.
 - `AgenticToolExecutionContext` construction from backend facade, graph
   service, ingestion service, chat store, session metadata, history refs, and
   pending process context.
 - User-visible rendering from `AgenticRunResult` to `ChatResponse`.
 - Assistant message persistence for agentic responses.
 - Pending process persistence when agentic execution returns a clarification or
-  pending-process hint.
+  pending-process hint, including active, paused, cancelled, completed, and
+  expired lifecycle states.
 - `AgenticIngestionPlanner`, which runs the tool-enabled
   `memory_ingestion_planning` support state and then requires a structured
   `ExtractionPlan` final output.
@@ -361,12 +363,19 @@ Locked behavior:
 - Optional lightweight classification may be used only when it helps decide
   whether to resume a pending process.
 - Paused pending processes are distinct from cancelled pending processes.
+- Multiple paused pending processes may exist; only one process is active per
+  session, and the model-facing paused backlog is capped to the newest five
+  compact summaries.
+- Backend-only resumable snapshots must not be injected into model prompts.
+- Resume tools select a pending process; they do not pass a copied `user_reply`
+  field because current message and recent history are already in context.
+- Resume for memory ingestion must refresh graph context and rerun
+  validation/resolution before writing.
 - Proactive resurfacing of paused questions is deferred.
 
 Deferred decisions:
 
 - What is the default expiration duration?
-- Can multiple paused pending clarifications exist at once?
 - If a user ignores a clarification and sends a new memory, should the old one
   always pause, or can some cases cancel immediately?
 - How should ambiguous clarification answers be handled?
@@ -887,8 +896,8 @@ Implemented outputs:
 - Contradiction review final output is structurally enforced through
   `ContradictionJudgeResultContext`; runtime behavior is driven by explicit
   intents rather than free-form assistant text.
-- Active pending process context starts the runtime from
-  `pending_process_review` instead of forcing the next message through a
+- Active pending process context or paused pending backlog starts the runtime
+  from `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.
 - `AgenticIngestionPlanner` runs the `memory_ingestion_planning` state through
   the existing provider tool-call loop for support tools, then requires a
@@ -909,6 +918,17 @@ Implemented outputs:
   Clarification rendering comes from that structured result.
 - `AgenticRunResult` is rendered into `ChatResponse` without exposing raw tool
   traces, UUID-heavy graph payloads, or backend internals.
+- Pending process lifecycle is implemented:
+  - `cancel_pending_process` is final, clears active state, and marks the
+    resumable checkpoint non-resumable while preserving compact audit/chat
+    summary.
+  - `pause_pending_process` clears active state, preserves backend-only
+    resumable snapshot, and keeps a compact model-facing pending summary.
+  - `resume_pending_process` accepts `pending_process_id` only; the current user
+    message and recent history come from runtime context, not a `user_reply`
+    argument.
+  - memory-ingestion resume re-enters the ingestion service path and refreshes
+    graph context plus validation/resolution before write execution.
 
 Verification:
 

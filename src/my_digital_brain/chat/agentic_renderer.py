@@ -95,6 +95,18 @@ def _control_metadata(result: AgenticRunResult) -> dict[str, Any]:
                     metadata["clear_pending_process"] = True
             if data.get("operation") == "cancel_pending_process":
                 metadata["clear_pending_process"] = True
+            if data.get("operation") == "pause_pending_process":
+                metadata["clear_pending_process"] = True
+            if data.get("operation") == "resume_pending_process":
+                result_payload = data.get("result")
+                result_metadata = (
+                    result_payload.get("metadata")
+                    if isinstance(result_payload, dict)
+                    and isinstance(result_payload.get("metadata"), dict)
+                    else {}
+                )
+                if result_metadata.get("clear_pending_process"):
+                    metadata["clear_pending_process"] = True
     return metadata
 
 

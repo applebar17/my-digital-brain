@@ -148,13 +148,11 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         _definition(
             "resume_pending_process",
-            "Resume a pending process with the user's latest reply.",
+            "Resume a selected pending process using the current message and recent history.",
             states=[AgenticStateId.PENDING_PROCESS_REVIEW],
             properties={
                 "pending_process_id": optional_string_property("Pending process id to resume."),
-                "user_reply": string_property("Latest user reply."),
             },
-            required=["user_reply"],
         ),
         _definition(
             "pause_pending_process",

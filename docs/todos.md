@@ -27,17 +27,30 @@ implemented agentic runtime aligned with the locked architecture.
 
 ### Pending Process State Application
 
-- Implement real backend handling for `resume_pending_process` and
-  `pause_pending_process`.
-- When a pending process is resumed, route the user reply back into the owning
-  process with the original pending context and relevant conversation history.
-- When a pending process is paused, clear it as the active pending process but
-  preserve a compact unresolved-process summary for later context.
-- When a new memory/query/correction supersedes a pending process, decide
-  whether the old process should be paused, cancelled, or preserved in a pending
-  backlog.
-- Avoid rigid clarification forcing: pending context should guide
-  `pending_process_review`, not deterministically consume every next message.
+Status: implemented as the baseline lifecycle foundation.
+
+- `PendingProcessStatus` supports `paused`.
+- Chat pending storage supports one active pending process per session and a
+  paused backlog with compact summaries.
+- `pause_pending_process` clears active state, preserves a backend-only
+  resumable snapshot, and keeps a compact model-facing pending summary.
+- `cancel_pending_process` clears active state, marks the process cancelled, and
+  marks the checkpoint non-resumable while preserving compact audit/chat
+  summary.
+- `resume_pending_process` accepts `pending_process_id` only. It uses the
+  current message and recent history from runtime context instead of a
+  `user_reply` argument.
+- Memory-ingestion resume re-enters the ingestion service path, refreshes graph
+  context, and reruns validation/resolution before write execution.
+- `pending_process_review` receives active pending summary plus up to five
+  paused summaries, without backend-only snapshots or noisy transport metadata.
+- Ambiguous process selection returns verbose tool errors so the model can ask
+  the user naturally.
+
+Remaining follow-up after real usage:
+
+- Decide whether a superseded active pending process should usually be paused or
+  cancelled when the user starts unrelated work.
 
 ### State-Aware History Builder
 

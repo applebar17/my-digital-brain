@@ -496,7 +496,10 @@ class AgenticRuntime:
         )
 
     def _entry_state(self, conversation_context: ConversationContext) -> AgenticStateId:
-        if conversation_context.pending_process is not None:
+        if (
+            conversation_context.pending_process is not None
+            or conversation_context.pending_processes
+        ):
             return AgenticStateId.PENDING_PROCESS_REVIEW
         return AgenticStateId.CONVERSATION_ENTRY
 

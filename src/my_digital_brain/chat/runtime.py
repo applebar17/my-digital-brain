@@ -15,6 +15,7 @@ from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
     ConversationMessageRole,
+    PendingProcessStatus,
 )
 from my_digital_brain.chat.exceptions import ChatValidationError
 from my_digital_brain.chat.facade import (
@@ -82,6 +83,7 @@ class ChatRuntime:
         )
 
         pending_context = self.store.get_active_pending_process_context(session.session_id)
+        pending_contexts = self._pending_process_contexts(session.session_id)
         history_refs = self._history_refs(
             session.session_id,
             explicit_refs=message.conversation_history_refs,
@@ -91,6 +93,7 @@ class ChatRuntime:
                 message,
                 session.session_id,
                 pending_context,
+                pending_contexts,
                 history_refs,
             )
             result = None
@@ -116,6 +119,15 @@ class ChatRuntime:
                     context={
                         "source_message_id": message.message_id,
                         "source_text": message.text,
+                        "summary": response.pending_process.metadata.get("summary")
+                        or self._pending_summary(message.text, response.pending_process.question),
+                        "unresolved_targets": response.pending_process.metadata.get(
+                            "unresolved_targets",
+                            [],
+                        ),
+                        "checkpoint_schema_version": "v1",
+                        "resume_step": "source_reprocess",
+                        "pending_question": response.pending_process.question,
                     },
                 ),
             )
@@ -157,7 +169,16 @@ class ChatRuntime:
                 reason=reason,
             ),
         )
-        self.store.clear_active_pending_process(session.session_id)
+        if session.active_pending_process_id is not None:
+            self.store.update_pending_process_status(
+                session.session_id,
+                session.active_pending_process_id,
+                PendingProcessStatus.CANCELLED,
+                metadata={"cancel_reason": reason, "resumable": False},
+                context_updates={"resumable": False},
+            )
+        else:
+            self.store.clear_active_pending_process(session.session_id)
         response = ChatResponse(
             session_id=session.session_id,
             status=result.status,
@@ -203,16 +224,26 @@ class ChatRuntime:
         if lower_text == "/status" or lower_text.startswith("/status "):
             return self.tool_facade.get_conversation_status(request)
         if lower_text == "/cancel" or lower_text.startswith("/cancel "):
+            process_id = pending_context.process_ref.process_id if pending_context else None
             result = self.tool_facade.cancel_pending_process(
                 CancelPendingProcessRequest(
                     session_id=session_id,
-                    pending_process_id=(
-                        pending_context.process_ref.process_id if pending_context else None
-                    ),
+                    pending_process_id=process_id,
                     owner_id=message.owner_id,
                     reason=text[7:].strip() if len(text) > 7 else None,
                 ),
             )
+            if process_id is not None:
+                self.store.update_pending_process_status(
+                    session_id,
+                    process_id,
+                    PendingProcessStatus.CANCELLED,
+                    metadata={
+                        "cancel_reason": text[7:].strip() if len(text) > 7 else None,
+                        "resumable": False,
+                    },
+                    context_updates={"resumable": False},
+                )
             return result.model_copy(
                 update={"metadata": {**result.metadata, "clear_pending_process": True}},
                 deep=True,
@@ -252,6 +283,7 @@ class ChatRuntime:
         message: IncomingChatMessage,
         session_id: str,
         pending_context: PendingProcessContext | None,
+        pending_contexts: list[PendingProcessContext],
         history_refs: list[str],
     ) -> ChatResponse:
         if self.agentic_runtime is None:
@@ -260,6 +292,7 @@ class ChatRuntime:
             message,
             session_id,
             pending_context,
+            pending_contexts,
         )
         execution_context = AgenticToolExecutionContext(
             backend_facade=self.tool_facade,
@@ -274,6 +307,7 @@ class ChatRuntime:
             message_id=message.message_id,
             current_text=(message.text or "").strip(),
             pending_process_context=pending_context,
+            pending_process_contexts=pending_contexts,
             conversation_history_refs=history_refs,
             metadata={
                 "media_refs": [media.model_dump(mode="json") for media in message.media_refs],
@@ -288,14 +322,23 @@ class ChatRuntime:
         message: IncomingChatMessage,
         session_id: str,
         pending_context: PendingProcessContext | None,
+        pending_contexts: list[PendingProcessContext],
     ) -> AgenticConversationContext:
         text = (message.text or "").strip()
+        agentic_pending_contexts = [
+            context
+            for context in (
+                self._agentic_pending_context(pending) for pending in pending_contexts
+            )
+            if context is not None
+        ]
         return self.history_service.build_conversation_context(
             current_text=text,
             history_records=self.store.list_messages(session_id, limit=100),
             current_time=message.received_at,
             timezone=str(message.metadata.get("timezone") or "UTC"),
             pending_process=self._agentic_pending_context(pending_context),
+            pending_processes=agentic_pending_contexts,
             channel_metadata=ChannelSessionMetadata(
                 channel=str(ChatChannel(message.channel)),
                 conversation_id=message.conversation_id,
@@ -328,14 +371,42 @@ class ChatRuntime:
             question=process.question,
             expires_at=process.expires_at,
             compact_summary=pending_context.context.get("summary"),
+            unresolved_targets=list(pending_context.context.get("unresolved_targets") or []),
             metadata={
-                **process.metadata,
-                "context": pending_context.context,
-                "conversation_history_refs": pending_context.conversation_history_refs,
+                key: value
+                for key, value in process.metadata.items()
+                if key
+                in {
+                    "reason",
+                    "source",
+                    "intent",
+                    "decision",
+                    "severity",
+                    "resume_step",
+                    "checkpoint_schema_version",
+                }
             },
+        )
+
+    def _pending_process_contexts(self, session_id: str) -> list[PendingProcessContext]:
+        if not hasattr(self.store, "list_pending_process_contexts"):
+            active = self.store.get_active_pending_process_context(session_id)
+            return [active] if active is not None else []
+        return self.store.list_pending_process_contexts(
+            session_id,
+            statuses={PendingProcessStatus.PENDING, PendingProcessStatus.PAUSED},
+            limit=5,
         )
 
     def _history_refs(self, session_id: str, explicit_refs: list[str]) -> list[str]:
         if explicit_refs:
             return list(explicit_refs)
         return [message.message_id for message in self.store.list_messages(session_id, limit=20)]
+
+    def _pending_summary(self, source_text: str | None, question: str | None) -> str:
+        source = (source_text or "a recent message").strip()
+        if len(source) > 220:
+            source = source[:217] + "..."
+        if question:
+            return f"Pending process for: {source}. Open question: {question}"
+        return f"Pending process for: {source}."

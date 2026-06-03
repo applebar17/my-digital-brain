@@ -318,9 +318,25 @@ Runtime-only operations:
 - `get_conversation_status`
 - `cancel_pending_process`
 - `resume_pending_process`
+- `pause_pending_process`
 - `expire_pending_sessions`
 
-Runtime-only operations are backend process controls. They should not be treated as broad top-level agent tools unless a later agentic design explicitly allows it.
+Runtime-only operations are backend process controls. They should not be treated
+as broad `conversation_entry` tools. `pending_process_review` may expose
+`cancel_pending_process`, `pause_pending_process`, and
+`resume_pending_process` because that state receives compact pending-process
+context and can infer the user's natural-language intent.
+
+Pending lifecycle rules:
+
+- Cancel is final for the selected process and clears active pending state.
+- Pause clears active pending state but preserves a backend-only resumable
+  snapshot plus compact model-facing summary.
+- Resume selects a pending process by `pending_process_id`; it does not pass a
+  `user_reply` argument because the current message and recent history are
+  already part of the runtime context.
+- Memory-ingestion resume must refresh graph context and rerun
+  validation/resolution before any graph write.
 
 Tool facade rules:
 

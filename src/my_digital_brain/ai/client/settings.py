@@ -37,6 +37,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _is_azure_provider(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"azure", "azure_openai"}
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None or not value.strip():
@@ -123,6 +127,9 @@ class GenAISettings:
 
 def get_genai_settings() -> GenAISettings:
     load_env_file()
+    is_azure = _env_bool("AZURE_OPENAI_ENABLED", False) or _is_azure_provider(
+        os.getenv("LLM_PROVIDER")
+    )
     embed_dimensions_raw = os.getenv("OPENAI_EMBED_DIMENSIONS")
     embed_dimensions = None
     if embed_dimensions_raw and embed_dimensions_raw.strip():
@@ -138,9 +145,21 @@ def get_genai_settings() -> GenAISettings:
             "OPENAI_TRANSCRIPTION_MODEL",
             "gpt-4o-mini-transcribe",
         ),
-        chat_model_default=os.getenv("OPENAI_CHAT_MODEL_DEFAULT", "gpt-4o-mini"),
-        chat_model_smart=os.getenv("OPENAI_CHAT_MODEL_SMART", "gpt-4.1"),
-        chat_model_reasoning=os.getenv("OPENAI_CHAT_MODEL_REASONING", "o4-mini"),
+        chat_model_default=(
+            os.getenv("AZURE_CHAT_MODEL_DEFAULT")
+            if is_azure and os.getenv("AZURE_CHAT_MODEL_DEFAULT")
+            else os.getenv("OPENAI_CHAT_MODEL_DEFAULT", "gpt-4o-mini")
+        ),
+        chat_model_smart=(
+            os.getenv("AZURE_CHAT_MODEL_SMART")
+            if is_azure and os.getenv("AZURE_CHAT_MODEL_SMART")
+            else os.getenv("OPENAI_CHAT_MODEL_SMART", "gpt-4.1")
+        ),
+        chat_model_reasoning=(
+            os.getenv("AZURE_CHAT_MODEL_REASONING")
+            if is_azure and os.getenv("AZURE_CHAT_MODEL_REASONING")
+            else os.getenv("OPENAI_CHAT_MODEL_REASONING", "o4-mini")
+        ),
         embed_dimensions=embed_dimensions,
         context_tokens_default=_env_context_tokens("GENAI_CONTEXT_TOKENS_DEFAULT"),
         context_tokens_smart=_env_context_tokens("GENAI_CONTEXT_TOKENS_SMART"),
@@ -168,7 +187,7 @@ def get_genai_settings() -> GenAISettings:
             "GENAI_CONTEXT_SUMMARY_MAX_TOKENS",
             DEFAULT_CONTEXT_SUMMARY_MAX_TOKENS,
         ),
-        is_azure=_env_bool("AZURE_OPENAI_ENABLED", False),
+        is_azure=is_azure,
         azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),
         azure_openai_api_version=os.getenv(
@@ -194,6 +213,10 @@ def genai_settings_from_app_settings(settings: Any) -> GenAISettings:
         except ValueError:
             embed_dimensions = None
 
+    is_azure = _is_azure_provider(getattr(settings, "llm_provider", None)) or bool(
+        getattr(settings, "azure_openai_enabled", False)
+    )
+
     return GenAISettings(
         openai_api_key=getattr(settings, "openai_api_key", None),
         openai_embed_model=getattr(
@@ -206,9 +229,21 @@ def genai_settings_from_app_settings(settings: Any) -> GenAISettings:
             "openai_transcription_model",
             "gpt-4o-mini-transcribe",
         ),
-        chat_model_default=getattr(settings, "openai_chat_model_default", "gpt-4o-mini"),
-        chat_model_smart=getattr(settings, "openai_chat_model_smart", "gpt-4.1"),
-        chat_model_reasoning=getattr(settings, "openai_chat_model_reasoning", "o4-mini"),
+        chat_model_default=(
+            getattr(settings, "azure_chat_model_default", None)
+            if is_azure and getattr(settings, "azure_chat_model_default", None)
+            else getattr(settings, "openai_chat_model_default", "gpt-4o-mini")
+        ),
+        chat_model_smart=(
+            getattr(settings, "azure_chat_model_smart", None)
+            if is_azure and getattr(settings, "azure_chat_model_smart", None)
+            else getattr(settings, "openai_chat_model_smart", "gpt-4.1")
+        ),
+        chat_model_reasoning=(
+            getattr(settings, "azure_chat_model_reasoning", None)
+            if is_azure and getattr(settings, "azure_chat_model_reasoning", None)
+            else getattr(settings, "openai_chat_model_reasoning", "o4-mini")
+        ),
         embed_dimensions=embed_dimensions,
         context_tokens_default=_settings_context_tokens(
             getattr(settings, "genai_context_tokens_default", None)
@@ -242,11 +277,7 @@ def genai_settings_from_app_settings(settings: Any) -> GenAISettings:
             getattr(settings, "genai_context_summary_max_tokens", None),
             DEFAULT_CONTEXT_SUMMARY_MAX_TOKENS,
         ),
-        is_azure=(
-            str(getattr(settings, "llm_provider", "") or "").strip().lower()
-            == "azure_openai"
-            or bool(getattr(settings, "azure_openai_enabled", False))
-        ),
+        is_azure=is_azure,
         azure_openai_endpoint=getattr(settings, "azure_openai_endpoint", None),
         azure_openai_api_key=getattr(settings, "azure_openai_api_key", None),
         azure_openai_api_version=getattr(

@@ -177,6 +177,115 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             },
         )
         result = self.ingestion_service.process_source(source)
+        return self._chat_result_from_ingestion(
+            result,
+            source=source,
+            operation="start_memory_ingestion",
+        )
+
+    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
+        if self.ingestion_service is None:
+            return super().resume_pending_process(request)
+        pending_context = request.pending_process_context
+        if pending_context is None:
+            return ChatToolResult(
+                status=ChatResponseStatus.FAILED,
+                primary_text="There is no pending memory process to resume.",
+                diagnostics=[
+                    ChatDiagnostic(
+                        level=ChatDiagnosticLevel.ERROR,
+                        code="missing_pending_process",
+                        message="Resume requires a pending process context.",
+                    )
+                ],
+                metadata={"operation": "resume_pending_process"},
+            )
+        if str(pending_context.process_ref.kind) != PendingProcessKind.MEMORY_INGESTION.value:
+            return ChatToolResult(
+                status=ChatResponseStatus.FAILED,
+                primary_text="I can only resume memory-ingestion processes right now.",
+                diagnostics=[
+                    ChatDiagnostic(
+                        level=ChatDiagnosticLevel.ERROR,
+                        code="unsupported_pending_process_kind",
+                        message=(
+                            "Only memory_ingestion pending processes support resume in this "
+                            "implementation slice."
+                        ),
+                        details={"kind": str(pending_context.process_ref.kind)},
+                    )
+                ],
+                metadata={
+                    "operation": "resume_pending_process",
+                    "pending_process_id": pending_context.process_ref.process_id,
+                },
+            )
+
+        original_text = str(
+            pending_context.context.get("source_text")
+            or pending_context.process_ref.metadata.get("source_text")
+            or "",
+        ).strip()
+        current_answer = request.text.strip()
+        resumed_text = "\n\n".join(
+            item
+            for item in [
+                original_text,
+                f"Clarification answer: {current_answer}" if current_answer else None,
+            ]
+            if item
+        )
+        if not resumed_text:
+            resumed_text = current_answer or "Resume pending memory ingestion."
+
+        original_source_id = (
+            pending_context.process_ref.metadata.get("source_id")
+            or pending_context.context.get("source_id")
+        )
+        source = SourceRecordRef(
+            source_id=new_uuid(),
+            source_type=SourceType.TEXT,
+            channel=self._source_channel_for_request(request),
+            external_id=request.metadata.get("message_id"),
+            content_ref=None,
+            raw_text=resumed_text,
+            metadata={
+                "conversation_id": request.conversation_id,
+                "session_id": request.session_id,
+                "chat_channel": request.channel,
+                "resumed_from_pending_process_id": pending_context.process_ref.process_id,
+                "original_source_id": original_source_id,
+                "checkpoint_schema_version": pending_context.context.get(
+                    "checkpoint_schema_version",
+                    "v1",
+                ),
+                "resume_policy": "refresh_context_before_write",
+                "conversation_history_refs": list(request.conversation_history_refs),
+            },
+        )
+        result = self.ingestion_service.process_source(source)
+        chat_result = self._chat_result_from_ingestion(
+            result,
+            source=source,
+            operation="resume_pending_process",
+        )
+        metadata = {
+            **chat_result.metadata,
+            "pending_process_id": pending_context.process_ref.process_id,
+            "resumed_from_pending_process_id": pending_context.process_ref.process_id,
+            "resume_policy": "refresh_context_before_write",
+        }
+        if chat_result.pending_process is None:
+            metadata["clear_pending_process"] = True
+        return chat_result.model_copy(update={"metadata": metadata}, deep=True)
+
+    def _chat_result_from_ingestion(
+        self,
+        result,
+        *,
+        source: SourceRecordRef,
+        operation: str,
+    ) -> ChatToolResult:
         if result.status == IngestionStatus.NEEDS_CLARIFICATION and result.clarification:
             return ChatToolResult(
                 status=ChatResponseStatus.NEEDS_USER_INPUT,
@@ -188,9 +297,12 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                     metadata={
                         "source_id": source.source_id,
                         "reason": result.clarification.reason,
+                        "ingestion_id": result.ingestion_id,
+                        "resume_step": "source_reprocess",
+                        "checkpoint_schema_version": "v1",
                     },
                 ),
-                metadata={"operation": "start_memory_ingestion", "source_id": source.source_id},
+                metadata={"operation": operation, "source_id": source.source_id},
             )
         if result.validation_errors:
             return ChatToolResult(
@@ -205,7 +317,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                     )
                     for issue in result.validation_errors
                 ],
-                metadata={"operation": "start_memory_ingestion", "source_id": source.source_id},
+                metadata={"operation": operation, "source_id": source.source_id},
             )
         if result.status == IngestionStatus.WRITTEN:
             text = "I stored this memory."
@@ -219,10 +331,11 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             status=ChatResponseStatus.ACCEPTED,
             primary_text=text,
             metadata={
-                "operation": "start_memory_ingestion",
+                "operation": operation,
                 "source_id": source.source_id,
                 "ingestion_id": result.ingestion_id,
                 "ingestion_status": result.status,
+                "clear_pending_process": operation == "resume_pending_process",
             },
         )
 

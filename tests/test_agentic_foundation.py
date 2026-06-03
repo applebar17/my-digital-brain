@@ -184,4 +184,4 @@ def test_deterministic_router_resumes_pending_process_by_default() -> None:
     assert route.entry_state == AgenticStateId.PENDING_PROCESS_REVIEW.value
     assert route.pending_intent == PendingMessageIntent.CLARIFICATION_ANSWER.value
     assert route.tool_call.name == "resume_pending_process"
-    assert route.tool_call.arguments["user_reply"] == "Marco from university"
+    assert route.tool_call.arguments == {"pending_process_id": "process-1"}

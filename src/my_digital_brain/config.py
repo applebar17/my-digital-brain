@@ -90,7 +90,7 @@ class Settings(BaseSettings):
         alias="TELEGRAM_ALLOWED_USER_IDS",
     )
 
-    llm_provider: Literal["openai", "azure_openai"] = Field(
+    llm_provider: Literal["openai", "azure_openai", "azure"] = Field(
         default="openai",
         alias="LLM_PROVIDER",
     )
@@ -130,6 +130,22 @@ class Settings(BaseSettings):
         default=None,
         alias="AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT",
     )
+    azure_chat_model_default: str | None = Field(
+        default=None,
+        alias="AZURE_CHAT_MODEL_DEFAULT",
+    )
+    azure_chat_model_smart: str | None = Field(
+        default=None,
+        alias="AZURE_CHAT_MODEL_SMART",
+    )
+    azure_chat_model_reasoning: str | None = Field(
+        default=None,
+        alias="AZURE_CHAT_MODEL_REASONING",
+    )
+
+    @property
+    def normalized_llm_provider(self) -> Literal["openai", "azure_openai"]:
+        return "azure_openai" if self.llm_provider in {"azure", "azure_openai"} else "openai"
 
     @property
     def relational_database_url(self) -> str:

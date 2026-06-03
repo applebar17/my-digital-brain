@@ -11,6 +11,7 @@ from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
     PendingProcessKind,
+    PendingProcessStatus,
 )
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
@@ -21,6 +22,7 @@ from my_digital_brain.chat.models import (
     ChatResponse,
     ConversationMessage,
     IncomingChatMessage,
+    PendingProcessContext,
     PendingProcessRef,
 )
 from my_digital_brain.chat.runtime import ChatRuntime
@@ -91,7 +93,7 @@ class ScriptedToolProvider:
         max_tool_calls: int | None = None,
     ) -> ChatResult:
         step = self.steps.pop(0) if self.steps else {"content": ""}
-        self.calls.append({"tool_names": sorted(toolbox.tools_by_name)})
+        self.calls.append({"request": request, "tool_names": sorted(toolbox.tools_by_name)})
         tool_name = step.get("tool")
         if isinstance(tool_name, str):
             tools_mapping[tool_name](**step.get("arguments", {}))
@@ -175,6 +177,95 @@ def test_runtime_attaches_pending_context_without_forcing_route() -> None:
     assert isinstance(request, ChatToolRequest)
     assert request.pending_process_context is not None
     assert request.pending_process_context.process_ref.process_id == "process-1"
+
+
+def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="web-conversation-1",
+        owner_id="owner-1",
+    )
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question="Which Marco?",
+            ),
+            context={
+                "summary": "Trying to store a memory about Marco.",
+                "source_text": "Yesterday I met Marco.",
+                "unresolved_targets": ["person: Marco"],
+            },
+        ),
+    )
+
+    paused = store.update_pending_process_status(
+        session.session_id,
+        "process-1",
+        PendingProcessStatus.PAUSED,
+        metadata={"pause_reason": "not now"},
+        context_updates={"resumable": True},
+    )
+
+    assert paused.process_ref.status == PendingProcessStatus.PAUSED
+    assert paused.context["source_text"] == "Yesterday I met Marco."
+    assert paused.context["resumable"] is True
+    assert store.get_active_pending_process_context(session.session_id) is None
+    backlog = store.list_pending_process_contexts(
+        session.session_id,
+        statuses={PendingProcessStatus.PAUSED},
+    )
+    assert [item.process_ref.process_id for item in backlog] == ["process-1"]
+
+
+def test_agentic_context_contains_compact_pending_overview_without_backend_snapshot() -> None:
+    provider = ScriptedToolProvider([{"content": "I can continue that later."}])
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question="Which Marco?",
+            ),
+            context={
+                "summary": "Trying to store a memory about Marco in Milan.",
+                "source_text": "Yesterday I met Marco in Milan.",
+                "candidate_graph_snapshot": {"raw": "hidden"},
+                "unresolved_targets": ["person: Marco"],
+            },
+        ),
+    )
+    store.update_pending_process_status(
+        session.session_id,
+        "process-1",
+        PendingProcessStatus.PAUSED,
+        context_updates={"resumable": True},
+    )
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+
+    response = runtime.handle_message(_message(text="Marco from university"))
+    payload = provider.calls[0]["request"].messages[1].content
+
+    assert response.metadata["visited_states"] == ["pending_process_review"]
+    assert "pending_processes" in payload
+    assert "Trying to store a memory about Marco in Milan." in payload
+    assert "candidate_graph_snapshot" not in payload
+    assert "Yesterday I met Marco in Milan." not in payload
 
 
 def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
@@ -339,6 +430,7 @@ def _client(runtime: ChatRuntime) -> TestClient:
     app.dependency_overrides[chat_routes.get_chat_runtime] = lambda: runtime
     app.dependency_overrides[chat_routes.get_settings] = lambda: Settings(
         _env_file=None,
+        LLM_PROVIDER="openai",
         WEB_CHAT_AUTH_TOKEN="test-token",
     )
     return TestClient(app)

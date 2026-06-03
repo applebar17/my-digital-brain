@@ -5,7 +5,11 @@ from datetime import datetime
 from threading import RLock
 from typing import Protocol
 
-from my_digital_brain.chat.enums import ChatChannel, ConversationMessageRole
+from my_digital_brain.chat.enums import (
+    ChatChannel,
+    ConversationMessageRole,
+    PendingProcessStatus,
+)
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
     ConversationMessage,
@@ -48,6 +52,25 @@ class ChatSessionStore(Protocol):
         session_id: str,
     ) -> PendingProcessContext | None: ...
 
+    def list_pending_process_contexts(
+        self,
+        session_id: str,
+        *,
+        statuses: set[PendingProcessStatus | str] | None = None,
+        limit: int = 5,
+    ) -> list[PendingProcessContext]: ...
+
+    def update_pending_process_status(
+        self,
+        session_id: str,
+        process_id: str,
+        status: PendingProcessStatus | str,
+        *,
+        metadata: dict | None = None,
+        context_updates: dict | None = None,
+        activate: bool = False,
+    ) -> PendingProcessContext: ...
+
     def clear_active_pending_process(self, session_id: str) -> ConversationSession: ...
 
     def expire_pending_processes(self, now: datetime | None = None) -> list[str]: ...
@@ -62,6 +85,7 @@ class InMemoryChatSessionStore:
         self._session_keys: dict[tuple[str, str, str], str] = {}
         self._messages: dict[str, list[ConversationMessage]] = defaultdict(list)
         self._pending_contexts: dict[str, PendingProcessContext] = {}
+        self._pending_session_ids: dict[str, set[str]] = defaultdict(set)
 
     def get_or_create_session(
         self,
@@ -134,10 +158,16 @@ class InMemoryChatSessionStore:
         session = self.get_session(session_id)
         messages = self.list_messages(session_id, limit=limit)
         pending = self.get_active_pending_process_context(session_id)
+        pending_processes = self.list_pending_process_contexts(
+            session_id,
+            statuses={PendingProcessStatus.PENDING, PendingProcessStatus.PAUSED},
+            limit=5,
+        )
         return ConversationSessionDetail(
             session=session,
             messages=messages,
             pending_process=pending,
+            pending_processes=pending_processes,
         )
 
     def save_pending_process_context(
@@ -151,15 +181,17 @@ class InMemoryChatSessionStore:
 
             updated_context = context.model_copy(update={"updated_at": utc_now()}, deep=True)
             self._pending_contexts[updated_context.process_ref.process_id] = updated_context
+            self._pending_session_ids[session_id].add(updated_context.process_ref.process_id)
 
-            session = self._sessions[session_id].model_copy(
-                update={
-                    "active_pending_process_id": updated_context.process_ref.process_id,
-                    "updated_at": utc_now(),
-                },
-                deep=True,
-            )
-            self._sessions[session_id] = session
+            if updated_context.process_ref.status == PendingProcessStatus.PENDING.value:
+                session = self._sessions[session_id].model_copy(
+                    update={
+                        "active_pending_process_id": updated_context.process_ref.process_id,
+                        "updated_at": utc_now(),
+                    },
+                    deep=True,
+                )
+                self._sessions[session_id] = session
             return updated_context.model_copy(deep=True)
 
     def get_pending_process_context(self, process_id: str) -> PendingProcessContext:
@@ -179,6 +211,90 @@ class InMemoryChatSessionStore:
                 return None
             context = self._pending_contexts.get(session.active_pending_process_id)
             return context.model_copy(deep=True) if context is not None else None
+
+    def list_pending_process_contexts(
+        self,
+        session_id: str,
+        *,
+        statuses: set[PendingProcessStatus | str] | None = None,
+        limit: int = 5,
+    ) -> list[PendingProcessContext]:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            normalized_statuses = (
+                {str(getattr(status, "value", status)) for status in statuses}
+                if statuses is not None
+                else None
+            )
+            contexts: list[PendingProcessContext] = []
+            for process_id in self._pending_session_ids.get(session_id, set()):
+                context = self._pending_contexts.get(process_id)
+                if context is None:
+                    continue
+                if (
+                    normalized_statuses is not None
+                    and str(context.process_ref.status) not in normalized_statuses
+                ):
+                    continue
+                contexts.append(context.model_copy(deep=True))
+            contexts.sort(key=lambda item: item.updated_at, reverse=True)
+            return contexts[: max(0, limit)]
+
+    def update_pending_process_status(
+        self,
+        session_id: str,
+        process_id: str,
+        status: PendingProcessStatus | str,
+        *,
+        metadata: dict | None = None,
+        context_updates: dict | None = None,
+        activate: bool = False,
+    ) -> PendingProcessContext:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            if process_id not in self._pending_session_ids.get(session_id, set()):
+                raise ChatNotFoundError(f"Pending process not found: {process_id}")
+            context = self.get_pending_process_context(process_id)
+            normalized_status = PendingProcessStatus(status)
+            updated_ref = context.process_ref.model_copy(
+                update={
+                    "status": normalized_status.value,
+                    "metadata": {
+                        **context.process_ref.metadata,
+                        **(metadata or {}),
+                    },
+                },
+                deep=True,
+            )
+            updated_context = context.model_copy(
+                update={
+                    "process_ref": updated_ref,
+                    "context": {
+                        **context.context,
+                        **(context_updates or {}),
+                    },
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            self._pending_contexts[process_id] = updated_context
+
+            session = self._sessions[session_id]
+            active_process_id = session.active_pending_process_id
+            if activate:
+                active_process_id = process_id
+            elif active_process_id == process_id and normalized_status != PendingProcessStatus.PENDING:
+                active_process_id = None
+            self._sessions[session_id] = session.model_copy(
+                update={
+                    "active_pending_process_id": active_process_id,
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            return updated_context.model_copy(deep=True)
 
     def clear_active_pending_process(self, session_id: str) -> ConversationSession:
         with self._lock:
@@ -208,6 +324,9 @@ class InMemoryChatSessionStore:
                             update={"active_pending_process_id": None, "updated_at": utc_now()},
                             deep=True,
                         )
+                for process_id in expired:
+                    for session_ids in self._pending_session_ids.values():
+                        session_ids.discard(process_id)
 
         return expired_ids
 

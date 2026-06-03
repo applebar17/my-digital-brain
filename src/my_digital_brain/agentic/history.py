@@ -60,6 +60,7 @@ class AgenticHistoryService:
         current_time: datetime | None = None,
         timezone: str = "UTC",
         pending_process: PendingProcessContext | None = None,
+        pending_processes: list[PendingProcessContext] | None = None,
         channel_metadata: ChannelSessionMetadata | None = None,
         compacted_summary: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -88,6 +89,9 @@ class AgenticHistoryService:
             current_time=current_time or _utc_now(),
             timezone=timezone,
             pending_process=pending_process,
+            pending_processes=pending_processes or (
+                [pending_process] if pending_process is not None else []
+            ),
             channel_metadata=channel_metadata,
             metadata=metadata or {},
         )
@@ -99,6 +103,7 @@ class AgenticHistoryService:
         current_time: datetime | None = None,
         timezone: str = "UTC",
         pending_process: PendingProcessContext | None = None,
+        pending_processes: list[PendingProcessContext] | None = None,
         history: list[NeutralConversationMessage] | None = None,
     ) -> ConversationContext:
         compacted_summary, compacted_history = self.compact_history(history or [])
@@ -111,6 +116,9 @@ class AgenticHistoryService:
             current_time=current_time or _utc_now(),
             timezone=timezone,
             pending_process=pending_process,
+            pending_processes=pending_processes or (
+                [pending_process] if pending_process is not None else []
+            ),
         )
 
     def neutral_message_from_record(self, record: Any) -> NeutralConversationMessage | None:
