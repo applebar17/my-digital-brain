@@ -12,6 +12,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
 - [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
+- [Frontend UI product requirements](requirements/ui/frontend-ui-product-requirements.md): product brief for chat, graph exploration, evidence, timeline, map, and analytics UI.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
 - [Graph model](network/graph-model.md): entity types, relationship types, evidence, identity, and provenance.

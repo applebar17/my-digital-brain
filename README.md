@@ -24,3 +24,17 @@ Invoke-RestMethod http://localhost:8000/health
 ```
 
 Local Python development expects `uv`.
+
+## Frontend Scaffold
+
+The frontend app lives in `frontend/` and consumes the FastAPI chat and graph
+routes.
+
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+Set `VITE_WEB_CHAT_AUTH_TOKEN` to match `WEB_CHAT_AUTH_TOKEN` when using the
+web chat API locally.

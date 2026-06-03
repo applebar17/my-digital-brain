@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from my_digital_brain.api.routes.chat import router as chat_router
 from my_digital_brain.api.routes.graph import router as graph_router
@@ -15,6 +16,15 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
 
     app = FastAPI(title="My Digital Brain", version="0.1.0")
+    cors_origins = settings.frontend_cors_origin_list
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.include_router(health_router)
     app.include_router(graph_router)
     app.include_router(chat_router)

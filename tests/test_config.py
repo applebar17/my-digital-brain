@@ -28,3 +28,15 @@ def test_chat_and_telegram_settings() -> None:
     assert settings.web_chat_auth_token == "web-token"
     assert settings.telegram_webhook_secret_token == "telegram-secret"
     assert settings.telegram_allowed_user_id_set == {"123", "456"}
+
+
+def test_frontend_cors_origins_parse_to_list() -> None:
+    settings = Settings(
+        _env_file=None,
+        FRONTEND_CORS_ORIGINS="http://localhost:5173, http://127.0.0.1:5173,",
+    )
+
+    assert settings.frontend_cors_origin_list == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]

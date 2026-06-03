@@ -72,6 +72,10 @@ class Settings(BaseSettings):
 
     source_media_root: Path = Field(default=Path("data/source-media"), alias="SOURCE_MEDIA_ROOT")
 
+    frontend_cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173",
+        alias="FRONTEND_CORS_ORIGINS",
+    )
     web_chat_auth_token: str | None = Field(
         default="change-me-web-chat-token",
         alias="WEB_CHAT_AUTH_TOKEN",
@@ -143,6 +147,14 @@ class Settings(BaseSettings):
             for item in self.telegram_allowed_user_ids.split(",")
             if item.strip()
         }
+
+    @property
+    def frontend_cors_origin_list(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.frontend_cors_origins.split(",")
+            if item.strip()
+        ]
 
 
 @lru_cache(maxsize=1)

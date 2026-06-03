@@ -4,6 +4,10 @@
 
 Define the future frontend that lets the user inspect, search, and visualize the memory graph without turning the product into a heavy admin interface.
 
+Detailed product UI requirements for design and frontend implementation are
+defined in
+[Frontend UI Product Requirements](../requirements/ui/frontend-ui-product-requirements.md).
+
 ## Wave 0: Baseline Decisions
 
 - Frontend comes after the backend memory loop is useful.
