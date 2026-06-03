@@ -128,7 +128,8 @@ Status: implemented for normal completion paths.
   - `conversation_entry` for normal completed processes;
   - `pending_process_review` when the conversation starts from an active pending
     process;
-  - deterministic chat runtime handlers for explicit `/status` and `/cancel`.
+  - deterministic chat runtime handlers for optional developer/debug shortcuts
+    such as `/status` and `/cancel`.
 - `memory_query`, `correction_intake`, contradiction review, ingestion planning,
   and backend subprocesses return compact process/tool outputs upward by
   default instead of owning final public text.
@@ -143,8 +144,12 @@ Status: implemented for normal completion paths.
 
 ### Tool Surface Ownership
 
-- Keep explicit `/status` and `/cancel` as deterministic chat-runtime
-  shortcuts.
+Status: implemented.
+
+- Keep explicit `/status` and `/cancel` as optional deterministic chat-runtime
+  developer/debug shortcuts, not normal user-facing product flows.
+- Normal users should cancel, skip, pause, resume, or ask status-like questions
+  through natural language handled by `pending_process_review`.
 - Keep `conversation_entry` model-visible tools limited to:
   - `start_memory_ingestion`
   - `query_memory_context`
@@ -153,7 +158,8 @@ Status: implemented for normal completion paths.
   pending process exists and the model infers explicit cancellation or skip.
 - Keep `get_conversation_status` as deterministic backend/chat behavior unless
   a later design explicitly promotes it to a model-visible tool.
-- Refactor state configs/tool registry to match this ownership policy.
+- State configs, prompt text, and the tool registry have been aligned with this
+  ownership policy.
 
 ## Real Provider Smoke Tests
 

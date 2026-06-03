@@ -216,8 +216,9 @@ Implemented foundation artifacts:
 Implemented focused MVP integration artifacts:
 
 - Opt-in `agentic` mode in `ChatRuntime`.
-- Deterministic `/status` and `/cancel` shortcuts still bypass the agentic
-  runtime.
+- Optional deterministic `/status` and `/cancel` developer/debug shortcuts
+  still bypass the agentic runtime. They are not normal user-facing product
+  flows.
 - `ConversationContext` construction from persisted chat history, current
   message, current time/timezone, and active pending process context.
 - `AgenticToolExecutionContext` construction from backend facade, graph
@@ -235,11 +236,10 @@ Implemented focused MVP integration artifacts:
   - `request_contradiction_review`
 - Agent-invoked contradiction review handoff from planning contexts without
   deterministic contradiction detection rules.
-- Locked target refactors still required:
-  - contradiction review should return structured result intents instead of
-    relying on free-form assistant text for clarification handling.
-  - `conversation_entry` model-visible tools should be limited to
-    memory ingestion, memory query, and memory correction.
+- Contradiction review returns structured result intents instead of relying on
+  free-form assistant text for clarification handling.
+- `conversation_entry` model-visible tools are limited to memory ingestion,
+  memory query, and memory correction.
 
 Still intentionally deferred:
 
@@ -267,7 +267,7 @@ Possible actions:
 - `query_memory_context`
 - `propose_memory_correction`
 
-Deterministic chat-runtime shortcuts:
+Optional deterministic developer/debug shortcuts:
 
 - `/status`
 - `/cancel`
@@ -285,6 +285,8 @@ Locked behavior:
   memory query, and memory correction.
 - `cancel_pending_process` belongs to `pending_process_review` when a pending
   process exists and cancellation/skip is inferred.
+- Normal users should express cancel, skip, pause, or status-like questions in
+  natural language; `pending_process_review` decides the action from context.
 - The deterministic fallback router is already implemented for Wave 1.
 
 Deferred decisions:
@@ -870,7 +872,8 @@ Implemented outputs:
 
 - Opt-in `agentic` mode in `ChatRuntime`; deterministic mode remains the
   default.
-- Explicit `/status` and `/cancel` deterministic shortcuts are preserved.
+- Explicit `/status` and `/cancel` deterministic shortcuts are preserved as
+  developer/debug control paths, not normal product UX.
 - Incoming agentic chat messages now flow through message persistence,
   `ConversationContext` construction, `AgenticToolExecutionContext`
   construction, `AgenticRuntime.run(...)`, response rendering, assistant

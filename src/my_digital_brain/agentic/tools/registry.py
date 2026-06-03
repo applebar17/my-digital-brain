@@ -133,14 +133,14 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         _definition(
             "get_conversation_status",
-            "Return current conversation and pending-process status.",
-            states=[AgenticStateId.CONVERSATION_ENTRY],
+            "Developer/debug status shortcut. Not exposed to model-visible states by default.",
+            states=[],
             properties={"metadata": object_property("Optional status metadata.")},
         ),
         _definition(
             "cancel_pending_process",
             "Cancel an active pending process when the user explicitly asks.",
-            states=conversation_states,
+            states=[AgenticStateId.PENDING_PROCESS_REVIEW],
             properties={
                 "pending_process_id": optional_string_property("Pending process id to cancel."),
                 "reason": optional_string_property("User-facing cancellation reason."),

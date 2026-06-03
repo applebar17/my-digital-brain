@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 
 from my_digital_brain.agentic import (
@@ -238,12 +239,37 @@ def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> N
         assert names == set(state_config.allowed_tools)
         assert not names.intersection(state_config.forbidden_tools)
 
+    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
+    entry_toolbox = build_agentic_toolbox(entry_config, registry)
+    assert set(entry_toolbox.tools_by_name) == {
+        "start_memory_ingestion",
+        "query_memory_context",
+        "propose_memory_correction",
+    }
+
+
+def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
+    registry = default_agentic_tool_registry()
+    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY].model_copy(
+        update={"allowed_tools": ["cancel_pending_process"]},
+        deep=True,
+    )
+
+    with pytest.raises(ValueError, match="not registered for state conversation_entry"):
+        registry.definitions_for_state(entry_config)
+
 
 def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> None:
     facade = FakeFacade()
     execution_context = _execution_context(backend_facade=facade)
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     mapping = build_agentic_tool_mapping(config, execution_context)
+
+    assert set(mapping) == {
+        "start_memory_ingestion",
+        "query_memory_context",
+        "propose_memory_correction",
+    }
 
     result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
 

@@ -39,18 +39,16 @@ class DeterministicAgenticRouter:
         lower_text = text.lower()
 
         if self._is_status(lower_text):
-            return self._tool_route(
+            return self._assistant_route(
                 context,
-                tool_name="get_conversation_status",
-                arguments={"text": text},
-                reason="Explicit status command.",
+                "Status is handled by the chat runtime control layer, not by the conversation entry state.",
+                reason="Status shortcut is not a conversation-entry model-visible tool.",
             )
         if self._is_cancel(lower_text):
-            return self._tool_route(
+            return self._assistant_route(
                 context,
-                tool_name="cancel_pending_process",
-                arguments={"reason": self._command_payload(text, "/cancel")},
-                reason="Explicit cancel command.",
+                "There is no active pending process to cancel.",
+                reason="Cancellation is only model-visible during pending process review.",
             )
         if lower_text.startswith("/ask"):
             return self._tool_route(
@@ -158,6 +156,21 @@ class DeterministicAgenticRouter:
         return AgenticRoute(
             entry_state=self.select_entry_state(context),
             tool_call=ToolCall(name=tool_name, arguments=arguments),
+            pending_intent=pending_intent,
+            reason=reason,
+        )
+
+    def _assistant_route(
+        self,
+        context: ConversationContext,
+        message: str,
+        *,
+        reason: str,
+        pending_intent: PendingMessageIntent | None = None,
+    ) -> AgenticRoute:
+        return AgenticRoute(
+            entry_state=self.select_entry_state(context),
+            assistant_message=NeutralConversationMessage.assistant(message),
             pending_intent=pending_intent,
             reason=reason,
         )

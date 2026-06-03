@@ -34,8 +34,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "start_memory_ingestion",
                 "query_memory_context",
                 "propose_memory_correction",
-                "cancel_pending_process",
-                "get_conversation_status",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",

@@ -150,6 +150,11 @@ def test_conversation_entry_without_tool_call_returns_terminal_assistant_respons
     assert result.state_results[0].terminal is True
     prompt_payload = provider.calls[0]["request"].messages[1].content
     assert "channel_metadata" not in str(prompt_payload)
+    assert provider.calls[0]["tool_names"] == [
+        "propose_memory_correction",
+        "query_memory_context",
+        "start_memory_ingestion",
+    ]
 
 
 def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None:
@@ -190,6 +195,11 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     assert result.state_results[1].tool_events[0].tool_name == "get_context_package"
     assert graph.calls == [("get_context_package", "node-marco")]
     assert provider.calls[0]["max_tool_calls"] == 3
+    assert provider.calls[0]["tool_names"] == [
+        "propose_memory_correction",
+        "query_memory_context",
+        "start_memory_ingestion",
+    ]
     assert provider.calls[2]["tool_names"] == []
     assert provider.calls[2]["max_tool_calls"] == 0
     assert '"owner_finalization": true' in provider.calls[2]["request"].messages[1].content

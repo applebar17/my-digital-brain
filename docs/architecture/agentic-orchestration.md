@@ -839,7 +839,10 @@ Top-level handoff semantics:
 
 Tool surface ownership:
 
-- `/status` and `/cancel` are deterministic chat-runtime shortcuts.
+- `/status` and `/cancel` are optional deterministic developer/debug shortcuts,
+  not normal user-facing product flows.
+- Normal users should cancel, pause, resume, or inspect pending work through
+  natural language handled by `pending_process_review`.
 - `conversation_entry` model-visible tools are limited to
   `start_memory_ingestion`, `query_memory_context`, and
   `propose_memory_correction`.
@@ -859,8 +862,8 @@ Assistant message ownership:
   - `conversation_entry` for normal conversations and completed delegated
     processes;
   - `pending_process_review` when an active pending process is the entry state;
-  - deterministic chat runtime handlers for explicit `/status` and `/cancel`
-    shortcuts.
+  - deterministic chat runtime handlers for optional developer/debug control
+    paths such as `/status` and `/cancel`.
 - Deeper states normally return compact tool outputs or context objects upward,
   not final public text.
 - After `memory_query`, `correction_intake`, or a successful ingestion backend
@@ -890,8 +893,9 @@ Assistant message ownership:
 Boundaries:
 
 - `ChatRuntime` can invoke this runtime as an opt-in `agentic` mode.
-  Deterministic mode remains the default and deterministic `/status` and
-  `/cancel` shortcuts are preserved.
+  Deterministic mode remains the default and optional deterministic `/status`
+  and `/cancel` debug shortcuts are preserved without making them normal user
+  UX.
 - The runtime executes `AS` nodes. `BP`, `LP`, and `RS` nodes are invoked through
   backend services, structured generation services, or persisted process state.
 - Nested tool/provider traces are compacted into runtime results. Parent prompts

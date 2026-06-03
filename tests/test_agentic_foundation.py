@@ -81,9 +81,16 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     pending = configs[AgenticStateId.PENDING_PROCESS_REVIEW]
 
     assert entry.prompt_id == "conversation_entry"
-    assert "start_memory_ingestion" in entry.allowed_tools
+    assert entry.allowed_tools == [
+        "start_memory_ingestion",
+        "query_memory_context",
+        "propose_memory_correction",
+    ]
+    assert "cancel_pending_process" not in entry.allowed_tools
+    assert "get_conversation_status" not in entry.allowed_tools
     assert "focused_extraction" in entry.forbidden_tools
     assert "pause_pending_process" in pending.allowed_tools
+    assert "cancel_pending_process" in pending.allowed_tools
     assert pending.required_context_type == "ConversationContext"
 
 
@@ -117,6 +124,27 @@ def test_deterministic_router_defaults_to_ingestion_without_pending_process() ->
     assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
     assert route.tool_call.name == "start_memory_ingestion"
     assert route.tool_call.arguments["source_text"] == "Yesterday I met Marco."
+
+
+def test_deterministic_router_does_not_expose_control_tools_to_conversation_entry() -> None:
+    router = DeterministicAgenticRouter()
+    status_context = ConversationContext(
+        current_message=NeutralConversationMessage.user("/status"),
+    )
+    cancel_context = ConversationContext(
+        current_message=NeutralConversationMessage.user("skip"),
+    )
+
+    status_route = router.route(status_context)
+    cancel_route = router.route(cancel_context)
+
+    assert status_route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
+    assert status_route.tool_call is None
+    assert status_route.assistant_message is not None
+    assert "control layer" in status_route.assistant_message.content
+    assert cancel_route.tool_call is None
+    assert cancel_route.assistant_message is not None
+    assert "no active pending process" in cancel_route.assistant_message.content
 
 
 def test_deterministic_router_uses_pending_review_and_can_pause() -> None:
