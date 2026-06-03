@@ -10,6 +10,16 @@ The Wave 0 scaffold provides FastAPI, Neo4j, Postgres, Chroma, migration runners
 docker compose up --build
 ```
 
+Frontend UI is available at:
+
+```powershell
+http://localhost:5173
+```
+
+The Docker frontend build reads `FRONTEND_VITE_*` values from the root compose
+environment. Rebuild the `frontend` service after changing them because Vite
+embeds `VITE_*` values into the static assets.
+
 Run migrations inside the backend container:
 
 ```powershell
