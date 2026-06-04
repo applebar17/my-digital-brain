@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { createChatSession, getChatSession, listChatSessions, postChatMessage } from "../api/chat";
+import {
+  createChatSession,
+  getChatSession,
+  listChatSessions,
+  postChatMessage,
+  updateChatSession
+} from "../api/chat";
 import {
   defaultConversationId,
   defaultOwnerId,
@@ -8,12 +14,18 @@ import {
   defaultWebChatToken
 } from "../config";
 import { ChatComposer } from "../features/chat/components/ChatComposer";
+import { ChatHistorySidebar } from "../features/chat/components/ChatHistorySidebar";
 import { ChatMessageList } from "../features/chat/components/ChatMessageList";
 import { ChatStatusBar } from "../features/chat/components/ChatStatusBar";
+import { ChatTopbar } from "../features/chat/components/ChatTopbar";
 import type { ChatRuntimeState, RenderedChatMessage } from "../features/chat/types";
+import {
+  createClientMessageId,
+  messagesFromSession,
+  processUpdatesFromSession
+} from "../features/chat/utils/chatSession";
 import type {
   ChatResponse,
-  ConversationMessage,
   ConversationSessionDetail,
   ConversationSessionSummary,
   PendingProcessRef
@@ -30,6 +42,7 @@ export function ChatView() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [recentChats, setRecentChats] = useState<ConversationSessionSummary[]>([]);
   const [recentSearch, setRecentSearch] = useState("");
+  const [openChatMenuId, setOpenChatMenuId] = useState<string>();
   const [processUpdates, setProcessUpdates] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>();
@@ -42,7 +55,6 @@ export function ChatView() {
     statusMessage,
     errorMessage
   };
-  const filteredRecentChats = filterRecentChats(recentChats, recentSearch);
 
   useEffect(() => {
     let isCancelled = false;
@@ -110,7 +122,7 @@ export function ChatView() {
       return;
     }
 
-    const messageId = createId();
+    const messageId = createClientMessageId();
     const userMessage: RenderedChatMessage = {
       id: messageId,
       role: "user",
@@ -163,6 +175,7 @@ export function ChatView() {
     if (isSending) {
       return;
     }
+    setOpenChatMenuId(undefined);
     await loadSession(chat, { setLoadedStatus: true });
   }
 
@@ -242,6 +255,7 @@ export function ChatView() {
   async function refreshRecentChats() {
     const list = await listChatSessions(defaultOwnerId, token, { channel: "web", limit: 50 });
     setRecentChats(list.sessions);
+    return list.sessions;
   }
 
   function applySessionDetail(detail: ConversationSessionDetail) {
@@ -251,86 +265,63 @@ export function ChatView() {
     setPendingProcess(detail.pending_process?.process_ref ?? null);
   }
 
+  async function handleArchiveChat(chat: ConversationSessionSummary) {
+    if (isSending) {
+      return;
+    }
+    setOpenChatMenuId(undefined);
+    setErrorMessage(undefined);
+    setStatusMessage("Archiving chat...");
+    try {
+      await updateChatSession(chat.session_id, { status: "archived" }, token);
+      const nextChats = await refreshRecentChats();
+      if (chat.session_id === sessionId) {
+        const nextActive = nextChats.find((item) => item.session_id !== chat.session_id);
+        if (nextActive) {
+          await loadSession(nextActive, { setLoadedStatus: false });
+        } else {
+          setSessionId(undefined);
+          setActiveConversationId(defaultConversationId);
+          setMessages([]);
+          setPendingProcess(null);
+          setProcessUpdates([]);
+        }
+      }
+      setStatusMessage("Chat archived");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to archive chat.");
+      setStatusMessage(undefined);
+    }
+  }
+
   return (
     <div
       className={`workspace chat-workspace memory-chat-workspace ${
         isHistoryOpen ? "has-chat-history" : "is-chat-history-collapsed"
       }`}
     >
-      <aside className="memory-chat-history" aria-label="Recent chats">
-        <header className="memory-chat-history-header">
-          <strong>Chats</strong>
-          <button
-            className="memory-icon-button"
-            type="button"
-            title="Close recent chats"
-            aria-label="Close recent chats"
-            onClick={() => setIsHistoryOpen(false)}
-          >
-            <ChatSidebarIcon name="panel" />
-          </button>
-        </header>
-        <button className="memory-chat-history-action" type="button" onClick={handleNewChat}>
-          <ChatSidebarIcon name="new" />
-          <span>New chat</span>
-        </button>
-        <div className="memory-chat-history-search">
-          <ChatSidebarIcon name="search" />
-          <input
-            type="search"
-            value={recentSearch}
-            placeholder="Search chat"
-            aria-label="Search recent chats"
-            onChange={(event) => setRecentSearch(event.target.value)}
-          />
-        </div>
-        <div className="memory-chat-recents">
-          <p>Recent</p>
-          {filteredRecentChats.length === 0 ? (
-            <span className="memory-chat-history-empty">
-              {recentChats.length === 0 ? "No recent chats yet" : "No matching chats"}
-            </span>
-          ) : (
-            filteredRecentChats.map((chat) => (
-              <button
-                className={`memory-chat-recent ${
-                  chat.session_id === sessionId ? "is-active" : ""
-                }`}
-                type="button"
-                key={chat.session_id}
-                onClick={() => void handleSelectChat(chat)}
-              >
-                <span>{chat.title}</span>
-                {chat.last_message_preview ? <small>{chat.last_message_preview}</small> : null}
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
+      <ChatHistorySidebar
+        recentChats={recentChats}
+        recentSearch={recentSearch}
+        selectedSessionId={sessionId}
+        openMenuId={openChatMenuId}
+        onSearchChange={setRecentSearch}
+        onNewChat={handleNewChat}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectChat={(chat) => void handleSelectChat(chat)}
+        onToggleMenu={(nextSessionId) =>
+          setOpenChatMenuId((current) => (current === nextSessionId ? undefined : nextSessionId))
+        }
+        onArchiveChat={(chat) => void handleArchiveChat(chat)}
+      />
 
       <section className="memory-chat-panel">
-        <header className="memory-chat-topbar">
-          <div className="memory-chat-title-row">
-            <button
-              className="memory-icon-button"
-              type="button"
-              title="Open recent chats"
-              aria-label="Open recent chats"
-              aria-expanded={isHistoryOpen}
-              onClick={() => setIsHistoryOpen((current) => !current)}
-            >
-              <ChatSidebarIcon name="panel" />
-            </button>
-            <div>
-              <p className="eyebrow">Conversation Runtime</p>
-              <h2>Chat</h2>
-            </div>
-          </div>
-          <div className="memory-chat-meta">
-            <span>Web</span>
-            <span>{activeConversationId}</span>
-          </div>
-        </header>
+        <ChatTopbar
+          activeConversationId={activeConversationId}
+          isHistoryOpen={isHistoryOpen}
+          onToggleHistory={() => setIsHistoryOpen((current) => !current)}
+          onNewChat={handleNewChat}
+        />
 
         <ChatStatusBar runtime={runtime} />
 
@@ -345,76 +336,5 @@ export function ChatView() {
         </main>
       </section>
     </div>
-  );
-}
-
-function processUpdatesFromSession(detail: ConversationSessionDetail): string[] {
-  const updates = [`Session ${detail.session.status}`];
-  const active = detail.pending_process?.process_ref;
-  if (active) {
-    updates.push(`Pending ${active.kind}: ${active.status}`);
-    if (active.question) {
-      updates.push(active.question);
-    }
-  }
-  const paused = detail.pending_processes?.filter((item) => item.process_ref.status === "paused") ?? [];
-  if (paused.length > 0) {
-    updates.push(`${paused.length} paused process${paused.length === 1 ? "" : "es"} available`);
-  }
-  return updates;
-}
-
-function createId(): string {
-  if ("randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function filterRecentChats(
-  chats: ConversationSessionSummary[],
-  search: string
-): ConversationSessionSummary[] {
-  const query = search.trim().toLowerCase();
-  if (!query) {
-    return chats;
-  }
-  return chats.filter((chat) =>
-    `${chat.title} ${chat.last_message_preview ?? ""}`.toLowerCase().includes(query)
-  );
-}
-
-function messagesFromSession(messages: ConversationMessage[]): RenderedChatMessage[] {
-  return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({
-      id: message.channel_message_id ?? message.message_id,
-      role: (message.role === "user" ? "user" : "assistant") as "user" | "assistant",
-      text: message.text ?? "",
-      createdAt: message.created_at,
-      status:
-        typeof message.metadata.status === "string" ? message.metadata.status : undefined
-    }));
-}
-
-function ChatSidebarIcon({ name }: { name: "panel" | "new" | "search" }) {
-  if (name === "new") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M4 20h16M5.5 14.5 15.8 4.2a2 2 0 0 1 2.8 2.8L8.3 17.3 4 18.5l1.5-4Z" />
-      </svg>
-    );
-  }
-  if (name === "search") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="m20 20-4.4-4.4M10.5 17a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13Z" />
-      </svg>
-    );
-  }
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM9 4v16" />
-    </svg>
   );
 }

@@ -284,7 +284,8 @@ p {
 .theme-toggle svg,
 .memory-icon-button svg,
 .memory-chat-history-action svg,
-.memory-chat-history-search svg {
+.memory-chat-history-search svg,
+.memory-chat-recent-menu-trigger svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -914,6 +915,12 @@ p {
   border-bottom: 1px solid var(--outline-variant);
 }
 
+.memory-chat-history-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .memory-chat-history-header strong {
   color: var(--on-surface);
   font-size: 16px;
@@ -1009,11 +1016,13 @@ p {
 }
 
 .memory-chat-recent {
+  position: relative;
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: stretch;
+  gap: var(--space-1);
   width: 100%;
   min-height: 48px;
-  padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -1025,6 +1034,83 @@ p {
 .memory-chat-recent.is-active {
   border-color: var(--outline-variant);
   background: var(--surface-container-low);
+}
+
+.memory-chat-recent-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.memory-chat-recent-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-right: var(--space-1);
+}
+
+.memory-chat-recent-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-surface-variant);
+  opacity: 0;
+}
+
+.memory-chat-recent:hover .memory-chat-recent-menu-trigger,
+.memory-chat-recent.is-active .memory-chat-recent-menu-trigger,
+.memory-chat-recent-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.memory-chat-recent-menu-trigger:hover,
+.memory-chat-recent-menu-trigger[aria-expanded="true"] {
+  border-color: var(--outline-variant);
+  background: var(--surface-container);
+  color: var(--on-surface);
+}
+
+.memory-chat-recent-menu-popover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: var(--space-1);
+  z-index: 6;
+  min-width: 128px;
+  padding: var(--space-1);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  background: var(--surface-container-high);
+  box-shadow: var(--shadow-2);
+}
+
+.memory-chat-recent-menu-popover button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-surface);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.memory-chat-recent-menu-popover button:hover {
+  background: var(--surface-container);
 }
 
 .memory-chat-recent span,
