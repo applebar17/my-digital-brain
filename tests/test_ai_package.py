@@ -109,6 +109,8 @@ def test_strict_response_format_closes_metadata_objects_for_mention_scan() -> No
     assert mention_schema["additionalProperties"] is False
     assert mention_schema["properties"]["metadata"]["additionalProperties"] is False
     _assert_all_objects_are_closed(schema)
+    _assert_refs_have_no_siblings(schema)
+    _assert_schema_has_no_defaults(schema)
 
 
 def test_structured_call_sends_strict_json_schema_response_format() -> None:
@@ -175,3 +177,24 @@ def _assert_all_objects_are_closed(schema: object) -> None:
     elif isinstance(schema, list):
         for item in schema:
             _assert_all_objects_are_closed(item)
+
+
+def _assert_refs_have_no_siblings(schema: object) -> None:
+    if isinstance(schema, dict):
+        if "$ref" in schema:
+            assert set(schema) == {"$ref"}
+        for value in schema.values():
+            _assert_refs_have_no_siblings(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _assert_refs_have_no_siblings(item)
+
+
+def _assert_schema_has_no_defaults(schema: object) -> None:
+    if isinstance(schema, dict):
+        assert "default" not in schema
+        for value in schema.values():
+            _assert_schema_has_no_defaults(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _assert_schema_has_no_defaults(item)

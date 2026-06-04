@@ -37,6 +37,14 @@ def strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_node(node: Any) -> None:
     if isinstance(node, dict):
+        if "$ref" in node:
+            ref = node["$ref"]
+            node.clear()
+            node["$ref"] = ref
+            return
+
+        node.pop("default", None)
+
         if _is_object_node(node):
             properties = node.get("properties")
             if not isinstance(properties, dict):
