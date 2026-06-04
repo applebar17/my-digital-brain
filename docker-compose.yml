@@ -1,6 +1,8 @@
 services:
   backend:
     build: .
+    env_file:
+      - src/.env
     environment:
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -68,7 +70,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brain}
       POSTGRES_DB: ${POSTGRES_DB:-brain}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-brain} -d $${POSTGRES_DB:-brain}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-brain} -d $${POSTGRES_DB:-brain}" ]
       interval: 5s
       timeout: 5s
       retries: 20
