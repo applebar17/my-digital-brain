@@ -5,6 +5,7 @@ import type {
   GraphViewResult,
   MapViewResult,
   NodeSearchResult,
+  RelationshipResult,
   TimelineResult
 } from "../types/graph";
 
@@ -26,6 +27,21 @@ export function searchNodes(params: SearchNodesParams): Promise<NodeSearchResult
       privacy_level: params.privacy_level,
       trust_level: params.trust_level,
       limit: params.limit
+    }
+  });
+}
+
+export function getNodeRelationships(
+  nodeId: string,
+  relationshipType?: string,
+  direction = "both",
+  limit = 50
+): Promise<RelationshipResult[]> {
+  return apiRequest<RelationshipResult[]>(`/graph/nodes/${nodeId}/relationships`, {
+    query: {
+      relationship_type: relationshipType,
+      direction,
+      limit
     }
   });
 }

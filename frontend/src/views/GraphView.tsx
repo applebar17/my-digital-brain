@@ -4,6 +4,7 @@ import {
   getEntityDetail,
   getMapView,
   getNeighborhoodView,
+  getNodeRelationships,
   getTimelineForNode,
   searchNodes
 } from "../api/graph";
@@ -14,17 +15,23 @@ import { GraphTimelineDock } from "../features/graph/components/GraphTimelineDoc
 import { MemoryGraphCanvas } from "../features/graph/components/MemoryGraphCanvas";
 import type {
   EntityDetailResult,
+  GraphViewNode,
+  GraphViewRelationship,
   GraphViewResult,
   MapViewResult,
   NodeSearchResult,
+  RelationshipResult,
   TimelineResult
 } from "../types/graph";
+import { firstString, nodeId, nodeTitle } from "../lib/graphLabels";
 
 export function GraphView() {
   const [query, setQuery] = useState("");
   const [label, setLabel] = useState("");
   const [depth, setDepth] = useState(1);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [showDatabaseSample, setShowDatabaseSample] = useState(false);
+  const [databaseSampleLimit, setDatabaseSampleLimit] = useState(25);
   const [results, setResults] = useState<NodeSearchResult[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [detail, setDetail] = useState<EntityDetailResult>();
@@ -37,6 +44,10 @@ export function GraphView() {
 
   async function handleSearch(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
+    setSelectedNodeId(undefined);
+    setDetail(undefined);
+    setTimeline(undefined);
+    setMapView(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
     setStatusMessage("Searching graph...");
@@ -50,6 +61,50 @@ export function GraphView() {
       setStatusMessage(`${found.length} result${found.length === 1 ? "" : "s"} found`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to search graph.");
+      setStatusMessage(undefined);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loadDatabaseSample(
+    nextLimit = databaseSampleLimit,
+    nextLabel = label,
+    nextIncludeArchived = includeArchived
+  ) {
+    const boundedLimit = Math.max(1, Math.min(nextLimit, 100));
+    setDatabaseSampleLimit(boundedLimit);
+    setSelectedNodeId(undefined);
+    setDetail(undefined);
+    setTimeline(undefined);
+    setMapView(undefined);
+    setIsLoading(true);
+    setErrorMessage(undefined);
+    setStatusMessage("Loading database sample...");
+    try {
+      const nodes = await searchNodes({
+        label: nextLabel || undefined,
+        lifecycle_state: nextIncludeArchived ? undefined : "active",
+        limit: boundedLimit
+      });
+      const nodeIds = new Set(nodes.map(nodeId).filter(Boolean));
+      const relationshipBatches = await Promise.all(
+        nodes.map((node) => {
+          const id = nodeId(node);
+          return id ? getNodeRelationships(id, undefined, "both", 100) : Promise.resolve([]);
+        })
+      );
+      const relationships = dedupeRelationships(relationshipBatches.flat()).filter(
+        (relationship) => nodeIds.has(relationship.from_id) && nodeIds.has(relationship.to_id)
+      );
+      setResults(nodes);
+      setGraph(toDatabaseSampleGraph(nodes, relationships));
+      setStatusMessage(
+        `Database sample loaded: ${nodes.length} node${nodes.length === 1 ? "" : "s"}, ` +
+          `${relationships.length} visible edge${relationships.length === 1 ? "" : "s"}`
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load database sample.");
       setStatusMessage(undefined);
     } finally {
       setIsLoading(false);
@@ -93,10 +148,43 @@ export function GraphView() {
     }
   }
 
+  function handleLabelChange(nextLabel: string) {
+    setLabel(nextLabel);
+    if (showDatabaseSample && !selectedNodeId) {
+      void loadDatabaseSample(databaseSampleLimit, nextLabel, includeArchived);
+    }
+  }
+
   function handleIncludeArchivedChange(nextIncludeArchived: boolean) {
     setIncludeArchived(nextIncludeArchived);
     if (selectedNodeId) {
       void loadNodeContext(selectedNodeId, depth, nextIncludeArchived);
+    } else if (showDatabaseSample) {
+      void loadDatabaseSample(databaseSampleLimit, label, nextIncludeArchived);
+    }
+  }
+
+  function handleShowDatabaseSampleChange(nextShowDatabaseSample: boolean) {
+    setShowDatabaseSample(nextShowDatabaseSample);
+    if (nextShowDatabaseSample) {
+      void loadDatabaseSample(databaseSampleLimit);
+      return;
+    }
+    setGraph(undefined);
+    setResults([]);
+    setSelectedNodeId(undefined);
+    setDetail(undefined);
+    setTimeline(undefined);
+    setMapView(undefined);
+    setStatusMessage(undefined);
+    setErrorMessage(undefined);
+  }
+
+  function handleDatabaseSampleLimitChange(nextLimit: number) {
+    const boundedLimit = Math.max(1, Math.min(Number.isFinite(nextLimit) ? nextLimit : 25, 100));
+    setDatabaseSampleLimit(boundedLimit);
+    if (showDatabaseSample) {
+      void loadDatabaseSample(boundedLimit);
     }
   }
 
@@ -107,13 +195,17 @@ export function GraphView() {
         label={label}
         depth={depth}
         includeArchived={includeArchived}
+        showDatabaseSample={showDatabaseSample}
+        databaseSampleLimit={databaseSampleLimit}
         isLoading={isLoading}
         statusMessage={statusMessage}
         errorMessage={errorMessage}
         onQueryChange={setQuery}
-        onLabelChange={setLabel}
+        onLabelChange={handleLabelChange}
         onDepthChange={handleDepthChange}
         onIncludeArchivedChange={handleIncludeArchivedChange}
+        onShowDatabaseSampleChange={handleShowDatabaseSampleChange}
+        onDatabaseSampleLimitChange={handleDatabaseSampleLimitChange}
         onSearch={handleSearch}
       />
 
@@ -140,4 +232,88 @@ export function GraphView() {
       </div>
     </div>
   );
+}
+
+function toDatabaseSampleGraph(
+  nodes: NodeSearchResult[],
+  relationships: RelationshipResult[]
+): GraphViewResult | undefined {
+  if (nodes.length === 0) {
+    return undefined;
+  }
+  return {
+    seed_id: nodeId(nodes[0]),
+    nodes: nodes.map(toGraphViewNode),
+    relationships: relationships.map(toGraphViewRelationship)
+  };
+}
+
+function toGraphViewNode(node: NodeSearchResult): GraphViewNode {
+  const properties = node.properties;
+  return {
+    id: nodeId(node),
+    label: node.label,
+    title: nodeTitle(node),
+    description: stringValue(properties.description),
+    lifecycle_state: stringValue(properties.lifecycle_state),
+    privacy_level: stringValue(properties.privacy_level),
+    trust_level: stringValue(properties.trust_level),
+    emotional_summary: stringValue(properties.emotional_summary),
+    temporal_summary: optionalFirstString(
+      properties.resolved_start,
+      properties.valid_from,
+      properties.source_time,
+      properties.observed_at
+    ),
+    latitude: numberValue(properties.latitude),
+    longitude: numberValue(properties.longitude),
+    display_metadata: {}
+  };
+}
+
+function toGraphViewRelationship(relationship: RelationshipResult): GraphViewRelationship {
+  const properties = relationship.properties;
+  return {
+    id: stringValue(properties.id) || `${relationship.from_id}:${relationship.type}:${relationship.to_id}`,
+    type: relationship.type,
+    from_id: relationship.from_id,
+    to_id: relationship.to_id,
+    description: stringValue(properties.description),
+    lifecycle_state: stringValue(properties.lifecycle_state),
+    emotional_summary: stringValue(properties.emotional_summary),
+    temporal_summary: optionalFirstString(
+      properties.resolved_start,
+      properties.valid_from,
+      properties.source_time,
+      properties.observed_at
+    )
+  };
+}
+
+function dedupeRelationships(relationships: RelationshipResult[]): RelationshipResult[] {
+  const seen = new Set<string>();
+  const deduped: RelationshipResult[] = [];
+  relationships.forEach((relationship) => {
+    const id = stringValue(relationship.properties.id);
+    const key = id || `${relationship.from_id}:${relationship.type}:${relationship.to_id}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    deduped.push(relationship);
+  });
+  return deduped;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function optionalFirstString(...values: unknown[]): string | null {
+  const value = firstString(...values);
+  return value === "Untitled" ? null : value;
 }

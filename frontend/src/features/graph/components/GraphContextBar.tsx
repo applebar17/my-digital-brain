@@ -6,6 +6,8 @@ interface GraphContextBarProps {
   label: string;
   depth: number;
   includeArchived: boolean;
+  showDatabaseSample: boolean;
+  databaseSampleLimit: number;
   isLoading: boolean;
   statusMessage?: string;
   errorMessage?: string;
@@ -13,6 +15,8 @@ interface GraphContextBarProps {
   onLabelChange: (label: string) => void;
   onDepthChange: (depth: number) => void;
   onIncludeArchivedChange: (includeArchived: boolean) => void;
+  onShowDatabaseSampleChange: (showDatabaseSample: boolean) => void;
+  onDatabaseSampleLimitChange: (limit: number) => void;
   onSearch: (event?: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -21,6 +25,8 @@ export function GraphContextBar({
   label,
   depth,
   includeArchived,
+  showDatabaseSample,
+  databaseSampleLimit,
   isLoading,
   statusMessage,
   errorMessage,
@@ -28,6 +34,8 @@ export function GraphContextBar({
   onLabelChange,
   onDepthChange,
   onIncludeArchivedChange,
+  onShowDatabaseSampleChange,
+  onDatabaseSampleLimitChange,
   onSearch
 }: GraphContextBarProps) {
   return (
@@ -75,6 +83,27 @@ export function GraphContextBar({
           type="checkbox"
         />
         Archived
+      </label>
+
+      <label className="memory-check-field">
+        <input
+          checked={showDatabaseSample}
+          onChange={(event) => onShowDatabaseSampleChange(event.target.checked)}
+          type="checkbox"
+        />
+        DB sample
+      </label>
+
+      <label className="memory-control-field memory-sample-limit-field">
+        <span>Max nodes</span>
+        <input
+          value={databaseSampleLimit}
+          onChange={(event) => onDatabaseSampleLimitChange(Number(event.target.value))}
+          type="number"
+          min="1"
+          max="100"
+          disabled={!showDatabaseSample}
+        />
       </label>
 
       <div className="memory-trust-legend" aria-label="Trust legend">

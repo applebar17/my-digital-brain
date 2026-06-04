@@ -1828,7 +1828,7 @@ p {
 
 .memory-context-bar {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(240px, 1fr) 136px 84px auto minmax(260px, auto) auto;
+  grid-template-columns: minmax(170px, 220px) minmax(220px, 1fr) 128px 78px auto auto 92px minmax(220px, auto) auto;
   gap: var(--space-3);
   align-items: end;
   padding: var(--space-4) var(--space-5);
@@ -1890,6 +1890,11 @@ p {
 
 .memory-check-field input {
   accent-color: var(--graph-secondary);
+}
+
+.memory-sample-limit-field input:disabled {
+  color: var(--graph-muted);
+  opacity: 0.58;
 }
 
 .memory-trust-legend {
@@ -2534,7 +2539,7 @@ p {
 
 @media (max-width: 1380px) {
   .memory-context-bar {
-    grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) 132px 84px auto auto;
+    grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) 128px 78px auto auto 92px auto;
   }
 
   .memory-trust-legend {
