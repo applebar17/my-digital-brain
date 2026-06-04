@@ -465,6 +465,11 @@ Rules:
   authority for whether a memory was stored.
 - Answer generation must hydrate graph targets from Neo4j after vector search.
   Chroma hits alone are never enough grounding for user-visible answers.
+- Semantic search must ignore orphan Chroma hits that do not have a matching
+  relational vector record. Vector hits become usable only after backend
+  hydration through the operational vector record and Neo4j.
+- Retrieval responses should expose frontend/LLM-safe summaries, context
+  packages, and debug traces, not raw graph records or raw Chroma payloads.
 
 ## Practical Development Rules
 
@@ -475,6 +480,8 @@ Rules:
 - Build low-noise context packages for LLM answer generation and tool use.
 - Build low-noise embedding documents for semantic retrieval; do not embed raw
   graph records or model/tool traces.
+- Hydrate and rank vector hits through backend services before using them in
+  prompts or UI responses.
 - Prefer a small strong toolbox over many vague tools.
 - Add deterministic code where it is clearly cheaper, faster, and more reliable.
 - Add model calls where language, ambiguity, or contextual judgment matters.

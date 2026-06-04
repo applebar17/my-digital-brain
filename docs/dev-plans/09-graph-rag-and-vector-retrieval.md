@@ -533,6 +533,17 @@ mode and expose exact/property search as a secondary mode.
 - Expand graph neighborhoods.
 - Return low-noise retrieval packages for answer generation and graph UI.
 - Add debug traces that explain vector hits, graph hydration, and ranking.
+- Ignore Chroma hits that do not have a matching relational vector record.
+  Chroma is not trusted as memory truth by itself.
+- Filter archived/deleted vector records and hidden graph nodes by default.
+- Use `GraphViewNode`, `GraphViewRelationship`, and `GraphContextPackage`
+  outputs for retrieval responses. Do not expose raw graph records in semantic
+  search hits.
+- Add generated search endpoints:
+  - `GET /graph/search/semantic`
+  - `GET /graph/search/hybrid`
+- Hybrid search unions semantic vector hits with exact/property graph matches
+  and ranks the hydrated graph targets with transparent debug fields.
 
 ### Wave 4: Answer And UI Integration
 

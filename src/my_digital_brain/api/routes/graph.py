@@ -33,6 +33,8 @@ from my_digital_brain.graph.models import (
     TimelineResult,
 )
 from my_digital_brain.graph.service import GraphService
+from my_digital_brain.rag.models import SemanticMemorySearchResult
+from my_digital_brain.rag.search import SemanticMemorySearchService
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -47,7 +49,41 @@ def get_graph_service() -> Generator[GraphService]:
         yield GraphService(GraphRepository(client))
 
 
+def get_semantic_search_service() -> Generator[SemanticMemorySearchService]:
+    from my_digital_brain.ai.client.settings import genai_settings_from_app_settings
+    from my_digital_brain.ai.router import StaticModelRouter
+    from my_digital_brain.chat.factory import build_ai_provider
+    from my_digital_brain.config import get_settings
+    from my_digital_brain.graph.repository import GraphRepository
+    from my_digital_brain.storage.graph import GraphClient
+    from my_digital_brain.storage.relational import RelationalSessionProvider
+    from my_digital_brain.storage.vector import ChromaVectorStore
+    from my_digital_brain.rag.vector_records import VectorRecordStore
+
+    settings = get_settings()
+    provider = build_ai_provider(settings)
+    router = StaticModelRouter(
+        settings=genai_settings_from_app_settings(settings),
+        provider=settings.normalized_llm_provider,
+    )
+    relational = RelationalSessionProvider.from_settings(settings)
+    try:
+        with GraphClient.from_settings(settings) as client:
+            graph_service = GraphService(GraphRepository(client))
+            yield SemanticMemorySearchService(
+                graph_service=graph_service,
+                embedding_provider=provider,
+                vector_store=ChromaVectorStore.from_settings(settings),
+                vector_record_store=VectorRecordStore(relational),
+                model_router=router,
+            )
+    finally:
+        relational.dispose()
+
+
 def graph_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, GraphValidationError):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, GraphNotFoundError):
@@ -85,6 +121,46 @@ def search_nodes(
             lifecycle_state=lifecycle_state,
             privacy_level=privacy_level,
             trust_level=trust_level,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/search/semantic", response_model=SemanticMemorySearchResult)
+def semantic_search(
+    query: str,
+    include_archived: bool = False,
+    include_history: bool = False,
+    limit: int = Query(default=10, ge=1, le=100),
+    service: SemanticMemorySearchService = Depends(get_semantic_search_service),
+) -> SemanticMemorySearchResult:
+    try:
+        return service.search_semantic(
+            query,
+            include_archived=include_archived,
+            include_history=include_history,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/search/hybrid", response_model=SemanticMemorySearchResult)
+def hybrid_search(
+    query: str,
+    label: str | None = None,
+    include_archived: bool = False,
+    include_history: bool = False,
+    limit: int = Query(default=10, ge=1, le=100),
+    service: SemanticMemorySearchService = Depends(get_semantic_search_service),
+) -> SemanticMemorySearchResult:
+    try:
+        return service.search_hybrid(
+            query,
+            label=label,
+            include_archived=include_archived,
+            include_history=include_history,
             limit=limit,
         )
     except Exception as exc:
