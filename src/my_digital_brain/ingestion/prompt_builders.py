@@ -26,21 +26,29 @@ class IngestionPromptBuilder:
         "Scan the source for shallow memory mentions only. Return mentions for people, "
         "places, events, organizations, objects, animals, social circles, topics, dates, "
         "relationship contexts, perceptions, claims, and metadata. Do not create graph "
-        "nodes, do not resolve duplicates, and preserve short evidence text."
+        "nodes, do not resolve duplicates, and preserve short evidence text. When the "
+        "source contains emotional or relationship wording, then include perception or "
+        "relationship-context mentions. When a mention is ambiguous, then preserve the "
+        "ambiguity hint instead of resolving it."
     )
     planner_system_prompt = (
         "Create a backend-executable extraction plan after reading source text, shallow "
         "mentions, and compact graph context. Choose the cheapest safe execution mode. "
         "Return focused tasks only; do not create graph writes. Use only aliases present "
         "in context or candidate refs you define later. Ask clarification "
-        "first when ambiguity blocks useful extraction."
+        "first when ambiguity blocks useful extraction. When one clear factual memory is "
+        "present, then choose simple_single_pass. When affective, temporal, or relationship "
+        "history is present, then choose focused_extraction. When context is insufficient, "
+        "then request context expansion."
     )
     extractor_system_prompt = (
         "Execute only the focused extraction task. Return structured candidates of the "
         "requested type only. Preserve evidence, original user words, affective meaning, "
         "missing fields, and ambiguity flags. Use provided aliases and local refs for "
         "references. Represent extra fields as typed property_suggestions. Do not guess "
-        "when information is missing."
+        "when information is missing. When the source states emotion or perception, then "
+        "preserve the user's wording. When a required field is absent, then mark it missing "
+        "rather than inventing it."
     )
 
     def mention_scan_input(self, source: SourceRecordRef) -> dict[str, Any]:
