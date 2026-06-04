@@ -18,7 +18,16 @@ export interface SearchNodesParams {
 }
 
 export function searchNodes(params: SearchNodesParams): Promise<NodeSearchResult[]> {
-  return apiRequest<NodeSearchResult[]>("/graph/nodes/search", { query: params });
+  return apiRequest<NodeSearchResult[]>("/graph/nodes/search", {
+    query: {
+      label: params.label,
+      query: params.query,
+      lifecycle_state: params.lifecycle_state,
+      privacy_level: params.privacy_level,
+      trust_level: params.trust_level,
+      limit: params.limit
+    }
+  });
 }
 
 export function getEntityDetail(
