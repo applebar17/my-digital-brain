@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+import logging
 
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     CandidateOutput,
@@ -23,6 +25,9 @@ from my_digital_brain.ingestion.protocols import (
     ResolutionService,
 )
 from my_digital_brain.ingestion.validation import IngestionValidator
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -46,12 +51,52 @@ class IngestionService:
     process_store: IngestionProcessStore | None = None
 
     def process_source(self, source: SourceRecordRef) -> IngestionResult:
+        log_event(
+            logger,
+            "ingestion.source.start",
+            component="ingestion",
+            source_id=source.source_id,
+            source_type=str(source.source_type),
+            channel=str(source.channel),
+            execute_write_plan=self.execute_write_plan,
+            extractor_count=len(self.extractors),
+        )
         if self.process_store is not None:
             self.process_store.save_source(source)
 
         mention_scan = self.scanner.scan(source)
+        log_event(
+            logger,
+            "ingestion.mention_scan.done",
+            component="ingestion",
+            source_id=source.source_id,
+            mention_count=len(mention_scan.mentions),
+            mention_kinds=[str(mention.kind) for mention in mention_scan.mentions],
+        )
         context = self.context_retriever.retrieve(source, mention_scan)
+        log_event(
+            logger,
+            "ingestion.context.done",
+            component="ingestion",
+            source_id=source.source_id,
+            context_package_id=context.context_package_id,
+            context_entity_count=len(context.entities),
+            context_relationship_count=len(context.relationships),
+            context_note_count=len(context.notes),
+        )
         extraction_plan = self.planner.plan(source, mention_scan, context)
+        log_event(
+            logger,
+            "ingestion.plan.done",
+            component="ingestion",
+            source_id=source.source_id,
+            extraction_plan_id=extraction_plan.extraction_plan_id,
+            execution_mode=str(extraction_plan.execution_mode),
+            task_count=len(extraction_plan.tasks),
+            task_types=[str(task.task_type) for task in extraction_plan.tasks],
+            has_clarification=extraction_plan.clarification is not None,
+            context_gap_count=len(extraction_plan.context_gaps),
+        )
 
         if (
             extraction_plan.execution_mode
@@ -123,6 +168,16 @@ class IngestionService:
                 )
                 continue
             candidates.extend(extractor.extract(source, task, context))
+
+        log_event(
+            logger,
+            "ingestion.extraction.done",
+            component="ingestion",
+            source_id=source.source_id,
+            extraction_plan_id=extraction_plan.extraction_plan_id,
+            candidate_count=len(candidates),
+            missing_extractor_count=len(missing_extractor_issues),
+        )
 
         if missing_extractor_issues:
             return self._finish(
@@ -199,6 +254,17 @@ class IngestionService:
             )
 
         write_plan = self.write_plan_builder.build(candidate_graph, resolution, context)
+        write_counts = _write_plan_counts(write_plan)
+        log_event(
+            logger,
+            "ingestion.write_plan.done",
+            component="ingestion",
+            source_id=source.source_id,
+            write_plan_id=write_plan.write_plan_id,
+            mutation_count=sum(write_counts.values()),
+            write_counts=write_counts,
+            resolution_decision_count=len(write_plan.resolution_decisions),
+        )
         if not _write_plan_has_mutations(write_plan):
             return self._finish(
                 IngestionResult(
@@ -266,6 +332,17 @@ class IngestionService:
         return None
 
     def _finish(self, result: IngestionResult) -> IngestionResult:
+        log_event(
+            logger,
+            "ingestion.result",
+            component="ingestion",
+            source_id=result.source_id,
+            ingestion_id=result.ingestion_id,
+            status=str(result.status),
+            validation_error_count=len(result.validation_errors),
+            has_clarification=result.clarification is not None,
+            write_counts=_write_plan_counts(result.write_plan) if result.write_plan else None,
+        )
         if self.process_store is not None:
             self.process_store.record_result(result)
         return result
@@ -302,3 +379,16 @@ def _write_plan_has_mutations(write_plan) -> bool:
             write_plan.metadata_patches,
         )
     )
+
+
+def _write_plan_counts(write_plan) -> dict[str, int]:
+    return {
+        "nodes_to_create": len(write_plan.nodes_to_create),
+        "nodes_to_update": len(write_plan.nodes_to_update),
+        "relationships_to_create": len(write_plan.relationships_to_create),
+        "relationships_to_update": len(write_plan.relationships_to_update),
+        "claims_to_create": len(write_plan.claims_to_create),
+        "perceptions_to_create": len(write_plan.perceptions_to_create),
+        "relationship_contexts_to_create": len(write_plan.relationship_contexts_to_create),
+        "metadata_patches": len(write_plan.metadata_patches),
+    }
