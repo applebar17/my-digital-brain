@@ -10,9 +10,15 @@ from my_digital_brain.chat.tool_facade import (
     LLMGraphContextAnswerGenerator,
     MemoryBackendToolFacade,
 )
-from my_digital_brain.graph.models import GraphContextPackage, NodeSearchResult
+from my_digital_brain.graph.models import (
+    GraphContextPackage,
+    GraphViewNode,
+    GraphViewResult,
+    NodeSearchResult,
+)
 from my_digital_brain.ingestion.contracts import IngestionResult
 from my_digital_brain.ingestion.enums import IngestionStatus
+from my_digital_brain.rag.models import SemanticMemoryHit, SemanticMemorySearchResult
 
 
 class FakeGraphService:
@@ -110,6 +116,60 @@ class FakeIngestionService:
         )
 
 
+class FakeSemanticSearchService:
+    def __init__(self, *, has_hits: bool = True) -> None:
+        self.has_hits = has_hits
+        self.hybrid_queries: list[tuple[str, str | None]] = []
+
+    def search_hybrid(
+        self,
+        query: str,
+        *,
+        label: str | None = None,
+        **_kwargs: object,
+    ) -> SemanticMemorySearchResult:
+        self.hybrid_queries.append((query, label))
+        if not self.has_hits:
+            return SemanticMemorySearchResult(
+                query=query,
+                mode="hybrid",
+                graph_view=GraphViewResult(seed_id="", nodes=[], relationships=[]),
+            )
+
+        target = GraphViewNode(
+            id="person-semantic",
+            label="Person",
+            title="Marco",
+            description="Hydrated semantic match.",
+            display_metadata={},
+        )
+        return SemanticMemorySearchResult(
+            query=query,
+            mode="hybrid",
+            hits=[
+                SemanticMemoryHit(
+                    rank=1,
+                    score=0.92,
+                    source="semantic",
+                    vector_id="vector-1",
+                    primary_target_id="person-semantic",
+                    primary_target_label="Person",
+                    title="Marco",
+                    description="Hydrated semantic match.",
+                    target=target,
+                )
+            ],
+            graph_view=GraphViewResult(
+                seed_id="person-semantic",
+                nodes=[target],
+                relationships=[],
+            ),
+            context_packages=[
+                FakeGraphService().get_context_package("person-semantic"),
+            ],
+        )
+
+
 class FakeIncompleteIngestionService:
     def __init__(self) -> None:
         self.sources = []
@@ -134,6 +194,40 @@ def test_graph_backed_query_returns_context_answer_and_evidence() -> None:
     assert result.actions[0].action_type == "open_graph_node"
     assert result.metadata["seed_id"] == "person-1"
     assert result.metadata["context_package"]["target"]["alias"] == "NODE_000001"
+
+
+def test_graph_query_prefers_hybrid_retrieval_when_available() -> None:
+    graph = FakeGraphService()
+    semantic = FakeSemanticSearchService()
+    facade = MemoryBackendToolFacade(
+        graph_service=graph,
+        semantic_search_service=semantic,
+    )
+
+    result = facade.query_memory_context(_request("What do I remember about Marco?"))
+
+    assert result.status == ChatResponseStatus.OK
+    assert semantic.hybrid_queries == [("What do I remember about Marco?", None)]
+    assert graph.search_query is None
+    assert result.metadata["retrieval_mode"] == "hybrid"
+    assert result.metadata["seed_id"] == "person-semantic"
+    assert result.metadata["semantic_search"]["hits"][0]["source"] == "semantic"
+    assert result.actions[0].parameters["node_id"] == "person-semantic"
+
+
+def test_graph_query_hybrid_no_hits_returns_low_noise_no_match() -> None:
+    facade = MemoryBackendToolFacade(
+        graph_service=FakeGraphService(),
+        semantic_search_service=FakeSemanticSearchService(has_hits=False),
+    )
+
+    result = facade.query_memory_context(_request("What do I remember about Marco?"))
+
+    assert result.status == ChatResponseStatus.OK
+    assert "could not find" in result.primary_text
+    assert result.diagnostics[0].code == "no_matching_graph_seed"
+    assert result.metadata["retrieval_mode"] == "hybrid"
+    assert result.metadata["semantic_search"]["hits"] == []
 
 
 def test_graph_backed_query_returns_low_noise_no_match_response() -> None:

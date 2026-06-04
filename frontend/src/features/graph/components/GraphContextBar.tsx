@@ -1,8 +1,10 @@
 import type { FormEvent } from "react";
+import type { GraphSearchMode } from "../../../types/graph";
 import { graphNodeLabels } from "../utils/graphDisplay";
 
 interface GraphContextBarProps {
   query: string;
+  searchMode: GraphSearchMode;
   label: string;
   depth: number;
   includeArchived: boolean;
@@ -12,6 +14,7 @@ interface GraphContextBarProps {
   statusMessage?: string;
   errorMessage?: string;
   onQueryChange: (query: string) => void;
+  onSearchModeChange: (mode: GraphSearchMode) => void;
   onLabelChange: (label: string) => void;
   onDepthChange: (depth: number) => void;
   onIncludeArchivedChange: (includeArchived: boolean) => void;
@@ -22,6 +25,7 @@ interface GraphContextBarProps {
 
 export function GraphContextBar({
   query,
+  searchMode,
   label,
   depth,
   includeArchived,
@@ -31,6 +35,7 @@ export function GraphContextBar({
   statusMessage,
   errorMessage,
   onQueryChange,
+  onSearchModeChange,
   onLabelChange,
   onDepthChange,
   onIncludeArchivedChange,
@@ -52,6 +57,18 @@ export function GraphContextBar({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search current context..."
         />
+      </label>
+
+      <label className="memory-control-field memory-search-mode-field">
+        <span>Mode</span>
+        <select
+          value={searchMode}
+          onChange={(event) => onSearchModeChange(event.target.value as GraphSearchMode)}
+        >
+          <option value="property">Property</option>
+          <option value="semantic">Semantic</option>
+          <option value="hybrid">Hybrid</option>
+        </select>
       </label>
 
       <label className="memory-control-field">

@@ -5,8 +5,10 @@ import {
   getMapView,
   getNeighborhoodView,
   getNodeRelationships,
+  hybridSearch,
   getTimelineForNode,
-  searchNodes
+  searchNodes,
+  semanticSearch
 } from "../api/graph";
 import { GraphContextBar } from "../features/graph/components/GraphContextBar";
 import { GraphInspectorPanel } from "../features/graph/components/GraphInspectorPanel";
@@ -15,24 +17,28 @@ import { GraphTimelineDock } from "../features/graph/components/GraphTimelineDoc
 import { MemoryGraphCanvas } from "../features/graph/components/MemoryGraphCanvas";
 import type {
   EntityDetailResult,
+  GraphSearchMode,
   GraphViewNode,
   GraphViewRelationship,
   GraphViewResult,
   MapViewResult,
   NodeSearchResult,
   RelationshipResult,
+  SemanticMemorySearchResult,
   TimelineResult
 } from "../types/graph";
 import { firstString, nodeId, nodeTitle } from "../lib/graphLabels";
 
 export function GraphView() {
   const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<GraphSearchMode>("hybrid");
   const [label, setLabel] = useState("");
   const [depth, setDepth] = useState(1);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [showDatabaseSample, setShowDatabaseSample] = useState(false);
   const [databaseSampleLimit, setDatabaseSampleLimit] = useState(25);
   const [results, setResults] = useState<NodeSearchResult[]>([]);
+  const [retrievalResult, setRetrievalResult] = useState<SemanticMemorySearchResult>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [detail, setDetail] = useState<EntityDetailResult>();
   const [graph, setGraph] = useState<GraphViewResult>();
@@ -48,17 +54,49 @@ export function GraphView() {
     setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setRetrievalResult(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
-    setStatusMessage("Searching graph...");
+    setStatusMessage(
+      searchMode === "property" ? "Searching graph..." : "Retrieving graph memories..."
+    );
     try {
-      const found = await searchNodes({
-        query: query.trim() || undefined,
-        label: label || undefined,
-        limit: 25
-      });
-      setResults(found);
-      setStatusMessage(`${found.length} result${found.length === 1 ? "" : "s"} found`);
+      const trimmedQuery = query.trim();
+      if (searchMode === "property") {
+        const found = await searchNodes({
+          query: trimmedQuery || undefined,
+          label: label || undefined,
+          limit: 25
+        });
+        setResults(found);
+        setGraph(undefined);
+        setStatusMessage(`${found.length} result${found.length === 1 ? "" : "s"} found`);
+        return;
+      }
+      if (!trimmedQuery) {
+        throw new Error("Semantic and hybrid search require a text query.");
+      }
+      const found =
+        searchMode === "semantic"
+          ? await semanticSearch({
+              query: trimmedQuery,
+              include_archived: includeArchived,
+              include_history: true,
+              limit: 25
+            })
+          : await hybridSearch({
+              query: trimmedQuery,
+              label: label || undefined,
+              include_archived: includeArchived,
+              include_history: true,
+              limit: 25
+            });
+      setResults([]);
+      setRetrievalResult(found);
+      setGraph(found.graph_view);
+      setStatusMessage(
+        `${found.hits.length} retrieval hit${found.hits.length === 1 ? "" : "s"} found`
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to search graph.");
       setStatusMessage(undefined);
@@ -78,6 +116,7 @@ export function GraphView() {
     setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setRetrievalResult(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
     setStatusMessage("Loading database sample...");
@@ -172,6 +211,7 @@ export function GraphView() {
     }
     setGraph(undefined);
     setResults([]);
+    setRetrievalResult(undefined);
     setSelectedNodeId(undefined);
     setDetail(undefined);
     setTimeline(undefined);
@@ -192,6 +232,7 @@ export function GraphView() {
     <div className="workspace graph-workspace memory-graph-workspace">
       <GraphContextBar
         query={query}
+        searchMode={searchMode}
         label={label}
         depth={depth}
         includeArchived={includeArchived}
@@ -201,6 +242,7 @@ export function GraphView() {
         statusMessage={statusMessage}
         errorMessage={errorMessage}
         onQueryChange={setQuery}
+        onSearchModeChange={setSearchMode}
         onLabelChange={handleLabelChange}
         onDepthChange={handleDepthChange}
         onIncludeArchivedChange={handleIncludeArchivedChange}
@@ -224,7 +266,9 @@ export function GraphView() {
           <GraphInspectorPanel detail={detail} selectedNodeId={selectedNodeId} />
         ) : (
           <GraphSearchWindow
+            searchMode={searchMode}
             results={results}
+            retrievalResult={retrievalResult}
             selectedNodeId={selectedNodeId}
             onSelectNode={(id) => void loadNodeContext(id)}
           />

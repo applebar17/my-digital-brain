@@ -470,6 +470,12 @@ Rules:
   hydration through the operational vector record and Neo4j.
 - Retrieval responses should expose frontend/LLM-safe summaries, context
   packages, and debug traces, not raw graph records or raw Chroma payloads.
+- Chat memory queries should use hybrid retrieval when available, then hydrate
+  and answer from `GraphContextPackage`. The final user-visible response is
+  graph-grounded; retrieval hits and traces are support metadata for tooling,
+  debugging, and UI exploration.
+- Exact/property search remains useful as a fallback and as an explicit graph
+  workspace mode, but it should not be confused with semantic memory retrieval.
 
 ## Practical Development Rules
 

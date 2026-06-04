@@ -31,7 +31,11 @@ from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
-from my_digital_brain.rag import GraphVectorizationService, VectorRecordStore
+from my_digital_brain.rag import (
+    GraphVectorizationService,
+    SemanticMemorySearchService,
+    VectorRecordStore,
+)
 from my_digital_brain.storage.relational import RelationalSessionProvider
 from my_digital_brain.storage.vector import ChromaVectorStore
 
@@ -80,6 +84,12 @@ def build_chat_runtime(
         history_service=history_service,
     )
     agentic_runtime = AgenticRuntime(state_runner)
+    semantic_search_service = build_semantic_search_service(
+        settings=settings,
+        provider=provider,
+        graph_service=graph_service,
+        router=router,
+    )
     ingestion_service = build_ingestion_service(
         settings=settings,
         provider=provider,
@@ -91,6 +101,7 @@ def build_chat_runtime(
     facade = MemoryBackendToolFacade(
         graph_service=graph_service,
         ingestion_service=ingestion_service,
+        semantic_search_service=semantic_search_service,
         answer_generator=LLMGraphContextAnswerGenerator(provider, router=router),
     )
     return ChatRuntime(
@@ -165,4 +176,24 @@ def build_ingestion_service(
         ),
         execute_write_plan=execute_write_plan,
         process_store=InMemoryIngestionProcessStore(),
+    )
+
+
+def build_semantic_search_service(
+    *,
+    settings: Settings,
+    provider: Any,
+    graph_service: Any | None,
+    router: StaticModelRouter,
+) -> SemanticMemorySearchService | None:
+    if graph_service is None:
+        return None
+    return SemanticMemorySearchService(
+        graph_service=graph_service,
+        embedding_provider=provider,
+        vector_store=ChromaVectorStore.from_settings(settings),
+        vector_record_store=VectorRecordStore(
+            RelationalSessionProvider.from_settings(settings),
+        ),
+        model_router=router,
     )

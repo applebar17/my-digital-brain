@@ -94,3 +94,44 @@ export interface GraphAnalyticsSummary {
   top_emotion_tags: GraphAnalyticsItem[];
   unresolved_contradictions: number;
 }
+
+export type GraphSearchMode = "property" | "semantic" | "hybrid";
+
+export interface SemanticSearchTraceEvent {
+  stage: string;
+  status: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export interface SemanticMemoryHit {
+  rank: number;
+  score: number;
+  source: "semantic" | "property";
+  vector_id?: string | null;
+  distance?: number | null;
+  collection: string;
+  embedding_scope?: string | null;
+  primary_target_id: string;
+  primary_target_label: string;
+  canonical_target_id?: string | null;
+  related_target_ids: string[];
+  source_ids: string[];
+  relationship_ids: string[];
+  title?: string | null;
+  description?: string | null;
+  document_preview?: string | null;
+  target?: GraphViewNode | null;
+  canonical_target?: GraphViewNode | null;
+  debug: Record<string, unknown>;
+}
+
+export interface SemanticMemorySearchResult {
+  query: string;
+  mode: "semantic" | "hybrid";
+  collection: string;
+  hits: SemanticMemoryHit[];
+  graph_view: GraphViewResult;
+  context_packages: Record<string, unknown>[];
+  trace: SemanticSearchTraceEvent[];
+}

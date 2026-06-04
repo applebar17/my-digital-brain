@@ -552,6 +552,22 @@ mode and expose exact/property search as a secondary mode.
   hybrid search.
 - Render retrieval traces in a developer/debug panel.
 - Keep final answers grounded in graph evidence.
+- Build production chat `query_memory_context` with hybrid retrieval when the
+  semantic search service is configured. The answer generator receives a
+  hydrated `GraphContextPackage`, not raw Chroma hits.
+- Keep property search as a fallback when the semantic service is unavailable
+  or fails. Surface compact diagnostics so the model/developer understands the
+  fallback path.
+- Return retrieval hits, graph view, context package, and trace metadata from
+  chat tool results for UI/debug use, but do not show raw vector payloads or
+  backend IDs in the user-visible answer.
+- The graph workspace exposes three explicit modes:
+  - property search for exact/name/schema lookup;
+  - semantic search for vector-only retrieval plus graph hydration;
+  - hybrid search for vector hits unioned with exact graph matches.
+- The graph workspace uses the returned `GraphViewResult` from semantic/hybrid
+  retrieval to render the memory neighborhood immediately, while the side panel
+  shows ranked hydrated hits and compact trace events.
 
 ## Test Plan
 

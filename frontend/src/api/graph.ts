@@ -6,6 +6,7 @@ import type {
   MapViewResult,
   NodeSearchResult,
   RelationshipResult,
+  SemanticMemorySearchResult,
   TimelineResult
 } from "../types/graph";
 
@@ -118,5 +119,39 @@ export function getAnalyticsSummary(
 ): Promise<GraphAnalyticsSummary> {
   return apiRequest<GraphAnalyticsSummary>("/graph/analytics/summary", {
     query: { include_archived: includeArchived, limit }
+  });
+}
+
+export interface SemanticSearchParams {
+  query: string;
+  include_archived?: boolean;
+  include_history?: boolean;
+  limit?: number;
+}
+
+export interface HybridSearchParams extends SemanticSearchParams {
+  label?: string;
+}
+
+export function semanticSearch(params: SemanticSearchParams): Promise<SemanticMemorySearchResult> {
+  return apiRequest<SemanticMemorySearchResult>("/graph/search/semantic", {
+    query: {
+      query: params.query,
+      include_archived: params.include_archived,
+      include_history: params.include_history,
+      limit: params.limit
+    }
+  });
+}
+
+export function hybridSearch(params: HybridSearchParams): Promise<SemanticMemorySearchResult> {
+  return apiRequest<SemanticMemorySearchResult>("/graph/search/hybrid", {
+    query: {
+      query: params.query,
+      label: params.label,
+      include_archived: params.include_archived,
+      include_history: params.include_history,
+      limit: params.limit
+    }
   });
 }

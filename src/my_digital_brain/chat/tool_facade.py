@@ -28,6 +28,7 @@ from my_digital_brain.graph.models import GraphContextPackage, NodeSearchResult
 from my_digital_brain.ingestion.contracts import SourceRecordRef
 from my_digital_brain.ingestion.enums import IngestionStatus, SourceChannel, SourceType
 from my_digital_brain.ingestion.service import IngestionService
+from my_digital_brain.rag.models import SemanticMemorySearchResult
 
 
 class GraphContextAnswerGenerator(Protocol):
@@ -163,10 +164,12 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         *,
         graph_service: Any | None = None,
         ingestion_service: IngestionService | None = None,
+        semantic_search_service: Any | None = None,
         answer_generator: GraphContextAnswerGenerator | None = None,
     ) -> None:
         self.graph_service = graph_service
         self.ingestion_service = ingestion_service
+        self.semantic_search_service = semantic_search_service
         self.answer_generator = answer_generator or DeterministicGraphContextAnswerGenerator()
 
     def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
@@ -400,6 +403,125 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         if self.graph_service is None:
             return super().query_memory_context(request)
 
+        retrieval_diagnostics: list[ChatDiagnostic] = []
+        if self.semantic_search_service is not None:
+            try:
+                return self._query_memory_context_with_retrieval(request)
+            except Exception as exc:
+                retrieval_diagnostics.append(
+                    ChatDiagnostic(
+                        level=ChatDiagnosticLevel.ERROR,
+                        code="hybrid_retrieval_failed",
+                        message=(
+                            "Hybrid semantic retrieval failed, so the query fell back to "
+                            "exact graph-property search."
+                        ),
+                        details={
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    )
+                )
+
+        return self._query_memory_context_with_property_seed(
+            request,
+            diagnostics=retrieval_diagnostics,
+        )
+
+    def _query_memory_context_with_retrieval(
+        self,
+        request: ChatToolRequest,
+    ) -> ChatToolResult:
+        search_result: SemanticMemorySearchResult = self.semantic_search_service.search_hybrid(
+            request.text,
+            label=self._str_metadata(request, "label"),
+            include_archived=self._bool_metadata(request, "include_archived", default=False),
+            include_history=True,
+            limit=self._int_metadata(request, "limit", default=10),
+        )
+        if not search_result.hits:
+            return ChatToolResult(
+                status=ChatResponseStatus.OK,
+                primary_text=(
+                    "I could not find a matching memory in the graph yet. "
+                    "Try naming a person, place, event, or topic more explicitly."
+                ),
+                diagnostics=[
+                    ChatDiagnostic(
+                        level=ChatDiagnosticLevel.INFO,
+                        code="no_matching_graph_seed",
+                        message="Hybrid graph retrieval returned no hydrated hits.",
+                    )
+                ],
+                metadata={
+                    "operation": "query_memory_context",
+                    "retrieval_mode": search_result.mode,
+                    "semantic_search": search_result.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    ),
+                },
+            )
+
+        hit = search_result.hits[0]
+        target_id = hit.canonical_target_id or hit.primary_target_id
+        context_package = self._context_package_from_retrieval(
+            search_result,
+            target_id=target_id,
+            request=request,
+        )
+        primary_text = self.answer_generator.generate_answer(
+            question=request.text,
+            context_package=context_package,
+            conversation_id=request.conversation_id,
+        )
+        return ChatToolResult(
+            status=ChatResponseStatus.OK,
+            primary_text=primary_text,
+            actions=[
+                ChatAction(
+                    action_type="open_graph_node",
+                    label="Open memory",
+                    parameters={"node_id": target_id},
+                )
+            ],
+            evidence=self._evidence_from_context(context_package),
+            metadata={
+                "operation": "query_memory_context",
+                "retrieval_mode": search_result.mode,
+                "seed_id": target_id,
+                "target": context_package.target,
+                "alias_map": context_package.alias_map,
+                "context_package": context_package.model_dump(mode="json"),
+                "semantic_search": search_result.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
+            },
+        )
+
+    def _context_package_from_retrieval(
+        self,
+        search_result: SemanticMemorySearchResult,
+        *,
+        target_id: str,
+        request: ChatToolRequest,
+    ) -> GraphContextPackage:
+        if search_result.context_packages:
+            return search_result.context_packages[0]
+        return self.graph_service.get_context_package(
+            target_id,
+            include_history=True,
+            timeline_limit=self._int_metadata(request, "timeline_limit", default=20),
+            relationship_limit=self._int_metadata(request, "relationship_limit", default=50),
+        )
+
+    def _query_memory_context_with_property_seed(
+        self,
+        request: ChatToolRequest,
+        *,
+        diagnostics: list[ChatDiagnostic] | None = None,
+    ) -> ChatToolResult:
         seed = self._resolve_seed_node(request)
         if seed is None:
             return ChatToolResult(
@@ -414,8 +536,12 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                         code="no_matching_graph_seed",
                         message="No graph seed matched the memory question.",
                     )
-                ],
-                metadata={"operation": "query_memory_context"},
+                ]
+                + list(diagnostics or []),
+                metadata={
+                    "operation": "query_memory_context",
+                    "retrieval_mode": "property",
+                },
             )
 
         seed_id = str(seed.properties["id"])
@@ -441,8 +567,10 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 )
             ],
             evidence=self._evidence_from_context(context_package),
+            diagnostics=list(diagnostics or []),
             metadata={
                 "operation": "query_memory_context",
+                "retrieval_mode": "property",
                 "seed_id": seed_id,
                 "target": context_package.target,
                 "alias_map": context_package.alias_map,
@@ -558,6 +686,24 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         except (TypeError, ValueError):
             return default
         return max(1, min(parsed, 200))
+
+    def _bool_metadata(self, request: ChatToolRequest, key: str, *, default: bool) -> bool:
+        value = request.metadata.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return default
+
+    def _str_metadata(self, request: ChatToolRequest, key: str) -> str | None:
+        value = request.metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
 
     def _source_type_for_request(self, request: ChatToolRequest) -> SourceType:
         if request.metadata.get("media_only"):
