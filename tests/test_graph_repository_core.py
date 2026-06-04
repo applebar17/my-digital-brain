@@ -6,6 +6,7 @@ import pytest
 
 from my_digital_brain.graph.exceptions import GraphValidationError
 from my_digital_brain.graph.repository_core import GraphCoreRepository
+from my_digital_brain.graph.repository_records import relationship_from_record
 
 
 class FakeGraphClient:
@@ -55,3 +56,25 @@ def test_search_nodes_rejects_unknown_label_before_cypher_execution() -> None:
         repository.search_nodes(label="Unsafe")
 
     assert client.read_calls == []
+
+
+def test_relationship_from_record_accepts_neo4j_style_relationship_type_alias() -> None:
+    relationship = relationship_from_record(
+        {
+            "_type": "RELATED_TO",
+            "start_id": "node-1",
+            "end_id": "node-2",
+            "properties": {"description": "Related memory"},
+        }
+    )
+
+    assert relationship == {
+        "type": "RELATED_TO",
+        "from_id": "node-1",
+        "to_id": "node-2",
+        "properties": {
+            "id": "node-1:RELATED_TO:node-2",
+            "description": "Related memory",
+            "metadata": {},
+        },
+    }
