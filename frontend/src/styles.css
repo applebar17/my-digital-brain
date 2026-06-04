@@ -868,7 +868,9 @@ p {
   position: relative;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
-  min-height: calc(100vh - 48px);
+  height: calc(100dvh - (var(--space-6) * 2));
+  min-height: 0;
+  max-height: calc(100dvh - (var(--space-6) * 2));
   gap: 0;
   overflow: hidden;
   border: 1px solid var(--outline-variant);
@@ -884,6 +886,8 @@ p {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   border-right: 1px solid var(--outline-variant);
   background: var(--surface-container-lowest);
@@ -1052,6 +1056,8 @@ p {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--surface-bright);
 }
 
@@ -1162,7 +1168,8 @@ p {
 .memory-chat-main {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  min-height: calc(100vh - 48px - 64px - 48px);
+  min-height: 0;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgb(75 65 225 / 3%), transparent 35%),
     var(--surface-bright);
@@ -2691,6 +2698,8 @@ p {
   .memory-chat-workspace,
   .memory-chat-workspace.is-chat-history-collapsed {
     grid-template-columns: minmax(0, 1fr);
+    height: calc(100dvh - 73px - (var(--space-6) * 2));
+    max-height: calc(100dvh - 73px - (var(--space-6) * 2));
   }
 
   .memory-chat-history {
@@ -2761,7 +2770,9 @@ p {
   }
 
   .memory-chat-workspace {
-    min-height: auto;
+    height: calc(100dvh - 73px - (var(--space-4) * 2));
+    min-height: 0;
+    max-height: calc(100dvh - 73px - (var(--space-4) * 2));
     border-right: 0;
     border-left: 0;
     border-radius: 0;
@@ -2773,10 +2784,6 @@ p {
     flex-direction: column;
     min-height: auto;
     padding: var(--space-4);
-  }
-
-  .memory-chat-main {
-    min-height: 680px;
   }
 
   .memory-chat-thread {
