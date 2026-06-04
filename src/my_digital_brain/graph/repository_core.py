@@ -22,6 +22,47 @@ if TYPE_CHECKING:
     from my_digital_brain.storage.graph import GraphClient
 
 
+NODE_TEXT_SEARCH_FIELDS = [
+    "display_name",
+    "name",
+    "normalized_name",
+    "title",
+    "text",
+    "profile_key",
+    "value",
+    "description",
+    "emotional_summary",
+    "original_user_words",
+    "relationship_type",
+    "status",
+    "closeness",
+    "perception_type",
+    "claim_type",
+    "category",
+    "source_type",
+    "channel",
+    "external_id",
+    "city",
+    "region",
+    "country",
+    "species",
+    "breed",
+    "circle_type",
+    "source_kind",
+    "owner_hint",
+    "domain",
+    "address",
+    "label",
+    "normalized_value",
+    "kind",
+]
+
+NODE_LIST_SEARCH_FIELDS = [
+    "aliases",
+    "emotion_tags",
+]
+
+
 class GraphCoreRepository:
     def __init__(self, client: GraphClient) -> None:
         self.client = client
@@ -143,6 +184,8 @@ class GraphCoreRepository:
         parameters: dict[str, Any] = {
             "core_labels": list(CORE_NODE_LABELS),
             "query": query.lower().strip() if query else None,
+            "text_search_fields": NODE_TEXT_SEARCH_FIELDS,
+            "list_search_fields": NODE_LIST_SEARCH_FIELDS,
             "lifecycle_state": lifecycle_state,
             "privacy_level": privacy_level,
             "trust_level": trust_level,
@@ -157,24 +200,25 @@ class GraphCoreRepository:
         records = self.client.execute_read(
             f"""
             {match_clause}
+            WITH n, properties(n) AS props
             WHERE {label_filter}
               AND (
                 $query IS NULL
-                OR toLower(coalesce(
-                    n.display_name,
-                    n.name,
-                    n.title,
-                    n.text,
-                    n.profile_key,
-                    n.value,
-                    n.description,
-                    ""
-                )) CONTAINS $query
-                OR any(alias IN coalesce(n.aliases, []) WHERE toLower(alias) CONTAINS $query)
+                OR toLower(toString(props.id)) = $query
+                OR any(
+                    field IN $text_search_fields
+                    WHERE props[field] IS NOT NULL
+                      AND toLower(toString(props[field])) CONTAINS $query
+                )
+                OR any(
+                    field IN $list_search_fields
+                    WHERE props[field] IS NOT NULL
+                      AND any(value IN props[field] WHERE toLower(toString(value)) CONTAINS $query)
+                )
               )
-              AND ($lifecycle_state IS NULL OR n.lifecycle_state = $lifecycle_state)
-              AND ($privacy_level IS NULL OR n.privacy_level = $privacy_level)
-              AND ($trust_level IS NULL OR n.trust_level = $trust_level)
+              AND ($lifecycle_state IS NULL OR props.lifecycle_state = $lifecycle_state)
+              AND ($privacy_level IS NULL OR props.privacy_level = $privacy_level)
+              AND ($trust_level IS NULL OR props.trust_level = $trust_level)
             RETURN labels(n) AS labels, properties(n) AS properties
             LIMIT $limit
             """,
