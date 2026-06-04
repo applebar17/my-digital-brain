@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -20,19 +21,35 @@ class GenAIContextMixin:
         if isinstance(chat_message, str):
             messages.append({"role": "user", "content": chat_message})
         elif isinstance(chat_message, dict):
-            messages.append(chat_message)
+            messages.append(_message_or_user_payload(chat_message))
         elif isinstance(chat_message, list):
-            messages.extend(chat_message)
+            messages.extend(_messages_or_user_payload(chat_message))
         else:
             raise ValueError("chat_message is of unsupported type.")
 
         return messages
+
+    def _normalize_messages_for_chat(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not isinstance(messages, list):
+            raise ValueError("messages must be a list of chat message dictionaries.")
+        normalized: list[dict[str, Any]] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                raise ValueError(
+                    "messages must contain chat message dictionaries only."
+                )
+            normalized.append(_message_or_user_payload(message))
+        return normalized
 
     def _ensure_context_budget(self, params: dict[str, Any]) -> None:
         model = params.get("model")
         messages = params.get("messages") or []
         if not model or not messages:
             return
+        params["messages"] = self._normalize_messages_for_chat(messages)
 
         result = self._get_context_manager().ensure_budget(
             params,
@@ -169,3 +186,52 @@ class GenAIContextMixin:
             else:
                 raise
         return str(response.choices[0].message.content or "").strip()
+
+
+_ALLOWED_CHAT_ROLES = {"system", "developer", "user", "assistant", "tool"}
+
+
+def _message_or_user_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if "role" not in payload:
+        return _user_payload(payload)
+    return _normalize_message_dict(payload)
+
+
+def _messages_or_user_payload(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if all(isinstance(item, dict) and "role" in item for item in payload):
+        return [_normalize_message_dict(item) for item in payload]
+    return [_user_payload(payload)]
+
+
+def _normalize_message_dict(message: dict[str, Any]) -> dict[str, Any]:
+    role = str(message.get("role") or "").strip()
+    if role not in _ALLOWED_CHAT_ROLES:
+        raise ValueError(
+            "Chat message dictionaries must include a valid role. "
+            f"Received role={role!r}."
+        )
+    normalized = dict(message)
+    normalized["role"] = role
+    if role == "tool" and not normalized.get("tool_call_id"):
+        raise ValueError("Tool messages require tool_call_id.")
+    if (
+        role != "assistant"
+        and normalized.get("content") is None
+        and "tool_calls" not in normalized
+    ):
+        normalized["content"] = ""
+    return normalized
+
+
+def _user_payload(payload: Any) -> dict[str, Any]:
+    return {
+        "role": "user",
+        "content": _json_content(payload),
+    }
+
+
+def _json_content(payload: Any) -> str:
+    try:
+        return json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str)
+    except TypeError:
+        return str(payload)
