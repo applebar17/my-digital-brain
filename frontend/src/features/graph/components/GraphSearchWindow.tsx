@@ -99,7 +99,7 @@ function RetrievalResults({
             >
               <span>{hit.title || targetId}</span>
               <small>
-                #{hit.rank} {hit.primary_target_label} · {hit.source} · {hit.score.toFixed(2)}
+                #{hit.rank} {hit.primary_target_label} - {hit.source} - {hit.score.toFixed(2)}
               </small>
               {(hit.description || hit.document_preview) && (
                 <em>{hit.description || hit.document_preview}</em>

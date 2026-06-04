@@ -507,14 +507,25 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         target_id: str,
         request: ChatToolRequest,
     ) -> GraphContextPackage:
-        if search_result.context_packages:
-            return search_result.context_packages[0]
+        for context_package in search_result.context_packages:
+            if self._context_package_targets_id(context_package, target_id):
+                return context_package
         return self.graph_service.get_context_package(
             target_id,
             include_history=True,
             timeline_limit=self._int_metadata(request, "timeline_limit", default=20),
             relationship_limit=self._int_metadata(request, "relationship_limit", default=50),
         )
+
+    def _context_package_targets_id(
+        self,
+        context_package: GraphContextPackage,
+        target_id: str,
+    ) -> bool:
+        alias = context_package.target.get("alias")
+        if isinstance(alias, str) and context_package.alias_map.get(alias) == target_id:
+            return True
+        return target_id in set(context_package.alias_map.values())
 
     def _query_memory_context_with_property_seed(
         self,

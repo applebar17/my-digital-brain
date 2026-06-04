@@ -170,6 +170,25 @@ class FakeSemanticSearchService:
         )
 
 
+class FakeMismatchedContextSemanticSearchService(FakeSemanticSearchService):
+    def search_hybrid(
+        self,
+        query: str,
+        *,
+        label: str | None = None,
+        **kwargs: object,
+    ) -> SemanticMemorySearchResult:
+        result = super().search_hybrid(query, label=label, **kwargs)
+        return result.model_copy(
+            update={
+                "context_packages": [
+                    FakeGraphService().get_context_package("other-person"),
+                ],
+            },
+            deep=True,
+        )
+
+
 class FakeIncompleteIngestionService:
     def __init__(self) -> None:
         self.sources = []
@@ -228,6 +247,21 @@ def test_graph_query_hybrid_no_hits_returns_low_noise_no_match() -> None:
     assert result.diagnostics[0].code == "no_matching_graph_seed"
     assert result.metadata["retrieval_mode"] == "hybrid"
     assert result.metadata["semantic_search"]["hits"] == []
+
+
+def test_graph_query_hybrid_context_package_must_match_top_hit() -> None:
+    facade = MemoryBackendToolFacade(
+        graph_service=FakeGraphService(),
+        semantic_search_service=FakeMismatchedContextSemanticSearchService(),
+    )
+
+    result = facade.query_memory_context(_request("What do I remember about Marco?"))
+
+    assert result.status == ChatResponseStatus.OK
+    assert result.metadata["seed_id"] == "person-semantic"
+    assert result.metadata["context_package"]["alias_map"] == {
+        "NODE_000001": "person-semantic",
+    }
 
 
 def test_graph_backed_query_returns_low_noise_no_match_response() -> None:
