@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from my_digital_brain.ai.client.settings import GenAISettings
+from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.ai.schemas import ChatResult, ProviderCallMetadata
 from my_digital_brain.chat.enums import ChatResponseStatus, PendingProcessKind
 from my_digital_brain.chat.facade import ChatToolRequest
@@ -174,6 +176,27 @@ def test_llm_answer_generator_uses_provider_neutral_chat_request() -> None:
     assert answer == "Generated grounded answer."
     assert provider.request.model == "fake-answer-model"
     assert provider.request.context.purpose == "memory_question_answer"
+
+
+def test_llm_answer_generator_routes_memory_answers_to_smart_model() -> None:
+    provider = FakeLLMProvider()
+    router = StaticModelRouter(
+        settings=GenAISettings(
+            chat_model_default="default-model",
+            chat_model_smart="smart-model",
+        )
+    )
+    generator = LLMGraphContextAnswerGenerator(provider, router=router)
+
+    answer = generator.generate_answer(
+        question="Who is Marco?",
+        context_package=FakeGraphService().get_context_package("person-1"),
+        conversation_id="conversation-1",
+    )
+
+    assert answer == "Generated grounded answer."
+    assert provider.request.model == "smart-model"
+    assert provider.request.metadata["route"]["task"] == "memory_question_answer"
 
 
 def test_resume_pending_memory_ingestion_uses_current_text_and_refreshes_pipeline() -> None:

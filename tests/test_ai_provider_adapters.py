@@ -15,9 +15,12 @@ from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.protocols import ToolCallingLLMProvider
 from my_digital_brain.ai.providers import AzureOpenAIProvider, OpenAIProvider
 from my_digital_brain.ai.router import (
+    DEFAULT_STRUCTURED_TASKS,
     EMBEDDING_TASK,
+    REASONING_MODEL_TASKS,
     SPEECH_TO_TEXT_TASK,
     STRUCTURED_EXTRACTION_TASK,
+    SMART_MODEL_TASKS,
     StaticModelRouter,
 )
 from my_digital_brain.ai.schemas import (
@@ -251,6 +254,7 @@ def test_static_model_router_uses_default_and_azure_routes() -> None:
         settings=GenAISettings(
             chat_model_default="mini",
             chat_model_smart="smart",
+            chat_model_reasoning="reasoning",
             openai_embed_model="embed",
             openai_transcription_model="transcribe",
         )
@@ -267,7 +271,13 @@ def test_static_model_router_uses_default_and_azure_routes() -> None:
         )
     )
 
-    assert openai_router.route(STRUCTURED_EXTRACTION_TASK).model == "smart"
+    assert openai_router.route(STRUCTURED_EXTRACTION_TASK).model == "mini"
+    for task in SMART_MODEL_TASKS:
+        assert openai_router.route(task).model == "smart"
+    for task in DEFAULT_STRUCTURED_TASKS:
+        assert openai_router.route(task).model == "mini"
+    for task in REASONING_MODEL_TASKS:
+        assert openai_router.route(task).model == "reasoning"
     assert openai_router.route(EMBEDDING_TASK).model == "embed"
     assert openai_router.route(SPEECH_TO_TEXT_TASK).model == "transcribe"
 

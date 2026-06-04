@@ -13,12 +13,28 @@ STRUCTURED_EXTRACTION_TASK = "structured_extraction"
 SUMMARIZATION_TASK = "summarization"
 EMBEDDING_TASK = "embedding"
 SPEECH_TO_TEXT_TASK = "speech_to_text"
-AGENTIC_SMART_TASKS = {
-    "memory_query",
+SMART_MODEL_TASKS = {
+    "answer_generation",
+    "conversation_entry",
     "correction_intake",
+    "ingestion_planning",
+    "ingestion_perception_extraction",
+    "ingestion_relationship_context_extraction",
+    "memory_question_answer",
     "memory_ingestion_planning",
+    "memory_query",
+    "pending_process_review",
+    "query_retrieval_planning",
 }
-AGENTIC_REASONING_TASKS = {"contradiction_review"}
+REASONING_MODEL_TASKS = {"contradiction_review"}
+DEFAULT_STRUCTURED_TASKS = {
+    STRUCTURED_EXTRACTION_TASK,
+    "ingestion_claim_extraction",
+    "ingestion_entity_extraction",
+    "ingestion_mention_scan",
+    "ingestion_metadata_patch_extraction",
+    "ingestion_relationship_extraction",
+}
 
 
 @dataclass(slots=True)
@@ -47,11 +63,11 @@ class StaticModelRouter:
         provider: str,
         context: AIRequestContext | None,
     ) -> ModelRoute:
-        if task == STRUCTURED_EXTRACTION_TASK or task in AGENTIC_SMART_TASKS:
-            model = self.settings.chat_model_smart or self.settings.chat_model_default
-        elif task in AGENTIC_REASONING_TASKS:
+        if task in REASONING_MODEL_TASKS:
             model = self.settings.chat_model_reasoning or self.settings.chat_model_default
-        elif task == SUMMARIZATION_TASK:
+        elif task in SMART_MODEL_TASKS:
+            model = self.settings.chat_model_smart or self.settings.chat_model_default
+        elif task == SUMMARIZATION_TASK or task in DEFAULT_STRUCTURED_TASKS:
             model = self.settings.chat_model_default
         elif task == EMBEDDING_TASK:
             model = self._embedding_model(provider)

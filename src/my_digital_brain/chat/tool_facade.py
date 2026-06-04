@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol
 
-from my_digital_brain.ai.protocols import LLMProvider
+from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
 from my_digital_brain.chat.enums import (
     ChatDiagnosticLevel,
@@ -100,8 +100,15 @@ class DeterministicGraphContextAnswerGenerator:
 class LLMGraphContextAnswerGenerator:
     """Optional answer path using the provider-neutral LLM interface."""
 
-    def __init__(self, provider: LLMProvider, *, model: str | None = None) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        *,
+        router: ModelRouter | None = None,
+        model: str | None = None,
+    ) -> None:
         self.provider = provider
+        self.router = router
         self.model = model
 
     def generate_answer(
@@ -111,9 +118,14 @@ class LLMGraphContextAnswerGenerator:
         context_package: GraphContextPackage,
         conversation_id: str,
     ) -> str:
+        context = AIRequestContext(
+            purpose="memory_question_answer",
+            conversation_id=conversation_id,
+        )
+        route = self.router.route("memory_question_answer", context) if self.router else None
         result = self.provider.generate_chat(
             ChatRequest(
-                model=self.model,
+                model=self.model or (route.model if route else None),
                 temperature=0.2,
                 max_tokens=500,
                 messages=[
@@ -136,10 +148,8 @@ class LLMGraphContextAnswerGenerator:
                         ),
                     ),
                 ],
-                context=AIRequestContext(
-                    purpose="memory_question_answer",
-                    conversation_id=conversation_id,
-                ),
+                context=context,
+                metadata={"route": route.model_dump(mode="json")} if route else {},
             ),
         )
         return result.content

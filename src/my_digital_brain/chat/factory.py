@@ -87,7 +87,7 @@ def build_chat_runtime(
     facade = MemoryBackendToolFacade(
         graph_service=graph_service,
         ingestion_service=ingestion_service,
-        answer_generator=LLMGraphContextAnswerGenerator(provider),
+        answer_generator=LLMGraphContextAnswerGenerator(provider, router=router),
     )
     return ChatRuntime(
         store=store,
