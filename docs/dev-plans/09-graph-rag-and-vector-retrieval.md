@@ -22,6 +22,15 @@ Locked architecture:
 - A single embedding document may point to one primary graph target and may also
   reference multiple related graph nodes when the embedded memory logically
   spans them.
+- Wave 1 uses one Chroma collection first: `memory_documents`.
+- Every vector record has exactly one `primary_target_id` and may have multiple
+  `related_target_ids`.
+- Embedding documents are deterministic backend-built texts for now, not
+  LLM-generated summaries.
+- Vector freshness is determined through `builder_version` plus
+  `document_checksum`.
+- Wave 1 builds the vector record and text-builder foundation only. Automatic
+  ingestion-time embedding starts in Wave 2.
 
 ## Core Flow
 
@@ -201,6 +210,94 @@ Primary target:
 
 - the `ProfileMemory` node
 
+### `Person`
+
+Embed `Person` nodes when they have meaningful descriptive text. Do not embed
+bare names.
+
+Embed:
+
+- `display_name`
+- `aliases` when useful
+- `description`
+- `emotional_summary`
+- `original_user_words` when present
+- compact current relationship/social context when available
+
+Example:
+
+```text
+Person: Alessandro.
+Description: teenage friend, now low contact.
+Emotional context: care, distance, and remembered oppressive personality traits.
+```
+
+Primary target:
+
+- the `Person` node
+
+Related targets:
+
+- important `RelationshipContext`, `Perception`, `Claim`, `Event`, and `Source`
+  nodes when linked.
+
+### `Place`
+
+Embed `Place` nodes when they carry meaningful description, emotional context,
+or recurring memory context. Do not embed bare geographic names only.
+
+Embed:
+
+- `name`
+- `address`, `city`, `region`, `country` when informative
+- `description`
+- `emotional_summary`
+- relevant recurring/event context when available
+
+Example:
+
+```text
+Place: Pizzeria Napoli, Milan.
+Description: recurring dinner place connected to memories with Marco.
+```
+
+Primary target:
+
+- the `Place` node
+
+Related targets:
+
+- linked `Event`, `Person`, `Source`, and `Perception` nodes when useful.
+
+### `SocialCircle`
+
+Embed `SocialCircle` nodes when they describe a meaningful user-perceived group
+or social class. Do not embed empty category labels.
+
+Embed:
+
+- `name`
+- `circle_type`
+- `description`
+- `emotional_summary`
+- member summary when concise
+
+Example:
+
+```text
+Social circle: close friends.
+Description: people the user perceives as emotionally close and trusted.
+Members mentioned: Lorenzo, Marco.
+```
+
+Primary target:
+
+- the `SocialCircle` node
+
+Related targets:
+
+- member `Person` nodes and relevant `RelationshipContext` nodes.
+
 ### `Source`
 
 Do not embed entire raw source payloads by default.
@@ -228,23 +325,35 @@ Embed source snippets only when:
 Some semantic memories naturally span multiple graph records. The vector record
 should support:
 
+- `vector_id`
+- `collection`
 - `primary_target_id`
 - `primary_target_label`
 - `related_target_ids`
 - `source_ids`
 - `relationship_ids` when the text summarizes important relationships
 - `embedding_scope`
+- `embedding_model`
+- `builder_version`
+- `document_checksum`
+- `lifecycle_state`
+- timestamps
 
 Example:
 
 ```json
 {
   "vector_id": "vec_relationship_context_000001",
+  "collection": "memory_documents",
   "embedding_scope": "relationship_context_summary",
   "primary_target_id": "relationship-context-uuid",
   "primary_target_label": "RelationshipContext",
   "related_target_ids": ["person-alessandro-uuid", "perception-uuid", "source-uuid"],
   "source_ids": ["source-uuid"],
+  "embedding_model": "text-embedding-3-small",
+  "builder_version": "relationship_context_summary.v1",
+  "document_checksum": "sha256:...",
+  "lifecycle_state": "active",
   "document": "Relationship with Alessandro: close friendship during teenage years..."
 }
 ```
@@ -380,6 +489,19 @@ mode and expose exact/property search as a secondary mode.
 - Add embedding text-builder contracts and typed builders per target label.
 - Add tests proving each node type produces low-noise embedding text.
 - Add deterministic text-builder versioning.
+- Use one Chroma collection name: `memory_documents`.
+- Lock vector record fields: `vector_id`, `collection`, `embedding_scope`,
+  `primary_target_id`, `primary_target_label`, `related_target_ids`,
+  `source_ids`, `embedding_model`, `builder_version`, `document_checksum`,
+  `lifecycle_state`, and timestamps.
+- Require exactly one primary target per embedding document.
+- Support multiple related targets per embedding document.
+- Include deterministic builders for `Claim`, `Event`, `Perception`,
+  `RelationshipContext`, `ProfileMemory`, `Person`, `Place`, and
+  `SocialCircle`.
+- For `Person`, `Place`, and `SocialCircle`, embed only when meaningful
+  `description`, affective context, or contextual summary text exists. Bare
+  names or labels are skipped.
 - Do not change chat answer generation yet.
 
 ### Wave 2: Ingestion-Time Vectorization
