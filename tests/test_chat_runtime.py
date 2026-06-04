@@ -460,6 +460,60 @@ def test_chat_api_get_session_and_cancel() -> None:
     assert cancelled.json()["status"] == ChatResponseStatus.CANCELLED.value
 
 
+def test_chat_api_create_list_update_and_post_to_selected_session() -> None:
+    provider = ScriptedToolProvider([{"content": "Stored in selected chat."}])
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+    client = _client(runtime)
+    headers = {"Authorization": "Bearer test-token"}
+
+    created = client.post(
+        "/chat/sessions",
+        json={"owner_id": "owner-1", "channel": "web", "title": "New chat"},
+        headers=headers,
+    )
+    session_id = created.json()["session_id"]
+    posted = client.post(
+        "/chat/messages",
+        json=_message_payload("hello in selected chat", session_id=session_id),
+        headers=headers,
+    )
+    listed = client.get(
+        "/chat/sessions",
+        params={"owner_id": "owner-1", "channel": "web"},
+        headers=headers,
+    )
+    renamed = client.patch(
+        f"/chat/sessions/{session_id}",
+        json={"title": "Renamed from API"},
+        headers=headers,
+    )
+    archived = client.patch(
+        f"/chat/sessions/{session_id}",
+        json={"status": "archived"},
+        headers=headers,
+    )
+    listed_after_archive = client.get(
+        "/chat/sessions",
+        params={"owner_id": "owner-1", "channel": "web"},
+        headers=headers,
+    )
+
+    assert created.status_code == 200
+    assert posted.status_code == 200
+    assert posted.json()["session_id"] == session_id
+    assert listed.status_code == 200
+    assert listed.json()["sessions"][0]["session_id"] == session_id
+    assert listed.json()["sessions"][0]["last_message_preview"] == "Stored in selected chat."
+    assert renamed.json()["title"] == "Renamed from API"
+    assert archived.json()["status"] == "archived"
+    assert listed_after_archive.json()["sessions"] == []
+
+
 def _message(text: str, message_id: str = "message-1") -> IncomingChatMessage:
     return IncomingChatMessage(
         channel=ChatChannel.WEB,
@@ -471,14 +525,17 @@ def _message(text: str, message_id: str = "message-1") -> IncomingChatMessage:
     )
 
 
-def _message_payload(text: str) -> dict[str, object]:
-    return {
+def _message_payload(text: str, session_id: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
         "conversation_id": "conversation-1",
         "sender_id": "sender-1",
         "owner_id": "owner-1",
         "message_id": "message-1",
         "text": text,
     }
+    if session_id is not None:
+        payload["session_id"] = session_id
+    return payload
 
 
 def _client(runtime: ChatRuntime) -> TestClient:

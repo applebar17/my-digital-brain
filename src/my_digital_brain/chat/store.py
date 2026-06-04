@@ -8,6 +8,7 @@ from typing import Protocol
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ConversationMessageRole,
+    ConversationStatus,
     PendingProcessStatus,
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
@@ -15,12 +16,23 @@ from my_digital_brain.chat.models import (
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
+    ConversationSessionSummary,
     PendingProcessContext,
     utc_now,
 )
 
 
 class ChatSessionStore(Protocol):
+    def create_session(
+        self,
+        *,
+        channel: ChatChannel | str,
+        owner_id: str,
+        title: str | None = None,
+        external_conversation_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> ConversationSession: ...
+
     def get_or_create_session(
         self,
         *,
@@ -32,6 +44,19 @@ class ChatSessionStore(Protocol):
     def get_session(self, session_id: str) -> ConversationSession: ...
 
     def save_session(self, session: ConversationSession) -> ConversationSession: ...
+
+    def list_sessions(
+        self,
+        *,
+        owner_id: str,
+        channel: ChatChannel | str | None = None,
+        include_archived: bool = False,
+        limit: int = 50,
+    ) -> list[ConversationSessionSummary]: ...
+
+    def rename_session(self, session_id: str, title: str) -> ConversationSession: ...
+
+    def archive_session(self, session_id: str) -> ConversationSession: ...
 
     def append_message(self, message: ConversationMessage) -> ConversationMessage: ...
 
@@ -87,6 +112,38 @@ class InMemoryChatSessionStore:
         self._pending_contexts: dict[str, PendingProcessContext] = {}
         self._pending_session_ids: dict[str, set[str]] = defaultdict(set)
 
+    def create_session(
+        self,
+        *,
+        channel: ChatChannel | str,
+        owner_id: str,
+        title: str | None = None,
+        external_conversation_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> ConversationSession:
+        normalized_channel = ChatChannel(channel)
+        with self._lock:
+            session = ConversationSession(
+                channel=normalized_channel,
+                external_conversation_id=external_conversation_id or "",
+                owner_id=owner_id,
+                title=_clean_title(title),
+                metadata={"title_source": "manual" if title else "default", **(metadata or {})},
+            )
+            if not session.external_conversation_id:
+                session = session.model_copy(
+                    update={"external_conversation_id": session.session_id},
+                    deep=True,
+                )
+            key = (str(normalized_channel), session.external_conversation_id, owner_id)
+            if key in self._session_keys:
+                raise ChatNotFoundError(
+                    "A chat session already exists for this external conversation id.",
+                )
+            self._sessions[session.session_id] = session
+            self._session_keys[key] = session.session_id
+            return self._copy_session(session)
+
     def get_or_create_session(
         self,
         *,
@@ -105,6 +162,7 @@ class InMemoryChatSessionStore:
                 channel=normalized_channel,
                 external_conversation_id=external_conversation_id,
                 owner_id=owner_id,
+                metadata={"title_source": "default"},
             )
             self._sessions[session.session_id] = session
             self._session_keys[key] = session.session_id
@@ -125,6 +183,61 @@ class InMemoryChatSessionStore:
             self._sessions[updated.session_id] = updated
             return self._copy_session(updated)
 
+    def list_sessions(
+        self,
+        *,
+        owner_id: str,
+        channel: ChatChannel | str | None = None,
+        include_archived: bool = False,
+        limit: int = 50,
+    ) -> list[ConversationSessionSummary]:
+        normalized_channel = ChatChannel(channel) if channel is not None else None
+        with self._lock:
+            sessions = [
+                session
+                for session in self._sessions.values()
+                if session.owner_id == owner_id
+                and (normalized_channel is None or session.channel == normalized_channel)
+                and (include_archived or session.status != ConversationStatus.ARCHIVED)
+            ]
+            sessions.sort(
+                key=lambda item: item.last_message_at or item.updated_at or item.created_at,
+                reverse=True,
+            )
+            return [
+                self._summary_for_session(session)
+                for session in sessions[: max(0, limit)]
+            ]
+
+    def rename_session(self, session_id: str, title: str) -> ConversationSession:
+        with self._lock:
+            session = self.get_session(session_id)
+            updated = session.model_copy(
+                update={
+                    "title": _clean_title(title),
+                    "metadata": {**session.metadata, "title_source": "manual"},
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            self._sessions[session_id] = updated
+            return self._copy_session(updated)
+
+    def archive_session(self, session_id: str) -> ConversationSession:
+        with self._lock:
+            session = self.get_session(session_id)
+            updated = session.model_copy(
+                update={
+                    "status": ConversationStatus.ARCHIVED,
+                    "archived_at": utc_now(),
+                    "active_pending_process_id": None,
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            self._sessions[session_id] = updated
+            return self._copy_session(updated)
+
     def append_message(self, message: ConversationMessage) -> ConversationMessage:
         with self._lock:
             if message.session_id not in self._sessions:
@@ -136,11 +249,22 @@ class InMemoryChatSessionStore:
             session = self._sessions[stored.session_id]
             timestamp = stored.created_at
             if stored.role == ConversationMessageRole.USER or session.last_message_at is None:
+                session_update = {
+                    "last_message_at": timestamp,
+                    "updated_at": utc_now(),
+                }
+                if (
+                    stored.role == ConversationMessageRole.USER
+                    and stored.text
+                    and _can_autotitle(session)
+                ):
+                    session_update["title"] = _title_from_text(stored.text)
+                    session_update["metadata"] = {
+                        **session.metadata,
+                        "title_source": "first_message",
+                    }
                 session = session.model_copy(
-                    update={
-                        "last_message_at": timestamp,
-                        "updated_at": utc_now(),
-                    },
+                    update=session_update,
                     deep=True,
                 )
                 self._sessions[session.session_id] = session
@@ -333,3 +457,64 @@ class InMemoryChatSessionStore:
     @staticmethod
     def _copy_session(session: ConversationSession) -> ConversationSession:
         return session.model_copy(deep=True)
+
+    def _summary_for_session(self, session: ConversationSession) -> ConversationSessionSummary:
+        messages = self._messages.get(session.session_id, [])
+        last_text = next(
+            (
+                message.text
+                for message in reversed(messages)
+                if message.text
+                and message.role
+                in {ConversationMessageRole.USER, ConversationMessageRole.ASSISTANT}
+            ),
+            None,
+        )
+        pending_context = (
+            self._pending_contexts.get(session.active_pending_process_id)
+            if session.active_pending_process_id
+            else None
+        )
+        return ConversationSessionSummary(
+            session_id=session.session_id,
+            channel=session.channel,
+            external_conversation_id=session.external_conversation_id,
+            owner_id=session.owner_id,
+            title=session.title,
+            status=session.status,
+            active_pending_process_id=session.active_pending_process_id,
+            pending_process_status=(
+                pending_context.process_ref.status if pending_context else None
+            ),
+            last_message_preview=_preview_text(last_text),
+            last_message_at=session.last_message_at,
+            archived_at=session.archived_at,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            metadata=session.metadata,
+        )
+
+
+def _clean_title(title: str | None) -> str:
+    cleaned = (title or "New chat").strip()
+    if not cleaned:
+        cleaned = "New chat"
+    return cleaned[:120]
+
+
+def _title_from_text(text: str) -> str:
+    return _preview_text(text, limit=46) or "New chat"
+
+
+def _preview_text(text: str | None, *, limit: int = 120) -> str | None:
+    cleaned = " ".join((text or "").strip().split())
+    if not cleaned:
+        return None
+    return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
+
+
+def _can_autotitle(session: ConversationSession) -> bool:
+    return (
+        session.title == "New chat"
+        and str(session.metadata.get("title_source") or "default") != "manual"
+    )

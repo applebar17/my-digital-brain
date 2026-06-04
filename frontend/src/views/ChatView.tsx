@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { getChatSession, postChatMessage } from "../api/chat";
+import { createChatSession, getChatSession, listChatSessions, postChatMessage } from "../api/chat";
 import {
   defaultConversationId,
   defaultOwnerId,
@@ -12,21 +12,14 @@ import { ChatMessageList } from "../features/chat/components/ChatMessageList";
 import { ChatStatusBar } from "../features/chat/components/ChatStatusBar";
 import type { ChatRuntimeState, RenderedChatMessage } from "../features/chat/types";
 import type {
+  ChatResponse,
   ConversationMessage,
   ConversationSessionDetail,
+  ConversationSessionSummary,
   PendingProcessRef
 } from "../types/chat";
 
 const tokenStorageKey = "my-digital-brain.web-chat-token";
-const recentChatStorageKey = "my-digital-brain.web-chat-recents";
-
-interface RecentChatSummary {
-  conversationId: string;
-  sessionId?: string;
-  title: string;
-  lastMessage?: string;
-  updatedAt: string;
-}
 
 export function ChatView() {
   const [draft, setDraft] = useState("");
@@ -35,7 +28,7 @@ export function ChatView() {
   const [sessionId, setSessionId] = useState<string>();
   const [activeConversationId, setActiveConversationId] = useState(defaultConversationId);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
-  const [recentChats, setRecentChats] = useState<RecentChatSummary[]>(() => loadRecentChats());
+  const [recentChats, setRecentChats] = useState<ConversationSessionSummary[]>([]);
   const [recentSearch, setRecentSearch] = useState("");
   const [processUpdates, setProcessUpdates] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -50,6 +43,34 @@ export function ChatView() {
     errorMessage
   };
   const filteredRecentChats = filterRecentChats(recentChats, recentSearch);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadInitialSessions() {
+      try {
+        const list = await listChatSessions(defaultOwnerId, token, { channel: "web", limit: 50 });
+        if (isCancelled) {
+          return;
+        }
+        setRecentChats(list.sessions);
+        if (!sessionId && list.sessions.length > 0) {
+          await loadSession(list.sessions[0], { setLoadedStatus: false });
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setErrorMessage(error instanceof Error ? error.message : "Unable to load chats.");
+        }
+      }
+    }
+
+    void loadInitialSessions();
+    return () => {
+      isCancelled = true;
+    };
+    // Initial backend-backed recent chat load only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   useEffect(() => {
     if (!isSending || !sessionId) {
@@ -107,6 +128,7 @@ export function ChatView() {
     try {
       const response = await postChatMessage(
         {
+          session_id: sessionId,
           conversation_id: activeConversationId,
           sender_id: defaultSenderId,
           owner_id: defaultOwnerId,
@@ -120,28 +142,12 @@ export function ChatView() {
 
       setSessionId(response.session_id);
       setPendingProcess(response.pending_process ?? null);
-      setRecentChats((current) =>
-        persistRecentChat(
-          {
-            conversationId: activeConversationId,
-            sessionId: response.session_id,
-            title: chatTitle([...messages, userMessage]),
-            lastMessage: text,
-            updatedAt: response.created_at
-          },
-          current
-        )
-      );
-      setMessages((current) => [
-        ...current,
-        {
-          id: response.response_id,
-          role: "assistant",
-          text: response.primary_text,
-          createdAt: response.created_at,
-          status: response.status
-        }
-      ]);
+      await reloadSession(response.session_id, response);
+      try {
+        await refreshRecentChats();
+      } catch {
+        setProcessUpdates(["Response received", "Recent chat list will refresh on reload"]);
+      }
       setStatusMessage(`Response received: ${response.status}`);
       setProcessUpdates([`Response received: ${response.status}`]);
       window.setTimeout(() => setProcessUpdates([]), 2600);
@@ -153,39 +159,26 @@ export function ChatView() {
     }
   }
 
-  async function handleSelectChat(chat: RecentChatSummary) {
+  async function handleSelectChat(chat: ConversationSessionSummary) {
     if (isSending) {
       return;
     }
-    setActiveConversationId(chat.conversationId);
-    setSessionId(chat.sessionId);
+    await loadSession(chat, { setLoadedStatus: true });
+  }
+
+  async function loadSession(
+    chat: ConversationSessionSummary,
+    options: { setLoadedStatus: boolean }
+  ) {
+    setActiveConversationId(chat.external_conversation_id);
+    setSessionId(chat.session_id);
     setErrorMessage(undefined);
-    setStatusMessage(chat.sessionId ? "Loading conversation..." : undefined);
+    setStatusMessage(options.setLoadedStatus ? "Loading conversation..." : undefined);
     setProcessUpdates([]);
-
-    if (!chat.sessionId) {
-      setMessages([]);
-      setPendingProcess(null);
-      return;
-    }
-
     try {
-      const detail = await getChatSession(chat.sessionId, token, 80);
-      setMessages(messagesFromSession(detail.messages));
-      setPendingProcess(detail.pending_process?.process_ref ?? null);
-      setStatusMessage(`Loaded ${chat.title}`);
-      setRecentChats((current) =>
-        persistRecentChat(
-          {
-            conversationId: detail.session.external_conversation_id,
-            sessionId: detail.session.session_id,
-            title: chat.title,
-            lastMessage: detail.messages[detail.messages.length - 1]?.text ?? chat.lastMessage,
-            updatedAt: detail.session.updated_at
-          },
-          current
-        )
-      );
+      const detail = await getChatSession(chat.session_id, token, 80);
+      applySessionDetail(detail);
+      setStatusMessage(options.setLoadedStatus ? `Loaded ${detail.session.title}` : undefined);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to load conversation.");
       setStatusMessage(undefined);
@@ -196,25 +189,66 @@ export function ChatView() {
     if (isSending) {
       return;
     }
-    const conversationId = `web-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    const now = new Date().toISOString();
-    setActiveConversationId(conversationId);
-    setSessionId(undefined);
-    setMessages([]);
-    setPendingProcess(null);
-    setProcessUpdates([]);
-    setStatusMessage("New chat ready");
+    void createNewChat();
+  }
+
+  async function createNewChat() {
     setErrorMessage(undefined);
-    setRecentChats((current) =>
-      persistRecentChat(
+    setStatusMessage("Creating new chat...");
+    setProcessUpdates([]);
+    try {
+      const session = await createChatSession(
         {
-          conversationId,
-          title: "New chat",
-          updatedAt: now
+          owner_id: defaultOwnerId,
+          channel: "web",
+          title: "New chat"
         },
-        current
-      )
-    );
+        token
+      );
+      setActiveConversationId(session.external_conversation_id);
+      setSessionId(session.session_id);
+      setMessages([]);
+      setPendingProcess(null);
+      await refreshRecentChats();
+      setStatusMessage("New chat ready");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to create chat.");
+      setStatusMessage(undefined);
+    }
+  }
+
+  async function reloadSession(nextSessionId: string, fallbackResponse?: ChatResponse) {
+    try {
+      const detail = await getChatSession(nextSessionId, token, 80);
+      applySessionDetail(detail);
+    } catch {
+      if (fallbackResponse) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: fallbackResponse.response_id,
+            role: "assistant",
+            text: fallbackResponse.primary_text,
+            createdAt: fallbackResponse.created_at,
+            status: fallbackResponse.status
+          }
+        ]);
+        return;
+      }
+      setErrorMessage("The session could not be reloaded.");
+    }
+  }
+
+  async function refreshRecentChats() {
+    const list = await listChatSessions(defaultOwnerId, token, { channel: "web", limit: 50 });
+    setRecentChats(list.sessions);
+  }
+
+  function applySessionDetail(detail: ConversationSessionDetail) {
+    setActiveConversationId(detail.session.external_conversation_id);
+    setSessionId(detail.session.session_id);
+    setMessages(messagesFromSession(detail.messages));
+    setPendingProcess(detail.pending_process?.process_ref ?? null);
   }
 
   return (
@@ -260,14 +294,14 @@ export function ChatView() {
             filteredRecentChats.map((chat) => (
               <button
                 className={`memory-chat-recent ${
-                  chat.conversationId === activeConversationId ? "is-active" : ""
+                  chat.session_id === sessionId ? "is-active" : ""
                 }`}
                 type="button"
-                key={chat.conversationId}
+                key={chat.session_id}
                 onClick={() => void handleSelectChat(chat)}
               >
                 <span>{chat.title}</span>
-                {chat.lastMessage ? <small>{chat.lastMessage}</small> : null}
+                {chat.last_message_preview ? <small>{chat.last_message_preview}</small> : null}
               </button>
             ))
           )}
@@ -337,46 +371,16 @@ function createId(): string {
   return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function loadRecentChats(): RecentChatSummary[] {
-  try {
-    const raw = localStorage.getItem(recentChatStorageKey);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as RecentChatSummary[];
-    return Array.isArray(parsed) ? parsed.slice(0, 24) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistRecentChat(
-  next: RecentChatSummary,
-  current: RecentChatSummary[]
-): RecentChatSummary[] {
-  const merged = [
-    next,
-    ...current.filter((chat) => chat.conversationId !== next.conversationId)
-  ].slice(0, 24);
-  localStorage.setItem(recentChatStorageKey, JSON.stringify(merged));
-  return merged;
-}
-
-function chatTitle(messages: RenderedChatMessage[]): string {
-  const firstUserMessage = messages.find((message) => message.role === "user")?.text;
-  if (!firstUserMessage) {
-    return "New chat";
-  }
-  return firstUserMessage.length > 46 ? `${firstUserMessage.slice(0, 43)}...` : firstUserMessage;
-}
-
-function filterRecentChats(chats: RecentChatSummary[], search: string): RecentChatSummary[] {
+function filterRecentChats(
+  chats: ConversationSessionSummary[],
+  search: string
+): ConversationSessionSummary[] {
   const query = search.trim().toLowerCase();
   if (!query) {
     return chats;
   }
   return chats.filter((chat) =>
-    `${chat.title} ${chat.lastMessage ?? ""}`.toLowerCase().includes(query)
+    `${chat.title} ${chat.last_message_preview ?? ""}`.toLowerCase().includes(query)
   );
 }
 

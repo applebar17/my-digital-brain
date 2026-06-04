@@ -25,12 +25,15 @@ from my_digital_brain.chat.models import (
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
+    ConversationSessionList,
+    ConversationSessionSummary,
     IncomingChatMessage,
     IncomingMediaRef,
     PendingProcessContext,
     PendingProcessRef,
 )
 from my_digital_brain.chat.runtime import ChatRuntime
+from my_digital_brain.chat.relational_store import RelationalChatSessionStore
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
 from my_digital_brain.chat.telegram import TelegramSendMessage, TelegramWebhookAdapter
 from my_digital_brain.chat.tool_facade import (
@@ -60,6 +63,8 @@ __all__ = [
     "ConversationMessageRole",
     "ConversationSession",
     "ConversationSessionDetail",
+    "ConversationSessionList",
+    "ConversationSessionSummary",
     "ConversationStatus",
     "DeterministicGraphContextAnswerGenerator",
     "GraphContextAnswerGenerator",
@@ -73,6 +78,7 @@ __all__ = [
     "PendingProcessKind",
     "PendingProcessRef",
     "PendingProcessStatus",
+    "RelationalChatSessionStore",
     "TelegramSendMessage",
     "TelegramWebhookAdapter",
     "WebChatAdapter",

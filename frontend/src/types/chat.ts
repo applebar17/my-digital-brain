@@ -18,6 +18,7 @@ export interface IncomingMediaRef {
 }
 
 export interface WebChatMessageRequest {
+  session_id?: string | null;
   conversation_id: string;
   sender_id: string;
   owner_id: string;
@@ -83,9 +84,11 @@ export interface ConversationSession {
   channel: string;
   external_conversation_id: string;
   owner_id: string;
+  title: string;
   status: string;
   active_pending_process_id?: string | null;
   last_message_at?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
   metadata: Record<string, unknown>;
@@ -118,4 +121,37 @@ export interface ConversationSessionDetail {
   messages: ConversationMessage[];
   pending_process?: PendingProcessContext | null;
   pending_processes?: PendingProcessContext[];
+}
+
+export interface ConversationSessionSummary {
+  session_id: string;
+  channel: string;
+  external_conversation_id: string;
+  owner_id: string;
+  title: string;
+  status: string;
+  active_pending_process_id?: string | null;
+  pending_process_status?: string | null;
+  last_message_preview?: string | null;
+  last_message_at?: string | null;
+  archived_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ConversationSessionList {
+  sessions: ConversationSessionSummary[];
+}
+
+export interface CreateChatSessionRequest {
+  owner_id: string;
+  channel?: string;
+  title?: string | null;
+  external_conversation_id?: string | null;
+}
+
+export interface UpdateChatSessionRequest {
+  title?: string | null;
+  status?: string | null;
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,6 +23,52 @@ class TelegramChat(TimestampMixin, Base):
     chat_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class ChatSessionRecord(TimestampMixin, Base):
+    __tablename__ = "chat_sessions"
+    __table_args__ = (
+        UniqueConstraint(
+            "channel",
+            "external_conversation_id",
+            "owner_id",
+            name="uq_chat_sessions_channel_external_owner",
+        ),
+    )
+
+    channel: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_conversation_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    active_pending_process_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ChatMessageRecord(TimestampMixin, Base):
+    __tablename__ = "chat_messages"
+
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    channel_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pending_process_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class ChatPendingProcessContextRecord(TimestampMixin, Base):
+    __tablename__ = "chat_pending_process_contexts"
+
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    process_metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    context_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    conversation_history_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class IngestionSession(TimestampMixin, Base):

@@ -44,6 +44,10 @@ class IncomingMediaRef(ChatModel):
 
 class IncomingChatMessage(ChatModel):
     channel: ChatChannel
+    session_id: str | None = Field(
+        default=None,
+        description="Internal chat session id when the client is continuing an existing chat.",
+    )
     conversation_id: str = Field(description="Channel conversation id before internal mapping.")
     sender_id: str
     owner_id: str
@@ -80,9 +84,11 @@ class ConversationSession(ChatModel):
     channel: ChatChannel
     external_conversation_id: str
     owner_id: str
+    title: str = "New chat"
     status: ConversationStatus = ConversationStatus.ACTIVE
     active_pending_process_id: str | None = None
     last_message_at: datetime | None = None
+    archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -152,3 +158,24 @@ class ConversationSessionDetail(ChatModel):
     messages: list[ConversationMessage] = Field(default_factory=list)
     pending_process: PendingProcessContext | None = None
     pending_processes: list[PendingProcessContext] = Field(default_factory=list)
+
+
+class ConversationSessionSummary(ChatModel):
+    session_id: str
+    channel: ChatChannel
+    external_conversation_id: str
+    owner_id: str
+    title: str
+    status: ConversationStatus
+    active_pending_process_id: str | None = None
+    pending_process_status: PendingProcessStatus | None = None
+    last_message_preview: str | None = None
+    last_message_at: datetime | None = None
+    archived_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConversationSessionList(ChatModel):
+    sessions: list[ConversationSessionSummary] = Field(default_factory=list)

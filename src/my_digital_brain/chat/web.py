@@ -10,6 +10,7 @@ from my_digital_brain.chat.models import ChatModel, IncomingChatMessage, Incomin
 
 
 class WebChatMessageRequest(ChatModel):
+    session_id: str | None = None
     conversation_id: str
     sender_id: str
     owner_id: str
@@ -33,6 +34,7 @@ class WebChatAdapter:
     def normalize(self, request: WebChatMessageRequest) -> IncomingChatMessage:
         return IncomingChatMessage(
             channel=ChatChannel.WEB,
+            session_id=request.session_id,
             conversation_id=request.conversation_id,
             sender_id=request.sender_id,
             owner_id=request.owner_id,

@@ -15,6 +15,7 @@ from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatDiagnosticLevel,
     ChatResponseStatus,
+    ConversationStatus,
     ConversationMessageRole,
     PendingProcessStatus,
 )
@@ -30,6 +31,8 @@ from my_digital_brain.chat.models import (
     ChatResponse,
     ChatDiagnostic,
     ConversationMessage,
+    ConversationSession,
+    ConversationSessionList,
     ConversationSessionDetail,
     IncomingChatMessage,
     PendingProcessContext,
@@ -65,11 +68,7 @@ class ChatRuntime:
         if not (message.text and message.text.strip()) and not message.media_refs:
             raise ChatValidationError("Incoming chat message must include text or media.")
 
-        session = self.store.get_or_create_session(
-            channel=message.channel,
-            external_conversation_id=message.conversation_id,
-            owner_id=message.owner_id,
-        )
+        session = self._resolve_session(message)
 
         self.store.append_message(
             ConversationMessage(
@@ -159,6 +158,62 @@ class ChatRuntime:
 
     def get_session_detail(self, session_id: str, limit: int = 50) -> ConversationSessionDetail:
         return self.store.get_session_detail(session_id, limit=limit)
+
+    def create_session(
+        self,
+        *,
+        channel: ChatChannel | str,
+        owner_id: str,
+        title: str | None = None,
+        external_conversation_id: str | None = None,
+    ) -> ConversationSession:
+        return self.store.create_session(
+            channel=channel,
+            owner_id=owner_id,
+            title=title,
+            external_conversation_id=external_conversation_id,
+        )
+
+    def list_sessions(
+        self,
+        *,
+        owner_id: str,
+        channel: ChatChannel | str | None = None,
+        include_archived: bool = False,
+        limit: int = 50,
+    ) -> ConversationSessionList:
+        return ConversationSessionList(
+            sessions=self.store.list_sessions(
+                owner_id=owner_id,
+                channel=channel,
+                include_archived=include_archived,
+                limit=limit,
+            ),
+        )
+
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        title: str | None = None,
+        status: ConversationStatus | str | None = None,
+    ) -> ConversationSession:
+        updated: ConversationSession | None = None
+        if title is not None:
+            updated = self.store.rename_session(session_id, title)
+        if status is not None:
+            normalized_status = ConversationStatus(status)
+            if normalized_status == ConversationStatus.ARCHIVED:
+                updated = self.store.archive_session(session_id)
+            elif updated is None:
+                session = self.store.get_session(session_id)
+                updated = self.store.save_session(
+                    session.model_copy(
+                        update={"status": normalized_status, "archived_at": None},
+                        deep=True,
+                    ),
+                )
+        return updated or self.store.get_session(session_id)
 
     def cancel_session_process(
         self,
@@ -269,6 +324,22 @@ class ChatRuntime:
             )
 
         return self._runtime_disabled_result()
+
+    def _resolve_session(self, message: IncomingChatMessage) -> ConversationSession:
+        if message.session_id:
+            session = self.store.get_session(message.session_id)
+            if session.owner_id != message.owner_id:
+                raise ChatValidationError("Chat session does not belong to the message owner.")
+            if session.channel != ChatChannel(message.channel):
+                raise ChatValidationError("Chat session channel does not match the message channel.")
+            if session.status == ConversationStatus.ARCHIVED:
+                raise ChatValidationError("Archived chat sessions cannot receive new messages.")
+            return session
+        return self.store.get_or_create_session(
+            channel=message.channel,
+            external_conversation_id=message.conversation_id,
+            owner_id=message.owner_id,
+        )
 
     def _uses_agentic_runtime(self, message: IncomingChatMessage) -> bool:
         if self.runtime_mode != "agentic":
