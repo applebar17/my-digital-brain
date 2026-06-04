@@ -11,9 +11,11 @@ RUN uv sync --no-dev --no-install-project
 COPY src ./src
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
+COPY scripts ./scripts
 
-RUN uv sync --no-dev
+RUN uv sync --no-dev && chmod +x ./scripts/docker-entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
 CMD ["uv", "run", "uvicorn", "my_digital_brain.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
