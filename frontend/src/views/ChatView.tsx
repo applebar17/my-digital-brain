@@ -265,13 +265,13 @@ export function ChatView() {
     setPendingProcess(detail.pending_process?.process_ref ?? null);
   }
 
-  async function handleArchiveChat(chat: ConversationSessionSummary) {
+  async function handleDeleteChat(chat: ConversationSessionSummary) {
     if (isSending) {
       return;
     }
     setOpenChatMenuId(undefined);
     setErrorMessage(undefined);
-    setStatusMessage("Archiving chat...");
+    setStatusMessage("Deleting chat...");
     try {
       await updateChatSession(chat.session_id, { status: "archived" }, token);
       const nextChats = await refreshRecentChats();
@@ -287,9 +287,9 @@ export function ChatView() {
           setProcessUpdates([]);
         }
       }
-      setStatusMessage("Chat archived");
+      setStatusMessage("Chat deleted");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to archive chat.");
+      setErrorMessage(error instanceof Error ? error.message : "Unable to delete chat.");
       setStatusMessage(undefined);
     }
   }
@@ -312,7 +312,7 @@ export function ChatView() {
         onToggleMenu={(nextSessionId) =>
           setOpenChatMenuId((current) => (current === nextSessionId ? undefined : nextSessionId))
         }
-        onArchiveChat={(chat) => void handleArchiveChat(chat)}
+        onDeleteChat={(chat) => void handleDeleteChat(chat)}
       />
 
       <section className="memory-chat-panel">
@@ -320,7 +320,6 @@ export function ChatView() {
           activeConversationId={activeConversationId}
           isHistoryOpen={isHistoryOpen}
           onToggleHistory={() => setIsHistoryOpen((current) => !current)}
-          onNewChat={handleNewChat}
         />
 
         <ChatStatusBar runtime={runtime} />

@@ -12,7 +12,7 @@ interface ChatHistorySidebarProps {
   onClose: () => void;
   onSelectChat: (chat: ConversationSessionSummary) => void;
   onToggleMenu: (sessionId: string) => void;
-  onArchiveChat: (chat: ConversationSessionSummary) => void;
+  onDeleteChat: (chat: ConversationSessionSummary) => void;
 }
 
 export function ChatHistorySidebar({
@@ -25,7 +25,7 @@ export function ChatHistorySidebar({
   onClose,
   onSelectChat,
   onToggleMenu,
-  onArchiveChat
+  onDeleteChat
 }: ChatHistorySidebarProps) {
   const filteredRecentChats = filterRecentChats(recentChats, recentSearch);
 
@@ -37,15 +37,6 @@ export function ChatHistorySidebar({
           <button
             className="memory-icon-button"
             type="button"
-            title="New chat"
-            aria-label="New chat"
-            onClick={onNewChat}
-          >
-            <ChatIcon name="new" />
-          </button>
-          <button
-            className="memory-icon-button"
-            type="button"
             title="Close recent chats"
             aria-label="Close recent chats"
             onClick={onClose}
@@ -54,6 +45,10 @@ export function ChatHistorySidebar({
           </button>
         </div>
       </header>
+      <button className="memory-chat-history-action" type="button" onClick={onNewChat}>
+        <ChatIcon name="new" />
+        <span>New chat</span>
+      </button>
       <div className="memory-chat-history-search">
         <ChatIcon name="search" />
         <input
@@ -79,7 +74,7 @@ export function ChatHistorySidebar({
               isMenuOpen={openMenuId === chat.session_id}
               onSelect={() => onSelectChat(chat)}
               onToggleMenu={() => onToggleMenu(chat.session_id)}
-              onArchive={() => onArchiveChat(chat)}
+              onDelete={() => onDeleteChat(chat)}
             />
           ))
         )}
@@ -94,7 +89,7 @@ interface RecentChatRowProps {
   isMenuOpen: boolean;
   onSelect: () => void;
   onToggleMenu: () => void;
-  onArchive: () => void;
+  onDelete: () => void;
 }
 
 function RecentChatRow({
@@ -103,7 +98,7 @@ function RecentChatRow({
   isMenuOpen,
   onSelect,
   onToggleMenu,
-  onArchive
+  onDelete
 }: RecentChatRowProps) {
   return (
     <div className={`memory-chat-recent ${isActive ? "is-active" : ""}`}>
@@ -124,8 +119,9 @@ function RecentChatRow({
         </button>
         {isMenuOpen ? (
           <div className="memory-chat-recent-menu-popover" role="menu">
-            <button type="button" role="menuitem" onClick={onArchive}>
-              Archive chat
+            <button className="is-danger" type="button" role="menuitem" onClick={onDelete}>
+              <ChatIcon name="trash" />
+              <span>Delete chat</span>
             </button>
           </div>
         ) : null}

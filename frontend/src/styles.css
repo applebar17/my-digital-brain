@@ -285,7 +285,8 @@ p {
 .memory-icon-button svg,
 .memory-chat-history-action svg,
 .memory-chat-history-search svg,
-.memory-chat-recent-menu-trigger svg {
+.memory-chat-recent-menu-trigger svg,
+.memory-chat-recent-menu-popover svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -951,6 +952,7 @@ p {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+  width: calc(100% - (var(--space-4) * 2));
   min-height: 42px;
   margin: var(--space-4) var(--space-4) var(--space-2);
   padding: 0 var(--space-3);
@@ -1097,6 +1099,9 @@ p {
 }
 
 .memory-chat-recent-menu-popover button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   min-height: 34px;
   padding: 0 var(--space-2);
@@ -1111,6 +1116,14 @@ p {
 
 .memory-chat-recent-menu-popover button:hover {
   background: var(--surface-container);
+}
+
+.memory-chat-recent-menu-popover button.is-danger {
+  color: var(--danger);
+}
+
+.memory-chat-recent-menu-popover button.is-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .memory-chat-recent span,

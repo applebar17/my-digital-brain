@@ -4,14 +4,12 @@ interface ChatTopbarProps {
   activeConversationId: string;
   isHistoryOpen: boolean;
   onToggleHistory: () => void;
-  onNewChat: () => void;
 }
 
 export function ChatTopbar({
   activeConversationId,
   isHistoryOpen,
-  onToggleHistory,
-  onNewChat
+  onToggleHistory
 }: ChatTopbarProps) {
   return (
     <header className="memory-chat-topbar">
@@ -25,15 +23,6 @@ export function ChatTopbar({
           onClick={onToggleHistory}
         >
           <ChatIcon name="panel" />
-        </button>
-        <button
-          className="memory-icon-button"
-          type="button"
-          title="New chat"
-          aria-label="New chat"
-          onClick={onNewChat}
-        >
-          <ChatIcon name="new" />
         </button>
         <div>
           <p className="eyebrow">Conversation Runtime</p>
