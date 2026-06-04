@@ -1,19 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppShell, type WorkspaceId } from "./components/AppShell";
+import { AppShell, type AppTheme, type WorkspaceId } from "./components/AppShell";
 import { AnalyticsView } from "./views/AnalyticsView";
 import { ChatView } from "./views/ChatView";
 import { GraphView } from "./views/GraphView";
 
 const workspaces: WorkspaceId[] = ["chat", "graph", "analytics"];
+const themeStorageKey = "my-digital-brain.theme";
 
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceId>(() => parseHashWorkspace());
+  const [theme, setTheme] = useState<AppTheme>(() => initialTheme());
 
   useEffect(() => {
     const onHashChange = () => setWorkspace(parseHashWorkspace());
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
 
   const content = useMemo(() => {
     if (workspace === "graph") {
@@ -28,6 +36,8 @@ export default function App() {
   return (
     <AppShell
       workspace={workspace}
+      theme={theme}
+      onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
       onNavigate={(nextWorkspace) => {
         window.location.hash = nextWorkspace;
         setWorkspace(nextWorkspace);
@@ -41,4 +51,9 @@ export default function App() {
 function parseHashWorkspace(): WorkspaceId {
   const hash = window.location.hash.replace("#", "").split("/")[0] as WorkspaceId;
   return workspaces.includes(hash) ? hash : "chat";
+}
+
+function initialTheme(): AppTheme {
+  const stored = localStorage.getItem(themeStorageKey);
+  return stored === "light" ? "light" : "dark";
 }
