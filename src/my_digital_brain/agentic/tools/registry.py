@@ -96,10 +96,16 @@ def _default_definitions() -> list[AgenticToolDefinition]:
     return [
         _definition(
             "start_memory_ingestion",
-            "Start a memory ingestion subprocess from text or media-derived text.",
+            (
+                "Start a memory ingestion subprocess only when the user clearly asks "
+                "to store, remember, record, update, or process a memory. Do not use "
+                "for greetings, small talk, or ordinary questions."
+            ),
             states=conversation_states,
             properties={
-                "source_text": string_property("Memory text or transcript to ingest."),
+                "source_text": string_property(
+                    "User-provided memory text or transcript to ingest, not a greeting.",
+                ),
                 "source_refs": array_property("Optional source or media references."),
                 "pending_process_policy": optional_string_property(
                     "Policy for an active pending process, such as pause or cancel.",

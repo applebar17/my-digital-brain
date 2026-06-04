@@ -291,6 +291,37 @@ def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> N
     }
 
 
+def test_agentic_tool_schemas_are_strict_openai_compatible() -> None:
+    registry = default_agentic_tool_registry()
+
+    for state_config in default_state_configs().values():
+        toolbox = build_agentic_toolbox(state_config, registry)
+        for tool in toolbox.tools:
+            function = tool["function"]
+            assert function["strict"] is True
+            _assert_objects_disallow_additional_properties(
+                function["parameters"],
+                path=function["name"],
+            )
+
+
+def _assert_objects_disallow_additional_properties(schema: dict[str, Any], *, path: str) -> None:
+    schema_type = schema.get("type")
+    if schema_type == "object" or (
+        isinstance(schema_type, list) and "object" in schema_type
+    ):
+        assert schema.get("additionalProperties") is False, path
+        properties = schema.get("properties", {})
+        assert schema.get("required", []) == list(properties), path
+        assert "default" not in schema, path
+        for key, child in properties.items():
+            _assert_objects_disallow_additional_properties(child, path=f"{path}.{key}")
+    else:
+        assert "default" not in schema, path
+    if schema_type == "array" and isinstance(schema.get("items"), dict):
+        _assert_objects_disallow_additional_properties(schema["items"], path=f"{path}[]")
+
+
 def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
     registry = default_agentic_tool_registry()
     entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY].model_copy(
