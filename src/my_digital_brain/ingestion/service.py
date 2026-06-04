@@ -340,6 +340,9 @@ class IngestionService:
             ingestion_id=result.ingestion_id,
             status=str(result.status),
             validation_error_count=len(result.validation_errors),
+            validation_error_codes=[
+                issue.code for issue in result.validation_errors if issue.code
+            ],
             has_clarification=result.clarification is not None,
             write_counts=_write_plan_counts(result.write_plan) if result.write_plan else None,
         )

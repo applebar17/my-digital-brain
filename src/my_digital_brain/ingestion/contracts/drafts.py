@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from my_digital_brain.ingestion.contracts.base import IngestionModel
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
@@ -123,6 +123,32 @@ class ExtractionPlanDraft(IngestionModel):
         default_factory=list,
         description="Missing context that future agents may retrieve before extraction.",
     )
+
+    @model_validator(mode="after")
+    def validate_execution_mode_payload(self) -> "ExtractionPlanDraft":
+        if self.execution_mode in {
+            ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
+            ExtractionExecutionMode.FOCUSED_EXTRACTION,
+        } and not self.tasks:
+            raise ValueError(
+                "Extraction modes simple_single_pass and focused_extraction require "
+                "at least one extraction task."
+            )
+        if (
+            self.execution_mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
+            and self.clarification is None
+        ):
+            raise ValueError(
+                "needs_clarification_first requires a clarification question."
+            )
+        if (
+            self.execution_mode == ExtractionExecutionMode.NEEDS_CONTEXT_EXPANSION
+            and not self.context_gaps
+        ):
+            raise ValueError(
+                "needs_context_expansion requires at least one context gap."
+            )
+        return self
 
 
 class CandidateBaseDraft(IngestionModel):

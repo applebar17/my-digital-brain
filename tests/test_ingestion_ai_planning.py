@@ -81,13 +81,21 @@ def test_llm_mention_scanner_uses_structured_provider_and_router() -> None:
 def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMode) -> None:
     payload: dict[str, Any] = {
         "execution_mode": mode,
-        "tasks": [],
     }
+    if mode in {
+        ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
+        ExtractionExecutionMode.FOCUSED_EXTRACTION,
+    }:
+        payload["tasks"] = [{"task_type": "person", "evidence_text": "Marco"}]
+    else:
+        payload["tasks"] = []
     if mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST:
         payload["clarification"] = {
             "question": "Which Marco?",
             "reason": "Multiple existing people match.",
         }
+    if mode == ExtractionExecutionMode.NEEDS_CONTEXT_EXPANSION:
+        payload["context_gaps"] = ["Need more graph context for Marco."]
     provider = QueuedStructuredProvider([payload])
     router = RecordingRouter()
 
@@ -100,6 +108,24 @@ def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMod
     assert plan.execution_mode == mode
     assert plan.source_id == "source-1"
     assert router.calls[0][0] == INGESTION_PLANNING_TASK
+
+
+def test_llm_planner_rejects_extraction_mode_without_tasks() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "execution_mode": "focused_extraction",
+                "tasks": [],
+            },
+        ],
+    )
+
+    with pytest.raises(ValidationError, match="at least one extraction task"):
+        LLMIngestionPlanner(provider).plan(
+            _source(),
+            _empty_scan(),
+            IngestionContextPackage(source_id="source-1"),
+        )
 
 
 def test_llm_planner_rejects_aliases_not_present_in_context() -> None:
