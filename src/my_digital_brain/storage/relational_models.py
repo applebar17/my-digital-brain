@@ -154,7 +154,16 @@ class VectorRecord(TimestampMixin, Base):
     vector_id: Mapped[str] = mapped_column(String(255), nullable=False)
     graph_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    embedding_scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    primary_target_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    primary_target_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    related_target_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    relationship_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    builder_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    document_checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
 
 class BackupExport(TimestampMixin, Base):
