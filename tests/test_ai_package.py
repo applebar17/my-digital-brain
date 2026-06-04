@@ -139,6 +139,23 @@ def test_structured_call_sends_strict_json_schema_response_format() -> None:
     assert "source_id" not in response_format["json_schema"]["schema"]["properties"]
 
 
+def test_structured_call_rejects_empty_provider_content() -> None:
+    completion = CapturingChatCompletion(content="")
+    client = object.__new__(GenAIClient)
+    client.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completion),
+    )
+
+    with pytest.raises(ValueError, match="empty content"):
+        client._call_structured_once(
+            MentionScanDraft,
+            messages=[{"role": "user", "content": "scan"}],
+            model="test-model",
+            temperature=None,
+            max_tokens=None,
+        )
+
+
 def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None:
     output_schemas = [
         draft_contracts.MentionScanDraft,
@@ -177,20 +194,25 @@ def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None
 
 
 class CapturingChatCompletion:
-    def __init__(self) -> None:
+    def __init__(self, content: str | None = None) -> None:
         self.params = {}
+        self.content = content
 
     def create(self, **params):
         self.params = params
+        content = self.content
+        if content is None:
+            content = json.dumps(
+                {
+                    "mentions": [],
+                }
+            )
         return SimpleNamespace(
             choices=[
                 SimpleNamespace(
+                    finish_reason="stop",
                     message=SimpleNamespace(
-                        content=json.dumps(
-                            {
-                                "mentions": [],
-                            }
-                        )
+                        content=content,
                     )
                 )
             ]

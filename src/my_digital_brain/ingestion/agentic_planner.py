@@ -36,6 +36,7 @@ from my_digital_brain.ingestion.exceptions import IngestionValidationError
 
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
+PLANNER_STRUCTURED_OUTPUT_MIN_TOKENS = 2_000
 
 
 class AgenticIngestionPlanner:
@@ -199,12 +200,15 @@ class AgenticIngestionPlanner:
                     },
                     model=route.model,
                     temperature=self.state_runner.temperature,
-                    max_tokens=self.state_runner.max_tokens,
+                    max_tokens=max(
+                        self.state_runner.max_tokens,
+                        PLANNER_STRUCTURED_OUTPUT_MIN_TOKENS,
+                    ),
                     context=request_context,
                     metadata={"route": route.model_dump(mode="json", exclude_none=True)},
                 ),
             )
-        except ValidationError as exc:
+        except (ValidationError, ValueError) as exc:
             raise IngestionValidationError(
                 "memory_ingestion_planning returned an invalid structured "
                 f"ExtractionPlanDraft: {exc}"

@@ -262,7 +262,13 @@ class GenAIRetryMixin:
             params["max_completion_tokens"] = max_completion_tokens
         params = apply_chat_completion_compatibility(params)
         response = self.client.chat.completions.create(**params)
-        content = response.choices[0].message.content or "{}"
+        content = response.choices[0].message.content
+        if not content:
+            finish_reason = _response_finish_reason(response)
+            raise ValueError(
+                "Structured generation returned empty content for schema "
+                f"{schema.__name__}. finish_reason={finish_reason or 'unknown'}"
+            )
         return schema.model_validate_json(content)
 
     def _normalize_structured_response_format(
@@ -358,3 +364,15 @@ def _is_json_schema_response_format(response_format: Any) -> bool:
         isinstance(response_format, dict)
         and response_format.get("type") == "json_schema"
     )
+
+
+def _response_finish_reason(response: Any) -> str | None:
+    try:
+        choice = response.choices[0]
+    except (AttributeError, IndexError, TypeError):
+        return None
+    if isinstance(choice, dict):
+        value = choice.get("finish_reason")
+    else:
+        value = getattr(choice, "finish_reason", None)
+    return str(value) if value is not None else None
