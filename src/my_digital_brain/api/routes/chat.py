@@ -10,9 +10,9 @@ from my_digital_brain.chat.models import (
     ChatResponse,
     ConversationSessionDetail,
 )
+from my_digital_brain.chat.factory import build_chat_runtime
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
-from my_digital_brain.chat.tool_facade import MemoryBackendToolFacade
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 from my_digital_brain.config import Settings, get_settings
 from my_digital_brain.graph.service import GraphService
@@ -33,10 +33,12 @@ class CancelChatSessionRequest(BaseModel):
 
 def get_chat_runtime(
     graph_service: GraphService = Depends(get_graph_service),
+    settings: Settings = Depends(get_settings),
 ) -> ChatRuntime:
-    return ChatRuntime(
+    return build_chat_runtime(
+        settings=settings,
         store=_chat_store,
-        tool_facade=MemoryBackendToolFacade(graph_service=graph_service),
+        graph_service=graph_service,
     )
 
 

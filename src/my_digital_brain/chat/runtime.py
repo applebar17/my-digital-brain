@@ -13,6 +13,7 @@ from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.enums import (
     ChatChannel,
+    ChatDiagnosticLevel,
     ChatResponseStatus,
     ConversationMessageRole,
     PendingProcessStatus,
@@ -22,10 +23,12 @@ from my_digital_brain.chat.facade import (
     BackendToolFacade,
     CancelPendingProcessRequest,
     ChatToolRequest,
+    ChatToolResult,
     NoopBackendToolFacade,
 )
 from my_digital_brain.chat.models import (
     ChatResponse,
+    ChatDiagnostic,
     ConversationMessage,
     ConversationSessionDetail,
     IncomingChatMessage,
@@ -45,6 +48,8 @@ class ChatRuntime:
         graph_service: object | None = None,
         ingestion_service: object | None = None,
         history_service: AgenticHistoryService | None = None,
+        debug_commands_enabled: bool = False,
+        runtime_unavailable_reason: str | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
         self.tool_facade = tool_facade or NoopBackendToolFacade()
@@ -53,6 +58,8 @@ class ChatRuntime:
         self.graph_service = graph_service
         self.ingestion_service = ingestion_service
         self.history_service = history_service or AgenticHistoryService()
+        self.debug_commands_enabled = debug_commands_enabled
+        self.runtime_unavailable_reason = runtime_unavailable_reason
 
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
         if not (message.text and message.text.strip()) and not message.media_refs:
@@ -221,9 +228,13 @@ class ChatRuntime:
             },
         )
 
-        if lower_text == "/status" or lower_text.startswith("/status "):
+        if self.debug_commands_enabled and (
+            lower_text == "/status" or lower_text.startswith("/status ")
+        ):
             return self.tool_facade.get_conversation_status(request)
-        if lower_text == "/cancel" or lower_text.startswith("/cancel "):
+        if self.debug_commands_enabled and (
+            lower_text == "/cancel" or lower_text.startswith("/cancel ")
+        ):
             process_id = pending_context.process_ref.process_id if pending_context else None
             result = self.tool_facade.cancel_pending_process(
                 CancelPendingProcessRequest(
@@ -248,35 +259,49 @@ class ChatRuntime:
                 update={"metadata": {**result.metadata, "clear_pending_process": True}},
                 deep=True,
             )
-        if lower_text.startswith("/ask"):
+        if self.debug_commands_enabled and lower_text.startswith("/ask"):
             return self.tool_facade.query_memory_context(
                 request.model_copy(update={"text": text[4:].strip() or text}, deep=True),
             )
-        if lower_text.startswith("/correct"):
+        if self.debug_commands_enabled and lower_text.startswith("/correct"):
             return self.tool_facade.propose_memory_correction(
                 request.model_copy(update={"text": text[8:].strip() or text}, deep=True),
             )
 
-        if not text and message.media_refs:
-            return self.tool_facade.start_memory_ingestion(
-                request.model_copy(
-                    update={"metadata": {**request.metadata, "media_only": True}},
-                    deep=True,
-                ),
-            )
-        return self.tool_facade.start_memory_ingestion(request)
+        return self._runtime_disabled_result()
 
     def _uses_agentic_runtime(self, message: IncomingChatMessage) -> bool:
         if self.runtime_mode != "agentic":
             return False
         text = (message.text or "").strip().lower()
-        if text == "/status" or text.startswith("/status "):
+        if self.debug_commands_enabled and (text == "/status" or text.startswith("/status ")):
             return False
-        if text == "/cancel" or text.startswith("/cancel "):
+        if self.debug_commands_enabled and (text == "/cancel" or text.startswith("/cancel ")):
             return False
         if self.agentic_runtime is None:
             raise ChatValidationError("Agentic runtime mode requires an AgenticRuntime.")
         return True
+
+    def _runtime_disabled_result(self):
+        reason = (
+            self.runtime_unavailable_reason
+            or "The chat runtime is running in deterministic mode."
+        )
+        return ChatToolResult(
+            status=ChatResponseStatus.FAILED,
+            primary_text=(
+                "The AI conversation runtime is not enabled, so I cannot decide whether "
+                "to answer, store, query, or correct this message."
+            ),
+            diagnostics=[
+                ChatDiagnostic(
+                    level=ChatDiagnosticLevel.ERROR,
+                    code="ai_runtime_not_enabled",
+                    message=reason,
+                ),
+            ],
+            metadata={"operation": "chat_runtime", "runtime_mode": self.runtime_mode},
+        )
 
     def _call_agentic(
         self,

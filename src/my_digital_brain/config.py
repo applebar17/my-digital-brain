@@ -80,6 +80,18 @@ class Settings(BaseSettings):
         default="change-me-web-chat-token",
         alias="WEB_CHAT_AUTH_TOKEN",
     )
+    chat_runtime_mode: Literal["agentic", "deterministic"] = Field(
+        default="agentic",
+        alias="CHAT_RUNTIME_MODE",
+    )
+    chat_debug_commands_enabled: bool = Field(
+        default=False,
+        alias="CHAT_DEBUG_COMMANDS_ENABLED",
+    )
+    ingestion_execute_write_plan: bool = Field(
+        default=True,
+        alias="INGESTION_EXECUTE_WRITE_PLAN",
+    )
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_webhook_secret_token: str | None = Field(
         default=None,

@@ -4,7 +4,7 @@ from typing import Any, Protocol
 
 from pydantic import Field
 
-from my_digital_brain.chat.enums import ChatResponseStatus
+from my_digital_brain.chat.enums import ChatDiagnosticLevel, ChatResponseStatus
 from my_digital_brain.chat.models import (
     ChatAction,
     ChatDiagnostic,
@@ -68,24 +68,25 @@ class NoopBackendToolFacade:
     """
 
     def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="I received this memory for processing.",
-            metadata={"operation": "start_memory_ingestion"},
+        return _missing_backend_service_result(
+            "start_memory_ingestion",
+            "Memory ingestion is not configured, so I could not store this memory.",
+            "Configure an IngestionService behind MemoryBackendToolFacade before exposing "
+            "start_memory_ingestion.",
         )
 
     def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="I received your memory question. Query answering is not wired yet.",
-            metadata={"operation": "query_memory_context"},
+        return _missing_backend_service_result(
+            "query_memory_context",
+            "Memory query is not configured, so I could not search your graph.",
+            "Configure GraphService and a graph answer path behind MemoryBackendToolFacade.",
         )
 
     def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="I received this correction for review.",
-            metadata={"operation": "propose_memory_correction"},
+        return _missing_backend_service_result(
+            "propose_memory_correction",
+            "Memory correction is not configured, so I could not prepare a safe update.",
+            "Configure GraphService-backed correction tooling behind MemoryBackendToolFacade.",
         )
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
@@ -109,13 +110,12 @@ class NoopBackendToolFacade:
                 primary_text="There is no pending process to resume.",
                 metadata={"operation": "resume_pending_process"},
             )
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="I received the clarification and will continue the pending process.",
+        return _missing_backend_service_result(
+            "resume_pending_process",
+            "Pending process resume is not configured, so I could not continue this memory.",
+            "Configure an IngestionService before exposing resume_pending_process.",
             metadata={
-                "operation": "resume_pending_process",
                 "pending_process_id": request.pending_process_context.process_ref.process_id,
-                "clear_pending_process": True,
             },
         )
 
@@ -152,3 +152,25 @@ class NoopBackendToolFacade:
                 "pending_process_id": request.pending_process_id,
             },
         )
+
+
+def _missing_backend_service_result(
+    operation: str,
+    primary_text: str,
+    hint: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> ChatToolResult:
+    return ChatToolResult(
+        status=ChatResponseStatus.FAILED,
+        primary_text=primary_text,
+        diagnostics=[
+            ChatDiagnostic(
+                level=ChatDiagnosticLevel.ERROR,
+                code="missing_backend_service",
+                message=hint,
+                details={"operation": operation},
+            ),
+        ],
+        metadata={"operation": operation, **(metadata or {})},
+    )

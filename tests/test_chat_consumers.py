@@ -4,6 +4,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from my_digital_brain.api.routes import telegram as telegram_routes
+from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
+from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
+from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatChannel, ChatResponseStatus
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
@@ -42,6 +45,28 @@ class ConsumerFacade:
 
     def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
         return ChatToolResult(status=ChatResponseStatus.CANCELLED, primary_text="cancelled")
+
+
+class ScriptedToolProvider:
+    provider_name = "scripted"
+
+    def generate_chat_with_tools(
+        self,
+        request: ChatRequest,
+        *,
+        toolbox: ToolBox,
+        tools_mapping: dict[str, object],
+        max_tool_calls: int | None = None,
+    ) -> ChatResult:
+        if "start_memory_ingestion" in tools_mapping:
+            tools_mapping["start_memory_ingestion"](source_text="hello from telegram")
+            content = "Routing to ingestion."
+        else:
+            content = "accepted:hello from telegram"
+        return ChatResult(
+            content=content,
+            metadata=ProviderCallMetadata.fake(model=request.model),
+        )
 
 
 def test_web_adapter_normalizes_frontend_payload_to_channel_neutral_message() -> None:
@@ -92,7 +117,12 @@ def test_telegram_adapter_normalizes_voice_update_without_text() -> None:
 
 def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None:
     facade = ConsumerFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=facade,
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=ScriptedToolProvider())),
+    )
     client = _telegram_client(runtime)
 
     response = client.post(

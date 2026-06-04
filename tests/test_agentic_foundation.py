@@ -113,7 +113,7 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
         registry.load("missing")
 
 
-def test_deterministic_router_defaults_to_ingestion_without_pending_process() -> None:
+def test_deterministic_router_does_not_infer_default_memory_action() -> None:
     router = DeterministicAgenticRouter()
     context = ConversationContext(
         current_message=NeutralConversationMessage.user("Yesterday I met Marco."),
@@ -122,8 +122,9 @@ def test_deterministic_router_defaults_to_ingestion_without_pending_process() ->
     route = router.route(context)
 
     assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.tool_call.name == "start_memory_ingestion"
-    assert route.tool_call.arguments["source_text"] == "Yesterday I met Marco."
+    assert route.tool_call is None
+    assert route.assistant_message is not None
+    assert "Provider-backed conversation routing" in route.assistant_message.content
 
 
 def test_deterministic_router_does_not_expose_control_tools_to_conversation_entry() -> None:
@@ -167,7 +168,7 @@ def test_deterministic_router_uses_pending_review_and_can_pause() -> None:
     assert route.tool_call.arguments["pending_process_id"] == "process-1"
 
 
-def test_deterministic_router_resumes_pending_process_by_default() -> None:
+def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None:
     router = DeterministicAgenticRouter()
     context = ConversationContext(
         current_message=NeutralConversationMessage.user("Marco from university"),
@@ -182,6 +183,7 @@ def test_deterministic_router_resumes_pending_process_by_default() -> None:
     route = router.route(context)
 
     assert route.entry_state == AgenticStateId.PENDING_PROCESS_REVIEW.value
-    assert route.pending_intent == PendingMessageIntent.CLARIFICATION_ANSWER.value
-    assert route.tool_call.name == "resume_pending_process"
-    assert route.tool_call.arguments == {"pending_process_id": "process-1"}
+    assert route.pending_intent is None
+    assert route.tool_call is None
+    assert route.assistant_message is not None
+    assert "Provider-backed pending process review" in route.assistant_message.content

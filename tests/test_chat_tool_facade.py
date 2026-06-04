@@ -92,6 +92,19 @@ class FakeLLMProvider:
 
 
 class FakeIngestionService:
+    def __init__(self, status: IngestionStatus = IngestionStatus.WRITE_PLAN_READY) -> None:
+        self.status = status
+        self.sources = []
+
+    def process_source(self, source):
+        self.sources.append(source)
+        return IngestionResult(
+            source_id=source.source_id,
+            status=self.status,
+        )
+
+
+class FakeIncompleteIngestionService:
     def __init__(self) -> None:
         self.sources = []
 
@@ -164,7 +177,7 @@ def test_llm_answer_generator_uses_provider_neutral_chat_request() -> None:
 
 
 def test_resume_pending_memory_ingestion_uses_current_text_and_refreshes_pipeline() -> None:
-    ingestion = FakeIngestionService()
+    ingestion = FakeIngestionService(status=IngestionStatus.WRITTEN)
     facade = MemoryBackendToolFacade(ingestion_service=ingestion)
     pending = PendingProcessContext(
         process_ref=PendingProcessRef(
@@ -195,6 +208,28 @@ def test_resume_pending_memory_ingestion_uses_current_text_and_refreshes_pipelin
         "Clarification answer: Marco from university"
     )
     assert ingestion.sources[0].metadata["original_source_id"] == "source-original"
+
+
+def test_missing_ingestion_service_returns_failure_not_placeholder_success() -> None:
+    facade = MemoryBackendToolFacade()
+
+    result = facade.start_memory_ingestion(_request("Remember this."))
+
+    assert result.status == ChatResponseStatus.FAILED
+    assert "not configured" in result.primary_text
+    assert result.diagnostics[0].code == "missing_backend_service"
+
+
+def test_incomplete_ingestion_result_returns_safe_failure() -> None:
+    facade = MemoryBackendToolFacade(
+        ingestion_service=FakeIncompleteIngestionService(),
+    )
+
+    result = facade.start_memory_ingestion(_request("Remember this."))
+
+    assert result.status == ChatResponseStatus.FAILED
+    assert "could not store" in result.primary_text
+    assert result.diagnostics[0].code == "ingestion_not_written"
 
 
 def _request(text: str) -> ChatToolRequest:

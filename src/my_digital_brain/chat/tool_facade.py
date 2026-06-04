@@ -321,12 +321,31 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             )
         if result.status == IngestionStatus.WRITTEN:
             text = "I stored this memory."
-        elif result.status == IngestionStatus.WRITE_PLAN_READY:
-            text = "I prepared this memory for writing."
-        elif result.status == IngestionStatus.CANDIDATE_READY:
-            text = "I extracted candidate memory details for review."
         else:
-            text = "I received this memory for processing."
+            return ChatToolResult(
+                status=ChatResponseStatus.FAILED,
+                primary_text=(
+                    "I could not store this memory yet. The ingestion pipeline stopped "
+                    "before a graph write was completed."
+                ),
+                diagnostics=[
+                    ChatDiagnostic(
+                        level=ChatDiagnosticLevel.ERROR,
+                        code="ingestion_not_written",
+                        message=(
+                            "Ingestion returned a non-written status. Check pipeline "
+                            "configuration, write execution, or validation diagnostics."
+                        ),
+                        details={"ingestion_status": str(result.status)},
+                    ),
+                ],
+                metadata={
+                    "operation": operation,
+                    "source_id": source.source_id,
+                    "ingestion_id": result.ingestion_id,
+                    "ingestion_status": str(result.status),
+                },
+            )
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
             primary_text=text,

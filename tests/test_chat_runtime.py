@@ -148,35 +148,45 @@ def test_in_memory_store_keeps_session_and_messages_separate() -> None:
     assert detail.messages[0].text == "Yesterday I met Marco."
 
 
-def test_runtime_routes_default_text_to_ingestion_facade() -> None:
+def test_deterministic_runtime_does_not_route_default_text_to_ingestion() -> None:
     facade = RecordingFacade()
     runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
 
     response = runtime.handle_message(_message(text="Yesterday I met Marco."))
 
-    assert response.primary_text == "Memory accepted."
-    assert facade.calls[0][0] == "start_memory_ingestion"
-    request = facade.calls[0][1]
-    assert isinstance(request, ChatToolRequest)
-    assert request.text == "Yesterday I met Marco."
+    assert response.status == ChatResponseStatus.FAILED
+    assert "AI conversation runtime is not enabled" in response.primary_text
+    assert response.diagnostics[0].code == "ai_runtime_not_enabled"
+    assert facade.calls == []
 
 
-def test_runtime_attaches_pending_context_without_forcing_route() -> None:
+def test_deterministic_runtime_keeps_pending_context_but_does_not_force_route() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question="Which Marco do you mean?",
+            ),
+        ),
+    )
+    runtime = ChatRuntime(store=store, tool_facade=facade)
 
-    first_response = runtime.handle_message(_message(text="needs clarification", message_id="m1"))
-    second_response = runtime.handle_message(
+    response = runtime.handle_message(
         _message(text="This is a different memory.", message_id="m2"),
     )
 
-    assert first_response.status == ChatResponseStatus.NEEDS_USER_INPUT
-    assert second_response.primary_text == "Memory accepted."
-    assert facade.calls[1][0] == "start_memory_ingestion"
-    request = facade.calls[1][1]
-    assert isinstance(request, ChatToolRequest)
-    assert request.pending_process_context is not None
-    assert request.pending_process_context.process_ref.process_id == "process-1"
+    assert response.status == ChatResponseStatus.FAILED
+    assert store.get_active_pending_process_context(session.session_id) is not None
+    assert facade.calls == []
 
 
 def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
@@ -270,7 +280,11 @@ def test_agentic_context_contains_compact_pending_overview_without_backend_snaps
 
 def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=facade,
+        debug_commands_enabled=True,
+    )
 
     runtime.handle_message(_message(text="/ask what happened in Greece?", message_id="m1"))
     runtime.handle_message(_message(text="/correct Marco was from university", message_id="m2"))
@@ -281,6 +295,17 @@ def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
         "propose_memory_correction",
         "cancel_pending_process",
     ]
+
+
+def test_runtime_debug_commands_are_disabled_by_default() -> None:
+    facade = RecordingFacade()
+    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+
+    response = runtime.handle_message(_message(text="/status", message_id="m1"))
+
+    assert response.status == ChatResponseStatus.FAILED
+    assert response.diagnostics[0].code == "ai_runtime_not_enabled"
+    assert facade.calls == []
 
 
 def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it() -> None:
@@ -307,8 +332,21 @@ def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
     provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
     store = InMemoryChatSessionStore()
     facade = RecordingFacade()
-    deterministic = ChatRuntime(store=store, tool_facade=facade)
-    first = deterministic.handle_message(_message(text="needs clarification", message_id="m1"))
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question="Which Marco do you mean?",
+            ),
+        ),
+    )
     runtime = ChatRuntime(
         store=store,
         tool_facade=facade,
@@ -318,7 +356,6 @@ def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
 
     response = runtime.handle_message(_message(text="I'm not sure", message_id="m2"))
 
-    assert first.status == ChatResponseStatus.NEEDS_USER_INPUT
     assert response.metadata["visited_states"] == ["pending_process_review"]
     assert provider.calls[0]["tool_names"] == [
         "cancel_pending_process",
@@ -360,7 +397,13 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> 
 
 def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    provider = ScriptedToolProvider([{"content": "I can help with that."}])
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=facade,
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
     client = _client(runtime)
 
     unauthorized = client.post("/chat/messages", json=_message_payload("hello"))
@@ -372,12 +415,26 @@ def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
 
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
-    assert authorized.json()["primary_text"] == "Memory accepted."
+    assert authorized.json()["primary_text"] == "I can help with that."
 
 
 def test_chat_api_get_session_and_cancel() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    provider = ScriptedToolProvider(
+        [
+            {
+                "content": "Routing to ingestion.",
+                "tool": "start_memory_ingestion",
+                "arguments": {"source_text": "needs clarification"},
+            },
+        ]
+    )
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=facade,
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
     client = _client(runtime)
 
     response = client.post(

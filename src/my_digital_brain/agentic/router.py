@@ -65,11 +65,11 @@ class DeterministicAgenticRouter:
                 reason="Explicit correction command.",
             )
 
-        return self._tool_route(
+        return self._assistant_route(
             context,
-            tool_name="start_memory_ingestion",
-            arguments={"source_text": text},
-            reason="Default non-command text path starts memory ingestion.",
+            "Provider-backed conversation routing is required to decide whether this "
+            "message should be answered, stored, queried, or corrected.",
+            reason="Deterministic fallback does not infer a default memory action.",
         )
 
     def _route_pending_process_review(self, context: ConversationContext) -> AgenticRoute:
@@ -140,14 +140,11 @@ class DeterministicAgenticRouter:
                 pending_intent=PendingMessageIntent.NEW_MEMORY,
             )
 
-        return self._tool_route(
+        return self._assistant_route(
             context,
-            tool_name="resume_pending_process",
-            arguments={
-                "pending_process_id": pending_process.process_id,
-            },
-            reason="Default pending-process path treats the message as a possible answer.",
-            pending_intent=PendingMessageIntent.CLARIFICATION_ANSWER,
+            "Provider-backed pending process review is required to decide whether this "
+            "message resumes, pauses, cancels, or bypasses the pending process.",
+            reason="Deterministic fallback does not infer pending-process intent.",
         )
 
     def _tool_route(
