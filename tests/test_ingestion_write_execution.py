@@ -13,6 +13,7 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationship,
     ExtractionPlan,
     ExtractionTask,
+    GraphWritePlan,
     IngestionContextPackage,
     Mention,
     MentionScan,
@@ -213,6 +214,15 @@ def test_executor_rejects_repeated_application_of_executed_plan() -> None:
     assert "already been executed" in second_result.validation_errors[0].message
 
 
+def test_executor_rejects_empty_write_plan() -> None:
+    plan = GraphWritePlan(source_id="source-1")
+
+    result = GraphWritePlanExecutor(FakeGraphService()).execute(plan)
+
+    assert result.status == IngestionStatus.VALIDATION_FAILED
+    assert result.validation_errors[0].code == "empty_write_plan"
+
+
 def test_ingestion_service_can_execute_fake_write_path() -> None:
     graph = FakeGraphService()
     service = IngestionService(
@@ -242,6 +252,40 @@ def test_ingestion_service_can_execute_fake_write_path() -> None:
     assert result.status == IngestionStatus.WRITTEN
     assert result.candidate_graph is not None
     assert graph.upserted_nodes[0].label == "Person"
+
+
+def test_ingestion_service_rejects_empty_extraction_plan() -> None:
+    service = IngestionService(
+        scanner=StaticScanner(),
+        context_retriever=StaticContextRetriever(),
+        planner=StaticPlanner(
+            ExtractionPlan(
+                source_id="source-1",
+                execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
+                tasks=[],
+            )
+        ),
+        extractors=[],
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.VALIDATION_FAILED
+    assert result.validation_errors[0].code == "empty_extraction_plan"
+
+
+def test_ingestion_service_rejects_empty_candidate_graph() -> None:
+    service = IngestionService(
+        scanner=StaticScanner(),
+        context_retriever=StaticContextRetriever(),
+        planner=StaticPlanner(_plan()),
+        extractors=[StaticExtractor([])],
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.VALIDATION_FAILED
+    assert result.validation_errors[0].code == "empty_candidate_graph"
 
 
 def test_ingestion_service_pauses_on_resolution_clarification() -> None:

@@ -79,6 +79,31 @@ class IngestionService:
                 ),
             )
 
+        if not extraction_plan.tasks:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="extraction_plan.tasks",
+                            message=(
+                                "The ingestion planner produced no extraction tasks. "
+                                "A memory cannot be stored until at least one focused "
+                                "task, clarification, or context-expansion request is "
+                                "produced."
+                            ),
+                            code="empty_extraction_plan",
+                            details={
+                                "execution_mode": str(extraction_plan.execution_mode),
+                            },
+                        )
+                    ],
+                ),
+            )
+
         candidates: list[CandidateOutput] = []
         missing_extractor_issues: list[ValidationIssue] = []
         for task_index, task in enumerate(extraction_plan.tasks):
@@ -111,6 +136,31 @@ class IngestionService:
             )
 
         candidate_graph = self.assembler.assemble(source, extraction_plan, candidates)
+        if not _candidate_graph_has_outputs(candidate_graph):
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="candidate_graph",
+                            message=(
+                                "Focused extraction produced no memory candidates. "
+                                "No graph write can be executed from an empty candidate "
+                                "graph."
+                            ),
+                            code="empty_candidate_graph",
+                            details={
+                                "task_count": len(extraction_plan.tasks),
+                            },
+                        )
+                    ],
+                ),
+            )
+
         validation_result = self.validator.validate_candidate_graph(candidate_graph)
         if not validation_result.is_valid:
             return self._finish(
@@ -149,6 +199,34 @@ class IngestionService:
             )
 
         write_plan = self.write_plan_builder.build(candidate_graph, resolution, context)
+        if not _write_plan_has_mutations(write_plan):
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    mention_scan=mention_scan,
+                    extraction_plan=extraction_plan,
+                    candidate_graph=candidate_graph,
+                    write_plan=write_plan,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="write_plan",
+                            message=(
+                                "The resolved write plan contains no graph mutations. "
+                                "Memory storage is not considered successful unless at "
+                                "least one node, relationship, or patch is written."
+                            ),
+                            code="empty_write_plan",
+                            details={
+                                "candidate_count": _candidate_graph_output_count(
+                                    candidate_graph,
+                                ),
+                            },
+                        )
+                    ],
+                ),
+            )
+
         write_validation = self.validator.validate_write_plan(write_plan)
         if not write_validation.is_valid:
             return self._finish(
@@ -191,3 +269,36 @@ class IngestionService:
         if self.process_store is not None:
             self.process_store.record_result(result)
         return result
+
+
+def _candidate_graph_has_outputs(candidate_graph) -> bool:
+    return _candidate_graph_output_count(candidate_graph) > 0
+
+
+def _candidate_graph_output_count(candidate_graph) -> int:
+    return sum(
+        len(items)
+        for items in (
+            candidate_graph.candidate_entities,
+            candidate_graph.candidate_relationships,
+            candidate_graph.candidate_claims,
+            candidate_graph.candidate_perceptions,
+            candidate_graph.candidate_relationship_contexts,
+            candidate_graph.candidate_metadata_patches,
+        )
+    )
+
+
+def _write_plan_has_mutations(write_plan) -> bool:
+    return any(
+        (
+            write_plan.nodes_to_create,
+            write_plan.nodes_to_update,
+            write_plan.relationships_to_create,
+            write_plan.relationships_to_update,
+            write_plan.claims_to_create,
+            write_plan.perceptions_to_create,
+            write_plan.relationship_contexts_to_create,
+            write_plan.metadata_patches,
+        )
+    )

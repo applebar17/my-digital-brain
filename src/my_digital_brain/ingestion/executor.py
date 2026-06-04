@@ -39,6 +39,23 @@ class GraphWritePlanExecutor:
                     write_plan=write_plan,
                     validation_errors=validation.issues,
                 )
+            if not _write_plan_has_mutations(write_plan):
+                return IngestionResult(
+                    source_id=write_plan.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    write_plan=write_plan,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="write_plan",
+                            message=(
+                                "The write plan contains no graph mutations. "
+                                "Execution was skipped because an empty write plan "
+                                "cannot be considered stored memory."
+                            ),
+                            code="empty_write_plan",
+                        )
+                    ],
+                )
 
             ref_map = self._initial_ref_map(write_plan)
             created_nodes = self._execute_node_creates(write_plan.nodes_to_create, ref_map)
@@ -211,3 +228,18 @@ class GraphWritePlanExecutor:
         if ref.startswith("CANDIDATE_"):
             raise IngestionValidationError(f"Unresolved candidate reference: {ref}")
         return ref
+
+
+def _write_plan_has_mutations(write_plan: GraphWritePlan) -> bool:
+    return any(
+        (
+            write_plan.nodes_to_create,
+            write_plan.nodes_to_update,
+            write_plan.relationships_to_create,
+            write_plan.relationships_to_update,
+            write_plan.claims_to_create,
+            write_plan.perceptions_to_create,
+            write_plan.relationship_contexts_to_create,
+            write_plan.metadata_patches,
+        )
+    )

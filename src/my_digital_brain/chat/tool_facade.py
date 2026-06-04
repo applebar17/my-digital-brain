@@ -330,6 +330,34 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 metadata={"operation": operation, "source_id": source.source_id},
             )
         if result.status == IngestionStatus.WRITTEN:
+            if not _ingestion_result_has_graph_writes(result):
+                return ChatToolResult(
+                    status=ChatResponseStatus.FAILED,
+                    primary_text=(
+                        "I could not verify that this memory was written to the graph."
+                    ),
+                    diagnostics=[
+                        ChatDiagnostic(
+                            level=ChatDiagnosticLevel.ERROR,
+                            code="empty_graph_write_result",
+                            message=(
+                                "Ingestion returned written status without any recorded "
+                                "graph mutations. Treating the result as failed to avoid "
+                                "a false storage confirmation."
+                            ),
+                            details={
+                                "ingestion_status": str(result.status),
+                                "write_counts": _ingestion_write_counts(result),
+                            },
+                        )
+                    ],
+                    metadata={
+                        "operation": operation,
+                        "source_id": source.source_id,
+                        "ingestion_id": result.ingestion_id,
+                        "ingestion_status": str(result.status),
+                    },
+                )
             text = "I stored this memory."
         else:
             return ChatToolResult(
@@ -550,3 +578,30 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             return None
         storage_ref = first.get("storage_ref")
         return str(storage_ref) if storage_ref else None
+
+
+_WRITE_COUNT_KEYS = (
+    "created_nodes",
+    "updated_nodes",
+    "created_claims",
+    "created_perceptions",
+    "created_relationship_contexts",
+    "metadata_patches",
+    "relationships",
+)
+
+
+def _ingestion_result_has_graph_writes(result) -> bool:
+    return sum(_ingestion_write_counts(result).values()) > 0
+
+
+def _ingestion_write_counts(result) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    metadata = getattr(result, "metadata", {}) or {}
+    for key in _WRITE_COUNT_KEYS:
+        value = metadata.get(key, 0)
+        try:
+            counts[key] = max(0, int(value))
+        except (TypeError, ValueError):
+            counts[key] = 0
+    return counts

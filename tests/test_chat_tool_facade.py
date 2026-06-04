@@ -100,9 +100,13 @@ class FakeIngestionService:
 
     def process_source(self, source):
         self.sources.append(source)
+        metadata = {}
+        if self.status == IngestionStatus.WRITTEN:
+            metadata = {"created_nodes": 1}
         return IngestionResult(
             source_id=source.source_id,
             status=self.status,
+            metadata=metadata,
         )
 
 
@@ -253,6 +257,25 @@ def test_incomplete_ingestion_result_returns_safe_failure() -> None:
     assert result.status == ChatResponseStatus.FAILED
     assert "could not store" in result.primary_text
     assert result.diagnostics[0].code == "ingestion_not_written"
+
+
+def test_written_ingestion_without_graph_counts_returns_safe_failure() -> None:
+    class EmptyWrittenIngestionService:
+        def process_source(self, source):
+            return IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.WRITTEN,
+                metadata={"created_nodes": 0, "relationships": 0},
+            )
+
+    facade = MemoryBackendToolFacade(
+        ingestion_service=EmptyWrittenIngestionService(),
+    )
+
+    result = facade.start_memory_ingestion(_request("Remember this."))
+
+    assert result.status == ChatResponseStatus.FAILED
+    assert result.diagnostics[0].code == "empty_graph_write_result"
 
 
 def _request(text: str) -> ChatToolRequest:
