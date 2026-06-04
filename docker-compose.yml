@@ -2,7 +2,7 @@ services:
   backend:
     build: .
     env_file:
-      - src/.env
+      - src/my_digital_brain/.env
     environment:
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
