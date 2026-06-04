@@ -61,3 +61,21 @@ def test_azure_chat_model_settings_are_available() -> None:
     assert settings.azure_chat_model_default == "azure-default"
     assert settings.azure_chat_model_smart == "azure-smart"
     assert settings.azure_chat_model_reasoning == "azure-reasoning"
+
+
+def test_logging_settings_parse_defaults_and_overrides(tmp_path) -> None:
+    log_dir = tmp_path / "logs"
+    settings = Settings(
+        _env_file=None,
+        LOG_DIR=str(log_dir),
+        APP_LOG_LEVEL="WARNING",
+        AGENTIC_LOG_LEVEL="DEBUG",
+        LOG_MAX_BYTES="1234",
+        LOG_BACKUP_COUNT="2",
+    )
+
+    assert settings.log_dir == log_dir
+    assert settings.app_log_level == "WARNING"
+    assert settings.agentic_log_level == "DEBUG"
+    assert settings.log_max_bytes == 1234
+    assert settings.log_backup_count == 2

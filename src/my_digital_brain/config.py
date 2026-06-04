@@ -47,6 +47,11 @@ class Settings(BaseSettings):
 
     app_env: str = Field(default="local", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_dir: Path = Field(default=Path("data/logs"), alias="LOG_DIR")
+    app_log_level: str | None = Field(default=None, alias="APP_LOG_LEVEL")
+    agentic_log_level: str | None = Field(default=None, alias="AGENTIC_LOG_LEVEL")
+    log_max_bytes: int = Field(default=10_485_760, alias="LOG_MAX_BYTES")
+    log_backup_count: int = Field(default=5, alias="LOG_BACKUP_COUNT")
 
     neo4j_uri: str = Field(default="bolt://localhost:7687", alias="NEO4J_URI")
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")

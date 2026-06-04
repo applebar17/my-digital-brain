@@ -13,7 +13,14 @@ from my_digital_brain.logging import configure_logging
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        log_dir=settings.log_dir,
+        app_level=settings.app_log_level,
+        agentic_level=settings.agentic_log_level,
+        max_bytes=settings.log_max_bytes,
+        backup_count=settings.log_backup_count,
+    )
 
     app = FastAPI(title="My Digital Brain", version="0.1.0")
     cors_origins = settings.frontend_cors_origin_list
