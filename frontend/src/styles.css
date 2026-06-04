@@ -41,6 +41,34 @@
   --info-container: #113b61;
   --inverse-surface: #8fb5ff;
   --inverse-on-surface: #06111f;
+  --graph-surface: #08090b;
+  --graph-panel: #111113;
+  --graph-window: #141416;
+  --graph-window-low: #101012;
+  --graph-card: #19191c;
+  --graph-card-hover: #20212a;
+  --graph-canvas: #000000;
+  --graph-canvas-grid: rgb(255 255 255 / 5%);
+  --graph-canvas-glow: rgb(79 130 255 / 13%);
+  --graph-border: #2f3037;
+  --graph-border-strong: #3a3b42;
+  --graph-border-subtle: #30313a;
+  --graph-text: #e9e6ed;
+  --graph-muted: #92909b;
+  --graph-muted-strong: #aaa7b0;
+  --graph-secondary: #8fb5ff;
+  --graph-action: #1b5fd5;
+  --graph-action-text: #ffffff;
+  --graph-success: #8bcfad;
+  --graph-danger: #ff8d86;
+  --graph-edge: #8e929c;
+  --graph-inferred: #f6a524;
+  --graph-disputed: #ff5d5d;
+  --graph-node-pin: #050506;
+  --graph-node-label-bg: rgb(18 18 20 / 82%);
+  --graph-node-label-border: rgb(255 255 255 / 16%);
+  --graph-canvas-meta-bg: rgb(20 20 22 / 82%);
+  --graph-panel-shadow: -8px 0 24px rgb(0 0 0 / 20%);
   --shadow-soft: 0 14px 34px rgb(0 0 0 / 28%);
   --radius-sm: 2px;
   --radius: 4px;
@@ -88,6 +116,34 @@
   --info-container: #d9ecff;
   --inverse-surface: #285dbe;
   --inverse-on-surface: #ffffff;
+  --graph-surface: #f5f7fb;
+  --graph-panel: #ffffff;
+  --graph-window: #f8fafc;
+  --graph-window-low: #eef2f7;
+  --graph-card: #ffffff;
+  --graph-card-hover: #edf4ff;
+  --graph-canvas: #f2f6fb;
+  --graph-canvas-grid: rgb(36 43 58 / 8%);
+  --graph-canvas-glow: rgb(40 93 190 / 10%);
+  --graph-border: #d4dae3;
+  --graph-border-strong: #bac5d3;
+  --graph-border-subtle: #cbd3df;
+  --graph-text: #16171c;
+  --graph-muted: #6b7280;
+  --graph-muted-strong: #596170;
+  --graph-secondary: #285dbe;
+  --graph-action: #285dbe;
+  --graph-action-text: #ffffff;
+  --graph-success: #087d55;
+  --graph-danger: #b3261e;
+  --graph-edge: #728198;
+  --graph-inferred: #b86700;
+  --graph-disputed: #b3261e;
+  --graph-node-pin: #ffffff;
+  --graph-node-label-bg: rgb(255 255 255 / 86%);
+  --graph-node-label-border: rgb(22 23 28 / 14%);
+  --graph-canvas-meta-bg: rgb(255 255 255 / 86%);
+  --graph-panel-shadow: -8px 0 24px rgb(36 43 58 / 12%);
   --shadow-soft: 0 14px 34px rgb(36 43 58 / 12%);
 }
 
@@ -252,22 +308,17 @@ p {
 }
 
 .theme-toggle {
-  position: fixed;
-  top: var(--space-4);
-  right: var(--space-4);
-  z-index: 20;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
+  margin-top: auto;
   padding: 0;
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface-container-lowest) 92%, transparent);
+  background: var(--surface-container-low);
   color: var(--on-surface);
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(14px);
 }
 
 .theme-toggle:hover {
@@ -1753,19 +1804,19 @@ p {
   margin: calc(var(--space-6) * -1);
   gap: 0;
   overflow: hidden;
-  background: #08090b;
-  color: #e9e6ed;
+  background: var(--graph-surface);
+  color: var(--graph-text);
 }
 
 .memory-graph-workspace h2,
 .memory-graph-workspace h3,
 .memory-graph-workspace h4,
 .memory-graph-workspace p {
-  color: #e9e6ed;
+  color: var(--graph-text);
 }
 
 .memory-graph-workspace .eyebrow {
-  color: #92909b;
+  color: var(--graph-muted);
 }
 
 .memory-context-bar {
@@ -1774,8 +1825,8 @@ p {
   gap: var(--space-3);
   align-items: end;
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid #2f3037;
-  background: #111113;
+  border-bottom: 1px solid var(--graph-border);
+  background: var(--graph-panel);
 }
 
 .memory-context-title h2 {
@@ -1789,7 +1840,7 @@ p {
 .memory-check-field {
   display: grid;
   gap: var(--space-1);
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -1800,10 +1851,10 @@ p {
 .memory-control-field input,
 .memory-control-field select {
   min-height: 40px;
-  border: 1px solid #3a3b42;
+  border: 1px solid var(--graph-border-strong);
   border-radius: var(--radius);
-  background: #171719;
-  color: #e9e6ed;
+  background: var(--graph-card);
+  color: var(--graph-text);
   outline: none;
 }
 
@@ -1819,7 +1870,7 @@ p {
 .memory-search-field input:focus,
 .memory-control-field input:focus,
 .memory-control-field select:focus {
-  border-color: #8fb5ff;
+  border-color: var(--graph-secondary);
 }
 
 .memory-check-field {
@@ -1831,7 +1882,7 @@ p {
 }
 
 .memory-check-field input {
-  accent-color: #8fb5ff;
+  accent-color: var(--graph-secondary);
 }
 
 .memory-trust-legend {
@@ -1839,7 +1890,7 @@ p {
   align-items: center;
   gap: var(--space-3);
   min-height: 40px;
-  color: #c4c0cb;
+  color: var(--graph-muted-strong);
   font-size: 12px;
   line-height: 16px;
 }
@@ -1859,27 +1910,27 @@ p {
 }
 
 .legend-verified {
-  background: #14d8a2;
-  color: #14d8a2;
+  background: var(--success);
+  color: var(--success);
 }
 
 .legend-inferred {
-  background: #f6a524;
-  color: #f6a524;
+  background: var(--graph-inferred);
+  color: var(--graph-inferred);
 }
 
 .legend-disputed {
-  background: #ff5d5d;
-  color: #ff5d5d;
+  background: var(--graph-disputed);
+  color: var(--graph-disputed);
 }
 
 .memory-primary-action {
   min-height: 40px;
   padding: 0 var(--space-4);
-  border: 1px solid #8fb5ff;
+  border: 1px solid var(--graph-secondary);
   border-radius: var(--radius);
-  background: #1b5fd5;
-  color: #ffffff;
+  background: var(--graph-action);
+  color: var(--graph-action-text);
   font-size: 13px;
   font-weight: 700;
   line-height: 18px;
@@ -1887,13 +1938,13 @@ p {
 
 .memory-status {
   grid-column: 2 / -1;
-  color: #8bcfad;
+  color: var(--graph-success);
   font-size: 12px;
   line-height: 16px;
 }
 
 .memory-status.is-error {
-  color: #ff8d86;
+  color: var(--graph-danger);
 }
 
 .memory-graph-layout {
@@ -1906,24 +1957,24 @@ p {
   display: grid;
   grid-template-rows: minmax(0, 1fr) 192px;
   min-width: 0;
-  border-right: 1px solid #2f3037;
+  border-right: 1px solid var(--graph-border);
 }
 
 .memory-window {
   min-width: 0;
   overflow: hidden;
-  background: #141416;
-  color: #e9e6ed;
+  background: var(--graph-window);
+  color: var(--graph-text);
 }
 
 .memory-search-window {
-  border-left: 1px solid #2f3037;
-  box-shadow: -8px 0 24px rgb(0 0 0 / 18%);
+  border-left: 1px solid var(--graph-border);
+  box-shadow: var(--graph-panel-shadow);
 }
 
 .memory-inspector-window {
-  border-left: 1px solid #2f3037;
-  box-shadow: -8px 0 24px rgb(0 0 0 / 22%);
+  border-left: 1px solid var(--graph-border);
+  box-shadow: var(--graph-panel-shadow);
 }
 
 .memory-window-header {
@@ -1932,8 +1983,8 @@ p {
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-bottom: 1px solid #2f3037;
-  background: #101012;
+  border-bottom: 1px solid var(--graph-border);
+  background: var(--graph-window-low);
 }
 
 .memory-search-window,
@@ -1965,9 +2016,9 @@ p {
   justify-content: center;
   min-width: 28px;
   height: 24px;
-  border: 1px solid #393a42;
+  border: 1px solid var(--graph-border-strong);
   border-radius: var(--radius);
-  color: #c4c0cb;
+  color: var(--graph-muted-strong);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1985,17 +2036,17 @@ p {
   width: 100%;
   min-height: 58px;
   padding: var(--space-3);
-  border: 1px solid #30313a;
+  border: 1px solid var(--graph-border-subtle);
   border-radius: var(--radius);
-  background: #19191c;
-  color: #e9e6ed;
+  background: var(--graph-card);
+  color: var(--graph-text);
   text-align: left;
 }
 
 .memory-result:hover,
 .memory-result.is-active {
-  border-color: #8fb5ff;
-  background: #20212a;
+  border-color: var(--graph-secondary);
+  background: var(--graph-card-hover);
 }
 
 .memory-result span {
@@ -2006,22 +2057,22 @@ p {
 }
 
 .memory-result small {
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 12px;
   line-height: 16px;
 }
 
 .memory-graph-workspace .empty-state {
-  border-color: #343640;
-  background: #18191d;
+  border-color: var(--graph-border-strong);
+  background: var(--graph-card);
 }
 
 .memory-graph-workspace .empty-state h3 {
-  color: #e9e6ed;
+  color: var(--graph-text);
 }
 
 .memory-graph-workspace .empty-state p {
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
 }
 
 .memory-canvas-shell {
@@ -2029,10 +2080,10 @@ p {
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(rgb(255 255 255 / 5%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 5%) 1px, transparent 1px),
-    radial-gradient(circle at 52% 42%, rgb(79 130 255 / 13%), transparent 32%),
-    #000000;
+    linear-gradient(var(--graph-canvas-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--graph-canvas-grid) 1px, transparent 1px),
+    radial-gradient(circle at 52% 42%, var(--graph-canvas-glow), transparent 32%),
+    var(--graph-canvas);
   background-size: 32px 32px, 32px 32px, auto, auto;
 }
 
@@ -2055,16 +2106,16 @@ p {
 .memory-canvas-toolbar button {
   min-width: 36px;
   height: 36px;
-  border: 1px solid #3b3d46;
+  border: 1px solid var(--graph-border-strong);
   border-radius: var(--radius);
-  background: #17181c;
-  color: #e9e6ed;
+  background: var(--graph-card);
+  color: var(--graph-text);
   font-size: 13px;
   font-weight: 700;
 }
 
 .memory-canvas-toolbar button:hover {
-  border-color: #8fb5ff;
+  border-color: var(--graph-secondary);
 }
 
 .memory-canvas-meta {
@@ -2079,10 +2130,10 @@ p {
 .memory-canvas-meta span {
   min-height: 26px;
   padding: 0 var(--space-2);
-  border: 1px solid #30313a;
+  border: 1px solid var(--graph-border-subtle);
   border-radius: var(--radius);
-  background: rgb(20 20 22 / 82%);
-  color: #aaa7b0;
+  background: var(--graph-canvas-meta-bg);
+  color: var(--graph-muted-strong);
   font-size: 11px;
   font-weight: 700;
   line-height: 24px;
@@ -2097,22 +2148,22 @@ p {
 }
 
 .memory-edge-line {
-  stroke: #8e929c;
-  color: #8e929c;
+  stroke: var(--graph-edge);
+  color: var(--graph-edge);
   stroke-width: 1.3;
   stroke-opacity: 0.42;
   transition: stroke 160ms ease, stroke-opacity 160ms ease, stroke-width 160ms ease;
 }
 
 .memory-edge-inferred {
-  stroke: #f6a524;
-  color: #f6a524;
+  stroke: var(--graph-inferred);
+  color: var(--graph-inferred);
   stroke-dasharray: 7 6;
 }
 
 .memory-edge-disputed {
-  stroke: #ff5d5d;
-  color: #ff5d5d;
+  stroke: var(--graph-disputed);
+  color: var(--graph-disputed);
 }
 
 .memory-edge.is-active .memory-edge-line {
@@ -2122,7 +2173,7 @@ p {
 }
 
 .memory-edge-label {
-  fill: #747782;
+  fill: var(--graph-muted);
   font-size: 10px;
   font-weight: 700;
   text-anchor: middle;
@@ -2157,8 +2208,8 @@ p {
 }
 
 .memory-node-pin {
-  fill: #050506;
-  stroke: #e9e6ed;
+  fill: var(--graph-node-pin);
+  stroke: var(--graph-text);
   stroke-width: 1;
 }
 
@@ -2170,10 +2221,10 @@ p {
   max-width: 156px;
   margin: 0 auto;
   padding: 3px 7px;
-  border: 1px solid rgb(255 255 255 / 16%);
+  border: 1px solid var(--graph-node-label-border);
   border-radius: var(--radius);
-  background: rgb(18 18 20 / 82%);
-  color: #e9e6ed;
+  background: var(--graph-node-label-bg);
+  color: var(--graph-text);
   text-align: center;
   backdrop-filter: blur(8px);
 }
@@ -2181,7 +2232,7 @@ p {
 .memory-node-label strong {
   max-width: 142px;
   overflow: hidden;
-  color: #e9e6ed;
+  color: var(--graph-text);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -2190,7 +2241,7 @@ p {
 }
 
 .memory-node-label span {
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 9px;
   font-weight: 700;
   line-height: 11px;
@@ -2203,28 +2254,28 @@ p {
 }
 
 .memory-inspector-window .badge-neutral {
-  border-color: #393a42;
-  background: #1d1e24;
-  color: #c4c0cb;
+  border-color: var(--graph-border-strong);
+  background: var(--graph-card);
+  color: var(--graph-muted-strong);
 }
 
 .memory-inspector-window .badge-info {
-  background: #113b61;
-  color: #cfe5ff;
+  background: var(--info-container);
+  color: var(--info);
 }
 
 .memory-inspector-window .badge-trust {
-  background: #113d31;
-  color: #9ff2cd;
+  background: var(--success-container);
+  color: var(--success);
 }
 
 .memory-inspector-window .badge-privacy {
-  background: #38235f;
-  color: #d6c4ff;
+  background: var(--privacy-container);
+  color: var(--privacy);
 }
 
 .memory-node-description {
-  color: #c4c0cb;
+  color: var(--graph-muted-strong);
   font-size: 14px;
   line-height: 21px;
 }
@@ -2241,20 +2292,20 @@ p {
   min-height: 70px;
   align-content: center;
   padding: var(--space-3);
-  border: 1px solid #343640;
+  border: 1px solid var(--graph-border-strong);
   border-radius: var(--radius);
-  background: #101012;
+  background: var(--graph-window-low);
 }
 
 .memory-mini-metric span {
-  color: #e9e6ed;
+  color: var(--graph-text);
   font-size: 22px;
   font-weight: 700;
   line-height: 26px;
 }
 
 .memory-mini-metric small {
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -2262,13 +2313,13 @@ p {
 }
 
 .memory-mini-metric.is-danger {
-  border-color: #6d2f32;
-  background: #211112;
+  border-color: var(--danger-container);
+  background: var(--danger-container);
 }
 
 .memory-mini-metric.is-danger span,
 .memory-mini-metric.is-danger small {
-  color: #ff9b96;
+  color: var(--danger);
 }
 
 .memory-affective-block,
@@ -2279,7 +2330,7 @@ p {
 
 .memory-affective-block h4,
 .memory-property-section h4 {
-  color: #e9e6ed;
+  color: var(--graph-text);
   font-size: 14px;
   font-weight: 700;
   line-height: 20px;
@@ -2287,10 +2338,10 @@ p {
 
 .memory-affective-block p {
   padding: var(--space-3);
-  border-left: 2px solid #8fb5ff;
+  border-left: 2px solid var(--graph-secondary);
   border-radius: 0 var(--radius) var(--radius) 0;
-  background: #1b1c22;
-  color: #d2cfd8;
+  background: var(--graph-card);
+  color: var(--graph-muted-strong);
   font-style: italic;
 }
 
@@ -2305,11 +2356,11 @@ p {
   grid-template-columns: 108px minmax(0, 1fr);
   gap: var(--space-2);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid #2f3037;
+  border-bottom: 1px solid var(--graph-border);
 }
 
 .memory-property-list dt {
-  color: #92909b;
+  color: var(--graph-muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 15px;
@@ -2318,28 +2369,28 @@ p {
 
 .memory-property-list dd {
   margin: 0;
-  color: #d2cfd8;
+  color: var(--graph-muted-strong);
   font-size: 13px;
   line-height: 18px;
   overflow-wrap: anywhere;
 }
 
 .memory-muted {
-  color: #92909b;
+  color: var(--graph-muted);
 }
 
 .memory-evidence-list {
   display: grid;
-  border-top: 1px solid #30313a;
-  border-bottom: 1px solid #30313a;
+  border-top: 1px solid var(--graph-border-subtle);
+  border-bottom: 1px solid var(--graph-border-subtle);
 }
 
 .memory-evidence-row {
   display: grid;
   gap: var(--space-1);
   padding: var(--space-3);
-  border-bottom: 1px solid #30313a;
-  background: #101012;
+  border-bottom: 1px solid var(--graph-border-subtle);
+  background: var(--graph-window-low);
 }
 
 .memory-evidence-row:last-child {
@@ -2347,13 +2398,13 @@ p {
 }
 
 .memory-evidence-row strong {
-  color: #e9e6ed;
+  color: var(--graph-text);
   font-size: 13px;
   line-height: 18px;
 }
 
 .memory-evidence-row span {
-  color: #92909b;
+  color: var(--graph-muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -2362,8 +2413,8 @@ p {
 
 .memory-dock {
   overflow: hidden;
-  border-top: 1px solid #2f3037;
-  background: #111113;
+  border-top: 1px solid var(--graph-border);
+  background: var(--graph-panel);
 }
 
 .memory-dock-tabs {
@@ -2372,7 +2423,7 @@ p {
   gap: var(--space-2);
   min-height: 44px;
   padding: 0 var(--space-4);
-  border-bottom: 1px solid #2f3037;
+  border-bottom: 1px solid var(--graph-border);
 }
 
 .memory-dock-tabs button {
@@ -2381,22 +2432,22 @@ p {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 12px;
   font-weight: 700;
   line-height: 16px;
 }
 
 .memory-dock-tabs button.is-active {
-  border-color: #8fb5ff;
-  color: #e9e6ed;
+  border-color: var(--graph-secondary);
+  color: var(--graph-text);
 }
 
 .memory-dock-summary {
   display: flex;
   gap: var(--space-3);
   margin-left: auto;
-  color: #92909b;
+  color: var(--graph-muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -2423,7 +2474,7 @@ p {
   right: var(--space-5);
   left: var(--space-5);
   height: 1px;
-  background: #3a3b42;
+  background: var(--graph-border-strong);
   content: "";
 }
 
@@ -2438,7 +2489,7 @@ p {
 }
 
 .memory-timeline-node span {
-  color: #aaa7b0;
+  color: var(--graph-muted-strong);
   font-size: 11px;
   font-weight: 700;
   line-height: 14px;
@@ -2447,19 +2498,19 @@ p {
 .memory-timeline-node i {
   width: 13px;
   height: 13px;
-  border: 2px solid #747782;
+  border: 2px solid var(--graph-muted);
   border-radius: 999px;
-  background: #111113;
+  background: var(--graph-panel);
 }
 
 .memory-timeline-node.is-active i {
-  border-color: #8fb5ff;
-  background: #8fb5ff;
-  box-shadow: 0 0 14px rgb(143 181 255 / 72%);
+  border-color: var(--graph-secondary);
+  background: var(--graph-secondary);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--graph-secondary) 70%, transparent);
 }
 
 .memory-timeline-node strong {
-  color: #e9e6ed;
+  color: var(--graph-text);
   font-size: 13px;
   line-height: 17px;
 }
@@ -2467,7 +2518,7 @@ p {
 .memory-timeline-node p {
   display: -webkit-box;
   overflow: hidden;
-  color: #92909b;
+  color: var(--graph-muted);
   font-size: 11px;
   line-height: 15px;
   -webkit-line-clamp: 2;
@@ -2495,7 +2546,7 @@ p {
   .memory-inspector-window {
     grid-column: auto;
     border-top: 0;
-    border-left: 1px solid #2f3037;
+    border-left: 1px solid var(--graph-border);
   }
 
   .memory-inspector-body {
@@ -2622,6 +2673,11 @@ p {
     flex-direction: row;
     min-width: 0;
     width: auto;
+  }
+
+  .theme-toggle {
+    margin-top: 0;
+    margin-left: auto;
   }
 
   .workspace {

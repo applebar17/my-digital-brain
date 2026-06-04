@@ -47,18 +47,18 @@ export function graphRelationshipTone(relationship: GraphViewRelationship): Grap
 
 export function graphToneColor(tone: GraphTone): string {
   if (tone === "verified") {
-    return "#14d8a2";
+    return "var(--success)";
   }
   if (tone === "inferred") {
-    return "#f6a524";
+    return "var(--graph-inferred)";
   }
   if (tone === "disputed") {
-    return "#ff5d5d";
+    return "var(--graph-disputed)";
   }
   if (tone === "private") {
-    return "#a78bfa";
+    return "var(--privacy)";
   }
-  return "#8fb5ff";
+  return "var(--graph-secondary)";
 }
 
 export function trimGraphLabel(value: string | null | undefined, maxLength = 28): string {

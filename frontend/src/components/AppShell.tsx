@@ -42,8 +42,6 @@ export function AppShell({ workspace, onNavigate, theme, onToggleTheme, children
             </button>
           ))}
         </nav>
-      </aside>
-      <main className="app-main">
         <button
           className="theme-toggle"
           type="button"
@@ -54,8 +52,8 @@ export function AppShell({ workspace, onNavigate, theme, onToggleTheme, children
         >
           <Icon name={theme === "dark" ? "sun" : "moon"} />
         </button>
-        {children}
-      </main>
+      </aside>
+      <main className="app-main">{children}</main>
     </div>
   );
 }
