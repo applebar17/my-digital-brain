@@ -5,7 +5,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 RUN uv sync --no-dev --no-install-project
 
 COPY src ./src
