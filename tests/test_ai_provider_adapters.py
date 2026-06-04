@@ -7,6 +7,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from my_digital_brain.ai.client.core import GenAIClient
+from my_digital_brain.ai.client.compatibility import (
+    apply_chat_completion_compatibility,
+    is_gpt5_model,
+)
 from my_digital_brain.ai.client.settings import (
     GenAISettings,
     genai_settings_from_app_settings,
@@ -228,6 +232,47 @@ def test_openai_provider_passes_toolbox_and_mapping_to_genai_client() -> None:
     assert client.toolbox is toolbox
     assert client.tools_mapping is mapping
     assert client.max_tool_calls == 2
+
+
+def test_gpt5_chat_params_use_supported_token_and_temperature_shape() -> None:
+    client = StubGenAIClient()
+    provider = OpenAIProvider(
+        client=client,
+        settings=GenAISettings(openai_api_key="test"),
+    )
+
+    provider.generate_chat(
+        ChatRequest(
+            messages=[ChatMessage(role="user", content="hello")],
+            model="capco-ch-uat-openai-gpt5.2",
+            temperature=0.2,
+            max_tokens=500,
+        )
+    )
+
+    assert client.chat_params is not None
+    assert "temperature" not in client.chat_params
+    assert "max_tokens" not in client.chat_params
+    assert client.chat_params["max_completion_tokens"] == 500
+
+
+def test_gpt5_compatibility_detects_azure_and_openai_model_names() -> None:
+    assert is_gpt5_model("gpt-5.2-chat-dev")
+    assert is_gpt5_model("capco-ch-uat-openai-gpt5.2")
+    assert not is_gpt5_model("gpt-4.1")
+
+    normalized = apply_chat_completion_compatibility(
+        {
+            "model": "gpt-5.2-chat-dev",
+            "temperature": 0.2,
+            "max_tokens": 300,
+        }
+    )
+
+    assert normalized == {
+        "model": "gpt-5.2-chat-dev",
+        "max_completion_tokens": 300,
+    }
 
 
 def test_azure_provider_marks_provider_and_deployment(tmp_path: Path) -> None:

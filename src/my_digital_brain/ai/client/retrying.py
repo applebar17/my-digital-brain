@@ -10,10 +10,12 @@ from pydantic import BaseModel
 from my_digital_brain.ai.context import is_context_length_error
 from my_digital_brain.ai.structured_schema import strict_response_format
 from my_digital_brain.ai.tracing import traceable
+from .compatibility import apply_chat_completion_compatibility
 
 
 class GenAIRetryMixin:
     def _call_with_retries(self, params: dict[str, Any]):
+        params = apply_chat_completion_compatibility(params)
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
@@ -71,6 +73,7 @@ class GenAIRetryMixin:
     @traceable(name="Structured LLM Call", run_type="parser")
     def _call_structured_response_with_retries(self, params: dict[str, Any]):
         params = self._normalize_structured_response_format(params)
+        params = apply_chat_completion_compatibility(params)
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
@@ -146,11 +149,11 @@ class GenAIRetryMixin:
         model: str,
         temperature: float | None,
         max_tokens: int | None,
+        max_completion_tokens: int | None = None,
     ) -> BaseModel:
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
-        max_completion_tokens: int | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
                 params_for_budget: dict[str, Any] = {
@@ -251,12 +254,13 @@ class GenAIRetryMixin:
             "messages": messages,
             "response_format": strict_response_format(schema),
         }
-        # Some OpenAI models reject explicit temperature.
-        #     params["temperature"] = temperature
+        if temperature is not None:
+            params["temperature"] = temperature
         if max_tokens is not None:
             params["max_tokens"] = max_tokens
         if max_completion_tokens is not None:
             params["max_completion_tokens"] = max_completion_tokens
+        params = apply_chat_completion_compatibility(params)
         response = self.client.chat.completions.create(**params)
         content = response.choices[0].message.content or "{}"
         return schema.model_validate_json(content)

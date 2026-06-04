@@ -24,6 +24,7 @@ from ..schemas import (
     TranscriptionSegment,
 )
 from ..tools import ToolBox
+from ..client.compatibility import apply_chat_completion_compatibility
 
 
 class OpenAIProvider:
@@ -99,7 +100,7 @@ class OpenAIProvider:
             request.system_prompt,
             request.input_message,
             model=request.model,
-            temperature=request.temperature if request.temperature is not None else 0.2,
+            temperature=request.temperature,
             max_tokens=request.max_tokens,
         )
         latency_ms = int((time.monotonic() - start) * 1000)
@@ -197,7 +198,7 @@ class OpenAIProvider:
             params["max_tokens"] = request.max_tokens
         if request.tools:
             params["tools"] = request.tools
-        return params
+        return apply_chat_completion_compatibility(params)
 
 
 def _chat_message_to_dict(message: Any) -> dict[str, Any]:

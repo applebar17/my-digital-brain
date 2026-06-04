@@ -18,6 +18,7 @@ from my_digital_brain.ai.tools import ToolBox, build_chat_toolbox
 from my_digital_brain.ai.tracing import traceable
 
 from .context_ops import GenAIContextMixin
+from .compatibility import apply_chat_completion_compatibility
 from .diagnostics import _llm_prompt_diagnostics
 from .errors import _provider_error_details
 from .retrying import GenAIRetryMixin
@@ -72,19 +73,24 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         params: dict[str, Any] = {
             "model": model or self._default_chat_model(),
             "messages": messages,
-            "temperature": temperature,
         }
+        if temperature is not None:
+            params["temperature"] = temperature
         if max_tokens is not None:
             params["max_tokens"] = max_tokens
+        params = apply_chat_completion_compatibility(params)
         self._ensure_context_budget(params)
         messages = params.get("messages") or messages
         max_tokens = params.get("max_tokens")
+        max_completion_tokens = params.get("max_completion_tokens")
+        temperature = params.get("temperature")
         return self._call_structured_with_retries(
             schema,
             messages=messages,
             model=params["model"],
             temperature=temperature,
             max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
         )
 
     @traceable(name="Embed Texts", run_type="embedding")
@@ -169,6 +175,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         if "tools" not in params:
             params.pop("parallel_tool_calls", None)
 
+        params = apply_chat_completion_compatibility(params)
         self._ensure_context_budget(params)
         return params
 
