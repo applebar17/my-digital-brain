@@ -80,7 +80,10 @@ LLM extraction should return a typed structure such as:
 
 The exact schema should be versioned so previous extraction runs remain interpretable.
 
-LLM extraction should produce structured ingestion objects, not graph database writes. The downstream pipeline owns validation, resolution, clarification, and persistence.
+LLM extraction should produce structured ingestion drafts, not graph database
+writes or backend records. The downstream pipeline enriches drafts with
+deterministic IDs, source provenance, evidence refs, metadata, validation,
+resolution, clarification, and persistence.
 
 ## Context-Aware Ingestion Planning
 
@@ -90,8 +93,9 @@ Required planning flow:
 
 1. Run a cheap mention scan over source text or transcript.
 2. Retrieve compact graph context for the mentions.
-3. Ask the ingestion planner for an `ExtractionPlan`.
-4. Execute the selected backend flow.
+3. Ask the ingestion planner for an `ExtractionPlanDraft`.
+4. Backend-enrich the draft into an `ExtractionPlan`.
+5. Execute the selected backend flow.
 
 Planner execution modes:
 

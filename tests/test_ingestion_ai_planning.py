@@ -24,9 +24,9 @@ from my_digital_brain.ingestion.ai_services import LLMIngestionPlanner, LLMMenti
 from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
-    CandidateEntityBatch,
+    CandidateEntityDraftBatch,
     CandidateOutput,
-    ExtractionPlan,
+    ExtractionPlanDraft,
     ExtractionTask,
     IngestionContextPackage,
     SourceRecordRef,
@@ -54,7 +54,6 @@ def test_llm_mention_scanner_uses_structured_provider_and_router() -> None:
     provider = QueuedStructuredProvider(
         [
             {
-                "source_id": "source-1",
                 "mentions": [{"kind": "person", "text": "Marco"}],
             },
         ],
@@ -64,8 +63,9 @@ def test_llm_mention_scanner_uses_structured_provider_and_router() -> None:
     scan = LLMMentionScanner(provider, router=router).scan(_source())
 
     assert scan.mentions[0].kind == MentionKind.PERSON
+    assert scan.source_id == "source-1"
     assert router.calls[0][0] == INGESTION_MENTION_SCAN_TASK
-    assert provider.requests[0].output_schema.__name__ == "MentionScan"
+    assert provider.requests[0].output_schema.__name__ == "MentionScanDraft"
     assert provider.requests[0].context.source_id == "source-1"
 
 
@@ -80,7 +80,6 @@ def test_llm_mention_scanner_uses_structured_provider_and_router() -> None:
 )
 def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMode) -> None:
     payload: dict[str, Any] = {
-        "source_id": "source-1",
         "execution_mode": mode,
         "tasks": [],
     }
@@ -99,6 +98,7 @@ def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMod
     )
 
     assert plan.execution_mode == mode
+    assert plan.source_id == "source-1"
     assert router.calls[0][0] == INGESTION_PLANNING_TASK
 
 
@@ -106,7 +106,6 @@ def test_llm_planner_rejects_aliases_not_present_in_context() -> None:
     provider = QueuedStructuredProvider(
         [
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "person", "target_ref": "NODE_999"}],
             },
@@ -125,7 +124,6 @@ def test_llm_planner_rejects_unsupported_task_types() -> None:
     provider = QueuedStructuredProvider(
         [
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "relationship_link"}],
             },
@@ -145,7 +143,6 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
         [{"content": "Ready for structured plan."}],
         structured_payloads=[
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
             },
@@ -164,7 +161,8 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
         "request_contradiction_review",
         "request_graph_context_expansion",
     ]
-    assert provider.structured_requests[0].output_schema.__name__ == "ExtractionPlan"
+    assert plan.source_id == "source-1"
+    assert provider.structured_requests[0].output_schema.__name__ == "ExtractionPlanDraft"
 
 
 def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured_plan() -> None:
@@ -178,7 +176,6 @@ def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured
         ],
         structured_payloads=[
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
             },
@@ -257,7 +254,6 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
                 "inspected_context_refs": ["NODE_000001"],
             },
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
             },
@@ -289,7 +285,7 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
     assert provider.structured_requests[0].output_schema.__name__ == (
         "ContradictionJudgeResultContext"
     )
-    assert provider.structured_requests[1].output_schema is ExtractionPlan
+    assert provider.structured_requests[1].output_schema is ExtractionPlanDraft
 
 
 def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:
@@ -332,7 +328,20 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
                         "local_ref": "CANDIDATE_PERSON_001",
                         "entity_type": "Person",
                         "display_name": "Marco",
-                        "source_refs": ["source-1"],
+                        "evidence": [
+                            {
+                                "evidence_text": "Marco",
+                                "span_start": 6,
+                                "span_end": 11,
+                            },
+                        ],
+                        "property_suggestions": [
+                            {
+                                "key": "nickname",
+                                "value_text": "Marco",
+                                "value_kind": "text",
+                            },
+                        ],
                     },
                 ],
             },
@@ -345,8 +354,12 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
 
     assert extractor.supports(task) is True
     assert isinstance(candidates[0], CandidateEntity)
+    assert candidates[0].source_refs == ["source-1"]
+    assert candidates[0].evidence_refs[0].source_id == "source-1"
+    assert candidates[0].evidence_refs[0].evidence_text == "Marco"
+    assert candidates[0].typed_properties == {"nickname": "Marco"}
     assert not PerceptionExtractor(provider).supports(task)
-    assert provider.requests[0].output_schema is CandidateEntityBatch
+    assert provider.requests[0].output_schema is CandidateEntityDraftBatch
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
 
 
@@ -354,11 +367,9 @@ def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
     provider = QueuedStructuredProvider(
         [
             {
-                "source_id": "source-1",
                 "mentions": [{"kind": "person", "text": "Marco"}],
             },
             {
-                "source_id": "source-1",
                 "execution_mode": "focused_extraction",
                 "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
             },
@@ -368,7 +379,6 @@ def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
                         "local_ref": "CANDIDATE_PERSON_001",
                         "entity_type": "Person",
                         "display_name": "Marco",
-                        "source_refs": ["source-1"],
                     },
                 ],
             },

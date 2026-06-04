@@ -32,14 +32,15 @@ class IngestionPromptBuilder:
         "Create a backend-executable extraction plan after reading source text, shallow "
         "mentions, and compact graph context. Choose the cheapest safe execution mode. "
         "Return focused tasks only; do not create graph writes. Use only aliases present "
-        "in context, candidate refs you define later, or source refs. Ask clarification "
+        "in context or candidate refs you define later. Ask clarification "
         "first when ambiguity blocks useful extraction."
     )
     extractor_system_prompt = (
         "Execute only the focused extraction task. Return structured candidates of the "
         "requested type only. Preserve evidence, original user words, affective meaning, "
-        "missing fields, and ambiguity flags. Use provided aliases and local refs instead "
-        "of raw internal graph ids. Do not guess when information is missing."
+        "missing fields, and ambiguity flags. Use provided aliases and local refs for "
+        "references. Represent extra fields as typed property_suggestions. Do not guess "
+        "when information is missing."
     )
 
     def mention_scan_input(self, source: SourceRecordRef) -> dict[str, Any]:
@@ -53,8 +54,8 @@ class IngestionPromptBuilder:
     ) -> dict[str, Any]:
         return {
             "source": self.source_payload(source),
-            "mention_scan": mention_scan.model_dump(mode="json", exclude_none=True),
-            "compact_graph_context": context.model_dump(mode="json", exclude_none=True),
+            "mention_scan": self.mention_scan_payload(mention_scan),
+            "compact_graph_context": self.context_payload(context),
         }
 
     def extraction_input(
@@ -65,11 +66,57 @@ class IngestionPromptBuilder:
     ) -> dict[str, Any]:
         return {
             "source": self.source_payload(source),
-            "task": task.model_dump(mode="json", exclude_none=True),
-            "compact_graph_context": context.model_dump(mode="json", exclude_none=True),
+            "task": self.task_payload(task),
+            "compact_graph_context": self.context_payload(context),
         }
 
     def source_payload(self, source: SourceRecordRef) -> dict[str, Any]:
         payload = source.model_dump(mode="json", exclude_none=True)
+        payload.pop("source_id", None)
+        payload.pop("external_id", None)
+        payload.pop("content_ref", None)
+        payload.pop("derived_from_source_id", None)
         payload.pop("metadata", None)
         return payload
+
+    def mention_scan_payload(self, mention_scan: MentionScan) -> dict[str, Any]:
+        return {
+            "mentions": [
+                {
+                    key: value
+                    for key, value in {
+                        "kind": str(mention.kind),
+                        "text": mention.text,
+                        "evidence_text": mention.evidence_text,
+                        "span_start": mention.span_start,
+                        "span_end": mention.span_end,
+                        "possible_normalized_value": mention.possible_normalized_value,
+                        "ambiguity_hint": mention.ambiguity_hint,
+                    }.items()
+                    if value is not None
+                }
+                for mention in mention_scan.mentions
+            ],
+        }
+
+    def task_payload(self, task: ExtractionTask) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in {
+                "task_type": str(task.task_type),
+                "target_ref": task.target_ref,
+                "evidence_text": task.evidence_text,
+                "expected_output": task.expected_output,
+                "required_context_refs": list(task.required_context_refs),
+                "notes": task.notes,
+            }.items()
+            if value not in (None, [], {})
+        }
+
+    def context_payload(self, context: IngestionContextPackage) -> dict[str, Any]:
+        return {
+            "aliases": {alias: alias for alias in context.aliases},
+            "entities": list(context.entities),
+            "relationships": list(context.relationships),
+            "notes": list(context.notes),
+        }

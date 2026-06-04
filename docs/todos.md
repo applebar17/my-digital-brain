@@ -82,12 +82,16 @@ Status: implemented in the planner foundation.
   `memory_ingestion_planning` toolbox.
 - `memory_ingestion_planning` can use support tools during execution and then
   returns a required structured final output.
-- `memory_ingestion_planning` ends by returning a validated `ExtractionPlan`
-  structured output, not by calling a final submission tool.
+- `memory_ingestion_planning` ends by returning a validated
+  `ExtractionPlanDraft` structured output, not by calling a final submission
+  tool.
+- Backend enrichment deterministically converts the draft into the canonical
+  `ExtractionPlan` by adding source provenance, task IDs, context package ID,
+  and backend metadata.
 - Keep planning tools for side work only:
   - `request_graph_context_expansion`
   - `request_contradiction_review`
-- After the structured `ExtractionPlan` is returned, backend code
+- After the enriched `ExtractionPlan` is built, backend code
   deterministically routes the next process step from `execution_mode`,
   `tasks`, `clarification`, and `context_gaps`.
 - Free-form assistant text alone must not be treated as a valid planning

@@ -13,6 +13,7 @@ from my_digital_brain.ingestion.contracts import (
     IngestionContextPackage,
     SourceRecordRef,
 )
+from my_digital_brain.ingestion.enrichment import enrich_candidate_batch
 from my_digital_brain.ingestion.enums import ExtractionTaskType
 from my_digital_brain.ingestion.prompt_builders import IngestionPromptBuilder
 
@@ -45,7 +46,7 @@ class FocusedLLMExtractor:
         context: IngestionContextPackage,
     ) -> Sequence[CandidateOutput]:
         parsed = self._generate(source, task, context)
-        return list(getattr(parsed, "candidates"))
+        return enrich_candidate_batch(parsed, source, task)
 
     def _generate(
         self,

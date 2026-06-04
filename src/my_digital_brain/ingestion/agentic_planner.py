@@ -26,10 +26,12 @@ from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRe
 from my_digital_brain.ingestion.ai_services import _is_graph_alias
 from my_digital_brain.ingestion.contracts import (
     ExtractionPlan,
+    ExtractionPlanDraft,
     IngestionContextPackage,
     MentionScan,
     SourceRecordRef,
 )
+from my_digital_brain.ingestion.enrichment import enrich_extraction_plan
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
 
 
@@ -40,8 +42,8 @@ class AgenticIngestionPlanner:
     """Tool-enabled ingestion planner backed by the agentic runtime foundation.
 
     The planner state may call planning support tools, then this class requests
-    a provider-structured `ExtractionPlan`. Backend code validates that plan
-    before the ingestion service continues.
+    a provider-structured `ExtractionPlanDraft`. Backend code enriches and
+    validates that plan before the ingestion service continues.
     """
 
     def __init__(
@@ -137,26 +139,27 @@ class AgenticIngestionPlanner:
                 )
                 continue
 
-            plan = self._structured_plan(source, planning_context)
+            plan = self._structured_plan(source, planning_context, context)
             self._validate_plan(plan, source, context)
             return plan
 
         raise IngestionValidationError(
             "memory_ingestion_planning exceeded the allowed planning rounds "
-            "without returning a structured ExtractionPlan."
+            "without returning a structured ExtractionPlanDraft."
         )
 
     def _structured_plan(
         self,
         source: SourceRecordRef,
         planning_context: PlanningContext,
+        context: IngestionContextPackage,
     ) -> ExtractionPlan:
         provider = self.structured_provider or self.state_runner.provider
         if not hasattr(provider, "generate_structured"):
             raise IngestionValidationError(
                 "memory_ingestion_planning requires a provider that implements "
                 "generate_structured so the final output can be a validated "
-                "ExtractionPlan."
+                "ExtractionPlanDraft."
             )
 
         state_config = self.state_runner.state_configs[
@@ -169,7 +172,7 @@ class AgenticIngestionPlanner:
             source_id=source.source_id,
             prompt_id=state_config.prompt_id,
             prompt_version=state_config.prompt_version,
-            schema_id=ExtractionPlan.__name__,
+            schema_id=ExtractionPlanDraft.__name__,
             metadata={
                 "state_id": state_value,
                 "source_type": str(source.source_type),
@@ -184,7 +187,7 @@ class AgenticIngestionPlanner:
         try:
             result = provider.generate_structured(  # type: ignore[attr-defined]
                 StructuredGenerationRequest(
-                    schema=ExtractionPlan,
+                    schema=ExtractionPlanDraft,
                     system_prompt=prompt,
                     input_message={
                         "state_id": state_value,
@@ -192,7 +195,7 @@ class AgenticIngestionPlanner:
                             AgenticStateId.MEMORY_INGESTION_PLANNING,
                             planning_context,
                         ),
-                        "final_output_contract": "ExtractionPlan",
+                        "final_output_contract": "ExtractionPlanDraft",
                     },
                     model=route.model,
                     temperature=self.state_runner.temperature,
@@ -204,10 +207,10 @@ class AgenticIngestionPlanner:
         except ValidationError as exc:
             raise IngestionValidationError(
                 "memory_ingestion_planning returned an invalid structured "
-                f"ExtractionPlan: {exc}"
+                f"ExtractionPlanDraft: {exc}"
             ) from exc
-        plan = ExtractionPlan.model_validate(result.parsed)
-        return plan
+        draft = ExtractionPlanDraft.model_validate(result.parsed)
+        return enrich_extraction_plan(draft, source, context)
 
     def _execution_context(self, source: SourceRecordRef) -> AgenticToolExecutionContext:
         if self.execution_context_factory is not None:
@@ -229,11 +232,6 @@ class AgenticIngestionPlanner:
         source: SourceRecordRef,
         context: IngestionContextPackage,
     ) -> None:
-        if plan.source_id != source.source_id:
-            raise IngestionValidationError(
-                f"Extraction plan returned source_id '{plan.source_id}' "
-                f"but expected '{source.source_id}'."
-            )
         known_aliases = set(context.aliases)
         unknown_aliases: list[str] = []
         for task in plan.tasks:
@@ -259,9 +257,10 @@ def _planning_context(
     history_service: AgenticHistoryService,
 ) -> PlanningContext:
     text = source.raw_text or source.content_ref or ""
+    source_alias = "SOURCE_000001"
     return PlanningContext(
         source=SourceContext(
-            source_id=source.source_id,
+            source_id=source_alias,
             normalized_text=source.raw_text,
             transcript_text=source.raw_text if str(source.source_type) == "transcript" else None,
             media_refs=[source.content_ref] if source.content_ref else [],
@@ -270,7 +269,7 @@ def _planning_context(
                     text=mention.evidence_text or mention.text,
                     span_start=mention.span_start,
                     span_end=mention.span_end,
-                    source_ref=source.source_id,
+                    source_ref=source_alias,
                 )
                 for mention in mention_scan.mentions
                 if mention.evidence_text or mention.text
@@ -282,7 +281,7 @@ def _planning_context(
             timezone=str(source.metadata.get("timezone") or "UTC"),
         ),
         mention_scan=MentionScanContext(
-            source_id=source.source_id,
+            source_id=source_alias,
             mentions=[
                 MentionContextItem(
                     kind=str(mention.kind),
@@ -304,11 +303,11 @@ def _planning_context(
         ),
         graph_context=GraphContextPackage(
             package_id=context.context_package_id,
-            aliases=dict(context.aliases),
+            aliases={alias: alias for alias in context.aliases},
             candidate_matches=list(context.entities),
             relationship_contexts=list(context.relationships),
             known_ambiguities=list(context.notes),
-            metadata=dict(context.metadata),
+            metadata={"source_alias": source_alias},
         ),
         timezone=str(source.metadata.get("timezone") or "UTC"),
         metadata={"context_package_id": context.context_package_id},

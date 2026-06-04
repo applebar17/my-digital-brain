@@ -25,6 +25,12 @@ The ingestion flow turns user input into graph updates while preserving source e
 
 Complexity is decided after the mention scan and context retrieval. The system must not classify rich versus simple ingestion from raw text alone.
 
+LLM-backed steps return draft objects, not backend records. The model extracts
+semantic content, evidence text/spans, local candidate refs, and graph aliases.
+Backend code then enriches those drafts with source IDs, generated IDs,
+`EvidenceRef`, status fields, timestamps, and metadata before validation,
+resolution, or graph writes.
+
 ## LLM Action Boundary
 
 The conversational LLM chooses actions and proposes parameters. Backend services validate and execute.
@@ -83,14 +89,16 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 - Agent contradiction doubts when present.
 - Suggested clarification questions.
 
-Every extraction object should include enough grounding to debug or reject it:
+Every LLM draft extraction object should include enough grounding to debug or reject it:
 
-- source references
-- evidence text
+- evidence text/spans
 - original user words when present
 - missing fields
 - ambiguity flags
 - clarification need
+
+Backend-enriched candidate records add source references and evidence refs after
+the draft is validated.
 
 This allows validation and resolution before permanent graph writes.
 

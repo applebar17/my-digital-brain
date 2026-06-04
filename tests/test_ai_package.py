@@ -11,7 +11,8 @@ from my_digital_brain.ai.tools import (
     build_chat_toolbox,
     build_tool_mapping,
 )
-from my_digital_brain.ingestion.contracts import MentionScan
+from my_digital_brain.ingestion.contracts import MentionScanDraft
+from my_digital_brain.ingestion.contracts import drafts as draft_contracts
 
 
 def test_ai_client_settings_import_without_constructing_client() -> None:
@@ -97,17 +98,20 @@ def test_genai_message_normalizer_repairs_roleless_payload_inside_messages() -> 
     assert json.loads(messages[1]["content"]) == {"source": {"raw_text": "hello"}}
 
 
-def test_strict_response_format_closes_metadata_objects_for_mention_scan() -> None:
-    response_format = strict_response_format(MentionScan)
+def test_strict_response_format_closes_draft_objects_for_mention_scan() -> None:
+    response_format = strict_response_format(MentionScanDraft)
     schema = response_format["json_schema"]["schema"]
-    mention_schema = schema["$defs"]["Mention"]
+    mention_schema = schema["$defs"]["MentionDraft"]
 
     assert response_format["type"] == "json_schema"
     assert response_format["json_schema"]["strict"] is True
     assert schema["additionalProperties"] is False
-    assert schema["properties"]["metadata"]["additionalProperties"] is False
     assert mention_schema["additionalProperties"] is False
-    assert mention_schema["properties"]["metadata"]["additionalProperties"] is False
+    assert "source_id" not in schema["properties"]
+    assert "mention_scan_id" not in schema["properties"]
+    assert "metadata" not in schema["properties"]
+    assert "mention_id" not in mention_schema["properties"]
+    assert "metadata" not in mention_schema["properties"]
     _assert_all_objects_are_closed(schema)
     _assert_refs_have_no_siblings(schema)
     _assert_schema_has_no_defaults(schema)
@@ -121,23 +125,55 @@ def test_structured_call_sends_strict_json_schema_response_format() -> None:
     )
 
     parsed = client._call_structured_once(
-        MentionScan,
+        MentionScanDraft,
         messages=[{"role": "user", "content": "scan"}],
         model="test-model",
         temperature=None,
         max_tokens=None,
     )
 
-    assert parsed.source_id == "source-1"
+    assert parsed.mentions == []
     response_format = completion.params["response_format"]
     assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["name"] == "MentionScan"
-    assert (
-        response_format["json_schema"]["schema"]["properties"]["metadata"][
-            "additionalProperties"
-        ]
-        is False
-    )
+    assert response_format["json_schema"]["name"] == "MentionScanDraft"
+    assert "source_id" not in response_format["json_schema"]["schema"]["properties"]
+
+
+def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None:
+    output_schemas = [
+        draft_contracts.MentionScanDraft,
+        draft_contracts.ExtractionPlanDraft,
+        draft_contracts.CandidateEntityDraftBatch,
+        draft_contracts.CandidateRelationshipDraftBatch,
+        draft_contracts.CandidateClaimDraftBatch,
+        draft_contracts.CandidatePerceptionDraftBatch,
+        draft_contracts.CandidateRelationshipContextDraftBatch,
+        draft_contracts.CandidateMetadataPatchDraftBatch,
+    ]
+    forbidden_fields = {
+        "source_id",
+        "source_refs",
+        "evidence_refs",
+        "metadata",
+        "mention_id",
+        "mention_scan_id",
+        "extraction_plan_id",
+        "task_id",
+        "candidate_id",
+        "candidate_relationship_id",
+        "candidate_claim_id",
+        "candidate_perception_id",
+        "candidate_relationship_context_id",
+        "patch_id",
+        "typed_properties",
+        "properties",
+    }
+
+    for schema_model in output_schemas:
+        schema = strict_response_format(schema_model)["json_schema"]["schema"]
+        _assert_no_forbidden_properties(schema, forbidden_fields)
+        _assert_all_objects_are_closed(schema)
+        _assert_refs_have_no_siblings(schema)
 
 
 class CapturingChatCompletion:
@@ -152,10 +188,7 @@ class CapturingChatCompletion:
                     message=SimpleNamespace(
                         content=json.dumps(
                             {
-                                "mention_scan_id": "scan-1",
-                                "source_id": "source-1",
                                 "mentions": [],
-                                "metadata": {},
                             }
                         )
                     )
@@ -188,6 +221,21 @@ def _assert_refs_have_no_siblings(schema: object) -> None:
     elif isinstance(schema, list):
         for item in schema:
             _assert_refs_have_no_siblings(item)
+
+
+def _assert_no_forbidden_properties(
+    schema: object,
+    forbidden_fields: set[str],
+) -> None:
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            assert forbidden_fields.isdisjoint(properties)
+        for value in schema.values():
+            _assert_no_forbidden_properties(value, forbidden_fields)
+    elif isinstance(schema, list):
+        for item in schema:
+            _assert_no_forbidden_properties(item, forbidden_fields)
 
 
 def _assert_schema_has_no_defaults(schema: object) -> None:

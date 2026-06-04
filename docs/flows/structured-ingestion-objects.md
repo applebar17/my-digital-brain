@@ -6,6 +6,30 @@ The ingestion pipeline needs well-defined intermediate objects between raw input
 
 ## Required Object Layers
 
+### Draft Versus Backend Record Boundary
+
+Objects that are returned by an LLM are not the same objects that downstream
+backend services validate and persist.
+
+Use two layers:
+
+- `*Draft` contracts are LLM-facing structured outputs. They contain semantic
+  content, local candidate refs, graph aliases, evidence text/spans, ambiguity
+  flags, and typed property suggestions.
+- Backend records are enriched objects. They add generated IDs, `source_id`,
+  `source_refs`, `EvidenceRef`, extraction run refs, timestamps, statuses,
+  metadata, and persistence-ready provenance.
+
+The LLM must not output backend-owned fields such as `source_id`,
+`mention_scan_id`, `extraction_plan_id`, `task_id`, candidate IDs,
+`source_refs`, `EvidenceRef`, raw UUIDs, or backend metadata. Backend code
+injects those fields after validating the draft.
+
+Free-form LLM metadata is not allowed in draft schemas. When the model sees an
+additional property worth storing, it returns a typed property suggestion:
+`key`, `value_text`, `value_kind`, and optional `reason`. Backend code decides
+whether that suggestion becomes a typed field, governed metadata, or is ignored.
+
 ### SourceRecord
 
 The immutable input record.
@@ -49,7 +73,7 @@ Speech-to-text runs should also be represented as extraction or processing runs,
 
 A cheap shallow pass over source text or transcript. It exists to drive compact graph-context retrieval before the ingestion planner runs.
 
-Core fields:
+Backend record fields:
 
 - `mention_scan_id`
 - `source_id`
@@ -57,13 +81,17 @@ Core fields:
 - `created_at`
 - `metadata`
 
+LLM draft fields:
+
+- `mentions`
+
 The mention scan should not create final entities or relationships. It only identifies likely names, places, events, dates, topics, relationship hints, and affective hints.
 
 ### Mention
 
 A shallow mention found in the source.
 
-Core fields:
+Backend record fields:
 
 - `mention_id`
 - `kind`: person, place, event, organization, object, animal, social_circle, topic, date, relationship_context, perception, claim.
@@ -74,11 +102,13 @@ Core fields:
 - `possible_normalized_value`
 - `ambiguity_hint`
 
+LLM draft fields are the same semantic fields without `mention_id` or metadata.
+
 ### ExtractionPlan
 
 The context-aware plan produced after mention scan and compact graph-context retrieval.
 
-Core fields:
+Backend record fields:
 
 - `extraction_plan_id`
 - `source_id`
@@ -90,13 +120,21 @@ Core fields:
 - `context_gaps`
 - `created_at`
 
+LLM draft fields:
+
+- `execution_mode`
+- `reason`
+- `tasks`
+- `clarification`
+- `context_gaps`
+
 The plan proposes extraction tasks. It must not propose direct graph writes.
 
 ### ExtractionTask
 
 A focused extraction instruction.
 
-Core fields:
+Backend record fields:
 
 - `task_id`
 - `task_type`
@@ -107,13 +145,16 @@ Core fields:
 - `required_context_refs`
 - `notes`
 
+LLM draft fields are the same operational fields without `task_id` or
+`source_refs`. Backend code injects source refs deterministically.
+
 Task types may include person, place, event, claim, perception, relationship_context, relationship_state, metadata_patch, and link extraction.
 
 ### CandidateEntity
 
 A proposed entity before resolution.
 
-Core fields:
+Backend record fields:
 
 - `candidate_id`
 - `entity_type`
@@ -124,7 +165,19 @@ Core fields:
 - `affective_fields`
 - `metadata`
 - `evidence_refs`
-- `confidence`
+- `missing_fields`
+- `ambiguity_flags`
+
+LLM draft fields:
+
+- `local_ref`
+- `entity_type`
+- `display_name`
+- `description`
+- `aliases`
+- `property_suggestions`
+- `affective_fields`
+- `evidence`
 - `missing_fields`
 - `ambiguity_flags`
 
@@ -132,7 +185,7 @@ Core fields:
 
 A proposed relationship between candidate or existing entities.
 
-Core fields:
+Backend record fields:
 
 - `candidate_relationship_id`
 - `relationship_type`
@@ -142,9 +195,11 @@ Core fields:
 - `affective_fields`
 - `metadata`
 - `evidence_refs`
-- `confidence`
 - `temporal_scope`
 - `ambiguity_flags`
+
+LLM draft fields use `property_suggestions` and evidence text/spans instead of
+backend `properties`, metadata, source refs, or evidence refs.
 
 ### CandidateClaim
 

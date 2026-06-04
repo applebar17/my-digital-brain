@@ -14,6 +14,24 @@ Information is extracted from unstructured text, transcripts, media-derived text
 
 When asking a model to extract information, the request should include the expected structured output contract, preferably as a Pydantic object or equivalent schema. The model should produce structured proposals, not direct database mutations.
 
+LLM-facing extraction contracts must be semantic draft contracts. The model
+extracts meaning, local candidate refs, graph aliases, evidence text/spans, and
+property suggestions. Backend code deterministically enriches those drafts into
+records with source IDs, generated IDs, evidence refs, status fields, timestamps,
+metadata, and persistence-ready provenance.
+
+Rules:
+
+- Use `*Draft` schemas for provider structured outputs.
+- Use enriched backend records for validation, resolution, write plans, storage,
+  and audit.
+- Do not ask the model to echo `source_id`, generated IDs, raw UUIDs,
+  `EvidenceRef`, `source_refs`, or backend metadata.
+- Let the model use only scoped local refs such as `CANDIDATE_PERSON_001` and
+  provided graph aliases such as `NODE_000001`.
+- Represent arbitrary metadata as typed property suggestions in model-facing
+  schemas; backend decides whether they become typed fields or metadata.
+
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
 used only to smuggle the schema back to the backend. Tools may still be used

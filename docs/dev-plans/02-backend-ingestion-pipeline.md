@@ -13,6 +13,16 @@ This plan does not define the Telegram bot or the user-facing chat loop. The cha
 - The ingestion package contains application business logic: memory extraction contracts, planning, candidate assembly, validation, resolution, and write-plan execution.
 - The conversational LLM chooses actions and proposes parameters. Backend services validate parameters and perform all state changes.
 - The LLM never writes directly to the graph, relational store, source files, or vector store.
+- LLM structured outputs use `*Draft` contracts. Backend code enriches those
+  drafts into canonical records by adding generated IDs, source provenance,
+  evidence refs, timestamps, status fields, and backend metadata.
+- LLM-facing schemas must not require or accept raw backend IDs, `source_id`,
+  generated candidate IDs, `source_refs`, `EvidenceRef`, raw UUIDs, or free-form
+  backend metadata. The only model-facing identifiers are scoped local refs and
+  provided graph aliases.
+- LLM-facing arbitrary fields are represented as typed property suggestions.
+  Backend code decides whether suggestions become typed graph properties,
+  governed metadata, or are ignored.
 - Top-level conversational action space is intentionally small:
   - default answer path: no tool
   - `start_memory_ingestion`
@@ -292,9 +302,9 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
 
 ### Contract Requirements
 
-All LLM-facing contracts must have concise field descriptions because Pydantic field descriptions are part of the prompt surface.
+All LLM-facing draft contracts must have concise field descriptions because Pydantic field descriptions are part of the prompt surface.
 
-Every candidate object that can affect graph state must include:
+Every backend-enriched candidate object that can affect graph state must include:
 
 - source references
 - evidence text or evidence refs
@@ -302,6 +312,10 @@ Every candidate object that can affect graph state must include:
 - missing fields
 - ambiguity flags
 - local refs or graph aliases only, never arbitrary raw graph IDs in LLM-facing fields
+
+The corresponding LLM-facing candidate drafts include evidence text/spans and
+property suggestions only. Backend enrichment injects `source_refs`,
+`EvidenceRef`, candidate IDs, and backend metadata before validation.
 
 The `GraphWritePlan` must be backend-generated. It is not a direct LLM output schema.
 
@@ -342,8 +356,8 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 ### Key Changes
 
 - Add `ingestion/mention_scanner.py`.
-  - Uses `StructuredLLMProvider`.
-  - Produces `MentionScan`.
+- Uses `StructuredLLMProvider`.
+- Produces `MentionScanDraft`, then backend-enriches it into `MentionScan`.
   - Performs shallow extraction only.
   - Must not create final candidate entities or relationships.
 - Add `ingestion/context_retriever.py`.
@@ -352,9 +366,9 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
   - Uses LLM-facing aliases through `IdAliasMapper`.
   - Excludes noisy metadata by default.
 - Add `ingestion/planner.py`.
-  - Uses `StructuredLLMProvider`.
-  - Receives source text plus compact graph context.
-  - Produces `ExtractionPlan`.
+- Uses `StructuredLLMProvider`.
+- Receives source text plus compact graph context.
+- Produces `ExtractionPlanDraft`, then backend-enriches it into `ExtractionPlan`.
   - Selects one of:
     - `simple_single_pass`
     - `focused_extraction`
@@ -385,6 +399,8 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 - Focused extractors must only extract the requested task.
 - Extractors must preserve evidence text and original user wording.
 - Extractors should use `unknown`, `missing_fields`, or `ambiguity_flags` instead of guessing.
+- Extractors return `Candidate*DraftBatch` schemas to the model; backend
+  enrichment returns canonical `Candidate*` records to downstream services.
 - Tool/provider errors must be verbose enough for orchestration to retry, ask clarification, or fail cleanly.
 
 ### Out Of Scope
@@ -448,8 +464,10 @@ This wave makes the first useful ingestion path possible.
   - Expire pending process snapshots through explicit timestamps.
   - Use `InMemoryIngestionProcessStore` for local/private runs; relational persistence can map the same snapshots to existing operational tables.
 - Preserve provider request context at the service boundary.
-  - AI-backed services pass source id, purpose, schema id, route metadata, and source/channel metadata into provider requests.
-  - Durable provider request-log persistence remains owned by the AI/operational logging layer.
+- AI-backed services pass source id, purpose, schema id, route metadata, and source/channel metadata into provider requests.
+- Durable provider request-log persistence remains owned by the AI/operational logging layer.
+- Provider request context may carry backend IDs for tracing, but those IDs are
+  not part of model-facing prompt payloads or structured response schemas.
 
 ### Resolution Policy
 

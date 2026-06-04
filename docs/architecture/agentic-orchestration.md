@@ -105,7 +105,8 @@ Some `AS` states may use tools during execution and still end with a required
 structured output. In that case, tools are side-effect-bounded support actions,
 while the final state result is a validated schema. `memory_ingestion_planning`
 is the canonical example: it may request context expansion or contradiction
-review, but it must finish by producing an `ExtractionPlan` structured output.
+review, but it must finish by producing an `ExtractionPlanDraft` structured
+output that backend code enriches into an `ExtractionPlan`.
 
 ## Execution Node Labels
 
@@ -264,7 +265,7 @@ General context rules:
 | `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification context if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
 | `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
 | `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
-| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlan`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or clarification request. |
+| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlanDraft`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or clarification request. |
 | `LP: simple_extraction` | Source context, full but compact evidence payload, task schemas selected by the plan, relevant graph aliases, temporal basis. | Candidate objects for simple low-ambiguity memories. |
 | `LP: focused_extraction` | Source context, selected evidence span, one focused Pydantic contract per task, relevant graph aliases only, prior candidate refs if needed for local linking. | Focused candidate objects with evidence, original user words, missing fields, ambiguity flags, and local refs. |
 | `BP: candidate_assembly` | Extraction plan, focused/simple candidates, local candidate refs, source refs, evidence refs. | `CandidateMemoryGraph` with resolved local references and grouped entity/relationship/perception candidates. |
@@ -305,7 +306,7 @@ sequenceDiagram
     O->>G: compact graph context for mentions
     G-->>O: Marco candidates, Milan context
     O->>I: memory_ingestion_planning
-    I-->>O: ExtractionPlan
+    I-->>O: ExtractionPlanDraft enriched to ExtractionPlan
     alt Ambiguity blocks safe extraction
         O-->>R: assistant clarification text + pending process context
         R-->>U: "Which Marco?"
@@ -324,7 +325,7 @@ sequenceDiagram
 Critical boundary:
 
 ```text
-Planner -> ExtractionPlan
+Planner -> ExtractionPlanDraft -> backend-enriched ExtractionPlan
 Focused extractors -> candidate objects
 Assembler -> CandidateMemoryGraph
 Validator/resolver -> GraphWritePlan or ClarificationRequest
@@ -528,16 +529,18 @@ Allowed tools:
 
 Final output rule:
 
-- `ExtractionPlan` is the only accepted final planner output. The planner may
-  call tools while reasoning, but the final state result must be a structured
-  `ExtractionPlan` validated by backend code before extraction continues.
+- `ExtractionPlanDraft` is the only accepted final planner output. The planner
+  may call tools while reasoning, but the final state result must be a
+  structured draft validated and enriched by backend code before extraction
+  continues.
 - Backend code deterministically routes the next process step from
-  `execution_mode`, `tasks`, `clarification`, and `context_gaps`.
+  the enriched `ExtractionPlan`: `execution_mode`, `tasks`, `clarification`,
+  and `context_gaps`.
 - Free-form assistant text alone is not a valid planning result.
 
 Clarification behavior:
 
-- Clarification is returned as part of the `ExtractionPlan` when ambiguity
+- Clarification is returned as part of the `ExtractionPlanDraft` when ambiguity
   blocks safe extraction.
 - The assistant asks the user with a normal conversational message.
 - The runtime stores minimal pending context so a later message can resume the
@@ -775,7 +778,7 @@ The agent can:
   safe extraction
 - choose the extraction mode: `simple_single_pass`, `focused_extraction`,
   `needs_context_expansion`, or `needs_clarification_first`
-- return a structured `ExtractionPlan` with focused tasks and evidence spans
+- return a structured `ExtractionPlanDraft` with focused tasks and evidence spans
 
 The agent cannot:
 
@@ -999,7 +1002,7 @@ Boundaries:
 | --- | --- | --- | --- | --- |
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
-| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, contradiction review request, structured `ExtractionPlan` output | graph writes |
+| `memory_ingestion_planning` | `AS` | Plan extraction tasks | context expansion, contradiction review request, structured `ExtractionPlanDraft` output | graph writes |
 | `focused_extraction` | `LP` | Produce structured candidates | focused schema input only | resolution, writes, tools |
 | `validation_resolution` | `BP` | Deterministic validation and write-plan construction | validator, resolver, write-plan builder | LLM-authored writes |
 | `contradiction_review` | `AS` | Judge grounded doubt | read-only graph/source tools | direct mutation |

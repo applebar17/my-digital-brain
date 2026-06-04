@@ -9,9 +9,15 @@ from my_digital_brain.ai.protocols import ModelRouter, StructuredLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
 from my_digital_brain.ingestion.contracts import (
     ExtractionPlan,
+    ExtractionPlanDraft,
     IngestionContextPackage,
     MentionScan,
+    MentionScanDraft,
     SourceRecordRef,
+)
+from my_digital_brain.ingestion.enrichment import (
+    enrich_extraction_plan,
+    enrich_mention_scan,
 )
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
 from my_digital_brain.ingestion.prompt_builders import (
@@ -40,7 +46,7 @@ class LLMMentionScanner:
     def scan(self, source: SourceRecordRef) -> MentionScan:
         parsed = _structured_call(
             provider=self.provider,
-            output_schema=MentionScan,
+            output_schema=MentionScanDraft,
             system_prompt=self.prompt_builder.mention_scan_system_prompt,
             input_message=self.prompt_builder.mention_scan_input(source),
             source=source,
@@ -48,13 +54,8 @@ class LLMMentionScanner:
             router=self.router,
             model=self.model,
         )
-        mention_scan = MentionScan.model_validate(parsed)
-        if mention_scan.source_id != source.source_id:
-            raise IngestionValidationError(
-                "Mention scan returned source_id "
-                f"'{mention_scan.source_id}' but expected '{source.source_id}'."
-            )
-        return mention_scan
+        draft = MentionScanDraft.model_validate(parsed)
+        return enrich_mention_scan(draft, source)
 
 
 class LLMIngestionPlanner:
@@ -79,7 +80,7 @@ class LLMIngestionPlanner:
     ) -> ExtractionPlan:
         parsed = _structured_call(
             provider=self.provider,
-            output_schema=ExtractionPlan,
+            output_schema=ExtractionPlanDraft,
             system_prompt=self.prompt_builder.planner_system_prompt,
             input_message=self.prompt_builder.planner_input(source, mention_scan, context),
             source=source,
@@ -87,12 +88,8 @@ class LLMIngestionPlanner:
             router=self.router,
             model=self.model,
         )
-        plan = ExtractionPlan.model_validate(parsed)
-        if plan.source_id != source.source_id:
-            raise IngestionValidationError(
-                f"Extraction plan returned source_id '{plan.source_id}' "
-                f"but expected '{source.source_id}'."
-            )
+        draft = ExtractionPlanDraft.model_validate(parsed)
+        plan = enrich_extraction_plan(draft, source, context)
         self._validate_plan_aliases(plan, context)
         return plan
 
