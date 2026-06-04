@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from my_digital_brain.ai.client import GenAIClient, GenAISettings
+from my_digital_brain.ai.structured_schema import strict_response_format
 from my_digital_brain.ai.tools import (
     build_chat_toolbox,
     build_tool_mapping,
 )
+from my_digital_brain.ingestion.contracts import MentionScan
 
 
 def test_ai_client_settings_import_without_constructing_client() -> None:
@@ -92,3 +95,83 @@ def test_genai_message_normalizer_repairs_roleless_payload_inside_messages() -> 
 
     assert [message["role"] for message in messages] == ["system", "user"]
     assert json.loads(messages[1]["content"]) == {"source": {"raw_text": "hello"}}
+
+
+def test_strict_response_format_closes_metadata_objects_for_mention_scan() -> None:
+    response_format = strict_response_format(MentionScan)
+    schema = response_format["json_schema"]["schema"]
+    mention_schema = schema["$defs"]["Mention"]
+
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["strict"] is True
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["metadata"]["additionalProperties"] is False
+    assert mention_schema["additionalProperties"] is False
+    assert mention_schema["properties"]["metadata"]["additionalProperties"] is False
+    _assert_all_objects_are_closed(schema)
+
+
+def test_structured_call_sends_strict_json_schema_response_format() -> None:
+    completion = CapturingChatCompletion()
+    client = object.__new__(GenAIClient)
+    client.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completion),
+    )
+
+    parsed = client._call_structured_once(
+        MentionScan,
+        messages=[{"role": "user", "content": "scan"}],
+        model="test-model",
+        temperature=None,
+        max_tokens=None,
+    )
+
+    assert parsed.source_id == "source-1"
+    response_format = completion.params["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "MentionScan"
+    assert (
+        response_format["json_schema"]["schema"]["properties"]["metadata"][
+            "additionalProperties"
+        ]
+        is False
+    )
+
+
+class CapturingChatCompletion:
+    def __init__(self) -> None:
+        self.params = {}
+
+    def create(self, **params):
+        self.params = params
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=json.dumps(
+                            {
+                                "mention_scan_id": "scan-1",
+                                "source_id": "source-1",
+                                "mentions": [],
+                                "metadata": {},
+                            }
+                        )
+                    )
+                )
+            ]
+        )
+
+
+def _assert_all_objects_are_closed(schema: object) -> None:
+    if isinstance(schema, dict):
+        if (
+            schema.get("type") == "object"
+            or "properties" in schema
+            or "additionalProperties" in schema
+        ):
+            assert schema.get("additionalProperties") is False
+        for value in schema.values():
+            _assert_all_objects_are_closed(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _assert_all_objects_are_closed(item)

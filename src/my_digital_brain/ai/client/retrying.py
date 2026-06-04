@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from my_digital_brain.ai.context import is_context_length_error
+from my_digital_brain.ai.structured_schema import strict_response_format
 from my_digital_brain.ai.tracing import traceable
 
 
@@ -69,12 +70,15 @@ class GenAIRetryMixin:
 
     @traceable(name="Structured LLM Call", run_type="parser")
     def _call_structured_response_with_retries(self, params: dict[str, Any]):
+        params = self._normalize_structured_response_format(params)
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
         for attempt in range(1, self.max_retries + 1):
             try:
                 self._ensure_context_budget(params)
+                if _is_json_schema_response_format(params.get("response_format")):
+                    return self.client.chat.completions.create(**params)
                 if hasattr(self.client, "chat") and hasattr(
                     self.client.chat.completions, "parse"
                 ):
@@ -245,7 +249,7 @@ class GenAIRetryMixin:
         params = {
             "model": model,
             "messages": messages,
-            "response_format": schema,
+            "response_format": strict_response_format(schema),
         }
         # Some OpenAI models reject explicit temperature.
         #     params["temperature"] = temperature
@@ -253,36 +257,23 @@ class GenAIRetryMixin:
             params["max_tokens"] = max_tokens
         if max_completion_tokens is not None:
             params["max_completion_tokens"] = max_completion_tokens
-        if hasattr(self.client, "chat") and hasattr(
-            self.client.chat.completions, "parse"
-        ):
-            response = self.client.chat.completions.parse(**params)
-            parsed = getattr(response, "output_parsed", None)
-            if parsed is None:
-                parsed = getattr(response.choices[0].message, "parsed", None)
-            if parsed is not None:
-                return parsed
-            content = response.choices[0].message.content or "{}"
-            return schema.model_validate_json(content)
-
-        if (
-            hasattr(self.client, "beta")
-            and hasattr(self.client.beta, "chat")
-            and hasattr(self.client.beta.chat.completions, "parse")
-        ):
-            response = self.client.beta.chat.completions.parse(**params)
-            parsed = getattr(response, "output_parsed", None)
-            if parsed is None:
-                parsed = getattr(response.choices[0].message, "parsed", None)
-            if parsed is not None:
-                return parsed
-            content = response.choices[0].message.content or "{}"
-            return schema.model_validate_json(content)
-
-        params.pop("response_format", None)
         response = self.client.chat.completions.create(**params)
         content = response.choices[0].message.content or "{}"
         return schema.model_validate_json(content)
+
+    def _normalize_structured_response_format(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        response_format = params.get("response_format")
+        if (
+            isinstance(response_format, type)
+            and issubclass(response_format, BaseModel)
+        ):
+            updated = dict(params)
+            updated["response_format"] = strict_response_format(response_format)
+            return updated
+        return params
 
     def _should_retry_without_temperature(
         self,
@@ -356,3 +347,10 @@ class GenAIRetryMixin:
             "504",
         )
         return any(marker in message for marker in retry_markers)
+
+
+def _is_json_schema_response_format(response_format: Any) -> bool:
+    return (
+        isinstance(response_format, dict)
+        and response_format.get("type") == "json_schema"
+    )
