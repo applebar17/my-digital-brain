@@ -208,6 +208,24 @@ Status: implemented.
 - Persist compact traces locally enough to debug state transitions and tool
   failures without exposing noisy prompt internals.
 
+## Medium Priority UX And Conversation Flow
+
+- Transform clarification handling into a planning-question flow:
+  - backend/process states produce a structured outbound question;
+  - the question may include candidate answers/options plus free-text fallback;
+  - web chat renders clickable answer chips/buttons when options are available;
+  - selecting an option sends a normal chat message or structured answer payload
+    back through the same pending-process review path;
+  - agentic states still receive compact history and pending-process context,
+    not raw UI widget state.
+- Keep clarification UX natural: clicking a candidate answer is a convenience,
+  not a rigid command-only path. Free text remains valid.
+- Add per-chat item actions in the recent-chat sidebar:
+  - use an overflow `...` menu on each chat row;
+  - archive chats through the backend session status instead of hard deleting
+    them;
+  - hide archived chats from the default recent list.
+
 ## Post-UAT Hardening
 
 - Review confirmation policy after real user testing.
