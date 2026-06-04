@@ -108,6 +108,12 @@ class GraphWritePlanExecutor(Protocol):
 
 
 @runtime_checkable
+class GraphVectorizationService(Protocol):
+    def vectorize_ingestion_result(self, result: IngestionResult) -> object:
+        """Build and store vector records for a successful graph write result."""
+
+
+@runtime_checkable
 class IngestionProcessStore(Protocol):
     def save_source(self, source: SourceRecordRef) -> SourceRecordRef:
         """Persist or remember a source before processing."""

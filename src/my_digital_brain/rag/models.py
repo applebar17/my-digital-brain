@@ -89,3 +89,18 @@ class StoredVectorRecord(VectorRecordData):
     id: str
     created_at: datetime
     updated_at: datetime
+
+
+class GraphVectorizationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    collection: str = MEMORY_DOCUMENTS_COLLECTION
+    target_count: int = 0
+    documents_built: int = 0
+    embeddings_upserted: int = 0
+    vector_records_upserted: int = 0
+    unchanged_records: int = 0
+    archived_records: int = 0
+    skipped_targets: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

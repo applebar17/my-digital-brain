@@ -512,6 +512,17 @@ mode and expose exact/property search as a secondary mode.
 - Upsert embeddings into Chroma.
 - Persist vector record links.
 - Add update/delete behavior for archived or replaced vector records.
+- Hydrate graph records from Neo4j after write execution before building
+  embedding documents. Do not vectorize pre-write candidate payloads.
+- Treat vectorization as a post-write retrieval-indexing step. If vectorization
+  fails, the graph write remains successful and the ingestion result records
+  compact diagnostics.
+- Skip unchanged vector documents when `builder_version` and
+  `document_checksum` match the existing vector record.
+- Archive and delete vector-store entries when a target is archived/deleted or
+  when a previously embeddable target no longer has meaningful embedding text.
+- Keep Chroma metadata primitive and compact. Store rich graph context in Neo4j
+  and hydrate it during retrieval.
 
 ### Wave 3: Semantic And Hybrid Retrieval
 

@@ -441,6 +441,31 @@ If the relationship has emotional or temporal history, create a RelationshipCont
 Verbose errors are not only for humans. They are a control surface for agentic
 behavior.
 
+### 19. Embeddings Are Backend-Derived Retrieval Artifacts
+
+Vector embeddings are not memory truth and they are not model-authored memory
+summaries by default.
+
+For Graph-RAG, Neo4j remains authoritative. Backend code builds deterministic,
+typed embedding documents from stored graph records, then Chroma stores semantic
+lookup vectors that point back to Neo4j targets.
+
+Rules:
+
+- Embed low-noise informative text, not raw graph payloads.
+- Do not embed raw UUIDs, metadata blobs, provider traces, prompts, logs, or
+  tool-call payloads.
+- Prefer typed builders per graph label over generic property dumps.
+- Store exactly one primary graph target per vector record and optional related
+  targets for multi-node memories.
+- Use `builder_version` plus `document_checksum` to decide whether an embedding
+  is stale.
+- If vectorization fails after a successful graph write, preserve the graph
+  write and record vectorization diagnostics. Do not make Chroma availability the
+  authority for whether a memory was stored.
+- Answer generation must hydrate graph targets from Neo4j after vector search.
+  Chroma hits alone are never enough grounding for user-visible answers.
+
 ## Practical Development Rules
 
 - Treat schemas, tools, and prompts as one design surface.
@@ -448,6 +473,8 @@ behavior.
 - Let the AI Manager be dynamic, but keep graph writes validated.
 - Prefer context engineering over larger prompts.
 - Build low-noise context packages for LLM answer generation and tool use.
+- Build low-noise embedding documents for semantic retrieval; do not embed raw
+  graph records or model/tool traces.
 - Prefer a small strong toolbox over many vague tools.
 - Add deterministic code where it is clearly cheaper, faster, and more reliable.
 - Add model calls where language, ambiguity, or contextual judgment matters.

@@ -254,6 +254,73 @@ def test_ingestion_service_can_execute_fake_write_path() -> None:
     assert graph.upserted_nodes[0].label == "Person"
 
 
+def test_ingestion_service_vectorizes_after_successful_graph_write() -> None:
+    graph = FakeGraphService()
+    vectorizer = RecordingVectorizer()
+    service = IngestionService(
+        scanner=StaticScanner(),
+        context_retriever=StaticContextRetriever(),
+        planner=StaticPlanner(_plan()),
+        extractors=[
+            StaticExtractor(
+                [
+                    CandidateEntity(
+                        local_ref="CANDIDATE_PERSON_001",
+                        entity_type="Person",
+                        display_name="Marco",
+                        description="University friend.",
+                        source_refs=["source-1"],
+                    ),
+                ],
+            ),
+        ],
+        resolution_service=ConservativeResolutionService(graph),
+        write_plan_builder=GraphWritePlanBuilder(),
+        write_plan_executor=GraphWritePlanExecutor(graph),
+        vectorization_service=vectorizer,
+        execute_write_plan=True,
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.WRITTEN
+    assert vectorizer.calls == [result.ingestion_id]
+    assert result.metadata["vectorization"] == {"status": "ok", "documents_built": 1}
+
+
+def test_ingestion_service_keeps_written_status_when_vectorization_fails() -> None:
+    graph = FakeGraphService()
+    service = IngestionService(
+        scanner=StaticScanner(),
+        context_retriever=StaticContextRetriever(),
+        planner=StaticPlanner(_plan()),
+        extractors=[
+            StaticExtractor(
+                [
+                    CandidateEntity(
+                        local_ref="CANDIDATE_PERSON_001",
+                        entity_type="Person",
+                        display_name="Marco",
+                        description="University friend.",
+                        source_refs=["source-1"],
+                    ),
+                ],
+            ),
+        ],
+        resolution_service=ConservativeResolutionService(graph),
+        write_plan_builder=GraphWritePlanBuilder(),
+        write_plan_executor=GraphWritePlanExecutor(graph),
+        vectorization_service=FailingVectorizer(),
+        execute_write_plan=True,
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.WRITTEN
+    assert result.metadata["vectorization"]["status"] == "failed"
+    assert result.metadata["vectorization"]["error_type"] == "RuntimeError"
+
+
 def test_ingestion_service_rejects_empty_extraction_plan() -> None:
     service = IngestionService(
         scanner=StaticScanner(),
@@ -468,6 +535,20 @@ class StaticExtractor:
         context: IngestionContextPackage,
     ) -> Sequence[CandidateOutput]:
         return self.candidates
+
+
+class RecordingVectorizer:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def vectorize_ingestion_result(self, result):
+        self.calls.append(result.ingestion_id)
+        return {"status": "ok", "documents_built": 1}
+
+
+class FailingVectorizer:
+    def vectorize_ingestion_result(self, result):
+        raise RuntimeError("chroma unavailable")
 
 
 def _candidate_graph(candidates: Sequence[CandidateOutput]):

@@ -14,6 +14,7 @@ SUPPORTED_EMBEDDING_LABELS = frozenset(
         "Event",
         "Perception",
         "RelationshipContext",
+        "RelationshipState",
         "ProfileMemory",
         "Person",
         "Place",
@@ -142,6 +143,27 @@ class EmbeddingTextBuilder:
             _line("Status", properties.get("status")),
             _line("Closeness", properties.get("closeness")),
             _line("Participants", participants),
+            _time_line(properties),
+            _affective_line(properties),
+            _line("Original user wording", properties.get("original_user_words")),
+        )
+
+    def _build_relationship_state(
+        self,
+        properties: Mapping[str, Any],
+        related: list[NodeSearchResult],
+    ) -> str | None:
+        if not _has_meaningful_context(properties) and not _time_line(properties):
+            return None
+        description = _first_text(properties, "description", "emotional_summary", "original_user_words")
+        if not description:
+            return None
+        context = _titles_for_labels(related, {"RelationshipContext", "Person", "Animal", "Organization"})
+        return _document(
+            _line("Relationship state", description),
+            _line("Status", properties.get("status")),
+            _line("Closeness", properties.get("closeness")),
+            _line("Context", context),
             _time_line(properties),
             _affective_line(properties),
             _line("Original user wording", properties.get("original_user_words")),

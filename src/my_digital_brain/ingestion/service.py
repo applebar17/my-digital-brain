@@ -18,6 +18,7 @@ from my_digital_brain.ingestion.protocols import (
     FocusedExtractor,
     GraphWritePlanBuilder,
     GraphWritePlanExecutor,
+    GraphVectorizationService,
     IngestionContextRetriever,
     IngestionPlanner,
     IngestionProcessStore,
@@ -47,6 +48,7 @@ class IngestionService:
     resolution_service: ResolutionService | None = None
     write_plan_builder: GraphWritePlanBuilder | None = None
     write_plan_executor: GraphWritePlanExecutor | None = None
+    vectorization_service: GraphVectorizationService | None = None
     execute_write_plan: bool = False
     process_store: IngestionProcessStore | None = None
 
@@ -312,6 +314,8 @@ class IngestionService:
             result.mention_scan = mention_scan
             result.extraction_plan = extraction_plan
             result.candidate_graph = candidate_graph
+            if result.status == IngestionStatus.WRITTEN:
+                self._vectorize_written_result(result)
             return self._finish(result)
 
         return self._finish(
@@ -349,6 +353,46 @@ class IngestionService:
         if self.process_store is not None:
             self.process_store.record_result(result)
         return result
+
+    def _vectorize_written_result(self, result: IngestionResult) -> None:
+        if self.vectorization_service is None:
+            return
+        try:
+            vectorization = self.vectorization_service.vectorize_ingestion_result(result)
+            if hasattr(vectorization, "model_dump"):
+                payload = vectorization.model_dump(mode="json", exclude_none=True)
+            elif isinstance(vectorization, dict):
+                payload = dict(vectorization)
+            else:
+                payload = {"result": str(vectorization)}
+            result.metadata = {**result.metadata, "vectorization": payload}
+            log_event(
+                logger,
+                "ingestion.vectorization.done",
+                component="ingestion",
+                source_id=result.source_id,
+                ingestion_id=result.ingestion_id,
+                vectorization=payload,
+            )
+        except Exception as exc:  # pragma: no cover - defensive safety for external vector stores
+            result.metadata = {
+                **result.metadata,
+                "vectorization": {
+                    "status": "failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            }
+            log_event(
+                logger,
+                "ingestion.vectorization.failed",
+                level="error",
+                component="ingestion",
+                source_id=result.source_id,
+                ingestion_id=result.ingestion_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
 
 
 def _candidate_graph_has_outputs(candidate_graph) -> bool:

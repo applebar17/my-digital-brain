@@ -31,6 +31,9 @@ from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
+from my_digital_brain.rag import GraphVectorizationService, VectorRecordStore
+from my_digital_brain.storage.relational import RelationalSessionProvider
+from my_digital_brain.storage.vector import ChromaVectorStore
 
 
 def build_chat_runtime(
@@ -78,6 +81,7 @@ def build_chat_runtime(
     )
     agentic_runtime = AgenticRuntime(state_runner)
     ingestion_service = build_ingestion_service(
+        settings=settings,
         provider=provider,
         graph_service=graph_service,
         state_runner=state_runner,
@@ -110,6 +114,7 @@ def build_ai_provider(settings: Settings):
 
 def build_ingestion_service(
     *,
+    settings: Settings,
     provider: Any,
     graph_service: Any | None,
     state_runner: AgenticStateRunner,
@@ -149,6 +154,15 @@ def build_ingestion_service(
         resolution_service=ConservativeResolutionService(graph_service),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph_service),
+        vectorization_service=GraphVectorizationService(
+            graph_service=graph_service,
+            embedding_provider=provider,
+            vector_store=ChromaVectorStore.from_settings(settings),
+            vector_record_store=VectorRecordStore(
+                RelationalSessionProvider.from_settings(settings),
+            ),
+            model_router=router,
+        ),
         execute_write_plan=execute_write_plan,
         process_store=InMemoryIngestionProcessStore(),
     )
