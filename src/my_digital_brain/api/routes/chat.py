@@ -9,6 +9,7 @@ from my_digital_brain.chat.enums import ChatChannel, ConversationStatus
 from my_digital_brain.chat.exceptions import ChatNotFoundError, ChatValidationError
 from my_digital_brain.chat.models import (
     ChatResponse,
+    ClarificationAnswerPacket,
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionList,
@@ -50,6 +51,15 @@ class CancelChatSessionRequest(BaseModel):
 
     owner_id: str
     reason: str | None = None
+
+
+class SubmitClarificationAnswersRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner_id: str
+    sender_id: str | None = None
+    message_id: str
+    answer_packet: ClarificationAnswerPacket
 
 
 def get_chat_store(settings: Settings = Depends(get_settings)) -> ChatSessionStore:
@@ -203,6 +213,31 @@ def cancel_chat_session_process(
             session_id,
             owner_id=request.owner_id,
             reason=request.reason,
+        )
+    except Exception as exc:
+        raise chat_http_error(exc) from exc
+
+
+@router.post(
+    "/sessions/{session_id}/clarifications/{process_id}/answers",
+    response_model=ChatResponse,
+    dependencies=[Depends(require_web_chat_auth)],
+)
+def submit_clarification_answers(
+    session_id: str,
+    process_id: str,
+    request: SubmitClarificationAnswersRequest,
+    runtime: ChatRuntime = Depends(get_chat_runtime),
+) -> ChatResponse:
+    try:
+        if request.answer_packet.process_id != process_id:
+            raise ChatValidationError("Clarification answer process id does not match URL.")
+        return runtime.answer_clarification(
+            session_id,
+            owner_id=request.owner_id,
+            sender_id=request.sender_id or request.owner_id,
+            message_id=request.message_id,
+            answer_packet=request.answer_packet,
         )
     except Exception as exc:
         raise chat_http_error(exc) from exc

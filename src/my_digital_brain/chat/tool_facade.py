@@ -10,6 +10,7 @@ from my_digital_brain.chat.enums import (
     ChatResponseStatus,
     PendingProcessKind,
 )
+from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
     ChatToolRequest,
@@ -213,19 +214,58 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 ],
                 metadata={"operation": "resume_pending_process"},
             )
-        if str(pending_context.process_ref.kind) != PendingProcessKind.MEMORY_INGESTION.value:
+        process_kind = str(pending_context.process_ref.kind)
+        if process_kind == PendingProcessKind.MEMORY_QUERY.value:
+            result = self.query_memory_context(
+                request.model_copy(
+                    update={"text": self._resumed_text(request, pending_context)},
+                    deep=True,
+                ),
+            )
+            return result.model_copy(
+                update={
+                    "metadata": {
+                        **result.metadata,
+                        "operation": "resume_pending_process",
+                        "resumed_operation": "query_memory_context",
+                        "pending_process_id": pending_context.process_ref.process_id,
+                        "clear_pending_process": True,
+                    }
+                },
+                deep=True,
+            )
+        if process_kind == PendingProcessKind.MEMORY_CORRECTION.value:
+            result = self.propose_memory_correction(
+                request.model_copy(
+                    update={"text": self._resumed_text(request, pending_context)},
+                    deep=True,
+                ),
+            )
+            return result.model_copy(
+                update={
+                    "metadata": {
+                        **result.metadata,
+                        "operation": "resume_pending_process",
+                        "resumed_operation": "propose_memory_correction",
+                        "pending_process_id": pending_context.process_ref.process_id,
+                        "clear_pending_process": result.pending_process is None,
+                    }
+                },
+                deep=True,
+            )
+        if process_kind != PendingProcessKind.MEMORY_INGESTION.value:
             return ChatToolResult(
                 status=ChatResponseStatus.FAILED,
-                primary_text="I can only resume memory-ingestion processes right now.",
+                primary_text="I cannot resume this pending process kind yet.",
                 diagnostics=[
                     ChatDiagnostic(
                         level=ChatDiagnosticLevel.ERROR,
                         code="unsupported_pending_process_kind",
                         message=(
-                            "Only memory_ingestion pending processes support resume in this "
-                            "implementation slice."
+                            "Only memory_ingestion, memory_query, and memory_correction "
+                            "pending processes support resume in this implementation slice."
                         ),
-                        details={"kind": str(pending_context.process_ref.kind)},
+                        details={"kind": process_kind},
                     )
                 ],
                 metadata={
@@ -292,6 +332,21 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             metadata["clear_pending_process"] = True
         return chat_result.model_copy(update={"metadata": metadata}, deep=True)
 
+    def _resumed_text(
+        self,
+        request: ChatToolRequest,
+        pending_context,
+    ) -> str:
+        original_text = str(
+            pending_context.context.get("source_text")
+            or pending_context.context.get("original_text")
+            or pending_context.process_ref.metadata.get("source_text")
+            or pending_context.process_ref.question
+            or "",
+        ).strip()
+        current_answer = request.text.strip()
+        return "\n\n".join(item for item in [original_text, current_answer] if item) or current_answer
+
     def _chat_result_from_ingestion(
         self,
         result,
@@ -300,6 +355,25 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         operation: str,
     ) -> ChatToolResult:
         if result.status == IngestionStatus.NEEDS_CLARIFICATION and result.clarification:
+            packet = build_clarification_packet(
+                process_id=result.ingestion_id,
+                origin_state_id="memory_ingestion_planning",
+                reason=result.clarification.reason,
+                questions=[
+                    {
+                        "question": result.clarification.question,
+                        "options": [
+                            {"label": option, "recommended": index == 0}
+                            for index, option in enumerate(result.clarification.options)
+                        ],
+                        "free_text_allowed": result.clarification.free_text_allowed,
+                        "required": result.clarification.blocking,
+                        "selection_mode": "single",
+                    }
+                ],
+                compact_summary=result.clarification.reason,
+                target_refs=result.clarification.target_refs,
+            )
             return ChatToolResult(
                 status=ChatResponseStatus.NEEDS_USER_INPUT,
                 primary_text=result.clarification.question,
@@ -313,9 +387,15 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                         "ingestion_id": result.ingestion_id,
                         "resume_step": "source_reprocess",
                         "checkpoint_schema_version": "v1",
+                        "clarification_packet": packet.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        ),
+                        "resume_strategy": "memory_ingestion_planning",
                     },
                 ),
                 metadata={"operation": operation, "source_id": source.source_id},
+                clarification_packet=packet,
             )
         if result.validation_errors:
             return ChatToolResult(

@@ -25,6 +25,7 @@ from my_digital_brain.ai.protocols import StructuredLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
 from my_digital_brain.ingestion.ai_services import _is_graph_alias
 from my_digital_brain.ingestion.contracts import (
+    ClarificationRequest,
     ExtractionPlan,
     ExtractionPlanDraft,
     IngestionContextPackage,
@@ -89,6 +90,14 @@ class AgenticIngestionPlanner:
                 state_result,
                 skip_handoff_targets={"contradiction_review"},
             )
+
+            clarification_plan = _clarification_plan_from_state_result(
+                state_result,
+                source,
+                context,
+            )
+            if clarification_plan is not None:
+                return clarification_plan
 
             if state_result.handoff_target == "contradiction_review":
                 contradiction_context = _contradiction_context(
@@ -329,3 +338,42 @@ def _contradiction_context(arguments: dict[str, Any]):
         agent_doubt=arguments.get("agent_doubt") or "The planner requested review.",
         metadata=dict(arguments.get("metadata") or {}),
     )
+
+
+def _clarification_plan_from_state_result(
+    state_result,
+    source: SourceRecordRef,
+    context: IngestionContextPackage,
+) -> ExtractionPlan | None:
+    for event in state_result.tool_events:
+        data = event.data or {}
+        if data.get("operation") != "request_user_clarification":
+            continue
+        packet = data.get("clarification_packet")
+        if not isinstance(packet, dict):
+            continue
+        questions = packet.get("questions")
+        if not isinstance(questions, list) or not questions:
+            continue
+        first_question = questions[0]
+        options = [
+            str(option.get("label"))
+            for option in first_question.get("options", [])
+            if isinstance(option, dict) and option.get("label")
+        ]
+        return ExtractionPlan(
+            source_id=source.source_id,
+            context_package_id=context.context_package_id,
+            execution_mode="needs_clarification_first",
+            reason=str(packet.get("reason") or "Clarification required before extraction."),
+            clarification=ClarificationRequest(
+                question=str(first_question.get("question") or "Can you clarify?"),
+                reason=str(packet.get("reason") or "Clarification required before extraction."),
+                target_refs=list(packet.get("target_refs") or []),
+                options=options,
+                free_text_allowed=bool(first_question.get("free_text_allowed", True)),
+                blocking=True,
+                metadata={"clarification_packet": packet},
+            ),
+        )
+    return None

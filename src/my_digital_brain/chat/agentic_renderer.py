@@ -7,6 +7,7 @@ from my_digital_brain.chat.enums import ChatDiagnosticLevel, ChatResponseStatus,
 from my_digital_brain.chat.models import (
     ChatDiagnostic,
     ChatResponse,
+    ClarificationPacket,
     PendingProcessRef,
 )
 
@@ -26,11 +27,13 @@ def render_agentic_chat_response(
         else ChatResponseStatus.OK
     )
     primary_text = result.final_text or _fallback_text(status)
+    clarification_packet = _clarification_packet(result, pending_process)
     return ChatResponse(
         session_id=session_id,
         status=status,
         primary_text=primary_text,
         pending_process=pending_process,
+        clarification_packet=clarification_packet,
         diagnostics=_diagnostics(result),
         metadata={
             "operation": "agentic_runtime",
@@ -59,6 +62,23 @@ def _pending_process(hints: list[dict[str, Any]]) -> PendingProcessRef | None:
         expires_at=hint.get("expires_at"),
         metadata=dict(hint.get("metadata") or {}),
     )
+
+
+def _clarification_packet(
+    result: AgenticRunResult,
+    pending_process: PendingProcessRef | None,
+) -> ClarificationPacket | None:
+    for state_result in result.state_results:
+        for event in state_result.tool_events:
+            data = event.data or {}
+            packet = data.get("clarification_packet")
+            if isinstance(packet, dict):
+                return ClarificationPacket.model_validate(packet)
+    if pending_process is not None:
+        packet = pending_process.metadata.get("clarification_packet")
+        if isinstance(packet, dict):
+            return ClarificationPacket.model_validate(packet)
+    return None
 
 
 def _diagnostics(result: AgenticRunResult) -> list[ChatDiagnostic]:

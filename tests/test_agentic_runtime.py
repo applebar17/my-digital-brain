@@ -265,6 +265,7 @@ def test_pending_context_starts_from_pending_process_review() -> None:
         "pause_pending_process",
         "propose_memory_correction",
         "query_memory_context",
+        "request_user_clarification",
         "resume_pending_process",
         "start_memory_ingestion",
     ]
@@ -298,6 +299,53 @@ def test_missing_graph_dependency_produces_tool_error_without_crashing() -> None
     assert result.assistant_text == "I could not retrieve memory context."
     assert result.tool_events[0].error["code"] == "missing_dependency"
     assert "graph_service" in result.tool_events[0].error["hint"]
+
+
+def test_clarification_tool_interrupts_without_error_status() -> None:
+    provider = ScriptedToolCallingProvider(
+        [
+            {
+                "content": "I need to ask a clarification.",
+                "tool": "request_user_clarification",
+                "arguments": {
+                    "reason": "Two memory targets are plausible.",
+                    "compact_summary": "Need target disambiguation.",
+                    "target_refs": ["NODE_000001", "NODE_000002"],
+                    "questions": [
+                        {
+                            "question": "Which target should I use?",
+                            "options": [
+                                {"label": "First target", "recommended": True},
+                                {"label": "Second target"},
+                            ],
+                            "free_text_allowed": True,
+                            "required": True,
+                            "selection_mode": "single",
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+    runner = _runner(provider)
+    query_context = QueryRetrievalPlanningContext(
+        question="Which Marco?",
+        conversation=_conversation("Which Marco?"),
+    )
+
+    result = runner.run_state(
+        AgenticStateInvocation(
+            state_id=AgenticStateId.MEMORY_QUERY,
+            context_payload=query_context,
+            execution_context=AgenticToolExecutionContext(),
+        )
+    )
+
+    assert result.status == "ok"
+    assert result.tool_events[0].status == "needs_user_input"
+    assert result.tool_events[0].data["pending_process"]["question"] == (
+        "Which target should I use?"
+    )
 
 
 def test_ingestion_handoff_delegates_to_backend_facade() -> None:

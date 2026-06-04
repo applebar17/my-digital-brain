@@ -41,6 +41,51 @@ export interface PendingProcessRef {
   metadata: Record<string, unknown>;
 }
 
+export interface ClarificationOption {
+  option_id: string;
+  label: string;
+  description?: string | null;
+  recommended: boolean;
+}
+
+export interface ClarificationQuestion {
+  question_id: string;
+  question: string;
+  options: ClarificationOption[];
+  free_text_allowed: boolean;
+  required: boolean;
+  selection_mode: "single" | "multiple";
+}
+
+export interface ClarificationPacket {
+  packet_id: string;
+  process_id: string;
+  origin_state_id: string;
+  reason: string;
+  questions: ClarificationQuestion[];
+  compact_summary?: string | null;
+  target_refs: string[];
+}
+
+export interface ClarificationAnswer {
+  question_id: string;
+  selected_option_ids: string[];
+  free_text?: string | null;
+}
+
+export interface ClarificationAnswerPacket {
+  packet_id: string;
+  process_id: string;
+  answers: ClarificationAnswer[];
+}
+
+export interface SubmitClarificationAnswersRequest {
+  owner_id: string;
+  sender_id?: string | null;
+  message_id: string;
+  answer_packet: ClarificationAnswerPacket;
+}
+
 export interface ChatAction {
   action_id: string;
   action_type: string;
@@ -72,6 +117,7 @@ export interface ChatResponse {
   status: ChatResponseStatus;
   primary_text: string;
   pending_process?: PendingProcessRef | null;
+  clarification_packet?: ClarificationPacket | null;
   actions: ChatAction[];
   evidence: ChatEvidenceRef[];
   diagnostics: ChatDiagnostic[];

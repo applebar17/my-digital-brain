@@ -10,6 +10,7 @@ from my_digital_brain.chat.models import (
     ChatDiagnostic,
     ChatEvidenceRef,
     ChatModel,
+    ClarificationPacket,
     PendingProcessContext,
     PendingProcessRef,
 )
@@ -30,6 +31,7 @@ class ChatToolResult(ChatModel):
     status: ChatResponseStatus = ChatResponseStatus.OK
     primary_text: str
     pending_process: PendingProcessRef | None = None
+    clarification_packet: ClarificationPacket | None = None
     actions: list[ChatAction] = Field(default_factory=list)
     evidence: list[ChatEvidenceRef] = Field(default_factory=list)
     diagnostics: list[ChatDiagnostic] = Field(default_factory=list)

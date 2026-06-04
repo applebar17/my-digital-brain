@@ -11,6 +11,10 @@ from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
+from my_digital_brain.chat.clarification import (
+    summarize_clarification_answers,
+    validate_clarification_answers,
+)
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatDiagnosticLevel,
@@ -34,6 +38,8 @@ from my_digital_brain.chat.models import (
     ConversationSession,
     ConversationSessionList,
     ConversationSessionDetail,
+    ClarificationAnswerPacket,
+    ClarificationPacket,
     IncomingChatMessage,
     PendingProcessContext,
 )
@@ -110,6 +116,7 @@ class ChatRuntime:
                 status=result.status,
                 primary_text=result.primary_text,
                 pending_process=result.pending_process,
+                clarification_packet=result.clarification_packet,
                 actions=result.actions,
                 evidence=result.evidence,
                 diagnostics=result.diagnostics,
@@ -117,6 +124,11 @@ class ChatRuntime:
             )
 
         if response.pending_process is not None:
+            clarification_packet = (
+                response.clarification_packet.model_dump(mode="json", exclude_none=True)
+                if response.clarification_packet is not None
+                else response.pending_process.metadata.get("clarification_packet")
+            )
             self.store.save_pending_process_context(
                 session.session_id,
                 PendingProcessContext(
@@ -134,6 +146,31 @@ class ChatRuntime:
                         "checkpoint_schema_version": "v1",
                         "resume_step": "source_reprocess",
                         "pending_question": response.pending_process.question,
+                        **(
+                            {"clarification_packet": clarification_packet}
+                            if clarification_packet
+                            else {}
+                        ),
+                        **(
+                            {
+                                "clarification_resume": {
+                                    "origin_state_id": response.pending_process.metadata.get(
+                                        "state_id",
+                                    ),
+                                    "resume_strategy": response.pending_process.metadata.get(
+                                        "resume_strategy",
+                                    ),
+                                    "checkpoint_schema_version": (
+                                        response.pending_process.metadata.get(
+                                            "checkpoint_schema_version",
+                                        )
+                                        or "clarification_v1"
+                                    ),
+                                }
+                            }
+                            if clarification_packet
+                            else {}
+                        ),
                     },
                 ),
             )
@@ -259,6 +296,48 @@ class ChatRuntime:
             ),
         )
         return response
+
+    def answer_clarification(
+        self,
+        session_id: str,
+        *,
+        owner_id: str,
+        sender_id: str,
+        message_id: str,
+        answer_packet: ClarificationAnswerPacket,
+    ) -> ChatResponse:
+        session = self.store.get_session(session_id)
+        if session.owner_id != owner_id:
+            raise ChatValidationError("Chat session does not belong to the request owner.")
+        pending_context = self.store.get_pending_process_context(answer_packet.process_id)
+        if pending_context.process_ref.process_id != session.active_pending_process_id:
+            raise ChatValidationError(
+                "Clarification answers must target the active pending process.",
+            )
+        packet = self._clarification_packet_from_pending(pending_context)
+        validate_clarification_answers(packet, answer_packet)
+        answer_summary = summarize_clarification_answers(packet, answer_packet)
+        return self.handle_message(
+            IncomingChatMessage(
+                channel=session.channel,
+                session_id=session.session_id,
+                conversation_id=session.external_conversation_id,
+                sender_id=sender_id,
+                owner_id=owner_id,
+                message_id=message_id,
+                text=answer_summary,
+                pending_process_id=pending_context.process_ref.process_id,
+                conversation_history_refs=pending_context.conversation_history_refs,
+                metadata={
+                    "clarification_answer_packet": answer_packet.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    ),
+                    "clarification_answer_summary": answer_summary,
+                    "timezone": pending_context.context.get("timezone", "UTC"),
+                },
+            ),
+        )
 
     def _call_facade(
         self,
@@ -483,6 +562,19 @@ class ChatRuntime:
                 }
             },
         )
+
+    def _clarification_packet_from_pending(
+        self,
+        pending_context: PendingProcessContext,
+    ) -> ClarificationPacket:
+        packet = pending_context.context.get("clarification_packet")
+        if not isinstance(packet, dict):
+            packet = pending_context.process_ref.metadata.get("clarification_packet")
+        if not isinstance(packet, dict):
+            raise ChatValidationError(
+                "The pending process does not contain a structured clarification packet.",
+            )
+        return ClarificationPacket.model_validate(packet)
 
     def _pending_process_contexts(self, session_id: str) -> list[PendingProcessContext]:
         if not hasattr(self.store, "list_pending_process_contexts"):

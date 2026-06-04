@@ -333,6 +333,66 @@ class AgenticToolBindings:
             },
         )
 
+    def _handle_request_user_clarification(
+        self,
+        reason: str,
+        questions: list[dict[str, Any]],
+        compact_summary: str | None = None,
+        target_refs: list[str] | None = None,
+    ) -> ToolResult:
+        from my_digital_brain.chat.clarification import build_clarification_packet
+
+        state_id = self.context.state_id or "unknown"
+        process_id = self._pending_process_id() or new_uuid()
+        try:
+            packet = build_clarification_packet(
+                process_id=process_id,
+                origin_state_id=state_id,
+                reason=reason,
+                questions=questions,
+                compact_summary=compact_summary,
+                target_refs=target_refs or [],
+            )
+        except Exception as exc:
+            return _tool_error(
+                "request_user_clarification",
+                "invalid_clarification_packet",
+                f"Clarification questions failed validation: {exc}",
+                (
+                    "Pass one to three concrete questions. Each question may include "
+                    "up to five options with labels."
+                ),
+                retryable=True,
+                details={"exception_type": exc.__class__.__name__},
+            )
+
+        question = packet.questions[0].question
+        pending_process = {
+            "process_id": process_id,
+            "kind": _clarification_process_kind(state_id, self.context.pending_process_context),
+            "status": "pending",
+            "question": question,
+            "metadata": {
+                "source": "request_user_clarification",
+                "state_id": state_id,
+                "reason": reason,
+                "summary": compact_summary or reason,
+                "unresolved_targets": packet.target_refs,
+                "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
+                "resume_strategy": _clarification_resume_strategy(state_id),
+                "checkpoint_schema_version": "clarification_v1",
+            },
+        }
+        return ToolResult(
+            status="needs_user_input",
+            output=question,
+            data={
+                "operation": "request_user_clarification",
+                "pending_process": pending_process,
+                "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
+            },
+        )
+
     def _handle_request_graph_context_expansion(
         self,
         query: str | None = None,
@@ -849,6 +909,31 @@ def _compact_pending_context(pending_context: Any) -> dict[str, Any]:
         "unresolved_targets": getattr(pending_context, "unresolved_targets", [])
         or metadata.get("unresolved_targets", []),
     }
+
+
+def _clarification_process_kind(state_id: str, pending_context: Any | None) -> str:
+    from my_digital_brain.chat.enums import PendingProcessKind
+
+    process_ref = getattr(pending_context, "process_ref", None)
+    if process_ref is not None:
+        kind = getattr(process_ref, "kind", None)
+        if kind:
+            return str(getattr(kind, "value", kind))
+    if state_id == AgenticStateId.MEMORY_QUERY.value:
+        return PendingProcessKind.MEMORY_QUERY.value
+    if state_id == AgenticStateId.CORRECTION_INTAKE.value:
+        return PendingProcessKind.MEMORY_CORRECTION.value
+    return PendingProcessKind.MEMORY_INGESTION.value
+
+
+def _clarification_resume_strategy(state_id: str) -> str:
+    return {
+        AgenticStateId.MEMORY_INGESTION_PLANNING.value: "memory_ingestion_planning",
+        AgenticStateId.CONTRADICTION_REVIEW.value: "contradiction_review",
+        AgenticStateId.MEMORY_QUERY.value: "memory_query",
+        AgenticStateId.CORRECTION_INTAKE.value: "correction_intake",
+        AgenticStateId.PENDING_PROCESS_REVIEW.value: "pending_process_review",
+    }.get(state_id, "pending_process_review")
 
 
 def _handoff_result(

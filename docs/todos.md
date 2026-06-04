@@ -210,16 +210,15 @@ Status: implemented.
 
 ## Medium Priority UX And Conversation Flow
 
-- Transform clarification handling into a planning-question flow:
-  - backend/process states produce a structured outbound question;
-  - the question may include candidate answers/options plus free-text fallback;
-  - web chat renders clickable answer chips/buttons when options are available;
-  - selecting an option sends a normal chat message or structured answer payload
-    back through the same pending-process review path;
-  - agentic states still receive compact history and pending-process context,
-    not raw UI widget state.
-- Keep clarification UX natural: clicking a candidate answer is a convenience,
-  not a rigid command-only path. Free text remains valid.
+- Structured clarification question flow is implemented as a baseline:
+  - allowed agentic states call `request_user_clarification`;
+  - backend stores a compact pending process plus a resumable snapshot;
+  - web chat renders clickable options plus free-text answers;
+  - structured answer packets are validated by the backend;
+  - resumed states receive compact clarification-answer summaries, not raw UI
+    widget state.
+- Follow-up after usage: refine clarification option wording, multi-select
+  behavior, and richer candidate-answer rendering.
 - Add per-chat item actions in the recent-chat sidebar:
   - use an overflow `...` menu on each chat row;
   - archive chats through the backend session status instead of hard deleting

@@ -5,6 +5,7 @@ import {
   getChatSession,
   listChatSessions,
   postChatMessage,
+  submitClarificationAnswers,
   updateChatSession
 } from "../api/chat";
 import {
@@ -26,6 +27,8 @@ import {
 } from "../features/chat/utils/chatSession";
 import type {
   ChatResponse,
+  ClarificationAnswerPacket,
+  ClarificationPacket,
   ConversationSessionDetail,
   ConversationSessionSummary,
   PendingProcessRef
@@ -37,6 +40,7 @@ export function ChatView() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<RenderedChatMessage[]>([]);
   const [pendingProcess, setPendingProcess] = useState<PendingProcessRef | null>(null);
+  const [clarificationPacket, setClarificationPacket] = useState<ClarificationPacket | null>(null);
   const [sessionId, setSessionId] = useState<string>();
   const [activeConversationId, setActiveConversationId] = useState(defaultConversationId);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
@@ -99,6 +103,7 @@ export function ChatView() {
           return;
         }
         setPendingProcess(detail.pending_process?.process_ref ?? null);
+        setClarificationPacket(clarificationPacketFromSession(detail));
         setProcessUpdates(processUpdatesFromSession(detail));
       } catch {
         if (!isCancelled) {
@@ -154,6 +159,7 @@ export function ChatView() {
 
       setSessionId(response.session_id);
       setPendingProcess(response.pending_process ?? null);
+      setClarificationPacket(response.clarification_packet ?? null);
       await reloadSession(response.session_id, response);
       try {
         await refreshRecentChats();
@@ -222,6 +228,7 @@ export function ChatView() {
       setSessionId(session.session_id);
       setMessages([]);
       setPendingProcess(null);
+      setClarificationPacket(null);
       await refreshRecentChats();
       setStatusMessage("New chat ready");
     } catch (error) {
@@ -263,6 +270,43 @@ export function ChatView() {
     setSessionId(detail.session.session_id);
     setMessages(messagesFromSession(detail.messages));
     setPendingProcess(detail.pending_process?.process_ref ?? null);
+    setClarificationPacket(clarificationPacketFromSession(detail));
+  }
+
+  async function handleSubmitClarification(answerPacket: ClarificationAnswerPacket) {
+    if (!sessionId || isSending) {
+      return;
+    }
+    const messageId = createClientMessageId();
+    setIsSending(true);
+    setErrorMessage(undefined);
+    setStatusMessage("Submitting clarification...");
+    setProcessUpdates(["Clarification answers submitted", "Resuming backend process..."]);
+    try {
+      const response = await submitClarificationAnswers(
+        sessionId,
+        answerPacket.process_id,
+        {
+          owner_id: defaultOwnerId,
+          sender_id: defaultSenderId,
+          message_id: messageId,
+          answer_packet: answerPacket
+        },
+        token
+      );
+      setPendingProcess(response.pending_process ?? null);
+      setClarificationPacket(response.clarification_packet ?? null);
+      await reloadSession(response.session_id, response);
+      await refreshRecentChats();
+      setStatusMessage(`Response received: ${response.status}`);
+      setProcessUpdates([`Response received: ${response.status}`]);
+      window.setTimeout(() => setProcessUpdates([]), 2600);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to submit clarification.");
+      setStatusMessage(undefined);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   async function handleDeleteChat(chat: ConversationSessionSummary) {
@@ -284,6 +328,7 @@ export function ChatView() {
           setActiveConversationId(defaultConversationId);
           setMessages([]);
           setPendingProcess(null);
+          setClarificationPacket(null);
           setProcessUpdates([]);
         }
       }
@@ -328,12 +373,40 @@ export function ChatView() {
           <ChatMessageList
             messages={messages}
             pendingProcess={pendingProcess}
+            clarificationPacket={clarificationPacket}
             isProcessing={isSending}
             processUpdates={processUpdates}
+            onSubmitClarification={(packet) => void handleSubmitClarification(packet)}
           />
           <ChatComposer value={draft} isSending={isSending} onChange={setDraft} onSubmit={handleSubmit} />
         </main>
       </section>
     </div>
+  );
+}
+
+function clarificationPacketFromSession(
+  detail: ConversationSessionDetail
+): ClarificationPacket | null {
+  const contextPacket = detail.pending_process?.context.clarification_packet;
+  if (isClarificationPacket(contextPacket)) {
+    return contextPacket;
+  }
+  const metadataPacket = detail.pending_process?.process_ref.metadata.clarification_packet;
+  if (isClarificationPacket(metadataPacket)) {
+    return metadataPacket;
+  }
+  return null;
+}
+
+function isClarificationPacket(value: unknown): value is ClarificationPacket {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const packet = value as Partial<ClarificationPacket>;
+  return (
+    typeof packet.packet_id === "string" &&
+    typeof packet.process_id === "string" &&
+    Array.isArray(packet.questions)
   );
 }

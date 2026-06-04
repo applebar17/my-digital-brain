@@ -1,22 +1,31 @@
 import { useEffect, useRef } from "react";
 import { EmptyState } from "../../../components/EmptyState";
-import type { PendingProcessRef } from "../../../types/chat";
+import type {
+  ClarificationAnswerPacket,
+  ClarificationPacket,
+  PendingProcessRef
+} from "../../../types/chat";
 import { ChatMessageBubble } from "./ChatMessageBubble";
+import { ClarificationQuestionBox } from "./ClarificationQuestionBox";
 import { PendingProcessNotice } from "./PendingProcessNotice";
 import type { RenderedChatMessage } from "../types";
 
 interface ChatMessageListProps {
   messages: RenderedChatMessage[];
   pendingProcess?: PendingProcessRef | null;
+  clarificationPacket?: ClarificationPacket | null;
   isProcessing?: boolean;
   processUpdates?: string[];
+  onSubmitClarification?: (packet: ClarificationAnswerPacket) => void;
 }
 
 export function ChatMessageList({
   messages,
   pendingProcess,
+  clarificationPacket,
   isProcessing = false,
-  processUpdates = []
+  processUpdates = [],
+  onSubmitClarification
 }: ChatMessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -38,6 +47,11 @@ export function ChatMessageList({
         messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
       )}
       <PendingProcessNotice pendingProcess={pendingProcess} />
+      <ClarificationQuestionBox
+        packet={clarificationPacket}
+        isSubmitting={isProcessing}
+        onSubmit={(packet) => onSubmitClarification?.(packet)}
+      />
       <ProcessingWidget isVisible={isProcessing || processUpdates.length > 0} updates={processUpdates} />
       <div ref={endRef} />
     </section>

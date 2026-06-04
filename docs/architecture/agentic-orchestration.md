@@ -143,7 +143,7 @@ flowchart TD
     PPR -->|correction| CI
     PPR -->|pause| PP[BP: pause_pending_process]
     PPR -->|cancel / skip| CP[BP: cancel_pending_process]
-    PPR -->|assistant asks natural follow-up| CW
+    PPR -->|structured clarification tool| CW
 
     MIP --> MS[LP: mention_scan]
     MS --> GCR[BP: graph_context_retrieval]
@@ -152,7 +152,7 @@ flowchart TD
     MPLAN -->|simple_single_pass| SE[LP: simple_extraction]
     MPLAN -->|focused_extraction| FE[LP: focused_extraction]
     MPLAN -->|needs_context_expansion| GCR
-    MPLAN -->|assistant asks clarification| CW[RS: clarification_waiting]
+    MPLAN -->|structured clarification tool| CW[RS: clarification_waiting]
 
     SE --> CA[BP: candidate_assembly]
     FE --> CA
@@ -187,11 +187,14 @@ state enriches context, but it does not force the next user message into one
 route. A later message can still be classified as a clarification answer, new
 memory, question, correction, cancellation, or normal chat.
 
-Clarification is not modeled as a broad model-visible tool. When a process
-needs user input, the assistant asks a normal human-friendly question and the
-runtime stores minimal `RS: clarification_waiting` context. A later user
-message can resume the process only if the current state, tool call, or optional
-lightweight classification indicates that it is actually a clarification answer.
+Clarification is modeled as a narrow, state-scoped user-interaction tool. It is
+not available to `conversation_entry`, and it does not mutate the graph. When a
+process cannot safely continue, allowed states call `request_user_clarification`
+with one to three questions and optional candidate answers. The chat layer
+renders those questions as a widget with clickable options and free-text
+answers. The backend stores compact pending context plus a resumable snapshot,
+then resumes the originating process from a compact clarification-answer summary
+instead of trying to keep the provider tool call suspended across turns.
 
 ## Pending Process Lifecycle
 
@@ -265,7 +268,7 @@ General context rules:
 | `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification context if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
 | `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
 | `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
-| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlanDraft`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or clarification request. |
+| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `ExtractionPlanDraft`: execution mode, focused tasks, evidence spans, target aliases, required schemas, context expansion request, or structured clarification interruption. |
 | `LP: simple_extraction` | Source context, full but compact evidence payload, task schemas selected by the plan, relevant graph aliases, temporal basis. | Candidate objects for simple low-ambiguity memories. |
 | `LP: focused_extraction` | Source context, selected evidence span, one focused Pydantic contract per task, relevant graph aliases only, prior candidate refs if needed for local linking. | Focused candidate objects with evidence, original user words, missing fields, ambiguity flags, and local refs. |
 | `BP: candidate_assembly` | Extraction plan, focused/simple candidates, local candidate refs, source refs, evidence refs. | `CandidateMemoryGraph` with resolved local references and grouped entity/relationship/perception candidates. |
@@ -757,6 +760,9 @@ The agent can:
 - call `pause_pending_process` when the user moves on but the pending question
   may remain useful later
 - call `cancel_pending_process` when cancellation is explicit
+- call `request_user_clarification` when visible pending processes or possible
+  interpretations are ambiguous and a structured answer box would reduce user
+  friction
 
 The agent cannot:
 
@@ -774,8 +780,8 @@ The agent can:
   plan
 - call `request_contradiction_review` when source text plus graph context raises
   a grounded ambiguity or conflict that needs judgment
-- return a clarification request in the planning result when ambiguity blocks
-  safe extraction
+- call `request_user_clarification` when ambiguity blocks safe extraction and
+  user input is required before continuing
 - choose the extraction mode: `simple_single_pass`, `focused_extraction`,
   `needs_context_expansion`, or `needs_clarification_first`
 - return a structured `ExtractionPlanDraft` with focused tasks and evidence spans
@@ -797,6 +803,8 @@ The agent can:
 - call `get_neighborhood_view` for bounded context expansion
 - call `get_change_records` for history on the involved targets
 - call `get_relationship_state_history` for relationship-context evolution
+- call `request_user_clarification` when the contradiction cannot be judged
+  safely without user input
 - return a contradiction assessment: `no_conflict`, `nuance`,
   `temporal_update`, `contradiction`, or `needs_clarification`
 - recommend a backend action, including asking the user or recording a disputed
@@ -821,6 +829,8 @@ The agent can:
 - call `get_map_view`
 - call `get_target_evidence`
 - call `get_latest_contact_details`
+- call `request_user_clarification` when a memory question has multiple
+  plausible targets and the answer would be misleading without disambiguation
 - produce a grounded answer from retrieved context
 
 The agent cannot:
@@ -839,6 +849,8 @@ The agent can:
 - call `get_target_evidence`
 - call `build_correction_proposal`
 - call `request_user_confirmation` when the correction would mutate graph state
+- call `request_user_clarification` when the correction target or intended
+  change is unclear
 
 The agent cannot:
 

@@ -291,6 +291,15 @@ Before any resumed memory write, the backend must refresh graph context and reru
 validation/resolution so stale checkpoints do not duplicate memories created by
 another process.
 
+Structured clarification is a user-interaction contract, not a graph mutation.
+Allowed states may call `request_user_clarification` with a small packet of
+questions, candidate answers, and free-text allowance. The chat UI renders that
+packet as a question box. When the user submits answers, the backend validates
+the selected options, stores a user-visible answer summary, and resumes the
+originating process from a compact clarification-answer summary. Model-facing
+history should receive the answer summary, not raw widget state or backend-only
+snapshots.
+
 ### 13. Keep Channel Metadata Backend-Owned By Default
 
 Channel and session metadata should be modeled, stored, and available to backend

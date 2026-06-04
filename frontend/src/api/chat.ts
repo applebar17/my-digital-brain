@@ -5,6 +5,7 @@ import type {
   ConversationSessionDetail,
   ConversationSessionList,
   CreateChatSessionRequest,
+  SubmitClarificationAnswersRequest,
   UpdateChatSessionRequest,
   WebChatMessageRequest
 } from "../types/chat";
@@ -81,4 +82,20 @@ export function cancelChatSessionProcess(
     body: { owner_id: ownerId, reason },
     bearerToken
   });
+}
+
+export function submitClarificationAnswers(
+  sessionId: string,
+  processId: string,
+  request: SubmitClarificationAnswersRequest,
+  bearerToken: string
+): Promise<ChatResponse> {
+  return apiRequest<ChatResponse>(
+    `/chat/sessions/${sessionId}/clarifications/${processId}/answers`,
+    {
+      method: "POST",
+      body: request,
+      bearerToken
+    }
+  );
 }

@@ -120,7 +120,10 @@ class AgenticStateRunner:
         )
         tool_events = invocation.execution_context.tool_events[event_start:]
         handoff_target, handoff_arguments = _last_handoff(tool_events)
-        has_error = any(event.status != "ok" for event in tool_events)
+        has_error = any(
+            event.status not in {"ok", "accepted", "needs_user_input"}
+            for event in tool_events
+        )
         return AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
@@ -289,6 +292,26 @@ class AgenticRuntime:
                     state_result.handoff_arguments,
                 )
                 continue
+
+            direct_pending_hints = _pending_process_hints([state_result])
+            if direct_pending_hints:
+                interrupt_text = (
+                    state_result.tool_events[-1].output
+                    if state_result.tool_events
+                    else None
+                ) or state_result.assistant_text
+                return AgenticRunResult(
+                    final_text=interrupt_text,
+                    visited_states=[result.state_id for result in state_results],
+                    state_results=state_results,
+                    status="needs_user_input",
+                    pending_process_hints=direct_pending_hints,
+                    compact_trace=compact_trace,
+                    metadata={
+                        "user_visible_owner": current_state.value,
+                        "interrupted_process": current_state.value,
+                    },
+                )
 
             if current_state == AgenticStateId.CONTRADICTION_REVIEW:
                 structured_result = self._run_contradiction_structured_result(

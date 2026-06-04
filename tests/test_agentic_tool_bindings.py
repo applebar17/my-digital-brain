@@ -268,6 +268,7 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
     assert planning.allowed_tools == [
         "request_graph_context_expansion",
         "request_contradiction_review",
+        "request_user_clarification",
     ]
     assert "Plan extraction tasks" in PromptRegistry().load("ingestion_planner").template
 
@@ -517,6 +518,7 @@ def test_memory_planning_context_expansion_uses_graph_service() -> None:
     assert sorted(toolbox.tools_by_name) == [
         "request_contradiction_review",
         "request_graph_context_expansion",
+        "request_user_clarification",
     ]
     assert result.status == "ok"
     assert result.data["matches"][0]["properties"]["id"] == "node-marco"
@@ -539,3 +541,45 @@ def test_memory_planning_contradiction_handoff_without_submit_tool() -> None:
     assert contradiction.status == "ok"
     assert contradiction.data["handoff_target"] == "contradiction_review"
     assert contradiction.data["handoff_arguments"]["agent_doubt"].startswith("The new place")
+
+
+def test_request_user_clarification_creates_pending_process_hint() -> None:
+    config = default_state_configs()[AgenticStateId.MEMORY_QUERY]
+    execution_context = _execution_context()
+    mapping = build_agentic_tool_mapping(config, execution_context)
+
+    result = mapping["request_user_clarification"](
+        reason="Two people named Marco are plausible.",
+        compact_summary="Need to identify which Marco the user means.",
+        target_refs=["NODE_000001", "NODE_000002"],
+        questions=[
+            {
+                "question": "Which Marco do you mean?",
+                "options": [
+                    {"label": "Marco from university", "recommended": True},
+                    {"label": "Marco from work", "description": "Former coworker"},
+                ],
+                "free_text_allowed": True,
+                "required": True,
+                "selection_mode": "single",
+            }
+        ],
+    )
+
+    assert result.status == "needs_user_input"
+    assert result.data["operation"] == "request_user_clarification"
+    packet = result.data["clarification_packet"]
+    pending = result.data["pending_process"]
+    assert packet["process_id"] == pending["process_id"]
+    assert packet["origin_state_id"] == AgenticStateId.MEMORY_QUERY.value
+    assert packet["questions"][0]["options"][0]["label"] == "Marco from university"
+    assert pending["kind"] == PendingProcessKind.MEMORY_QUERY.value
+    assert pending["metadata"]["clarification_packet"]["packet_id"] == packet["packet_id"]
+    assert execution_context.tool_events[0].status == "needs_user_input"
+
+
+def test_request_user_clarification_is_not_exposed_to_conversation_entry() -> None:
+    config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
+    toolbox = build_agentic_toolbox(config)
+
+    assert "request_user_clarification" not in toolbox.tools_by_name

@@ -20,6 +20,9 @@ from my_digital_brain.chat.facade import (
 )
 from my_digital_brain.chat.models import (
     ChatResponse,
+    ClarificationOption,
+    ClarificationPacket,
+    ClarificationQuestion,
     ConversationMessage,
     IncomingChatMessage,
     PendingProcessContext,
@@ -74,6 +77,22 @@ class RecordingFacade:
         return ChatToolResult(
             status=ChatResponseStatus.CANCELLED,
             primary_text="Cancelled.",
+        )
+
+    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
+        self.calls.append(("pause_pending_process", request))
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="Paused.",
+            metadata={"clear_pending_process": True},
+        )
+
+    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
+        self.calls.append(("resume_pending_process", request))
+        return ChatToolResult(
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="Resumed.",
+            metadata={"clear_pending_process": True},
         )
 
 
@@ -362,6 +381,7 @@ def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
         "pause_pending_process",
         "propose_memory_correction",
         "query_memory_context",
+        "request_user_clarification",
         "resume_pending_process",
         "start_memory_ingestion",
     ]
@@ -393,6 +413,131 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> 
     assert response.pending_process is not None
     assert detail.pending_process.process_ref.process_id == response.pending_process.process_id
     assert "compact_trace" not in response.metadata
+
+
+def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -> None:
+    provider = ScriptedToolProvider(
+        [
+            {
+                "content": "Resuming pending process.",
+                "tool": "resume_pending_process",
+                "arguments": {"pending_process_id": "process-1"},
+            }
+        ]
+    )
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    packet = _clarification_packet(process_id="process-1")
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question=packet.questions[0].question,
+                metadata={"clarification_packet": packet.model_dump(mode="json")},
+            ),
+            context={
+                "summary": "Need Marco disambiguation.",
+                "source_text": "Yesterday I met Marco in Milan.",
+                "clarification_packet": packet.model_dump(mode="json"),
+            },
+        ),
+    )
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+    client = _client(runtime)
+    option_id = packet.questions[0].options[0].option_id
+
+    response = client.post(
+        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        json={
+            "owner_id": "owner-1",
+            "sender_id": "sender-1",
+            "message_id": "clarification-message-1",
+            "answer_packet": {
+                "packet_id": packet.packet_id,
+                "process_id": packet.process_id,
+                "answers": [
+                    {
+                        "question_id": packet.questions[0].question_id,
+                        "selected_option_ids": [option_id],
+                        "free_text": None,
+                    }
+                ],
+            },
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["primary_text"] == "Resuming pending process."
+    messages = runtime.get_session_detail(session.session_id).messages
+    assert messages[-2].role == "user"
+    assert "Clarification answers:" in messages[-2].text
+    assert store.get_pending_process_context("process-1").process_ref.status == (
+        PendingProcessStatus.COMPLETED
+    )
+
+
+def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    packet = _clarification_packet(process_id="process-1")
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_INGESTION,
+                question=packet.questions[0].question,
+                metadata={"clarification_packet": packet.model_dump(mode="json")},
+            ),
+            context={"clarification_packet": packet.model_dump(mode="json")},
+        ),
+    )
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(ScriptedToolProvider([]))),
+    )
+    client = _client(runtime)
+
+    response = client.post(
+        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        json={
+            "owner_id": "owner-1",
+            "message_id": "clarification-message-1",
+            "answer_packet": {
+                "packet_id": packet.packet_id,
+                "process_id": packet.process_id,
+                "answers": [
+                    {
+                        "question_id": packet.questions[0].question_id,
+                        "selected_option_ids": ["invented-option"],
+                        "free_text": None,
+                    }
+                ],
+            },
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400
+    assert "unknown option ids" in response.json()["detail"]
 
 
 def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
@@ -536,6 +681,33 @@ def _message_payload(text: str, session_id: str | None = None) -> dict[str, obje
     if session_id is not None:
         payload["session_id"] = session_id
     return payload
+
+
+def _clarification_packet(process_id: str) -> ClarificationPacket:
+    return ClarificationPacket(
+        process_id=process_id,
+        origin_state_id="memory_ingestion_planning",
+        reason="Multiple Marco candidates exist.",
+        compact_summary="Need to know which Marco the user means.",
+        target_refs=["NODE_000001", "NODE_000002"],
+        questions=[
+            ClarificationQuestion(
+                question_id="question-1",
+                question="Which Marco do you mean?",
+                options=[
+                    ClarificationOption(
+                        option_id="option-marco-university",
+                        label="Marco from university",
+                        recommended=True,
+                    ),
+                    ClarificationOption(
+                        option_id="option-marco-work",
+                        label="Marco from work",
+                    ),
+                ],
+            )
+        ],
+    )
 
 
 def _client(runtime: ChatRuntime) -> TestClient:

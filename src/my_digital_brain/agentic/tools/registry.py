@@ -170,6 +170,30 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             },
         ),
         _definition(
+            "request_user_clarification",
+            (
+                "Ask the user one to three structured clarification questions when "
+                "the current state cannot continue safely. Use this only for a "
+                "process interruption, not for normal final answers."
+            ),
+            states=[
+                AgenticStateId.PENDING_PROCESS_REVIEW,
+                AgenticStateId.MEMORY_INGESTION_PLANNING,
+                AgenticStateId.MEMORY_QUERY,
+                AgenticStateId.CORRECTION_INTAKE,
+                AgenticStateId.CONTRADICTION_REVIEW,
+            ],
+            properties={
+                "reason": string_property("Why user input is required before continuing."),
+                "compact_summary": optional_string_property(
+                    "Short model-facing summary of the blocked process.",
+                ),
+                "target_refs": array_property("Candidate refs, graph aliases, or targets involved."),
+                "questions": _clarification_questions_property(),
+            },
+            required=["reason", "questions"],
+        ),
+        _definition(
             "request_graph_context_expansion",
             "Request compact graph context expansion for ingestion planning.",
             states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
@@ -375,6 +399,48 @@ def _node_detail_properties() -> dict[str, dict]:
         "include_history": boolean_property("Include history records.", default=False),
         "include_archived": boolean_property("Include archived records.", default=False),
         "limit": integer_property("Maximum records.", default=50),
+    }
+
+
+def _clarification_questions_property() -> dict:
+    return {
+        "type": "array",
+        "description": "One to three user-facing clarification questions.",
+        "minItems": 1,
+        "maxItems": 3,
+        "items": {
+            "type": "object",
+            "properties": {
+                "question": string_property("Natural user-facing question."),
+                "options": {
+                    "type": "array",
+                    "description": "Suggested answers. Free text remains allowed.",
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": string_property("Short answer label."),
+                            "description": optional_string_property(
+                                "Optional explanation for this answer.",
+                            ),
+                            "recommended": boolean_property(
+                                "Whether this is the recommended default option.",
+                                default=False,
+                            ),
+                        },
+                    },
+                },
+                "free_text_allowed": boolean_property(
+                    "Whether the user may answer with free text.",
+                    default=True,
+                ),
+                "required": boolean_property(
+                    "Whether this question must be answered to continue.",
+                    default=True,
+                ),
+                "selection_mode": string_property("Use single for v1 unless truly multiple."),
+            },
+        },
     }
 
 

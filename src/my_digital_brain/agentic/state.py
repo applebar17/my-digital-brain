@@ -60,6 +60,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "propose_memory_correction",
                 "pause_pending_process",
                 "cancel_pending_process",
+                "request_user_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -85,6 +86,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             allowed_tools=[
                 "request_graph_context_expansion",
                 "request_contradiction_review",
+                "request_user_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -116,6 +118,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_map_view",
                 "get_target_evidence",
                 "get_latest_contact_details",
+                "request_user_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -142,6 +145,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_target_evidence",
                 "build_correction_proposal",
                 "request_user_confirmation",
+                "request_user_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -169,6 +173,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_neighborhood_view",
                 "get_change_records",
                 "get_relationship_state_history",
+                "request_user_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",

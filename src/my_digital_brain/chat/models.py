@@ -79,6 +79,44 @@ class PendingProcessContext(ChatModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ClarificationOption(ChatModel):
+    option_id: str = Field(default_factory=new_uuid)
+    label: str = Field(description="Short user-visible answer option.")
+    description: str | None = None
+    recommended: bool = False
+
+
+class ClarificationQuestion(ChatModel):
+    question_id: str = Field(default_factory=new_uuid)
+    question: str
+    options: list[ClarificationOption] = Field(default_factory=list, max_length=5)
+    free_text_allowed: bool = True
+    required: bool = True
+    selection_mode: str = Field(default="single", pattern="^(single|multiple)$")
+
+
+class ClarificationPacket(ChatModel):
+    packet_id: str = Field(default_factory=new_uuid)
+    process_id: str
+    origin_state_id: str
+    reason: str
+    questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
+    compact_summary: str | None = None
+    target_refs: list[str] = Field(default_factory=list)
+
+
+class ClarificationAnswer(ChatModel):
+    question_id: str
+    selected_option_ids: list[str] = Field(default_factory=list)
+    free_text: str | None = None
+
+
+class ClarificationAnswerPacket(ChatModel):
+    packet_id: str
+    process_id: str
+    answers: list[ClarificationAnswer] = Field(min_length=1, max_length=3)
+
+
 class ConversationSession(ChatModel):
     session_id: str = Field(default_factory=new_uuid)
     channel: ChatChannel
@@ -146,6 +184,7 @@ class ChatResponse(ChatModel):
     status: ChatResponseStatus = ChatResponseStatus.OK
     primary_text: str
     pending_process: PendingProcessRef | None = None
+    clarification_packet: ClarificationPacket | None = None
     actions: list[ChatAction] = Field(default_factory=list)
     evidence: list[ChatEvidenceRef] = Field(default_factory=list)
     diagnostics: list[ChatDiagnostic] = Field(default_factory=list)

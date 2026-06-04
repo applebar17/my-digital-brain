@@ -186,6 +186,7 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
     assert provider.requests[0]["tool_names"] == [
         "request_contradiction_review",
         "request_graph_context_expansion",
+        "request_user_clarification",
     ]
     assert plan.source_id == "source-1"
     assert provider.structured_requests[0].output_schema.__name__ == "ExtractionPlanDraft"
@@ -232,6 +233,45 @@ def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured
     assert structured_context["prior_tool_outputs"][0]["tool_name"] == (
         "request_graph_context_expansion"
     )
+
+
+def test_agentic_ingestion_planner_maps_clarification_tool_to_plan() -> None:
+    provider = QueuedToolCallingProvider(
+        [
+            {
+                "content": "Need user clarification.",
+                "tool": "request_user_clarification",
+                "arguments": {
+                    "reason": "Multiple Marco candidates exist.",
+                    "compact_summary": "Need to know which Marco the memory refers to.",
+                    "target_refs": ["NODE_000001", "NODE_000002"],
+                    "questions": [
+                        {
+                            "question": "Which Marco do you mean?",
+                            "options": [
+                                {"label": "Marco from university", "recommended": True},
+                                {"label": "Marco from work"},
+                            ],
+                            "free_text_allowed": True,
+                            "required": True,
+                            "selection_mode": "single",
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    plan = AgenticIngestionPlanner(
+        AgenticStateRunner(provider=provider),
+    ).plan(_source(), _empty_scan(), IngestionContextPackage(source_id="source-1"))
+
+    assert plan.execution_mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
+    assert plan.clarification is not None
+    assert plan.clarification.question == "Which Marco do you mean?"
+    assert plan.clarification.options == ["Marco from university", "Marco from work"]
+    assert "clarification_packet" in plan.clarification.metadata
+    assert provider.structured_requests == []
 
 
 def test_agentic_ingestion_planner_reports_invalid_structured_plan() -> None:
@@ -304,10 +344,12 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
         "get_node_detail",
         "get_relationship_state_history",
         "get_target_evidence",
+        "request_user_clarification",
     ]
     assert provider.requests[2]["tool_names"] == [
         "request_contradiction_review",
         "request_graph_context_expansion",
+        "request_user_clarification",
     ]
     assert provider.structured_requests[0].output_schema.__name__ == (
         "ContradictionJudgeResultContext"
