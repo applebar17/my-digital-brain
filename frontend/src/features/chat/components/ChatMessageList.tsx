@@ -8,14 +8,21 @@ import type { RenderedChatMessage } from "../types";
 interface ChatMessageListProps {
   messages: RenderedChatMessage[];
   pendingProcess?: PendingProcessRef | null;
+  isProcessing?: boolean;
+  processUpdates?: string[];
 }
 
-export function ChatMessageList({ messages, pendingProcess }: ChatMessageListProps) {
+export function ChatMessageList({
+  messages,
+  pendingProcess,
+  isProcessing = false,
+  processUpdates = []
+}: ChatMessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages.length, pendingProcess]);
+  }, [messages.length, pendingProcess, isProcessing, processUpdates.length]);
 
   return (
     <section className="memory-chat-thread" aria-live="polite">
@@ -31,7 +38,27 @@ export function ChatMessageList({ messages, pendingProcess }: ChatMessageListPro
         messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
       )}
       <PendingProcessNotice pendingProcess={pendingProcess} />
+      <ProcessingWidget isVisible={isProcessing || processUpdates.length > 0} updates={processUpdates} />
       <div ref={endRef} />
     </section>
+  );
+}
+
+function ProcessingWidget({ isVisible, updates }: { isVisible: boolean; updates: string[] }) {
+  if (!isVisible) {
+    return null;
+  }
+  const renderedUpdates = updates.length > 0 ? updates.slice(-4) : ["Processing memory context..."];
+
+  return (
+    <aside className="memory-processing-widget" aria-live="polite">
+      <span className="memory-processing-pulse" aria-hidden="true" />
+      <div>
+        <strong>Processing</strong>
+        {renderedUpdates.map((update) => (
+          <p key={update}>{update}</p>
+        ))}
+      </div>
+    </aside>
   );
 }

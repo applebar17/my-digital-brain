@@ -117,4 +117,5 @@ export interface ConversationSessionDetail {
   session: ConversationSession;
   messages: ConversationMessage[];
   pending_process?: PendingProcessContext | null;
+  pending_processes?: PendingProcessContext[];
 }

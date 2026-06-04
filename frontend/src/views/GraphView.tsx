@@ -61,6 +61,7 @@ export function GraphView() {
       return;
     }
     setSelectedNodeId(id);
+    setDetail(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
     setStatusMessage("Loading graph context...");
@@ -117,12 +118,6 @@ export function GraphView() {
       />
 
       <div className="memory-graph-layout">
-        <GraphSearchWindow
-          results={results}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={(id) => void loadNodeContext(id)}
-        />
-
         <div className="memory-graph-stage">
           <MemoryGraphCanvas
             graph={graph}
@@ -133,7 +128,15 @@ export function GraphView() {
           <GraphTimelineDock timeline={timeline} mapView={mapView} />
         </div>
 
-        <GraphInspectorPanel detail={detail} />
+        {selectedNodeId ? (
+          <GraphInspectorPanel detail={detail} selectedNodeId={selectedNodeId} />
+        ) : (
+          <GraphSearchWindow
+            results={results}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={(id) => void loadNodeContext(id)}
+          />
+        )}
       </div>
     </div>
   );

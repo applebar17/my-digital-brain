@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family:
     Geist,
     Inter,
@@ -9,34 +9,39 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background: #fbf8ff;
-  color: #1a1b22;
+  background: #08090b;
+  color: #e9e6ed;
 
-  --surface: #fbf8ff;
-  --surface-container-lowest: #ffffff;
-  --surface-container-low: #f4f2fd;
-  --surface-container: #eeedf7;
-  --surface-container-high: #e8e7f1;
-  --surface-container-highest: #e3e1ec;
-  --on-surface: #1a1b22;
-  --on-surface-variant: #46464b;
-  --outline: #77767b;
-  --outline-variant: #c7c6cb;
-  --primary: #121315;
-  --on-primary: #ffffff;
-  --secondary: #4b41e1;
-  --secondary-container: #e2dfff;
-  --success: #236c3c;
-  --success-container: #e4f5e8;
-  --warning: #8a5a00;
-  --warning-container: #fff0cc;
-  --privacy: #6541a5;
-  --privacy-container: #efe7ff;
-  --danger: #ba1a1a;
-  --danger-container: #ffdad6;
-  --info: #245c73;
-  --info-container: #dff4fb;
-  --shadow-soft: 0 4px 12px rgb(0 0 0 / 3%);
+  --surface: #08090b;
+  --surface-bright: #0d0e11;
+  --surface-container-lowest: #101012;
+  --surface-container-low: #141416;
+  --surface-container: #191a1f;
+  --surface-container-high: #1f2027;
+  --surface-container-highest: #272832;
+  --on-surface: #e9e6ed;
+  --on-surface-variant: #aaa7b0;
+  --outline: #747782;
+  --outline-variant: #30313a;
+  --primary: #8fb5ff;
+  --on-primary: #06111f;
+  --secondary: #8fb5ff;
+  --on-secondary: #06111f;
+  --secondary-container: #152847;
+  --surface-tint: #506994;
+  --success: #9ff2cd;
+  --success-container: #113d31;
+  --warning: #f6c86c;
+  --warning-container: #392a10;
+  --privacy: #d6c4ff;
+  --privacy-container: #38235f;
+  --danger: #ff9b96;
+  --danger-container: #3f181a;
+  --info: #cfe5ff;
+  --info-container: #113b61;
+  --inverse-surface: #8fb5ff;
+  --inverse-on-surface: #06111f;
+  --shadow-soft: 0 14px 34px rgb(0 0 0 / 28%);
   --radius-sm: 2px;
   --radius: 4px;
   --radius-md: 6px;
@@ -115,36 +120,38 @@ p {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 80px minmax(0, 1fr);
   min-height: 100vh;
+  background: var(--surface);
 }
 
 .app-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-6);
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--outline-variant);
-  background: var(--surface-container-lowest);
+  background: #090a0d;
 }
 
 .brand-block {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
 }
 
 .brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border: 1px solid var(--primary);
   border-radius: var(--radius);
-  background: var(--primary);
+  background: #111d32;
   color: var(--on-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -162,37 +169,35 @@ p {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  width: 100%;
 }
 
 .nav-item {
-  display: grid;
-  gap: var(--space-1);
-  width: 100%;
-  min-height: 64px;
-  padding: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
   color: var(--on-surface);
-  text-align: left;
+  text-align: center;
 }
 
 .nav-item span {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 20px;
-}
-
-.nav-item small {
-  color: var(--on-surface-variant);
-  font-size: 12px;
-  line-height: 16px;
+  line-height: 18px;
 }
 
 .nav-item:hover,
 .nav-item.is-active {
-  border-color: var(--outline-variant);
-  background: var(--surface-container-low);
+  border-color: var(--primary);
+  background: #14213a;
+  color: #ffffff;
 }
 
 .app-main {
@@ -972,6 +977,66 @@ p {
   color: var(--on-surface-variant);
 }
 
+.memory-processing-widget {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-self: flex-start;
+  width: min(520px, 92%);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid rgb(143 181 255 / 26%);
+  border-radius: var(--radius-lg);
+  background: rgb(20 25 36 / 58%);
+  color: var(--on-surface);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 18%);
+  animation: memory-processing-in 180ms ease-out;
+  backdrop-filter: blur(12px);
+}
+
+.memory-processing-widget strong {
+  display: block;
+  color: var(--on-surface);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.memory-processing-widget p {
+  margin-top: var(--space-1);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.memory-processing-pulse {
+  width: 10px;
+  height: 10px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: var(--secondary);
+  box-shadow: 0 0 0 0 rgb(143 181 255 / 48%);
+  animation: memory-processing-pulse 1100ms ease-out infinite;
+}
+
+@keyframes memory-processing-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes memory-processing-pulse {
+  to {
+    box-shadow: 0 0 0 12px rgb(143 181 255 / 0%);
+  }
+}
+
 .memory-chat-composer-shell {
   display: grid;
   justify-items: center;
@@ -1571,7 +1636,7 @@ p {
 
 .memory-graph-layout {
   display: grid;
-  grid-template-columns: 290px minmax(520px, 1fr) 360px;
+  grid-template-columns: minmax(520px, 1fr) 328px;
   min-height: calc(100vh - 81px);
 }
 
@@ -1580,7 +1645,6 @@ p {
   grid-template-rows: minmax(0, 1fr) 192px;
   min-width: 0;
   border-right: 1px solid #2f3037;
-  border-left: 1px solid #2f3037;
 }
 
 .memory-window {
@@ -1591,7 +1655,8 @@ p {
 }
 
 .memory-search-window {
-  border-right: 1px solid #2f3037;
+  border-left: 1px solid #2f3037;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 18%);
 }
 
 .memory-inspector-window {
@@ -1607,6 +1672,23 @@ p {
   padding: var(--space-4);
   border-bottom: 1px solid #2f3037;
   background: #101012;
+}
+
+.memory-search-window,
+.memory-inspector-window {
+  animation: memory-panel-in 180ms ease-out;
+}
+
+@keyframes memory-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .memory-window-header h3 {
@@ -2145,29 +2227,26 @@ p {
   }
 
   .memory-graph-layout {
-    grid-template-columns: 260px minmax(460px, 1fr);
+    grid-template-columns: minmax(460px, 1fr) 300px;
   }
 
   .memory-inspector-window {
-    grid-column: 1 / -1;
-    border-top: 1px solid #2f3037;
-    border-left: 0;
+    grid-column: auto;
+    border-top: 0;
+    border-left: 1px solid #2f3037;
   }
 
   .memory-inspector-body {
-    grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1fr);
-    max-height: none;
+    grid-template-columns: 1fr;
+    max-height: calc(100vh - 82px);
   }
 
   .memory-inspector-body > .badge-row,
   .memory-inspector-body > .memory-node-description,
-  .memory-inspector-body > .memory-inspector-metrics {
-    grid-column: 1;
-  }
-
+  .memory-inspector-body > .memory-inspector-metrics,
   .memory-inspector-body > .memory-affective-block,
   .memory-inspector-body > .memory-property-section {
-    grid-column: 2;
+    grid-column: auto;
   }
 
   .memory-metric-strip {
@@ -2266,19 +2345,21 @@ p {
     flex-direction: row;
     align-items: center;
     overflow-x: auto;
-    padding: var(--space-4);
+    gap: var(--space-3);
+    padding: var(--space-3);
     border-right: 0;
     border-bottom: 1px solid var(--outline-variant);
   }
 
   .brand-block {
-    min-width: 220px;
+    min-width: 48px;
   }
 
   .nav-list {
-    grid-template-columns: repeat(3, minmax(160px, 1fr));
-    display: grid;
-    min-width: 520px;
+    display: flex;
+    flex-direction: row;
+    min-width: 0;
+    width: auto;
   }
 
   .workspace {

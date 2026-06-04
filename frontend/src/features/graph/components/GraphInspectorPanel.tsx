@@ -5,9 +5,10 @@ import type { EntityDetailResult } from "../../../types/graph";
 
 interface GraphInspectorPanelProps {
   detail?: EntityDetailResult;
+  selectedNodeId?: string;
 }
 
-export function GraphInspectorPanel({ detail }: GraphInspectorPanelProps) {
+export function GraphInspectorPanel({ detail, selectedNodeId }: GraphInspectorPanelProps) {
   if (!detail) {
     return (
       <aside className="memory-window memory-inspector-window">
@@ -17,7 +18,14 @@ export function GraphInspectorPanel({ detail }: GraphInspectorPanelProps) {
             <h3>Selected Node</h3>
           </div>
         </header>
-        <EmptyState title="Nothing selected" body="Select a node to inspect its evidence and graph state." />
+        <EmptyState
+          title={selectedNodeId ? "Loading selection" : "Nothing selected"}
+          body={
+            selectedNodeId
+              ? "Loading evidence and graph state for the selected node."
+              : "Select a node to inspect its evidence and graph state."
+          }
+        />
       </aside>
     );
   }
