@@ -14,6 +14,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Miscellaneous add-ons](06-miscellaneous-add-ons.md)
 - [AI provider foundation](07-ai-provider-foundation.md)
 - [Agentic process design and definition](08-agentic-process-design.md)
+- [Graph-RAG and vector retrieval](09-graph-rag-and-vector-retrieval.md)
 
 ## Wave Meaning
 

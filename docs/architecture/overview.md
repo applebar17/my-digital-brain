@@ -83,6 +83,12 @@ The relational store can be local or remote. It supports the application, but th
 
 Stores embeddings for semantic retrieval. The application should access it through a protocolled interface, with Chroma as the local option and Azure AI services as the cloud option.
 
+The vector store is a semantic lookup index, not the source of truth for
+memories. Vector records must point back to Neo4j graph targets and relational
+vector record metadata. Retrieval must hydrate Chroma hits through Neo4j before
+answer generation. Detailed implementation decisions are defined in
+[Graph-RAG and vector retrieval implementation plan](../dev-plans/09-graph-rag-and-vector-retrieval.md).
+
 ### LLM Extraction
 
 Converts source records into candidate entities, candidate relationships, summaries, missing-field signals, and ambiguity signals.

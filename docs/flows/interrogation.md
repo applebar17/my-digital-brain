@@ -28,6 +28,10 @@ The frontend displays places and place-linked events geographically. This helps 
 
 ## Graph-RAG Flow
 
+Implementation decisions for vectorization, semantic retrieval, graph
+hydration, multi-target vector records, and answer grounding are locked in
+[Graph-RAG and vector retrieval implementation plan](../dev-plans/09-graph-rag-and-vector-retrieval.md).
+
 1. User asks a question.
 2. System classifies intent: lookup, exploration, summary, comparison, timeline, contradiction check, or graph operation.
 3. Semantic retrieval finds relevant sources, entities, claims, and summaries.
@@ -58,6 +62,11 @@ The system should avoid answering from embeddings alone when graph evidence is a
 Semantic text-to-node retrieval is a dedicated retrieval feature, not part of the
 graph storage foundation. The graph layer should expose seed-based query helpers;
 the retrieval layer decides how natural language maps to those seeds.
+
+Semantic retrieval should treat Chroma hits as candidate pointers into Neo4j.
+Vector hits must be hydrated through graph targets, canonical merge resolution,
+source/evidence lookup, affective context, and graph-neighborhood expansion before
+answer generation.
 
 ## Answer Grounding
 
