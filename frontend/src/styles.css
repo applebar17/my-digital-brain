@@ -2240,6 +2240,16 @@ p {
   border-right: 1px solid var(--graph-border);
 }
 
+.memory-graph-side-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--graph-border);
+  background: var(--graph-window);
+  box-shadow: var(--graph-panel-shadow);
+}
+
 .memory-window {
   min-width: 0;
   overflow: hidden;
@@ -2248,13 +2258,38 @@ p {
 }
 
 .memory-search-window {
-  border-left: 1px solid var(--graph-border);
-  box-shadow: var(--graph-panel-shadow);
+  height: 100%;
 }
 
 .memory-inspector-window {
-  border-left: 1px solid var(--graph-border);
-  box-shadow: var(--graph-panel-shadow);
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  height: 100%;
+  border-left: 0;
+  box-shadow: -14px 0 32px rgb(0 0 0 / 18%);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0s linear 0s;
+}
+
+.memory-inspector-window.is-closed {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(24px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0s linear 180ms;
+}
+
+.memory-inspector-window.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
 }
 
 .memory-window-header {
@@ -2267,27 +2302,32 @@ p {
   background: var(--graph-window-low);
 }
 
-.memory-search-window,
-.memory-inspector-window {
-  animation: memory-panel-in 180ms ease-out;
-}
-
-@keyframes memory-panel-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 .memory-window-header h3 {
   margin-top: var(--space-1);
   font-size: 17px;
   line-height: 24px;
+}
+
+.memory-window-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border: 1px solid var(--graph-border-strong);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+  color: var(--graph-muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.memory-window-close:hover {
+  border-color: var(--graph-secondary);
+  color: var(--graph-text);
 }
 
 .memory-window-count {
@@ -2971,7 +3011,8 @@ p {
 }
 
 .memory-affective-block h4,
-.memory-property-section h4 {
+.memory-property-section h4,
+.memory-metadata-section summary {
   color: var(--graph-text);
   font-size: 14px;
   font-weight: 700;
@@ -3015,6 +3056,56 @@ p {
   font-size: 13px;
   line-height: 18px;
   overflow-wrap: anywhere;
+}
+
+.memory-metadata-section {
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-window-low);
+}
+
+.memory-metadata-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.memory-metadata-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.memory-metadata-section summary::before {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--graph-secondary);
+  border-bottom: 2px solid var(--graph-secondary);
+  content: "";
+  transform: rotate(-45deg);
+}
+
+.memory-metadata-section[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.memory-metadata-section summary span {
+  flex: 1 1 auto;
+}
+
+.memory-metadata-section summary small {
+  color: var(--graph-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.memory-metadata-section > .memory-property-list,
+.memory-metadata-section > .memory-muted {
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .memory-muted {
@@ -3200,6 +3291,7 @@ p {
   .memory-inspector-body > .memory-node-description,
   .memory-inspector-body > .memory-inspector-metrics,
   .memory-inspector-body > .memory-affective-block,
+  .memory-inspector-body > .memory-metadata-section,
   .memory-inspector-body > .memory-property-section {
     grid-column: auto;
   }
@@ -3248,6 +3340,12 @@ p {
     border-left: 0;
   }
 
+  .memory-graph-side-pane {
+    min-height: 420px;
+    border-top: 1px solid var(--graph-border);
+    border-left: 0;
+  }
+
   .memory-graph-stage {
     border-right: 0;
     border-left: 0;
@@ -3265,6 +3363,7 @@ p {
   .memory-inspector-body > .memory-node-description,
   .memory-inspector-body > .memory-inspector-metrics,
   .memory-inspector-body > .memory-affective-block,
+  .memory-inspector-body > .memory-metadata-section,
   .memory-inspector-body > .memory-property-section {
     grid-column: auto;
   }

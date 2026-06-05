@@ -6,17 +6,32 @@ import type { EntityDetailResult } from "../../../types/graph";
 interface GraphInspectorPanelProps {
   detail?: EntityDetailResult;
   selectedNodeId?: string;
+  onClose: () => void;
 }
 
-export function GraphInspectorPanel({ detail, selectedNodeId }: GraphInspectorPanelProps) {
+export function GraphInspectorPanel({ detail, selectedNodeId, onClose }: GraphInspectorPanelProps) {
+  const isOpen = Boolean(selectedNodeId);
+  const className = `memory-window memory-inspector-window ${isOpen ? "is-open" : "is-closed"}`;
+
   if (!detail) {
     return (
-      <aside className="memory-window memory-inspector-window">
+      <aside className={className} aria-hidden={!isOpen}>
         <header className="memory-window-header">
           <div>
             <p className="eyebrow">Inspector</p>
             <h3>Selected Node</h3>
           </div>
+          {selectedNodeId ? (
+            <button
+              className="memory-window-close"
+              type="button"
+              aria-label="Close selected node details"
+              title="Close selected node details"
+              onClick={onClose}
+            >
+              X
+            </button>
+          ) : null}
         </header>
         <EmptyState
           title={selectedNodeId ? "Loading selection" : "Nothing selected"}
@@ -31,17 +46,26 @@ export function GraphInspectorPanel({ detail, selectedNodeId }: GraphInspectorPa
   }
 
   const target = detail.target;
-  const properties = Object.entries(target.properties).filter(([key]) => {
-    return !["metadata", "id", "embedding"].includes(key);
-  });
+  const propertyEntries = Object.entries(target.properties);
+  const visibleProperties = propertyEntries.filter(([key]) => !isTechnicalProperty(key));
+  const metadataProperties = propertyEntries.filter(([key]) => isTechnicalProperty(key));
 
   return (
-    <aside className="memory-window memory-inspector-window">
+    <aside className={className} aria-hidden={!isOpen}>
       <header className="memory-window-header">
         <div>
           <p className="eyebrow">{target.label}</p>
           <h3>{nodeTitle(target)}</h3>
         </div>
+        <button
+          className="memory-window-close"
+          type="button"
+          aria-label="Close selected node details"
+          title="Close selected node details"
+          onClick={onClose}
+        >
+          X
+        </button>
       </header>
 
       <div className="memory-inspector-body">
@@ -72,15 +96,38 @@ export function GraphInspectorPanel({ detail, selectedNodeId }: GraphInspectorPa
 
         <section className="memory-property-section">
           <h4>Properties</h4>
-          <dl className="memory-property-list">
-            {properties.slice(0, 12).map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{formatUnknown(value)}</dd>
-              </div>
-            ))}
-          </dl>
+          {visibleProperties.length === 0 ? (
+            <p className="memory-muted">No display properties returned for this node.</p>
+          ) : (
+            <dl className="memory-property-list">
+              {visibleProperties.slice(0, 12).map(([key, value]) => (
+                <div key={key}>
+                  <dt>{formatPropertyLabel(key)}</dt>
+                  <dd>{formatUnknown(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </section>
+
+        <details className="memory-metadata-section">
+          <summary>
+            <span>Technical Metadata</span>
+            <small>{metadataProperties.length} fields</small>
+          </summary>
+          {metadataProperties.length === 0 ? (
+            <p className="memory-muted">No hidden metadata returned for this node.</p>
+          ) : (
+            <dl className="memory-property-list">
+              {metadataProperties.map(([key, value]) => (
+                <div key={key}>
+                  <dt>{formatPropertyLabel(key)}</dt>
+                  <dd>{formatUnknown(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </details>
 
         <section className="memory-property-section">
           <h4>Direct Evidence</h4>
@@ -127,3 +174,28 @@ function affectiveText(properties: Record<string, unknown>): string | undefined 
   const value = properties.emotional_summary ?? properties.original_user_words;
   return typeof value === "string" ? value : undefined;
 }
+
+function isTechnicalProperty(key: string): boolean {
+  return technicalPropertyKeys.has(key) || key.endsWith("_id") || key.endsWith("_ids");
+}
+
+function formatPropertyLabel(key: string): string {
+  return key.replaceAll("_", " ");
+}
+
+const technicalPropertyKeys = new Set([
+  "id",
+  "metadata",
+  "embedding",
+  "created_at",
+  "updated_at",
+  "source_ids",
+  "extraction_run_ids",
+  "normalized_name",
+  "normalized_value",
+  "checksum",
+  "content_ref",
+  "transcript_ref",
+  "external_id",
+  "merged_into_id"
+]);

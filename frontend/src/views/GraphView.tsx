@@ -220,6 +220,12 @@ export function GraphView() {
     setErrorMessage(undefined);
   }
 
+  function handleCloseInspector() {
+    setSelectedNodeId(undefined);
+    setTimeline(undefined);
+    setMapView(undefined);
+  }
+
   function handleDatabaseSampleLimitChange(nextLimit: number) {
     const boundedLimit = Math.max(1, Math.min(Number.isFinite(nextLimit) ? nextLimit : 25, 100));
     setDatabaseSampleLimit(boundedLimit);
@@ -262,9 +268,7 @@ export function GraphView() {
           <GraphTimelineDock timeline={timeline} mapView={mapView} />
         </div>
 
-        {selectedNodeId ? (
-          <GraphInspectorPanel detail={detail} selectedNodeId={selectedNodeId} />
-        ) : (
+        <div className="memory-graph-side-pane">
           <GraphSearchWindow
             searchMode={searchMode}
             results={results}
@@ -272,7 +276,12 @@ export function GraphView() {
             selectedNodeId={selectedNodeId}
             onSelectNode={(id) => void loadNodeContext(id)}
           />
-        )}
+          <GraphInspectorPanel
+            detail={detail}
+            selectedNodeId={selectedNodeId}
+            onClose={handleCloseInspector}
+          />
+        </div>
       </div>
     </div>
   );

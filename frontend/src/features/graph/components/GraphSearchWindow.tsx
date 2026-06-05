@@ -1,5 +1,5 @@
 import { EmptyState } from "../../../components/EmptyState";
-import { compactId, nodeId, nodeTitle } from "../../../lib/graphLabels";
+import { nodeId, nodeTitle } from "../../../lib/graphLabels";
 import type { GraphSearchMode, NodeSearchResult, SemanticMemorySearchResult } from "../../../types/graph";
 
 interface GraphSearchWindowProps {
@@ -66,9 +66,7 @@ function PropertyResults({
               onClick={() => onSelectNode(id)}
             >
               <span>{nodeTitle(node)}</span>
-              <small>
-                {node.label} {id ? compactId(id) : ""}
-              </small>
+              <small>{node.label}</small>
             </button>
           );
         })
@@ -90,6 +88,7 @@ function RetrievalResults({
       ) : (
         hits.map((hit) => {
           const targetId = hit.canonical_target_id || hit.primary_target_id;
+          const title = hit.title || hit.target?.title || hit.canonical_target?.title || "Untitled result";
           return (
             <button
               className={`memory-result memory-retrieval-hit ${selectedNodeId === targetId ? "is-active" : ""}`}
@@ -97,7 +96,7 @@ function RetrievalResults({
               type="button"
               onClick={() => onSelectNode(targetId)}
             >
-              <span>{hit.title || targetId}</span>
+              <span>{title}</span>
               <small>
                 #{hit.rank} {hit.primary_target_label} - {hit.source} - {hit.score.toFixed(2)}
               </small>
