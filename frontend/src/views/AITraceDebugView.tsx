@@ -15,7 +15,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
   const [isPolling, setIsPolling] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
   const [collapsedEvents, setCollapsedEvents] = useState<Set<number>>(() => new Set());
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const [token] = useState(() => localStorage.getItem(tokenStorageKey) ?? defaultWebChatToken);
 
   const sortedEvents = useMemo(
@@ -35,7 +35,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
     setLatestSequence(0);
     setErrorMessage(undefined);
     setCollapsedEvents(new Set());
-    setCollapsedSections(new Set());
+    setExpandedSections(new Set());
   }, [sessionId]);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
       setEvents([]);
       setLatestSequence(0);
       setCollapsedEvents(new Set());
-      setCollapsedSections(new Set());
+      setExpandedSections(new Set());
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to clear traces.");
     }
@@ -97,12 +97,12 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
 
   function handleExpandAll() {
     setCollapsedEvents(new Set());
-    setCollapsedSections(new Set());
+    setExpandedSections(new Set(allSectionKeys));
   }
 
   function handleCollapseAll() {
     setCollapsedEvents(new Set(sortedEvents.map((event) => event.sequence)));
-    setCollapsedSections(new Set(allSectionKeys));
+    setExpandedSections(new Set());
   }
 
   function handleToggleEvent(sequence: number) {
@@ -110,7 +110,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
   }
 
   function handleToggleSection(sectionKey: string) {
-    setCollapsedSections((current) => toggleSetValue(current, sectionKey));
+    setExpandedSections((current) => toggleSetValue(current, sectionKey));
   }
 
   return (
@@ -152,7 +152,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
               key={event.sequence}
               event={event}
               isCollapsed={collapsedEvents.has(event.sequence)}
-              collapsedSections={collapsedSections}
+              expandedSections={expandedSections}
               onToggleEvent={handleToggleEvent}
               onToggleSection={handleToggleSection}
             />
@@ -166,7 +166,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
 interface TraceEventCardProps {
   event: AIFlowTraceEvent;
   isCollapsed: boolean;
-  collapsedSections: Set<string>;
+  expandedSections: Set<string>;
   onToggleEvent: (sequence: number) => void;
   onToggleSection: (sectionKey: string) => void;
 }
@@ -174,7 +174,7 @@ interface TraceEventCardProps {
 function TraceEventCard({
   event,
   isCollapsed,
-  collapsedSections,
+  expandedSections,
   onToggleEvent,
   onToggleSection
 }: TraceEventCardProps) {
@@ -216,21 +216,23 @@ function TraceEventCard({
           <span>{event.sections.length} sections</span>
         </div>
       </header>
-      {!isCollapsed ? (
+      <div className="ai-trace-event-panel" aria-hidden={isCollapsed}>
         <div className="ai-trace-event-body">
           {event.sections.map((section, sectionIndex) => {
             const sectionKey = traceSectionKey(event.sequence, sectionIndex);
-            const isSectionCollapsed = collapsedSections.has(sectionKey);
+            const isSectionExpanded = expandedSections.has(sectionKey);
             return (
               <section
-                className={`ai-trace-section ${isSectionCollapsed ? "is-collapsed" : ""}`}
+                className={`ai-trace-section ${
+                  isSectionExpanded ? "is-expanded" : "is-collapsed"
+                }`}
                 key={sectionKey}
               >
                 <header className="ai-trace-section-header">
                   <button
                     className="ai-trace-section-toggle"
                     type="button"
-                    aria-expanded={!isSectionCollapsed}
+                    aria-expanded={isSectionExpanded}
                     onClick={() => onToggleSection(sectionKey)}
                   >
                     <span className="ai-trace-disclosure" aria-hidden="true" />
@@ -238,12 +240,16 @@ function TraceEventCard({
                   </button>
                   <span>{section.content_type}</span>
                 </header>
-                {!isSectionCollapsed ? <pre>{section.content || "(empty)"}</pre> : null}
+                <div className="ai-trace-section-panel" aria-hidden={!isSectionExpanded}>
+                  <div className="ai-trace-section-content">
+                    <pre>{section.content || "(empty)"}</pre>
+                  </div>
+                </div>
               </section>
             );
           })}
         </div>
-      ) : null}
+      </div>
     </article>
   );
 }

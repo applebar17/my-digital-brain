@@ -2522,6 +2522,10 @@ p {
   background: var(--surface-container-low);
 }
 
+.ai-trace-event.is-collapsed > header {
+  border-bottom-color: transparent;
+}
+
 .ai-trace-event-toggle,
 .ai-trace-section-toggle {
   display: inline-flex;
@@ -2610,6 +2614,27 @@ p {
   min-width: max-content;
 }
 
+.ai-trace-event-panel,
+.ai-trace-section-panel {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-height: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 180ms ease;
+}
+
+.ai-trace-event.is-collapsed .ai-trace-event-panel,
+.ai-trace-section.is-collapsed .ai-trace-section-panel {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.ai-trace-event-panel {
+  flex: 1 1 auto;
+}
+
 .ai-trace-event-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -2618,7 +2643,6 @@ p {
 }
 
 .ai-trace-section {
-  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--outline-variant);
 }
 
@@ -2631,11 +2655,7 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-2);
-}
-
-.ai-trace-section.is-collapsed .ai-trace-section-header {
-  margin-bottom: 0;
+  padding: var(--space-4) var(--space-5);
 }
 
 .ai-trace-section-toggle span:last-child {
@@ -2656,6 +2676,12 @@ p {
   font-weight: 700;
   line-height: 16px;
   text-transform: uppercase;
+}
+
+.ai-trace-section-content {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 var(--space-5) var(--space-4);
 }
 
 .ai-trace-section pre {
