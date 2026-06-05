@@ -25,6 +25,7 @@ from ..schemas import (
 )
 from ..tools import ToolBox
 from ..client.compatibility import apply_chat_completion_compatibility
+from ..tracing import traceable
 
 
 class OpenAIProvider:
@@ -39,6 +40,7 @@ class OpenAIProvider:
         self.settings = settings or get_genai_settings()
         self.client = client or GenAIClient(settings=self.settings)
 
+    @traceable(name="AI Provider Chat", run_type="llm")
     def generate_chat(self, request: ChatRequest) -> ChatResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()
@@ -58,6 +60,7 @@ class OpenAIProvider:
             raw_response=_dump_response(response),
         )
 
+    @traceable(name="AI Provider Chat With Tools", run_type="llm")
     def generate_chat_with_tools(
         self,
         request: ChatRequest,
@@ -89,6 +92,7 @@ class OpenAIProvider:
             raw_response=_dump_response(response),
         )
 
+    @traceable(name="AI Provider Structured Generation", run_type="parser")
     def generate_structured(
         self,
         request: StructuredGenerationRequest,
@@ -113,6 +117,7 @@ class OpenAIProvider:
             ),
         )
 
+    @traceable(name="AI Provider Embeddings", run_type="embedding")
     def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()
@@ -132,6 +137,7 @@ class OpenAIProvider:
             ),
         )
 
+    @traceable(name="AI Provider Transcription", run_type="tool")
     def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()

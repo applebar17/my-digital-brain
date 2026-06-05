@@ -10,6 +10,7 @@ from my_digital_brain.agentic.contexts import (
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.clarification import (
     summarize_clarification_answers,
@@ -70,6 +71,7 @@ class ChatRuntime:
         self.debug_commands_enabled = debug_commands_enabled
         self.runtime_unavailable_reason = runtime_unavailable_reason
 
+    @traceable(name="Chat Runtime Handle Message", run_type="chain")
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
         if not (message.text and message.text.strip()) and not message.media_refs:
             raise ChatValidationError("Incoming chat message must include text or media.")
@@ -297,6 +299,7 @@ class ChatRuntime:
         )
         return response
 
+    @traceable(name="Chat Runtime Answer Clarification", run_type="chain")
     def answer_clarification(
         self,
         session_id: str,
@@ -453,6 +456,7 @@ class ChatRuntime:
             metadata={"operation": "chat_runtime", "runtime_mode": self.runtime_mode},
         )
 
+    @traceable(name="Chat Runtime Call Agentic", run_type="chain")
     def _call_agentic(
         self,
         message: IncomingChatMessage,

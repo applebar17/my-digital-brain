@@ -8,6 +8,7 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.protocols import EmbeddingProvider, ModelRouter
 from my_digital_brain.ai.router import EMBEDDING_TASK, StaticModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, EmbeddingRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.graph.models import (
     GraphContextPackage,
     GraphViewResult,
@@ -56,6 +57,7 @@ class SemanticMemorySearchService:
         self.collection = collection
         self.vector_store_name = vector_store_name
 
+    @traceable(name="Graph RAG Semantic Search", run_type="retriever")
     def search_semantic(
         self,
         query: str,
@@ -72,6 +74,7 @@ class SemanticMemorySearchService:
             include_history=include_history,
         )
 
+    @traceable(name="Graph RAG Hybrid Search", run_type="retriever")
     def search_hybrid(
         self,
         query: str,
@@ -90,6 +93,7 @@ class SemanticMemorySearchService:
             include_history=include_history,
         )
 
+    @traceable(name="Graph RAG Search Pipeline", run_type="retriever")
     def _search(
         self,
         query: str,

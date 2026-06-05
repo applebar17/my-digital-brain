@@ -8,6 +8,7 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.protocols import EmbeddingProvider, ModelRouter
 from my_digital_brain.ai.router import EMBEDDING_TASK, StaticModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, EmbeddingRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.ingestion.contracts import GraphNodeWrite, IngestionResult
 from my_digital_brain.rag.models import (
@@ -48,6 +49,7 @@ class GraphVectorizationService:
         self.collection = collection
         self.vector_store_name = vector_store_name
 
+    @traceable(name="Graph RAG Vectorize Ingestion Result", run_type="chain")
     def vectorize_ingestion_result(self, result: IngestionResult) -> GraphVectorizationResult:
         if result.write_plan is None:
             return GraphVectorizationResult(status="skipped", collection=self.collection)

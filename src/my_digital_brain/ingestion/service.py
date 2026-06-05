@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import logging
 
 from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     CandidateOutput,
@@ -52,6 +53,7 @@ class IngestionService:
     execute_write_plan: bool = False
     process_store: IngestionProcessStore | None = None
 
+    @traceable(name="Ingestion Process Source", run_type="chain")
     def process_source(self, source: SourceRecordRef) -> IngestionResult:
         log_event(
             logger,
@@ -366,6 +368,7 @@ class IngestionService:
             self.process_store.record_result(result)
         return result
 
+    @traceable(name="Ingestion Vectorize Written Result", run_type="chain")
     def _vectorize_written_result(self, result: IngestionResult) -> None:
         if self.vectorization_service is None:
             return

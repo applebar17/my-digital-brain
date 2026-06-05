@@ -6,24 +6,33 @@ from contextlib import nullcontext
 import re
 from typing import Any
 
+
+def _noop_traceable(*args, **kwargs):  # type: ignore[no-untyped-def]
+    if args and callable(args[0]) and len(args) == 1 and not kwargs:
+        return args[0]
+
+    def decorator(fn):  # type: ignore[no-untyped-def]
+        return fn
+
+    return decorator
+
+
 try:
     from langsmith import traceable
     from langsmith.run_helpers import get_current_run_tree, tracing_context
-except ModuleNotFoundError:  # pragma: no cover - protects stale/minimal containers
-    def traceable(*args, **kwargs):  # type: ignore[no-untyped-def]
-        if args and callable(args[0]) and len(args) == 1 and not kwargs:
-            return args[0]
-
-        def decorator(fn):  # type: ignore[no-untyped-def]
-            return fn
-
-        return decorator
+except Exception:  # pragma: no cover - tracing integrations are optional
+    traceable = _noop_traceable
 
     def get_current_run_tree() -> None:
         return None
 
     def tracing_context(*args, **kwargs):  # type: ignore[no-untyped-def]
         return nullcontext()
+
+try:
+    from langsmith.wrappers import wrap_openai as _wrap_openai
+except Exception:  # pragma: no cover - client wrapping is optional
+    _wrap_openai = None  # type: ignore[assignment]
 
 TRACE_COLLECTION_LIMIT = 20
 
@@ -92,6 +101,17 @@ def get_trace_parent_headers() -> dict[str, str] | None:
     except Exception:
         return None
     return dict(headers) if headers else None
+
+
+def wrap_openai_client(client: Any) -> Any:
+    """Wrap OpenAI-compatible clients with LangSmith when available."""
+
+    if _wrap_openai is None:
+        return client
+    try:
+        return _wrap_openai(client)
+    except Exception:
+        return client
 
 
 def _sanitize_trace_value(value: Any) -> Any:

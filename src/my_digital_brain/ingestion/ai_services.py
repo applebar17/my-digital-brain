@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from my_digital_brain.ai.protocols import ModelRouter, StructuredLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.contracts import (
     ExtractionPlan,
     ExtractionPlanDraft,
@@ -43,6 +44,7 @@ class LLMMentionScanner:
         self.prompt_builder = prompt_builder or IngestionPromptBuilder()
         self.model = model
 
+    @traceable(name="Ingestion Mention Scan", run_type="parser")
     def scan(self, source: SourceRecordRef) -> MentionScan:
         parsed = _structured_call(
             provider=self.provider,
@@ -72,6 +74,7 @@ class LLMIngestionPlanner:
         self.prompt_builder = prompt_builder or IngestionPromptBuilder()
         self.model = model
 
+    @traceable(name="Ingestion Planning", run_type="parser")
     def plan(
         self,
         source: SourceRecordRef,
@@ -116,6 +119,7 @@ class LLMIngestionPlanner:
             )
 
 
+@traceable(name="Ingestion Structured LLM Call", run_type="parser")
 def _structured_call(
     *,
     provider: StructuredLLMProvider,

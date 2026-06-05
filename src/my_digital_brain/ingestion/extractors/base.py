@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from my_digital_brain.ai.protocols import ModelRouter, StructuredLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.contracts import (
     CandidateOutput,
     ExtractionTask,
@@ -39,6 +40,7 @@ class FocusedLLMExtractor:
     def supports(self, task: ExtractionTask) -> bool:
         return ExtractionTaskType(task.task_type) in self.supported_task_types
 
+    @traceable(name="Focused Extraction", run_type="parser")
     def extract(
         self,
         source: SourceRecordRef,
@@ -48,6 +50,7 @@ class FocusedLLMExtractor:
         parsed = self._generate(source, task, context)
         return enrich_candidate_batch(parsed, source, task)
 
+    @traceable(name="Focused Extraction Structured Call", run_type="parser")
     def _generate(
         self,
         source: SourceRecordRef,

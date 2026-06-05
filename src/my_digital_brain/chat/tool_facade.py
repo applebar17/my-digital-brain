@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.chat.enums import (
     ChatDiagnosticLevel,
     ChatResponseStatus,
@@ -113,6 +114,7 @@ class LLMGraphContextAnswerGenerator:
         self.router = router
         self.model = model
 
+    @traceable(name="LLM Graph Context Answer", run_type="llm")
     def generate_answer(
         self,
         *,
@@ -173,6 +175,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         self.semantic_search_service = semantic_search_service
         self.answer_generator = answer_generator or DeterministicGraphContextAnswerGenerator()
 
+    @traceable(name="Memory Tool Start Ingestion", run_type="tool")
     def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
         if self.ingestion_service is None:
             return super().start_memory_ingestion(request)
@@ -197,6 +200,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             operation="start_memory_ingestion",
         )
 
+    @traceable(name="Memory Tool Resume Pending Process", run_type="tool")
     def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
         if self.ingestion_service is None:
             return super().resume_pending_process(request)
@@ -479,6 +483,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             },
         )
 
+    @traceable(name="Memory Tool Query Context", run_type="tool")
     def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
         if self.graph_service is None:
             return super().query_memory_context(request)
@@ -669,6 +674,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             },
         )
 
+    @traceable(name="Memory Tool Propose Correction", run_type="tool")
     def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
         if self.graph_service is None:
             return super().propose_memory_correction(request)

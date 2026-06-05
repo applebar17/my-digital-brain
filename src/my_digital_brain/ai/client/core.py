@@ -15,7 +15,7 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolSpec
 from my_digital_brain.ai.tokenizer import TokenCounter
 from my_digital_brain.ai.tools import ToolBox, build_chat_toolbox
-from my_digital_brain.ai.tracing import traceable
+from my_digital_brain.ai.tracing import traceable, wrap_openai_client
 
 from .context_ops import GenAIContextMixin
 from .compatibility import apply_chat_completion_compatibility
@@ -24,12 +24,6 @@ from .errors import _provider_error_details
 from .retrying import GenAIRetryMixin
 from .settings import GenAISettings, get_genai_settings
 from .tool_execution import GenAIToolExecutionMixin
-
-try:
-    from langsmith.wrappers import wrap_openai  # type: ignore
-except Exception:  # pragma: no cover - tracing is optional
-    wrap_openai = None  # type: ignore
-
 
 class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
     def __init__(
@@ -404,12 +398,12 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
                 azure_endpoint=self.settings.azure_openai_endpoint,
                 api_version=self.settings.azure_openai_api_version,
             )
-            return wrap_openai(client) if wrap_openai else client
+            return wrap_openai_client(client)
 
         if not self.settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is missing.")
         client = openai.OpenAI(api_key=self.settings.openai_api_key)
-        return wrap_openai(client) if wrap_openai else client
+        return wrap_openai_client(client)
 
     def _build_context_manager(self) -> GenAIContextManager:
         tier_context_tokens = {

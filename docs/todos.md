@@ -190,9 +190,19 @@ Status: implemented.
 
 ## Observability And LangSmith Tracing
 
-- Integrate agentic runtime tracing with `src/my_digital_brain/ai/tracing.py`.
-- Use LangSmith remote tracing when configured.
-- Attach sanitized metadata for:
+Status: baseline implemented.
+
+- OpenAI/Azure clients are wrapped through `src/my_digital_brain/ai/tracing.py`
+  when LangSmith is available.
+- `@traceable` spans are applied to provider calls, agentic runtime states,
+  ingestion planning/extraction, RAG retrieval/vectorization, Chroma vector
+  operations, chat runtime handoffs, and memory tool facade operations.
+- LangSmith remote tracing is controlled by environment configuration and stays
+  disabled by default locally.
+
+Remaining follow-up after real trace review:
+
+- Attach richer sanitized metadata for:
   - state id
   - model task
   - model route
@@ -205,8 +215,8 @@ Status: implemented.
   - status and error codes
 - Avoid storing raw personal memory text, contact details, or raw graph payloads
   in trace metadata.
-- Persist compact traces locally enough to debug state transitions and tool
-  failures without exposing noisy prompt internals.
+- Review whether the existing local JSONL logs are sufficient as compact local
+  traces, or whether a separate state-transition trace artifact is still useful.
 
 ## Medium Priority UX And Conversation Flow
 

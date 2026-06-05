@@ -38,6 +38,7 @@ from my_digital_brain.ai.schemas import (
     StructuredGenerationRequest,
 )
 from my_digital_brain.ai.tools import ToolBox
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.prompts import PromptRegistry
 
@@ -55,6 +56,7 @@ class AgenticStateRunner:
     temperature: float = 0.2
     max_tokens: int = 800
 
+    @traceable(name="Agentic State Run", run_type="chain")
     def run_state(self, invocation: AgenticStateInvocation) -> AgenticStateRunResult:
         state_id = AgenticStateId(invocation.state_id)
         state_config = self.state_configs[state_id]
@@ -139,6 +141,7 @@ class AgenticStateRunner:
             },
         )
 
+    @traceable(name="Agentic Structured State Run", run_type="parser")
     def run_structured_state(
         self,
         invocation: AgenticStateInvocation,
@@ -235,6 +238,7 @@ class AgenticRuntime:
     state_runner: AgenticStateRunner
     max_state_transitions: int = 5
 
+    @traceable(name="Agentic Runtime Run", run_type="chain")
     def run(
         self,
         conversation_context: ConversationContext,
@@ -526,6 +530,7 @@ class AgenticRuntime:
             return AgenticStateId.PENDING_PROCESS_REVIEW
         return AgenticStateId.CONVERSATION_ENTRY
 
+    @traceable(name="Agentic Ingestion Backend Handoff", run_type="chain")
     def _run_ingestion_backend(
         self,
         conversation_context: ConversationContext,

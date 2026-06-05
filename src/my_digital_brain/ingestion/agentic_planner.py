@@ -23,6 +23,7 @@ from my_digital_brain.agentic.runtime import AgenticStateRunner
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.protocols import StructuredLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.ai_services import _is_graph_alias
 from my_digital_brain.ingestion.contracts import (
     ClarificationRequest,
@@ -63,6 +64,7 @@ class AgenticIngestionPlanner:
         self.history_service = history_service or state_runner.history_service
         self.max_planning_rounds = max(1, max_planning_rounds)
 
+    @traceable(name="Agentic Ingestion Planning", run_type="chain")
     def plan(
         self,
         source: SourceRecordRef,
@@ -158,6 +160,7 @@ class AgenticIngestionPlanner:
             "without returning a structured ExtractionPlanDraft."
         )
 
+    @traceable(name="Agentic Ingestion Structured Plan", run_type="parser")
     def _structured_plan(
         self,
         source: SourceRecordRef,

@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     import chromadb
 
 from my_digital_brain.config import Settings
+from my_digital_brain.ai.tracing import traceable
 
 
 class VectorStore(Protocol):
@@ -50,6 +51,7 @@ class ChromaVectorStore:
     def collection_name(self, collection: str) -> str:
         return f"{self.collection_prefix}_{collection}"
 
+    @traceable(name="Chroma Upsert Embedding", run_type="tool")
     def upsert_embedding(
         self,
         collection: str,
@@ -66,6 +68,7 @@ class ChromaVectorStore:
             documents=[document or ""],
         )
 
+    @traceable(name="Chroma Vector Search", run_type="retriever")
     def search(
         self,
         collection: str,
@@ -89,9 +92,11 @@ class ChromaVectorStore:
             for item_id, distance, metadata, document in rows
         ]
 
+    @traceable(name="Chroma Delete Vector", run_type="tool")
     def delete(self, collection: str, vector_id: str) -> None:
         chroma_collection = self.client.get_or_create_collection(self.collection_name(collection))
         chroma_collection.delete(ids=[vector_id])
 
+    @traceable(name="Chroma Health Check", run_type="tool")
     def health_check(self) -> None:
         self.client.heartbeat()
