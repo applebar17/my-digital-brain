@@ -3,38 +3,6 @@ services:
     build: .
     env_file:
       - src/my_digital_brain/.env
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_DIR: ${LOG_DIR:-/app/data/logs}
-      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
-      AGENTIC_LOG_LEVEL: ${AGENTIC_LOG_LEVEL:-INFO}
-      LOG_MAX_BYTES: ${LOG_MAX_BYTES:-10485760}
-      LOG_BACKUP_COUNT: ${LOG_BACKUP_COUNT:-5}
-      LANGSMITH_TRACING_V2: ${LANGSMITH_TRACING_V2:-false}
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
-      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-my-digital-brain-local}
-      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
-      MIGRATE_ON_START: ${MIGRATE_ON_START:-true}
-      MIGRATE_RELATIONAL_ON_START: ${MIGRATE_RELATIONAL_ON_START:-true}
-      MIGRATE_GRAPH_ON_START: ${MIGRATE_GRAPH_ON_START:-true}
-      MIGRATION_RETRIES: ${MIGRATION_RETRIES:-30}
-      MIGRATION_RETRY_SECONDS: ${MIGRATION_RETRY_SECONDS:-2}
-      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
-      NEO4J_USER: ${NEO4J_USER:-neo4j}
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-change-me-neo4j}
-      NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
-      RELATIONAL_BACKEND: ${RELATIONAL_BACKEND:-postgres}
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+psycopg://brain:brain@postgres:5432/brain}
-      SQLITE_PATH: ${SQLITE_PATH:-data/local/brain.sqlite3}
-      CHROMA_HOST: ${CHROMA_HOST:-chroma}
-      CHROMA_PORT: ${CHROMA_PORT:-8000}
-      CHROMA_COLLECTION_PREFIX: ${CHROMA_COLLECTION_PREFIX:-my_digital_brain}
-      ANONYMIZED_TELEMETRY: ${ANONYMIZED_TELEMETRY:-False}
-      SOURCE_MEDIA_ROOT: ${SOURCE_MEDIA_ROOT:-data/source-media}
-      FRONTEND_CORS_ORIGINS: ${FRONTEND_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      WEB_CHAT_AUTH_TOKEN: ${WEB_CHAT_AUTH_TOKEN:-change-me-web-chat-token}
-      AI_FLOW_DEBUG_ENABLED: ${AI_FLOW_DEBUG_ENABLED:-false}
     ports:
       - "8000:8000"
     volumes:
@@ -52,15 +20,8 @@ services:
   frontend:
     build:
       context: ./frontend
-      args:
-        VITE_API_BASE_URL: ${FRONTEND_VITE_API_BASE_URL:-http://localhost:8000}
-        VITE_WEB_CHAT_AUTH_TOKEN: ${WEB_CHAT_AUTH_TOKEN:-change-me-web-chat-token}
-        VITE_OWNER_ID: ${FRONTEND_VITE_OWNER_ID:-owner-local}
-        VITE_SENDER_ID: ${FRONTEND_VITE_SENDER_ID:-owner-local}
-        VITE_CONVERSATION_ID: ${FRONTEND_VITE_CONVERSATION_ID:-web-local}
-        VITE_AI_TRACE_DEBUG_ENABLED: ${FRONTEND_VITE_AI_TRACE_DEBUG_ENABLED:-false}
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "5173:80"
     depends_on:
       backend:
         condition: service_started

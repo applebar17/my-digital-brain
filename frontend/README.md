@@ -18,21 +18,14 @@ For local chat calls, set `VITE_WEB_CHAT_AUTH_TOKEN` to match the backend
 ## Docker
 
 The frontend Docker image builds static Vite assets and serves them with nginx.
+The Docker build reads `frontend/.env`; rebuild the image after changing any
+`VITE_*` value because Vite embeds those values into the static assets.
 
 ```powershell
 docker compose up --build frontend
 ```
 
-Docker build-time values come from the root compose environment:
-
-- `FRONTEND_VITE_API_BASE_URL`
-- `FRONTEND_VITE_OWNER_ID`
-- `FRONTEND_VITE_SENDER_ID`
-- `FRONTEND_VITE_CONVERSATION_ID`
-- `WEB_CHAT_AUTH_TOKEN`
-
-For local Vite development, use `frontend/.env`. For Docker Compose, use the
-root `.env`.
+For local Vite development and Docker Compose builds, use `frontend/.env`.
 
 ## Workspaces
 

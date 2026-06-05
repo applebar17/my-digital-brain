@@ -16,9 +16,9 @@ Frontend UI is available at:
 http://localhost:5173
 ```
 
-The Docker frontend build reads `FRONTEND_VITE_*` values from the root compose
-environment. Rebuild the `frontend` service after changing them because Vite
-embeds `VITE_*` values into the static assets.
+The backend container reads `src/my_digital_brain/.env`. The frontend Docker
+build reads `frontend/.env`; rebuild the `frontend` service after changing it
+because Vite embeds `VITE_*` values into the static assets.
 
 Run migrations inside the backend container:
 

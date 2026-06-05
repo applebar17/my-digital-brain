@@ -5,20 +5,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-ARG VITE_API_BASE_URL=http://localhost:8000
-ARG VITE_WEB_CHAT_AUTH_TOKEN=change-me-web-chat-token
-ARG VITE_OWNER_ID=owner-local
-ARG VITE_SENDER_ID=owner-local
-ARG VITE_CONVERSATION_ID=web-local
-ARG VITE_AI_TRACE_DEBUG_ENABLED=false
-
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-ENV VITE_WEB_CHAT_AUTH_TOKEN=${VITE_WEB_CHAT_AUTH_TOKEN}
-ENV VITE_OWNER_ID=${VITE_OWNER_ID}
-ENV VITE_SENDER_ID=${VITE_SENDER_ID}
-ENV VITE_CONVERSATION_ID=${VITE_CONVERSATION_ID}
-ENV VITE_AI_TRACE_DEBUG_ENABLED=${VITE_AI_TRACE_DEBUG_ENABLED}
-
+COPY .env* ./
+RUN if [ ! -f .env ]; then cp .env.example .env; fi
 COPY index.html vite.config.ts tsconfig*.json ./
 COPY src ./src
 
