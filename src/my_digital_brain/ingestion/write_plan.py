@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from my_digital_brain.graph.constants import AFFECTIVE_FIELD_NAMES, NORMALIZED_NAME_LABELS
+from my_digital_brain.graph.models import node_model_for_label
 from my_digital_brain.graph.utils import normalize_text
 from my_digital_brain.ingestion.contracts import (
     AffectiveFields,
@@ -144,17 +145,29 @@ class GraphWritePlanBuilder:
         key = idempotency_key(source_id, "entity", candidate.local_ref, candidate.entity_type)
         properties = _base_properties(source_id, candidate, key)
         properties.update(_entity_display_properties(candidate))
-        properties.update(candidate.typed_properties)
+        typed_properties, unsupported_properties = _entity_typed_properties(candidate)
+        properties.update(typed_properties)
         if candidate.description:
             properties["description"] = candidate.description
         if candidate.aliases:
-            properties["aliases"] = candidate.aliases
+            if _entity_allows_property(candidate.entity_type, "aliases"):
+                properties["aliases"] = candidate.aliases
+            else:
+                unsupported_properties["aliases"] = _merge_listish_values(
+                    unsupported_properties.get("aliases"),
+                    candidate.aliases,
+                )
         if candidate.affective_fields:
             properties.update(_affective_properties(candidate.affective_fields))
         if candidate.entity_type in NORMALIZED_NAME_LABELS:
             name = properties.get("display_name") or properties.get("name")
             if isinstance(name, str) and name.strip():
                 properties.setdefault("normalized_name", normalize_text(name))
+        if unsupported_properties:
+            properties["metadata"] = {
+                **properties.get("metadata", {}),
+                "unsupported_entity_properties": _drop_empty(unsupported_properties),
+            }
         return GraphNodeWrite(
             local_ref=candidate.local_ref,
             label=candidate.entity_type,
@@ -346,6 +359,24 @@ def _entity_display_properties(candidate: CandidateEntity) -> dict[str, Any]:
     return {"name": display_name}
 
 
+def _entity_typed_properties(candidate: CandidateEntity) -> tuple[dict[str, Any], dict[str, Any]]:
+    allowed_fields = set(node_model_for_label(candidate.entity_type).model_fields)
+    properties: dict[str, Any] = {}
+    unsupported_properties: dict[str, Any] = {}
+    for key, value in candidate.typed_properties.items():
+        target = (
+            properties
+            if key in allowed_fields and key not in _ENTITY_PROTECTED_FIELDS
+            else unsupported_properties
+        )
+        target[key] = value
+    return properties, unsupported_properties
+
+
+def _entity_allows_property(label: str, property_name: str) -> bool:
+    return property_name in node_model_for_label(label).model_fields
+
+
 def _relationship_candidate_properties(candidate: CandidateRelationship) -> dict[str, Any]:
     properties = dict(candidate.properties)
     if candidate.relationship_kind:
@@ -401,9 +432,36 @@ def _unique(values) -> list[str]:
     return unique_values
 
 
+def _merge_listish_values(current: Any, next_value: Any) -> Any:
+    current_values = _listish_values(current)
+    next_values = _listish_values(next_value)
+    if current_values or next_values:
+        return _unique([*current_values, *next_values])
+    return next_value
+
+
+def _listish_values(value: Any) -> list[Any]:
+    if value in (None, "", []):
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
 def _drop_empty(properties: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in properties.items() if value not in (None, "", [])}
 
+
+_ENTITY_PROTECTED_FIELDS = {
+    "id",
+    "created_at",
+    "updated_at",
+    "source_ids",
+    "extraction_run_ids",
+    "metadata",
+}
 
 _RELATIONSHIP_PROPERTY_FIELDS = {
     "id",

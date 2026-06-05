@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from my_digital_brain.core.ids import new_uuid
-from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult
+from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult, SocialCircleNode
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
@@ -155,6 +155,56 @@ def test_write_plan_builder_preserves_social_relationship_kind_and_detail() -> N
     assert relationship.relationship_type == "RELATIONSHIP_WITH"
     assert relationship.properties["relationship_kind"] == "partner"
     assert relationship.properties["relationship_detail"] == "girlfriend"
+
+
+def test_write_plan_builder_does_not_write_aliases_to_social_circle_nodes() -> None:
+    candidate_graph = _candidate_graph(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_SOCIAL_CIRCLE_001",
+                entity_type="SocialCircle",
+                display_name="il suo gruppo",
+                aliases=["il suo gruppo"],
+                typed_properties={
+                    "aliases": ["gruppo di amici"],
+                    "circle_type": "friendship",
+                    "unmodeled_note": "kept for debug metadata",
+                },
+                source_refs=["source-1"],
+            ),
+        ],
+    )
+
+    plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
+    node = plan.nodes_to_create[0]
+
+    assert node.label == "SocialCircle"
+    assert "aliases" not in node.properties
+    assert node.properties["name"] == "il suo gruppo"
+    assert node.properties["circle_type"] == "friendship"
+    assert node.properties["metadata"]["unsupported_entity_properties"] == {
+        "aliases": ["gruppo di amici", "il suo gruppo"],
+        "unmodeled_note": "kept for debug metadata",
+    }
+    SocialCircleNode.model_validate(node.properties)
+
+
+def test_write_plan_builder_keeps_aliases_for_alias_bearing_node_labels() -> None:
+    candidate_graph = _candidate_graph(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Marco Rossi",
+                aliases=["Marco"],
+                source_refs=["source-1"],
+            ),
+        ],
+    )
+
+    plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
+
+    assert plan.nodes_to_create[0].properties["aliases"] == ["Marco"]
 
 
 def test_write_plan_builder_uses_existing_resolution_for_relationship_endpoints() -> None:
