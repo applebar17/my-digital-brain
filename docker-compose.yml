@@ -30,6 +30,7 @@ services:
       CHROMA_HOST: ${CHROMA_HOST:-chroma}
       CHROMA_PORT: ${CHROMA_PORT:-8000}
       CHROMA_COLLECTION_PREFIX: ${CHROMA_COLLECTION_PREFIX:-my_digital_brain}
+      ANONYMIZED_TELEMETRY: ${ANONYMIZED_TELEMETRY:-False}
       SOURCE_MEDIA_ROOT: ${SOURCE_MEDIA_ROOT:-data/source-media}
       FRONTEND_CORS_ORIGINS: ${FRONTEND_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       WEB_CHAT_AUTH_TOKEN: ${WEB_CHAT_AUTH_TOKEN:-change-me-web-chat-token}
@@ -95,6 +96,8 @@ services:
 
   chroma:
     image: chromadb/chroma:0.5.23
+    environment:
+      ANONYMIZED_TELEMETRY: ${ANONYMIZED_TELEMETRY:-False}
     volumes:
       - chroma_data:/chroma/chroma
     networks:
