@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_OWNER_ID?: string;
   readonly VITE_SENDER_ID?: string;
   readonly VITE_CONVERSATION_ID?: string;
+  readonly VITE_AI_TRACE_DEBUG_ENABLED?: string;
 }
 
 interface ImportMeta {
