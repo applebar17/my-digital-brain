@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type WorkspaceId = "chat" | "graph" | "analytics";
+export type WorkspaceId = "chat" | "graph" | "analytics" | "debug";
 export type AppTheme = "dark" | "light";
 
 interface AppShellProps {
@@ -8,18 +8,27 @@ interface AppShellProps {
   onNavigate: (workspace: WorkspaceId) => void;
   theme: AppTheme;
   onToggleTheme: () => void;
+  debugEnabled?: boolean;
   children: ReactNode;
 }
 
-type IconName = "chat" | "graph" | "analytics" | "sun" | "moon";
+type IconName = "chat" | "graph" | "analytics" | "debug" | "sun" | "moon";
 
-const navItems: Array<{ id: WorkspaceId; label: string; icon: IconName }> = [
+const navItems: Array<{ id: WorkspaceId; label: string; icon: IconName; debugOnly?: boolean }> = [
   { id: "chat", label: "Chat", icon: "chat" },
   { id: "graph", label: "Memory Graph", icon: "graph" },
-  { id: "analytics", label: "Analytics", icon: "analytics" }
+  { id: "analytics", label: "Analytics", icon: "analytics" },
+  { id: "debug", label: "AI Trace", icon: "debug", debugOnly: true }
 ];
 
-export function AppShell({ workspace, onNavigate, theme, onToggleTheme, children }: AppShellProps) {
+export function AppShell({
+  workspace,
+  onNavigate,
+  theme,
+  onToggleTheme,
+  debugEnabled = false,
+  children
+}: AppShellProps) {
   return (
     <div className="app-shell" data-theme={theme}>
       <aside className="app-nav" aria-label="Primary navigation">
@@ -29,18 +38,20 @@ export function AppShell({ workspace, onNavigate, theme, onToggleTheme, children
           </span>
         </div>
         <nav className="nav-list">
-          {navItems.map((item) => (
-            <button
-              className={`nav-item ${workspace === item.id ? "is-active" : ""}`}
-              type="button"
-              key={item.id}
-              title={item.label}
-              aria-label={item.label}
-              onClick={() => onNavigate(item.id)}
-            >
-              <Icon name={item.icon} />
-            </button>
-          ))}
+          {navItems
+            .filter((item) => !item.debugOnly || debugEnabled)
+            .map((item) => (
+              <button
+                className={`nav-item ${workspace === item.id ? "is-active" : ""}`}
+                type="button"
+                key={item.id}
+                title={item.label}
+                aria-label={item.label}
+                onClick={() => onNavigate(item.id)}
+              >
+                <Icon name={item.icon} />
+              </button>
+            ))}
         </nav>
         <button
           className="theme-toggle"
@@ -77,6 +88,13 @@ function Icon({ name }: { name: IconName }) {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24">
         <path d="M5 20V9M12 20V4M19 20v-7M3.5 20h17" />
+      </svg>
+    );
+  }
+  if (name === "debug") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M4 5h16M4 12h10M4 19h16M17 9l3 3-3 3" />
       </svg>
     );
   }

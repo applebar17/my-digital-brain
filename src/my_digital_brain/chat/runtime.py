@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Literal
 
 from my_digital_brain.agentic.contexts import (
@@ -45,6 +46,7 @@ from my_digital_brain.chat.models import (
     PendingProcessContext,
 )
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
+from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 
 
 class ChatRuntime:
@@ -59,6 +61,7 @@ class ChatRuntime:
         ingestion_service: object | None = None,
         history_service: AgenticHistoryService | None = None,
         debug_commands_enabled: bool = False,
+        ai_flow_debug_enabled: bool = False,
         runtime_unavailable_reason: str | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
@@ -69,6 +72,7 @@ class ChatRuntime:
         self.ingestion_service = ingestion_service
         self.history_service = history_service or AgenticHistoryService()
         self.debug_commands_enabled = debug_commands_enabled
+        self.ai_flow_debug_enabled = ai_flow_debug_enabled
         self.runtime_unavailable_reason = runtime_unavailable_reason
 
     @traceable(name="Chat Runtime Handle Message", run_type="chain")
@@ -493,7 +497,18 @@ class ChatRuntime:
                 **message.metadata,
             },
         )
-        result = self.agentic_runtime.run(conversation_context, execution_context)
+        trace_context = (
+            ai_flow_trace_session(
+                session_id=session_id,
+                message_id=message.message_id,
+                current_text=(message.text or "").strip(),
+                store=get_ai_flow_trace_store(),
+            )
+            if self.ai_flow_debug_enabled
+            else nullcontext()
+        )
+        with trace_context:
+            result = self.agentic_runtime.run(conversation_context, execution_context)
         return render_agentic_chat_response(result, session_id=session_id)
 
     def _agentic_conversation_context(

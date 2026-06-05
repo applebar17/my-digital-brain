@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 import logging
+import json
 
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.tracing import traceable
+from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     CandidateClaim,
@@ -416,6 +418,42 @@ class IngestionService:
         )
         if self.process_store is not None:
             self.process_store.record_result(result)
+        record_ai_flow_event(
+            title="Ingestion Backend Result",
+            call_kind="backend_process_result",
+            purpose="memory_ingestion",
+            status=str(result.status),
+            sections=[
+                AIFlowTraceSection(
+                    title="TOOL OUTPUTS",
+                    content=json.dumps(
+                        {
+                            "status": str(result.status),
+                            "source_id": result.source_id,
+                            "ingestion_id": result.ingestion_id,
+                            "has_clarification": result.clarification is not None,
+                            "validation_errors": _validation_issue_summaries(
+                                result.validation_errors,
+                            ),
+                            "write_counts": (
+                                _write_plan_counts(result.write_plan)
+                                if result.write_plan
+                                else None
+                            ),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    ),
+                    content_type="json",
+                ),
+            ],
+            metadata={
+                "source_id": result.source_id,
+                "ingestion_id": result.ingestion_id,
+                "status": str(result.status),
+            },
+        )
         return result
 
     @traceable(name="Ingestion Vectorize Written Result", run_type="chain")

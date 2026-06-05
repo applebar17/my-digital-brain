@@ -1,4 +1,4 @@
-export type ChatIconName = "panel" | "new" | "search" | "more" | "trash";
+export type ChatIconName = "panel" | "new" | "search" | "more" | "trash" | "trace";
 
 interface ChatIconProps {
   name: ChatIconName;
@@ -30,6 +30,13 @@ export function ChatIcon({ name }: ChatIconProps) {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24">
         <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+      </svg>
+    );
+  }
+  if (name === "trace") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M4 5h16M4 12h10M4 19h16M16 9l3 3-3 3" />
       </svg>
     );
   }

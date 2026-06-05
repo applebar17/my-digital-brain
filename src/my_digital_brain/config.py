@@ -97,6 +97,10 @@ class Settings(BaseSettings):
         default=True,
         alias="INGESTION_EXECUTE_WRITE_PLAN",
     )
+    ai_flow_debug_enabled: bool = Field(
+        default=False,
+        alias="AI_FLOW_DEBUG_ENABLED",
+    )
     telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_webhook_secret_token: str | None = Field(
         default=None,

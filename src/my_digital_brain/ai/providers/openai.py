@@ -26,6 +26,11 @@ from ..schemas import (
 from ..tools import ToolBox
 from ..client.compatibility import apply_chat_completion_compatibility
 from ..tracing import traceable
+from my_digital_brain.debug import (
+    ai_flow_trace_call,
+    record_embedding_result,
+    record_provider_result,
+)
 
 
 class OpenAIProvider:
@@ -46,19 +51,32 @@ class OpenAIProvider:
         start = time.monotonic()
         params = self._chat_params(request)
 
-        response = self.client.call_openai(params)
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return ChatResult(
-            content=_response_content(response),
-            usage=_usage_from_response(response),
-            metadata=self._metadata(
-                model=params["model"],
-                started_at=started_at,
-                latency_ms=latency_ms,
-                raw_response=response,
-            ),
-            raw_response=_dump_response(response),
-        )
+        with self._trace_call_context(
+            "chat",
+            request,
+            model=params["model"],
+            title="AI Provider Chat",
+        ):
+            response = self.client.call_openai(params)
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = ChatResult(
+                content=_response_content(response),
+                usage=_usage_from_response(response),
+                metadata=self._metadata(
+                    model=params["model"],
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                    raw_response=response,
+                ),
+                raw_response=_dump_response(response),
+            )
+            record_provider_result(
+                content=result.content,
+                call_kind="chat",
+                title="Provider Chat Result",
+                metadata={"latency_ms": latency_ms},
+            )
+        return result
 
     @traceable(name="AI Provider Chat With Tools", run_type="llm")
     def generate_chat_with_tools(
@@ -73,24 +91,39 @@ class OpenAIProvider:
         start = time.monotonic()
         params = self._chat_params(request)
 
-        response = self.client.call_openai(
-            params,
-            tools_mapping=tools_mapping,
-            toolbox=toolbox,
-            max_tool_calls=max_tool_calls,
-        )
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return ChatResult(
-            content=_response_content(response),
-            usage=_usage_from_response(response),
-            metadata=self._metadata(
-                model=params["model"],
-                started_at=started_at,
-                latency_ms=latency_ms,
-                raw_response=response,
-            ),
-            raw_response=_dump_response(response),
-        )
+        with self._trace_call_context(
+            "chat_with_tools",
+            request,
+            model=params["model"],
+            title="AI Provider Chat With Tools",
+            toolbox_name=toolbox.name,
+            metadata={"max_tool_calls": max_tool_calls},
+        ):
+            response = self.client.call_openai(
+                params,
+                tools_mapping=tools_mapping,
+                toolbox=toolbox,
+                max_tool_calls=max_tool_calls,
+            )
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = ChatResult(
+                content=_response_content(response),
+                usage=_usage_from_response(response),
+                metadata=self._metadata(
+                    model=params["model"],
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                    raw_response=response,
+                ),
+                raw_response=_dump_response(response),
+            )
+            record_provider_result(
+                content=result.content,
+                call_kind="chat_with_tools",
+                title="Provider Chat With Tools Result",
+                metadata={"latency_ms": latency_ms, "toolbox_name": toolbox.name},
+            )
+        return result
 
     @traceable(name="AI Provider Structured Generation", run_type="parser")
     def generate_structured(
@@ -99,43 +132,68 @@ class OpenAIProvider:
     ) -> StructuredGenerationResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()
-        parsed = self.client.generate_structured(
-            request.output_schema,
-            request.system_prompt,
-            request.input_message,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-        )
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return StructuredGenerationResult(
-            parsed=parsed,
-            metadata=self._metadata(
-                model=request.model or self.settings.chat_model_default,
-                started_at=started_at,
-                latency_ms=latency_ms,
-            ),
-        )
+        with self._trace_structured_context(request):
+            parsed = self.client.generate_structured(
+                request.output_schema,
+                request.system_prompt,
+                request.input_message,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = StructuredGenerationResult(
+                parsed=parsed,
+                metadata=self._metadata(
+                    model=request.model or self.settings.chat_model_default,
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                ),
+            )
+            record_provider_result(
+                content=parsed,
+                call_kind="structured",
+                title=f"Structured Result: {request.output_schema.__name__}",
+                metadata={"latency_ms": latency_ms},
+            )
+        return result
 
     @traceable(name="AI Provider Embeddings", run_type="embedding")
     def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         started_at = datetime.now(UTC)
         start = time.monotonic()
-        embeddings = self.client.embed(
-            request.texts,
-            model=request.model,
-            dimensions=request.dimensions,
-        )
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return EmbeddingResult(
-            embeddings=embeddings,
-            usage=ProviderUsage(input_tokens=sum(len(text.split()) for text in request.texts)),
-            metadata=self._metadata(
-                model=request.model or self._default_embedding_model(),
-                started_at=started_at,
-                latency_ms=latency_ms,
-            ),
-        )
+        with ai_flow_trace_call(
+            call_kind="embedding",
+            title="AI Provider Embeddings",
+            purpose=request.context.purpose,
+            model=request.model or self._default_embedding_model(),
+            provider=self.provider_name,
+            prompt_id=request.context.prompt_id,
+            schema_id=request.context.schema_id,
+            metadata=request.context.metadata,
+        ):
+            embeddings = self.client.embed(
+                request.texts,
+                model=request.model,
+                dimensions=request.dimensions,
+            )
+            latency_ms = int((time.monotonic() - start) * 1000)
+            result = EmbeddingResult(
+                embeddings=embeddings,
+                usage=ProviderUsage(input_tokens=sum(len(text.split()) for text in request.texts)),
+                metadata=self._metadata(
+                    model=request.model or self._default_embedding_model(),
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                ),
+            )
+            record_embedding_result(
+                texts=request.texts,
+                count=len(embeddings),
+                model=result.metadata.model,
+                metadata={"latency_ms": latency_ms},
+            )
+        return result
 
     @traceable(name="AI Provider Transcription", run_type="tool")
     def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
@@ -206,6 +264,50 @@ class OpenAIProvider:
             params["tools"] = request.tools
         return apply_chat_completion_compatibility(params)
 
+    def _trace_call_context(
+        self,
+        call_kind: str,
+        request: ChatRequest,
+        *,
+        model: str,
+        title: str,
+        toolbox_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
+        return ai_flow_trace_call(
+            call_kind=call_kind,
+            title=title,
+            state_id=_state_id_from_request_context(request.context),
+            purpose=request.context.purpose,
+            model=model,
+            provider=self.provider_name,
+            prompt_id=request.context.prompt_id,
+            schema_id=request.context.schema_id,
+            toolbox_name=toolbox_name,
+            metadata={
+                **request.context.metadata,
+                **request.metadata,
+                **(metadata or {}),
+            },
+        )
+
+    def _trace_structured_context(self, request: StructuredGenerationRequest):
+        return ai_flow_trace_call(
+            call_kind="structured",
+            title=f"AI Provider Structured: {request.output_schema.__name__}",
+            state_id=_state_id_from_request_context(request.context),
+            purpose=request.context.purpose,
+            model=request.model or self.settings.chat_model_default,
+            provider=self.provider_name,
+            prompt_id=request.context.prompt_id,
+            schema_id=request.context.schema_id or request.output_schema.__name__,
+            metadata={
+                **request.context.metadata,
+                **request.metadata,
+                "output_schema": request.output_schema.__name__,
+            },
+        )
+
 
 def _chat_message_to_dict(message: Any) -> dict[str, Any]:
     if hasattr(message, "model_dump"):
@@ -216,6 +318,13 @@ def _chat_message_to_dict(message: Any) -> dict[str, Any]:
         raise TypeError(f"Unsupported chat message type: {type(message)!r}")
     payload.pop("metadata", None)
     return payload
+
+
+def _state_id_from_request_context(context: Any) -> str | None:
+    metadata = getattr(context, "metadata", None)
+    if isinstance(metadata, dict) and metadata.get("state_id"):
+        return str(metadata["state_id"])
+    return None
 
 
 def _response_content(response: Any) -> str:

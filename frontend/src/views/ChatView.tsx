@@ -10,6 +10,7 @@ import {
 } from "../api/chat";
 import {
   defaultConversationId,
+  aiTraceDebugEnabled,
   defaultOwnerId,
   defaultSenderId,
   defaultWebChatToken
@@ -339,6 +340,14 @@ export function ChatView() {
     }
   }
 
+  function handleOpenTrace() {
+    if (sessionId) {
+      window.location.hash = `debug/${sessionId}`;
+      return;
+    }
+    window.location.hash = "debug";
+  }
+
   return (
     <div
       className={`workspace chat-workspace memory-chat-workspace ${
@@ -365,6 +374,8 @@ export function ChatView() {
           activeConversationId={activeConversationId}
           isHistoryOpen={isHistoryOpen}
           onToggleHistory={() => setIsHistoryOpen((current) => !current)}
+          traceEnabled={aiTraceDebugEnabled}
+          onOpenTrace={handleOpenTrace}
         />
 
         <ChatStatusBar runtime={runtime} />

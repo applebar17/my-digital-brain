@@ -59,6 +59,7 @@ def build_chat_runtime(
             runtime_mode="deterministic",
             graph_service=graph_service,
             debug_commands_enabled=settings.chat_debug_commands_enabled,
+            ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
         )
 
     try:
@@ -70,6 +71,7 @@ def build_chat_runtime(
             runtime_mode="deterministic",
             graph_service=graph_service,
             debug_commands_enabled=settings.chat_debug_commands_enabled,
+            ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
             runtime_unavailable_reason=str(exc),
         )
 
@@ -113,6 +115,7 @@ def build_chat_runtime(
         ingestion_service=ingestion_service,
         history_service=history_service,
         debug_commands_enabled=settings.chat_debug_commands_enabled,
+        ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
     )
 
 

@@ -4,12 +4,16 @@ interface ChatTopbarProps {
   activeConversationId: string;
   isHistoryOpen: boolean;
   onToggleHistory: () => void;
+  traceEnabled?: boolean;
+  onOpenTrace?: () => void;
 }
 
 export function ChatTopbar({
   activeConversationId,
   isHistoryOpen,
-  onToggleHistory
+  onToggleHistory,
+  traceEnabled = false,
+  onOpenTrace
 }: ChatTopbarProps) {
   return (
     <header className="memory-chat-topbar">
@@ -30,6 +34,18 @@ export function ChatTopbar({
         </div>
       </div>
       <div className="memory-chat-meta">
+        {traceEnabled ? (
+          <button
+            className="memory-chat-trace-button"
+            type="button"
+            title="Open AI trace whiteboard"
+            aria-label="Open AI trace whiteboard"
+            onClick={onOpenTrace}
+          >
+            <ChatIcon name="trace" />
+            <span>Trace</span>
+          </button>
+        ) : null}
         <span>Web</span>
         <span>{activeConversationId}</span>
       </div>

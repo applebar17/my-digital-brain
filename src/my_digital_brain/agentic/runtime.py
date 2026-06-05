@@ -40,6 +40,7 @@ from my_digital_brain.ai.schemas import (
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.prompts import PromptRegistry
 
 
@@ -89,6 +90,33 @@ class AgenticStateRunner:
             state_config.prompt_id,
             state_config.prompt_version,
         ).template
+        model_context_payload = self.history_service.model_payload_for_state(
+            state_id,
+            invocation.context_payload,
+        )
+        record_ai_flow_event(
+            title=f"{state_value} - State Input",
+            call_kind="agentic_state_input",
+            state_id=state_value,
+            purpose=model_task,
+            model=route.model,
+            prompt_id=state_config.prompt_id,
+            toolbox_name=toolbox.name,
+            sections=[
+                _trace_json_section("STATE INPUT", model_context_payload),
+                _trace_json_section(
+                    "EXPECTED OUTPUT",
+                    {
+                        "allowed_tools": sorted(toolbox.tools_by_name),
+                        "max_tool_calls": 0 if tools_disabled else state_config.max_tool_calls,
+                        "owner_finalization": bool(
+                            invocation.metadata.get("owner_finalization"),
+                        ),
+                    },
+                ),
+            ],
+            metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+        )
         request = ChatRequest(
             model=route.model,
             temperature=self.temperature,
@@ -101,10 +129,7 @@ class AgenticStateRunner:
                         {
                             "state_id": state_value,
                             "runtime": invocation.metadata,
-                            "context": self.history_service.model_payload_for_state(
-                                state_id,
-                                invocation.context_payload,
-                            ),
+                            "context": model_context_payload,
                         },
                         ensure_ascii=True,
                         sort_keys=True,
@@ -126,7 +151,7 @@ class AgenticStateRunner:
             event.status not in {"ok", "accepted", "needs_user_input"}
             for event in tool_events
         )
-        return AgenticStateRunResult(
+        state_run_result = AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
             tool_events=tool_events,
@@ -140,6 +165,40 @@ class AgenticStateRunner:
                 "route": route.model_dump(mode="json", exclude_none=True),
             },
         )
+        record_ai_flow_event(
+            title=f"{state_value} - State Output",
+            call_kind="agentic_state_output",
+            state_id=state_value,
+            purpose=model_task,
+            model=route.model,
+            prompt_id=state_config.prompt_id,
+            toolbox_name=toolbox.name,
+            status=state_run_result.status,
+            sections=[
+                AIFlowTraceSection(
+                    title="LLM OUTPUT",
+                    content=state_run_result.assistant_text or "",
+                    content_type="text",
+                ),
+                _trace_json_section(
+                    "TOOL OUTPUTS",
+                    [
+                        event.model_dump(mode="json", exclude_none=True)
+                        for event in tool_events
+                    ],
+                ),
+                _trace_json_section(
+                    "ERROR / DIAGNOSTICS",
+                    {
+                        "handoff_target": state_run_result.handoff_target,
+                        "terminal": state_run_result.terminal,
+                        "status": state_run_result.status,
+                    },
+                ),
+            ],
+            metadata=state_run_result.metadata,
+        )
+        return state_run_result
 
     @traceable(name="Agentic Structured State Run", run_type="parser")
     def run_structured_state(
@@ -164,6 +223,24 @@ class AgenticStateRunner:
             state_config.prompt_id,
             state_config.prompt_version,
         ).template
+        model_context_payload = self.history_service.model_payload_for_state(
+            state_id,
+            invocation.context_payload,
+        )
+        record_ai_flow_event(
+            title=f"{state_value} - Structured State Input",
+            call_kind="agentic_structured_state_input",
+            state_id=state_value,
+            purpose=model_task,
+            model=route.model,
+            prompt_id=state_config.prompt_id,
+            schema_id=output_schema.__name__,
+            sections=[
+                _trace_json_section("STATE INPUT", model_context_payload),
+                _trace_json_section("EXPECTED OUTPUT", {"schema": output_schema.__name__}),
+            ],
+            metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+        )
         provider = self.provider
         if not hasattr(provider, "generate_structured"):
             return AgenticStateRunResult(
@@ -218,7 +295,7 @@ class AgenticStateRunner:
             )
         parsed = result.parsed
         structured_output = parsed.model_dump(mode="json", exclude_none=True)
-        return AgenticStateRunResult(
+        state_run_result = AgenticStateRunResult(
             state_id=state_id,
             assistant_text=_structured_summary(parsed),
             structured_output=structured_output,
@@ -231,6 +308,26 @@ class AgenticStateRunner:
                 "structured_output_schema": output_schema.__name__,
             },
         )
+        record_ai_flow_event(
+            title=f"{state_value} - Structured State Output",
+            call_kind="agentic_structured_state_output",
+            state_id=state_value,
+            purpose=model_task,
+            model=route.model,
+            prompt_id=state_config.prompt_id,
+            schema_id=output_schema.__name__,
+            status=state_run_result.status,
+            sections=[
+                AIFlowTraceSection(
+                    title="LLM OUTPUT",
+                    content=state_run_result.assistant_text or "",
+                    content_type="text",
+                ),
+                _trace_json_section("PARSED STRUCTURED OUTPUT", structured_output),
+            ],
+            metadata=state_run_result.metadata,
+        )
+        return state_run_result
 
 
 @dataclass(slots=True)
@@ -772,3 +869,11 @@ def _structured_summary(parsed: BaseModel) -> str:
         if isinstance(value, str) and value.strip():
             return value
     return json.dumps(parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True)
+
+
+def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
+    return AIFlowTraceSection(
+        title=title,
+        content=json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        content_type="json",
+    )

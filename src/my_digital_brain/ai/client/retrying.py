@@ -8,6 +8,12 @@ from typing import Any
 from pydantic import BaseModel
 
 from my_digital_brain.ai.context import is_context_length_error
+from my_digital_brain.debug import (
+    AIFlowTraceSection,
+    record_ai_flow_event,
+    record_openai_payload,
+    record_openai_response,
+)
 from my_digital_brain.ai.structured_schema import strict_response_format
 from my_digital_brain.ai.tracing import traceable
 from .compatibility import apply_chat_completion_compatibility
@@ -22,8 +28,12 @@ class GenAIRetryMixin:
         for attempt in range(1, self.max_retries + 1):
             try:
                 self._ensure_context_budget(params)
-                return self.client.chat.completions.create(**params)
+                record_openai_payload(params, metadata={"attempt": attempt})
+                response = self.client.chat.completions.create(**params)
+                record_openai_response(response, metadata={"attempt": attempt})
+                return response
             except Exception as exc:  # pragma: no cover
+                _record_openai_error(exc, attempt=attempt)
                 if (
                     not adjusted_for_temperature
                     and self._should_retry_without_temperature(exc, params)
@@ -81,17 +91,36 @@ class GenAIRetryMixin:
             try:
                 self._ensure_context_budget(params)
                 if _is_json_schema_response_format(params.get("response_format")):
-                    return self.client.chat.completions.create(**params)
+                    record_openai_payload(params, metadata={"attempt": attempt})
+                    response = self.client.chat.completions.create(**params)
+                    record_openai_response(response, metadata={"attempt": attempt})
+                    return response
                 if hasattr(self.client, "chat") and hasattr(
                     self.client.chat.completions, "parse"
                 ):
-                    return self.client.chat.completions.parse(**params)
+                    record_openai_payload(params, metadata={"attempt": attempt, "parse": True})
+                    response = self.client.chat.completions.parse(**params)
+                    record_openai_response(response, metadata={"attempt": attempt, "parse": True})
+                    return response
                 if hasattr(self.client, "beta"):
-                    return self.client.beta.chat.completions.parse(**params)
+                    record_openai_payload(params, metadata={"attempt": attempt, "parse": True})
+                    response = self.client.beta.chat.completions.parse(**params)
+                    record_openai_response(response, metadata={"attempt": attempt, "parse": True})
+                    return response
                 fallback_params = dict(params)
                 fallback_params.pop("response_format", None)
-                return self.client.chat.completions.create(**fallback_params)
+                record_openai_payload(
+                    fallback_params,
+                    metadata={"attempt": attempt, "response_format_fallback": True},
+                )
+                response = self.client.chat.completions.create(**fallback_params)
+                record_openai_response(
+                    response,
+                    metadata={"attempt": attempt, "response_format_fallback": True},
+                )
+                return response
             except Exception as exc:  # pragma: no cover
+                _record_openai_error(exc, attempt=attempt)
                 if (
                     not adjusted_for_temperature
                     and self._should_retry_without_temperature(exc, params)
@@ -261,7 +290,9 @@ class GenAIRetryMixin:
         if max_completion_tokens is not None:
             params["max_completion_tokens"] = max_completion_tokens
         params = apply_chat_completion_compatibility(params)
+        record_openai_payload(params, metadata={"structured_schema": schema.__name__})
         response = self.client.chat.completions.create(**params)
+        record_openai_response(response, metadata={"structured_schema": schema.__name__})
         content = response.choices[0].message.content
         if not content:
             finish_reason = _response_finish_reason(response)
@@ -376,3 +407,19 @@ def _response_finish_reason(response: Any) -> str | None:
     else:
         value = getattr(choice, "finish_reason", None)
     return str(value) if value is not None else None
+
+
+def _record_openai_error(exc: Exception, *, attempt: int) -> None:
+    record_ai_flow_event(
+        title="OpenAI Error",
+        call_kind="openai_error",
+        status="error",
+        sections=[
+            AIFlowTraceSection(
+                title="ERROR / DIAGNOSTICS",
+                content=f"{exc.__class__.__name__}: {exc}",
+                content_type="text",
+            )
+        ],
+        metadata={"attempt": attempt, "error_type": exc.__class__.__name__},
+    )
