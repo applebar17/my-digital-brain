@@ -40,11 +40,16 @@ from my_digital_brain.ingestion.enums import (
     SourceType,
 )
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
-from my_digital_brain.ingestion.extractors import EntityExtractor, PerceptionExtractor
+from my_digital_brain.ingestion.extractors import (
+    EntityExtractor,
+    PerceptionExtractor,
+    RelationshipExtractor,
+)
 from my_digital_brain.ingestion.prompt_builders import (
     INGESTION_ENTITY_EXTRACTION_TASK,
     INGESTION_MENTION_SCAN_TASK,
     INGESTION_PLANNING_TASK,
+    INGESTION_RELATIONSHIP_EXTRACTION_TASK,
     IngestionPromptBuilder,
 )
 from my_digital_brain.ingestion.service import IngestionService
@@ -430,6 +435,50 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     assert not PerceptionExtractor(provider).supports(task)
     assert provider.requests[0].output_schema is CandidateEntityDraftBatch
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
+
+
+def test_focused_extractors_normalize_common_llm_label_and_relationship_aliases() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "person",
+                        "display_name": "Marco",
+                    },
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_REL_001",
+                        "relationship_type": "friendship",
+                        "from_ref": "CANDIDATE_PERSON_001",
+                        "to_ref": "CANDIDATE_PERSON_002",
+                    },
+                ],
+            },
+        ],
+    )
+    source = _source()
+
+    entity = EntityExtractor(provider).extract(
+        source,
+        ExtractionTask(task_type=ExtractionTaskType.PERSON, source_refs=["source-1"]),
+        IngestionContextPackage(source_id="source-1"),
+    )[0]
+    relationship = RelationshipExtractor(provider).extract(
+        source,
+        ExtractionTask(task_type=ExtractionTaskType.RELATIONSHIP, source_refs=["source-1"]),
+        IngestionContextPackage(source_id="source-1"),
+    )[0]
+
+    assert entity.entity_type == "Person"
+    assert entity.metadata["original_entity_type"] == "person"
+    assert relationship.relationship_type == "RELATIONSHIP_WITH"
+    assert relationship.metadata["original_relationship_type"] == "friendship"
+    assert provider.requests[1].context.purpose == INGESTION_RELATIONSHIP_EXTRACTION_TASK
 
 
 def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:

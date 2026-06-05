@@ -101,6 +101,37 @@ def test_candidate_graph_assembler_splits_outputs_and_preserves_local_refs() -> 
     assert graph.candidate_relationships[0].relationship_type == "HAPPENED_AT"
 
 
+def test_candidate_graph_assembler_remaps_duplicate_local_refs_before_validation() -> None:
+    source = _source()
+    plan = _plan()
+    first_person = CandidateEntity(
+        local_ref="CANDIDATE_PERSON_001",
+        entity_type="Person",
+        display_name="Marco",
+        source_refs=[source.source_id],
+        metadata={"task_id": "task-person"},
+    )
+    second_person = CandidateEntity(
+        local_ref="CANDIDATE_PERSON_001",
+        entity_type="Person",
+        display_name="Marco Rossi",
+        source_refs=[source.source_id],
+        metadata={"task_id": "task-person-detail"},
+    )
+
+    graph = CandidateMemoryGraphAssembler().assemble(
+        source,
+        plan,
+        [first_person, second_person],
+    )
+    result = IngestionValidator().validate_candidate_graph(graph)
+
+    assert result.is_valid is True
+    assert graph.candidate_entities[0].local_ref == "CANDIDATE_PERSON_001"
+    assert graph.candidate_entities[1].local_ref.startswith("CANDIDATE_PERSON_001_TASK_")
+    assert graph.candidate_entities[1].metadata["original_local_ref"] == "CANDIDATE_PERSON_001"
+
+
 def test_candidate_graph_validation_uses_graph_registries_and_refs() -> None:
     source = _source()
     plan = _plan()

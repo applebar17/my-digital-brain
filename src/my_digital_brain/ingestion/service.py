@@ -336,6 +336,18 @@ class IngestionService:
         return None
 
     def _finish(self, result: IngestionResult) -> IngestionResult:
+        if result.validation_errors:
+            log_event(
+                logger,
+                "ingestion.validation_failed",
+                level="warning",
+                component="ingestion",
+                source_id=result.source_id,
+                ingestion_id=result.ingestion_id,
+                status=str(result.status),
+                validation_error_count=len(result.validation_errors),
+                validation_errors=_validation_issue_summaries(result.validation_errors),
+            )
         log_event(
             logger,
             "ingestion.result",
@@ -439,3 +451,52 @@ def _write_plan_counts(write_plan) -> dict[str, int]:
         "relationship_contexts_to_create": len(write_plan.relationship_contexts_to_create),
         "metadata_patches": len(write_plan.metadata_patches),
     }
+
+
+def _validation_issue_summaries(
+    issues: Sequence[ValidationIssue],
+    *,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    summaries: list[dict[str, object]] = []
+    for issue in issues[:limit]:
+        summaries.append(
+            {
+                key: value
+                for key, value in {
+                    "code": issue.code,
+                    "field_path": issue.field_path,
+                    "message": _short_text(issue.message),
+                    "details": _compact_issue_details(issue.details),
+                }.items()
+                if value not in (None, "", {}, [])
+            },
+        )
+    if len(issues) > limit:
+        summaries.append({"code": "truncated", "remaining_count": len(issues) - limit})
+    return summaries
+
+
+def _compact_issue_details(details: dict[str, object]) -> dict[str, object]:
+    allowed_keys = {
+        "label",
+        "relationship_type",
+        "ref",
+        "count",
+        "execution_mode",
+        "task_id",
+        "task_type",
+        "candidate_count",
+    }
+    return {
+        key: _short_text(value) if isinstance(value, str) else value
+        for key, value in details.items()
+        if key in allowed_keys
+    }
+
+
+def _short_text(value: str, *, max_chars: int = 260) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 1].rstrip()}..."

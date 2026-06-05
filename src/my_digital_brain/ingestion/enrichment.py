@@ -43,6 +43,10 @@ from my_digital_brain.ingestion.contracts.drafts import (
     MentionScanDraft,
     PropertyDraft,
 )
+from my_digital_brain.ingestion.normalization import (
+    canonical_node_label,
+    canonical_relationship_type,
+)
 
 
 def enrich_mention_scan(draft: MentionScanDraft, source: SourceRecordRef) -> MentionScan:
@@ -161,9 +165,14 @@ def _enrich_entity(
     source: SourceRecordRef,
     task: ExtractionTask,
 ) -> CandidateEntity:
+    entity_type = canonical_node_label(draft.entity_type)
+    payload = _base_candidate_payload(draft, source, task)
+    if entity_type != draft.entity_type:
+        payload["metadata"]["original_entity_type"] = draft.entity_type
+        payload["metadata"]["normalized_entity_type"] = entity_type
     return CandidateEntity(
-        **_base_candidate_payload(draft, source, task),
-        entity_type=draft.entity_type,
+        **payload,
+        entity_type=entity_type,
         display_name=draft.display_name,
         description=draft.description,
         aliases=list(draft.aliases),
@@ -178,9 +187,14 @@ def _enrich_relationship(
     source: SourceRecordRef,
     task: ExtractionTask,
 ) -> CandidateRelationship:
+    relationship_type = canonical_relationship_type(draft.relationship_type)
+    payload = _base_candidate_payload(draft, source, task)
+    if relationship_type != draft.relationship_type:
+        payload["metadata"]["original_relationship_type"] = draft.relationship_type
+        payload["metadata"]["normalized_relationship_type"] = relationship_type
     return CandidateRelationship(
-        **_base_candidate_payload(draft, source, task),
-        relationship_type=draft.relationship_type,
+        **payload,
+        relationship_type=relationship_type,
         from_ref=draft.from_ref,
         to_ref=draft.to_ref,
         properties=property_suggestions_to_dict(draft.property_suggestions),
