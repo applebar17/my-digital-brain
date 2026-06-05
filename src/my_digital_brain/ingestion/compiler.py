@@ -55,6 +55,7 @@ class SemanticExtractionTaskCompiler:
             )
 
         ordered_actions = self._ordered_actions(draft.actions)
+        ordered_actions = self._ensure_anchor_actions(ordered_actions, mention_scan)
         mention_refs = self._mention_ref_catalog(mention_scan)
         tasks: list[ExtractionTask] = []
         for action_index, action in enumerate(ordered_actions, start=1):
@@ -156,6 +157,77 @@ class SemanticExtractionTaskCompiler:
             ),
         )
 
+    def _ensure_anchor_actions(
+        self,
+        actions: list[SemanticIngestionActionDraft],
+        mention_scan: MentionScan,
+    ) -> list[SemanticIngestionActionDraft]:
+        if not actions:
+            return actions
+
+        needs_refs = any(
+            task_type in REF_CONSUMING_TASK_TYPES
+            for action in actions
+            for task_type in self._task_types_for_action(action, mention_scan)
+        )
+        if not needs_refs:
+            return actions
+
+        mention_anchor_tasks = self._anchor_tasks_from_mentions(mention_scan)
+        if not mention_anchor_tasks:
+            return actions
+
+        covered_anchor_tasks = {
+            task_type
+            for action in actions
+            for task_type in self._task_types_for_action(action, mention_scan)
+            if task_type in REF_PRODUCING_TASK_TYPES
+        }
+        missing_anchor_tasks = [
+            task_type
+            for task_type in mention_anchor_tasks
+            if task_type not in covered_anchor_tasks
+        ]
+        if not missing_anchor_tasks:
+            return actions
+
+        kind_by_task = {
+            task_type: mention_kind
+            for mention_kind, task_type in ANCHOR_MENTION_TO_TASK.items()
+        }
+        missing_kinds = [
+            kind_by_task[task_type]
+            for task_type in missing_anchor_tasks
+            if task_type in kind_by_task
+        ]
+        concepts: list[str] = []
+        evidence: list[str] = []
+        for mention in mention_scan.mentions:
+            if mention.kind not in missing_kinds:
+                continue
+            if mention.text and mention.text not in concepts:
+                concepts.append(mention.text)
+            evidence_text = mention.evidence_text or mention.text
+            if evidence_text and evidence_text not in evidence:
+                evidence.append(evidence_text)
+
+        synthesized = SemanticIngestionActionDraft(
+            action_ref="ACTION_AUTO_ANCHORS_001",
+            action_kind=SemanticActionKind.EXTRACT_ANCHORS,
+            goal=(
+                "Create candidate anchors required before relationship, perception, "
+                "claim, or metadata actions consume refs."
+            ),
+            evidence_text="; ".join(evidence) or None,
+            concept_kinds=missing_kinds,
+            concepts=concepts,
+            notes=(
+                "Backend-synthesized anchor action from the mention scan because "
+                "later semantic actions require candidate refs."
+            ),
+        )
+        return [synthesized, *actions]
+
     def _task_types_for_action(
         self,
         action: SemanticIngestionActionDraft,
@@ -176,6 +248,15 @@ class SemanticExtractionTaskCompiler:
                 ]
             return _dedupe([ANCHOR_MENTION_TO_TASK[kind] for kind in kinds])
         return list(ACTION_KIND_TO_TASKS[action_kind])
+
+    def _anchor_tasks_from_mentions(self, mention_scan: MentionScan) -> list[ExtractionTaskType]:
+        return _dedupe(
+            [
+                ANCHOR_MENTION_TO_TASK[mention.kind]
+                for mention in mention_scan.mentions
+                if mention.kind in ANCHOR_MENTION_TO_TASK
+            ]
+        )
 
     def _mention_ref_catalog(
         self,

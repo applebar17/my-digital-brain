@@ -49,6 +49,13 @@ The model may use local refs only when the process goal requires orchestration
 between objects. A ref-consuming extraction step may use only refs created by
 earlier steps or graph aliases explicitly provided by the backend.
 
+The backend task compiler must guarantee executable ordering. If a high-freedom
+semantic plan contains ref-consuming actions such as relationships, perceptions,
+claims, or metadata updates, but omits the anchor extraction actions implied by
+the mention scan, the compiler must synthesize the missing anchor actions before
+running any ref-consuming extractor. This is a backend responsibility, not a
+planner prompt expectation.
+
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
 used only to smuggle the schema back to the backend. Tools may still be used

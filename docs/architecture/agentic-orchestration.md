@@ -269,7 +269,7 @@ General context rules:
 | `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
 | `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
 | `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `SemanticIngestionPlanDraft`: execution mode, ordered semantic actions, evidence spans, dependencies, ambiguity/context gaps, or structured clarification interruption. |
-| `BP: semantic_task_compiler` | `SemanticIngestionPlanDraft`, mention scan, compact graph context, current candidate/ref catalog policy, ontology registry. | Backend `ExtractionPlan` with ordered focused tasks, allowed refs, ontology constraints, and compact per-action metadata. |
+| `BP: semantic_task_compiler` | `SemanticIngestionPlanDraft`, mention scan, compact graph context, current candidate/ref catalog policy, ontology registry. | Backend `ExtractionPlan` with ordered focused tasks, synthesized missing anchor tasks before ref-consuming actions, allowed refs, ontology constraints, and compact per-action metadata. |
 | `LP: simple_extraction` | Source context, full but compact evidence payload, backend-compiled task schema, relevant graph aliases, temporal basis, allowed candidate refs. | Candidate objects for simple low-ambiguity memories. |
 | `LP: focused_extraction` | Source context, selected evidence span, one focused Pydantic contract per task, relevant graph aliases only, prior candidate refs if needed for local linking. | Focused candidate objects with evidence, original user words, missing fields, ambiguity flags, local refs, and enum-bound ontology values. |
 | `BP: candidate_assembly` | Extraction plan, focused/simple candidates, local candidate refs, source refs, evidence refs, step summaries. | `CandidateMemoryGraph` with resolved local references and grouped entity/relationship/perception candidates. |
@@ -338,6 +338,12 @@ Executor -> graph mutation
 ```
 
 The LLM never authors the final write plan.
+
+The compiler also owns executable ordering. If the semantic plan contains a
+relationship, perception, claim, or metadata action but the planner did not
+include the anchor action needed to create local candidate refs, the compiler
+synthesizes the missing anchor action from the mention scan before focused
+extraction starts.
 
 ## Baseline Runtime Configurations
 

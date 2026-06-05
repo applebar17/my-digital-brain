@@ -544,14 +544,33 @@ def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
     assert len(provider.requests) == 3
 
 
-def test_pipeline_rejects_invented_refs_before_candidate_graph_assembly() -> None:
+def test_pipeline_synthesizes_anchor_tasks_before_relationship_tasks() -> None:
     provider = QueuedStructuredProvider(
         [
-            {"mentions": [{"kind": "person", "text": "Marco"}]},
+            {
+                "mentions": [
+                    {"kind": "person", "text": "Marco"},
+                    {"kind": "person", "text": "Alessia"},
+                ],
+            },
             {
                 "execution_mode": "focused_extraction",
                 "actions": [
                     _semantic_action("connect_entities", "Link Marco to Alessia."),
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                    },
+                    {
+                        "local_ref": "CANDIDATE_PERSON_002",
+                        "entity_type": "Person",
+                        "display_name": "Alessia",
+                    },
                 ],
             },
             {
@@ -571,7 +590,74 @@ def test_pipeline_rejects_invented_refs_before_candidate_graph_assembly() -> Non
         scanner=LLMMentionScanner(provider),
         context_retriever=StaticContextRetriever(),
         planner=LLMIngestionPlanner(provider),
-        extractors=[RelationshipExtractor(provider)],
+        extractors=[EntityExtractor(provider), RelationshipExtractor(provider)],
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.CANDIDATE_READY
+    assert result.extraction_plan is not None
+    assert [task.task_type for task in result.extraction_plan.tasks] == [
+        ExtractionTaskType.PERSON,
+        ExtractionTaskType.RELATIONSHIP,
+    ]
+    assert result.extraction_plan.tasks[0].metadata["semantic_action_ref"] == (
+        "ACTION_AUTO_ANCHORS_001"
+    )
+    assert result.candidate_graph is not None
+    assert len(result.candidate_graph.candidate_entities) == 2
+    assert len(result.candidate_graph.candidate_relationships) == 1
+    assert provider.requests[2].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
+    assert provider.requests[3].context.purpose == INGESTION_RELATIONSHIP_EXTRACTION_TASK
+
+
+def test_pipeline_rejects_invented_refs_before_candidate_graph_assembly() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "mentions": [
+                    {"kind": "person", "text": "Marco"},
+                    {"kind": "person", "text": "Alessia"},
+                ],
+            },
+            {
+                "execution_mode": "focused_extraction",
+                "actions": [
+                    _semantic_action("connect_entities", "Link Marco to Alessia."),
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                    },
+                    {
+                        "local_ref": "CANDIDATE_PERSON_002",
+                        "entity_type": "Person",
+                        "display_name": "Alessia",
+                    },
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_REL_001",
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_ref": "CANDIDATE_PERSON_001",
+                        "to_ref": "CANDIDATE_PERSON_999",
+                        "relationship_kind": "partner",
+                    }
+                ],
+            },
+        ],
+    )
+    service = IngestionService(
+        scanner=LLMMentionScanner(provider),
+        context_retriever=StaticContextRetriever(),
+        planner=LLMIngestionPlanner(provider),
+        extractors=[EntityExtractor(provider), RelationshipExtractor(provider)],
     )
 
     result = service.process_source(_source())
