@@ -104,7 +104,9 @@ def test_relationship_context_document_keeps_related_targets_and_sources() -> No
         {
             "id": "relctx-1",
             "description": "Close teenage friendship, now low contact.",
-            "relationship_type": "friendship",
+            "relationship_type": "RELATIONSHIP_WITH",
+            "relationship_kind": "friend",
+            "relationship_detail": "teenage friendship",
             "status": "low_contact",
             "closeness": "formerly_close",
             "emotional_summary": "Care and distance.",

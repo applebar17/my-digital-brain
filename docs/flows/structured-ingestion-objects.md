@@ -104,9 +104,38 @@ Backend record fields:
 
 LLM draft fields are the same semantic fields without `mention_id` or metadata.
 
+### SemanticIngestionPlanDraft
+
+The high-freedom model-facing planner output.
+
+LLM draft fields:
+
+- `execution_mode`
+- `reason`
+- `actions`
+- `clarification`
+- `context_gaps`
+
+Each semantic action contains:
+
+- `action_ref`
+- `action_kind`
+- `goal`
+- `evidence_text`
+- `concept_kinds`
+- `concepts`
+- `depends_on`
+- `context_refs`
+- `notes`
+
+The semantic planner may organize the narrative and identify dependencies, but
+it must not choose graph labels, relationship types, write-plan operations,
+persistence fields, or backend-owned IDs.
+
 ### ExtractionPlan
 
-The context-aware plan produced after mention scan and compact graph-context retrieval.
+The backend-compiled plan produced from `SemanticIngestionPlanDraft` after
+mention scan and compact graph-context retrieval.
 
 Backend record fields:
 
@@ -120,15 +149,10 @@ Backend record fields:
 - `context_gaps`
 - `created_at`
 
-LLM draft fields:
-
-- `execution_mode`
-- `reason`
-- `tasks`
-- `clarification`
-- `context_gaps`
-
-The plan proposes extraction tasks. It must not propose direct graph writes.
+The deterministic compiler creates tasks from semantic actions, schedules
+anchor/ref-producing tasks before ref-consuming tasks, and injects ontology,
+allowed aliases, candidate refs, previous compact action summaries, and source
+refs into backend task metadata.
 
 ### ExtractionTask
 
@@ -145,10 +169,9 @@ Backend record fields:
 - `required_context_refs`
 - `notes`
 
-LLM draft fields are the same operational fields without `task_id` or
-`source_refs`. Backend code injects source refs deterministically.
-
-Task types may include person, place, event, claim, perception, relationship_context, relationship_state, metadata_patch, and link extraction.
+Tasks are not LLM planner output. They are backend-compiled focused extraction
+instructions. Task types may include person, place, event, claim, perception,
+relationship_context, relationship_state, metadata_patch, and link extraction.
 
 ### CandidateEntity
 
@@ -181,6 +204,13 @@ LLM draft fields:
 - `missing_fields`
 - `ambiguity_flags`
 
+`entity_type` is enum-constrained to LLM-creatable memory labels only:
+`Person`, `Event`, `Place`, `Organization`, `Object`, `Animal`,
+`SocialCircle`, and `Topic`. Backend-owned labels such as `Claim`,
+`Perception`, `RelationshipContext`, `Source`, `ExtractionRun`,
+`ChangeRecord`, `ContradictionRecord`, and `MergeRecord` are not generic entity
+choices for the model.
+
 ### CandidateRelationship
 
 A proposed relationship between candidate or existing entities.
@@ -191,6 +221,8 @@ Backend record fields:
 - `relationship_type`
 - `from_ref`
 - `to_ref`
+- `relationship_kind`
+- `relationship_detail`
 - `properties`
 - `affective_fields`
 - `metadata`
@@ -200,6 +232,21 @@ Backend record fields:
 
 LLM draft fields use `property_suggestions` and evidence text/spans instead of
 backend `properties`, metadata, source refs, or evidence refs.
+
+`relationship_type` is enum-constrained. For v1 social relationships use only:
+
+```text
+RELATIONSHIP_WITH
+```
+
+and set `relationship_kind` to one of:
+
+```text
+friend | family | partner | former_partner | colleague | classmate | acquaintance
+```
+
+Preserve source wording in `relationship_detail`, for example `brother`,
+`girlfriend`, or `university friend`.
 
 ### CandidateClaim
 
@@ -250,6 +297,8 @@ Core fields:
 - `from_ref`
 - `to_ref`
 - `relationship_type`
+- `relationship_kind`
+- `relationship_detail`
 - `status`
 - `closeness`
 - `description`

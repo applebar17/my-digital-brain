@@ -8,6 +8,7 @@ from my_digital_brain.ingestion.contracts import (
     MentionScan,
     SourceRecordRef,
 )
+from my_digital_brain.ingestion.ontology import ontology_prompt_payload
 
 INGESTION_MENTION_SCAN_TASK = "ingestion_mention_scan"
 INGESTION_PLANNING_TASK = "ingestion_planning"
@@ -32,23 +33,26 @@ class IngestionPromptBuilder:
         "ambiguity hint instead of resolving it."
     )
     planner_system_prompt = (
-        "Create a backend-executable extraction plan after reading source text, shallow "
-        "mentions, and compact graph context. Choose the cheapest safe execution mode. "
-        "Return focused tasks only; do not create graph writes. Use only aliases present "
-        "in context or candidate refs you define later. Ask clarification "
-        "first when ambiguity blocks useful extraction. When one clear factual memory is "
-        "present, then choose simple_single_pass. When affective, temporal, or relationship "
-        "history is present, then choose focused_extraction. When context is insufficient, "
-        "then request context expansion."
+        "Create a semantic ingestion plan after reading source text, shallow mentions, "
+        "conversation context, and compact graph context. Organize the user's narrative "
+        "into ordered semantic actions with goals, evidence, dependencies, ambiguity "
+        "notes, and context gaps. Do not choose graph labels, edge types, write-plan "
+        "operations, persistence fields, or backend identifiers. Ask clarification first "
+        "when ambiguity blocks useful extraction. When context is insufficient, request "
+        "context expansion. When one clear factual memory is present, choose "
+        "simple_single_pass with one or more semantic actions. When the source has "
+        "affective, temporal, relational, or multi-entity content, choose "
+        "focused_extraction with ordered actions."
     )
     extractor_system_prompt = (
         "Execute only the focused extraction task. Return structured candidates of the "
-        "requested type only. Preserve evidence, original user words, affective meaning, "
-        "missing fields, and ambiguity flags. Use provided aliases and local refs for "
-        "references. Represent extra fields as typed property_suggestions. Do not guess "
-        "when information is missing. When the source states emotion or perception, then "
-        "preserve the user's wording. When a required field is absent, then mark it missing "
-        "rather than inventing it."
+        "requested type only. This is a low-freedom backend-facing step: use only enum "
+        "values allowed by the schema and only refs or aliases supplied in the task/context. "
+        "Preserve evidence, original user words, affective meaning, missing fields, "
+        "ambiguity flags, and source-grounded subtype details. Represent extra fields as "
+        "typed property_suggestions. Do not guess when information is missing. For social "
+        "relationships, use RELATIONSHIP_WITH plus relationship_kind and preserve wording "
+        "such as brother or girlfriend in relationship_detail."
     )
 
     def mention_scan_input(self, source: SourceRecordRef) -> dict[str, Any]:
@@ -64,6 +68,18 @@ class IngestionPromptBuilder:
             "source": self.source_payload(source),
             "mention_scan": self.mention_scan_payload(mention_scan),
             "compact_graph_context": self.context_payload(context),
+            "semantic_planning_policy": {
+                "output": "ordered semantic actions, not graph schema decisions",
+                "allowed_action_kinds": [
+                    "extract_anchors",
+                    "extract_event",
+                    "connect_entities",
+                    "capture_relationship_context",
+                    "capture_perception",
+                    "capture_claim",
+                    "update_metadata",
+                ],
+            },
         }
 
     def extraction_input(
@@ -76,6 +92,7 @@ class IngestionPromptBuilder:
             "source": self.source_payload(source),
             "task": self.task_payload(task),
             "compact_graph_context": self.context_payload(context),
+            "ontology": ontology_prompt_payload(),
         }
 
     def source_payload(self, source: SourceRecordRef) -> dict[str, Any]:
@@ -117,14 +134,55 @@ class IngestionPromptBuilder:
                 "expected_output": task.expected_output,
                 "required_context_refs": list(task.required_context_refs),
                 "notes": task.notes,
+                "metadata": self._task_metadata_payload(task.metadata),
             }.items()
             if value not in (None, [], {})
         }
 
     def context_payload(self, context: IngestionContextPackage) -> dict[str, Any]:
+        metadata = self._context_metadata_payload(context.metadata)
         return {
-            "aliases": {alias: alias for alias in context.aliases},
-            "entities": list(context.entities),
-            "relationships": list(context.relationships),
-            "notes": list(context.notes),
+            key: value
+            for key, value in {
+                "aliases": {alias: alias for alias in context.aliases},
+                "entities": list(context.entities),
+                "relationships": list(context.relationships),
+                "notes": list(context.notes),
+                "metadata": metadata,
+            }.items()
+            if value not in ({}, [], None)
+        }
+
+    def _task_metadata_payload(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        allowed_keys = {
+            "semantic_action_ref",
+            "semantic_action_kind",
+            "semantic_action_goal",
+            "semantic_action_index",
+            "semantic_depends_on",
+            "semantic_concepts",
+            "ref_policy",
+            "suggested_candidate_refs",
+            "candidate_ref_catalog",
+            "previous_action_summaries",
+            "allowed_graph_aliases",
+            "ontology",
+        }
+        return {
+            key: value
+            for key, value in metadata.items()
+            if key in allowed_keys and value not in (None, [], {})
+        }
+
+    def _context_metadata_payload(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        allowed_keys = {
+            "candidate_ref_catalog",
+            "previous_action_summaries",
+            "current_action",
+            "ingestion_ontology",
+        }
+        return {
+            key: value
+            for key, value in metadata.items()
+            if key in allowed_keys and value not in (None, [], {})
         }

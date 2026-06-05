@@ -26,9 +26,10 @@ from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateEntityDraftBatch,
     CandidateOutput,
-    ExtractionPlanDraft,
+    CandidateRelationshipDraftBatch,
     ExtractionTask,
     IngestionContextPackage,
+    SemanticIngestionPlanDraft,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.enums import (
@@ -91,9 +92,7 @@ def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMod
         ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
         ExtractionExecutionMode.FOCUSED_EXTRACTION,
     }:
-        payload["tasks"] = [{"task_type": "person", "evidence_text": "Marco"}]
-    else:
-        payload["tasks"] = []
+        payload["actions"] = [_semantic_action("extract_anchors", "Identify Marco.")]
     if mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST:
         payload["clarification"] = {
             "question": "Which Marco?",
@@ -115,17 +114,17 @@ def test_llm_planner_accepts_locked_execution_modes(mode: ExtractionExecutionMod
     assert router.calls[0][0] == INGESTION_PLANNING_TASK
 
 
-def test_llm_planner_rejects_extraction_mode_without_tasks() -> None:
+def test_llm_planner_rejects_extraction_mode_without_actions() -> None:
     provider = QueuedStructuredProvider(
         [
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [],
+                "actions": [],
             },
         ],
     )
 
-    with pytest.raises(ValidationError, match="at least one extraction task"):
+    with pytest.raises(ValidationError, match="at least one semantic action"):
         LLMIngestionPlanner(provider).plan(
             _source(),
             _empty_scan(),
@@ -138,7 +137,13 @@ def test_llm_planner_rejects_aliases_not_present_in_context() -> None:
         [
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "person", "target_ref": "NODE_999"}],
+                "actions": [
+                    _semantic_action(
+                        "extract_anchors",
+                        "Use an unknown graph alias.",
+                        context_refs=["NODE_999"],
+                    ),
+                ],
             },
         ],
     )
@@ -151,12 +156,18 @@ def test_llm_planner_rejects_aliases_not_present_in_context() -> None:
         LLMIngestionPlanner(provider).plan(_source(), _empty_scan(), context)
 
 
-def test_llm_planner_rejects_unsupported_task_types() -> None:
+def test_llm_planner_rejects_unsupported_semantic_action_kinds() -> None:
     provider = QueuedStructuredProvider(
         [
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "relationship_link"}],
+                "actions": [
+                    {
+                        "action_ref": "ACTION_001",
+                        "action_kind": "relationship_link",
+                        "goal": "Unsupported action.",
+                    }
+                ],
             },
         ],
     )
@@ -175,7 +186,7 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
         structured_payloads=[
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+                "actions": [_semantic_action("extract_anchors", "Identify Marco.")],
             },
         ],
     )
@@ -194,7 +205,9 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
         "request_user_clarification",
     ]
     assert plan.source_id == "source-1"
-    assert provider.structured_requests[0].output_schema.__name__ == "ExtractionPlanDraft"
+    assert provider.structured_requests[0].output_schema.__name__ == (
+        "SemanticIngestionPlanDraft"
+    )
     assert provider.structured_requests[0].max_tokens == 2000
 
 
@@ -210,7 +223,7 @@ def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured
         structured_payloads=[
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+                "actions": [_semantic_action("extract_anchors", "Identify Marco.")],
             },
         ],
     )
@@ -286,7 +299,7 @@ def test_agentic_ingestion_planner_reports_invalid_structured_plan() -> None:
             {
                 "source_id": "wrong-source",
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "person"}],
+                "actions": [_semantic_action("extract_anchors", "Identify Marco.")],
             },
         ],
     )
@@ -327,7 +340,7 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
             },
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "event", "evidence_text": "met Marco"}],
+                "actions": [_semantic_action("extract_event", "Capture the meeting event.")],
             },
         ],
     )
@@ -359,7 +372,7 @@ def test_agentic_ingestion_planner_can_detour_through_contradiction_review() -> 
     assert provider.structured_requests[0].output_schema.__name__ == (
         "ContradictionJudgeResultContext"
     )
-    assert provider.structured_requests[1].output_schema is ExtractionPlanDraft
+    assert provider.structured_requests[1].output_schema is SemanticIngestionPlanDraft
 
 
 def test_graph_context_retriever_returns_low_noise_alias_packages() -> None:
@@ -437,25 +450,45 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
 
 
-def test_focused_extractors_normalize_common_llm_label_and_relationship_aliases() -> None:
+def test_focused_extractors_reject_freeform_labels_and_relationship_types() -> None:
+    with pytest.raises(ValidationError, match="GameEvent"):
+        CandidateEntityDraftBatch.model_validate(
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_EVENT_001",
+                        "entity_type": "GameEvent",
+                    }
+                ],
+            },
+        )
+    with pytest.raises(ValidationError, match="romantic_partner"):
+        CandidateRelationshipDraftBatch.model_validate(
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_REL_001",
+                        "relationship_type": "romantic_partner",
+                        "from_ref": "CANDIDATE_PERSON_001",
+                        "to_ref": "CANDIDATE_PERSON_002",
+                    }
+                ],
+            },
+        )
+
+
+def test_focused_relationship_extractor_preserves_social_kind_and_detail() -> None:
     provider = QueuedStructuredProvider(
         [
             {
                 "candidates": [
                     {
-                        "local_ref": "CANDIDATE_PERSON_001",
-                        "entity_type": "person",
-                        "display_name": "Marco",
-                    },
-                ],
-            },
-            {
-                "candidates": [
-                    {
                         "local_ref": "CANDIDATE_REL_001",
-                        "relationship_type": "friendship",
+                        "relationship_type": "RELATIONSHIP_WITH",
                         "from_ref": "CANDIDATE_PERSON_001",
                         "to_ref": "CANDIDATE_PERSON_002",
+                        "relationship_kind": "partner",
+                        "relationship_detail": "girlfriend",
                     },
                 ],
             },
@@ -463,22 +496,16 @@ def test_focused_extractors_normalize_common_llm_label_and_relationship_aliases(
     )
     source = _source()
 
-    entity = EntityExtractor(provider).extract(
-        source,
-        ExtractionTask(task_type=ExtractionTaskType.PERSON, source_refs=["source-1"]),
-        IngestionContextPackage(source_id="source-1"),
-    )[0]
     relationship = RelationshipExtractor(provider).extract(
         source,
         ExtractionTask(task_type=ExtractionTaskType.RELATIONSHIP, source_refs=["source-1"]),
         IngestionContextPackage(source_id="source-1"),
     )[0]
 
-    assert entity.entity_type == "Person"
-    assert entity.metadata["original_entity_type"] == "person"
     assert relationship.relationship_type == "RELATIONSHIP_WITH"
-    assert relationship.metadata["original_relationship_type"] == "friendship"
-    assert provider.requests[1].context.purpose == INGESTION_RELATIONSHIP_EXTRACTION_TASK
+    assert relationship.relationship_kind == "partner"
+    assert relationship.relationship_detail == "girlfriend"
+    assert provider.requests[0].context.purpose == INGESTION_RELATIONSHIP_EXTRACTION_TASK
 
 
 def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
@@ -489,7 +516,7 @@ def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
             },
             {
                 "execution_mode": "focused_extraction",
-                "tasks": [{"task_type": "person", "evidence_text": "Marco"}],
+                "actions": [_semantic_action("extract_anchors", "Identify Marco.")],
             },
             {
                 "candidates": [
@@ -515,6 +542,43 @@ def test_pipeline_runs_with_ai_services_and_fake_provider() -> None:
     assert result.candidate_graph is not None
     assert result.candidate_graph.candidate_entities[0].display_name == "Marco"
     assert len(provider.requests) == 3
+
+
+def test_pipeline_rejects_invented_refs_before_candidate_graph_assembly() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {"mentions": [{"kind": "person", "text": "Marco"}]},
+            {
+                "execution_mode": "focused_extraction",
+                "actions": [
+                    _semantic_action("connect_entities", "Link Marco to Alessia."),
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_REL_001",
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_ref": "CANDIDATE_PERSON_001",
+                        "to_ref": "CANDIDATE_PERSON_002",
+                        "relationship_kind": "partner",
+                    }
+                ],
+            },
+        ],
+    )
+    service = IngestionService(
+        scanner=LLMMentionScanner(provider),
+        context_retriever=StaticContextRetriever(),
+        planner=LLMIngestionPlanner(provider),
+        extractors=[RelationshipExtractor(provider)],
+    )
+
+    result = service.process_source(_source())
+
+    assert result.status == IngestionStatus.VALIDATION_FAILED
+    assert result.candidate_graph is None
+    assert result.validation_errors[0].code == "unknown_extraction_candidate_ref"
 
 
 def test_prompt_builder_excludes_noisy_source_metadata() -> None:
@@ -655,3 +719,21 @@ def _empty_scan():
         source_id="source-1",
         mentions=[Mention(kind=MentionKind.PERSON, text="placeholder")],
     )
+
+
+def _semantic_action(
+    action_kind: str,
+    goal: str,
+    *,
+    evidence_text: str = "Marco",
+    context_refs: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "action_ref": "ACTION_001",
+        "action_kind": action_kind,
+        "goal": goal,
+        "evidence_text": evidence_text,
+        "concept_kinds": ["person"] if action_kind == "extract_anchors" else [],
+        "concepts": ["Marco"],
+        "context_refs": context_refs or [],
+    }

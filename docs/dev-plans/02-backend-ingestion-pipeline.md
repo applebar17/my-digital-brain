@@ -141,10 +141,25 @@ Planner result:
 ```json
 {
   "execution_mode": "simple_single_pass",
-  "tasks": [
-    {"task_type": "event", "evidence_text": "Yesterday I had dinner..."},
-    {"task_type": "relationship_link", "target_ref": "NODE_001"},
-    {"task_type": "place_link", "target_ref": "NODE_002"}
+  "actions": [
+    {
+      "action_ref": "ACTION_001",
+      "action_kind": "extract_anchors",
+      "goal": "Identify Alessandro and Pizzeria Napoli from the dinner memory.",
+      "evidence_text": "Yesterday I had dinner with Alessandro at Pizzeria Napoli"
+    },
+    {
+      "action_ref": "ACTION_002",
+      "action_kind": "extract_event",
+      "goal": "Capture the dinner event and its time/place context.",
+      "evidence_text": "Yesterday I had dinner..."
+    },
+    {
+      "action_ref": "ACTION_003",
+      "action_kind": "connect_entities",
+      "goal": "Connect the dinner, participant, and place using the source narrative.",
+      "depends_on": ["ACTION_001", "ACTION_002"]
+    }
   ],
   "clarification": null
 }
@@ -368,13 +383,17 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 - Add `ingestion/planner.py`.
 - Uses `StructuredLLMProvider`.
 - Receives source text plus compact graph context.
-- Produces `ExtractionPlanDraft`, then backend-enriches it into `ExtractionPlan`.
+- Produces `SemanticIngestionPlanDraft`, then backend-compiles it into `ExtractionPlan`.
   - Selects one of:
     - `simple_single_pass`
     - `focused_extraction`
     - `needs_context_expansion`
     - `needs_clarification_first`
-  - Proposes extraction tasks, not graph writes.
+  - Proposes semantic actions, not graph writes or DB-shaped task internals.
+- Add deterministic semantic task compiler.
+  - Schedules anchor/ref actions before ref-consuming actions.
+  - Builds the candidate/ref catalog and compact previous-step summaries.
+  - Injects ontology constraints into low-freedom extractor calls.
 - Add `ingestion/extractors/`.
   - `entity.py`
   - `relationship.py`

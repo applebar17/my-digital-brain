@@ -8,8 +8,13 @@ from my_digital_brain.ingestion.contracts.base import IngestionModel
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
 from my_digital_brain.ingestion.enums import (
     ExtractionExecutionMode,
-    ExtractionTaskType,
     MentionKind,
+)
+from my_digital_brain.ingestion.ontology import (
+    LLMEntityType,
+    LLMRelationshipType,
+    RelationshipKind,
+    SemanticActionKind,
 )
 
 
@@ -79,42 +84,52 @@ class ClarificationRequestDraft(IngestionModel):
     )
 
 
-class ExtractionTaskDraft(IngestionModel):
-    task_type: ExtractionTaskType = Field(
-        description="Focused extraction task assigned by the planner.",
+class SemanticIngestionActionDraft(IngestionModel):
+    action_ref: str = Field(
+        description="Planner-scoped action handle such as ACTION_001.",
     )
-    target_ref: str | None = Field(
-        default=None,
-        description="Candidate ref or graph alias this task focuses on.",
+    action_kind: SemanticActionKind = Field(
+        description="Semantic action category. This is not a graph label or edge type.",
+    )
+    goal: str = Field(
+        description="Short user-language goal for this action.",
     )
     evidence_text: str | None = Field(
         default=None,
-        description="Minimal text span the task should use as primary evidence.",
+        description="Source wording that motivates this action.",
     )
-    expected_output: str | None = Field(
-        default=None,
-        description="Short instruction describing the structured object expected.",
-    )
-    required_context_refs: list[str] = Field(
+    concept_kinds: list[MentionKind] = Field(
         default_factory=list,
-        description="Graph aliases or candidate refs that must be included in context.",
+        description="Semantic mention kinds relevant to this action, not DB labels.",
+    )
+    concepts: list[str] = Field(
+        default_factory=list,
+        description="Relevant user-language concepts, names, or phrases.",
+    )
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="Earlier action_refs whose outputs are needed.",
+    )
+    context_refs: list[str] = Field(
+        default_factory=list,
+        description="Graph aliases from compact context that this action should consider.",
     )
     notes: str | None = Field(
         default=None,
-        description="Planner notes for focused extraction. Keep short and operational.",
+        description="Short operational notes for the backend compiler.",
     )
 
 
-class ExtractionPlanDraft(IngestionModel):
+class SemanticIngestionPlanDraft(IngestionModel):
     execution_mode: ExtractionExecutionMode = Field(
         default=ExtractionExecutionMode.FOCUSED_EXTRACTION,
-        description="Backend execution mode selected after source and context review.",
+        description="Semantic execution mode selected after source and context review.",
     )
     reason: str | None = Field(
         default=None,
-        description="Concise reason for the selected plan and execution mode.",
+        description="Concise reason for the selected semantic plan.",
     )
-    tasks: list[ExtractionTaskDraft] = Field(default_factory=list)
+    actions: list[SemanticIngestionActionDraft] = Field(default_factory=list)
     clarification: ClarificationRequestDraft | None = Field(
         default=None,
         description="Blocking clarification required before extraction can continue.",
@@ -125,14 +140,14 @@ class ExtractionPlanDraft(IngestionModel):
     )
 
     @model_validator(mode="after")
-    def validate_execution_mode_payload(self) -> "ExtractionPlanDraft":
+    def validate_execution_mode_payload(self) -> "SemanticIngestionPlanDraft":
         if self.execution_mode in {
             ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
             ExtractionExecutionMode.FOCUSED_EXTRACTION,
-        } and not self.tasks:
+        } and not self.actions:
             raise ValueError(
                 "Extraction modes simple_single_pass and focused_extraction require "
-                "at least one extraction task."
+                "at least one semantic action."
             )
         if (
             self.execution_mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
@@ -163,7 +178,9 @@ class CandidateBaseDraft(IngestionModel):
 
 
 class CandidateEntityDraft(CandidateBaseDraft):
-    entity_type: str = Field(description="Target graph label, validated against graph registry.")
+    entity_type: LLMEntityType = Field(
+        description="Allowed memory entity type. Use only enum values; do not invent labels.",
+    )
     display_name: str | None = Field(
         default=None,
         description="Best human-readable name for display and retrieval.",
@@ -182,9 +199,22 @@ class CandidateEntityDraft(CandidateBaseDraft):
 
 
 class CandidateRelationshipDraft(CandidateBaseDraft):
-    relationship_type: str = Field(description="Target graph relationship type.")
+    relationship_type: LLMRelationshipType = Field(
+        description="Allowed graph relationship type. Use only enum values.",
+    )
     from_ref: str = Field(description="Source endpoint ref, usually a candidate ref or alias.")
     to_ref: str = Field(description="Target endpoint ref, usually a candidate ref or alias.")
+    relationship_kind: RelationshipKind | None = Field(
+        default=None,
+        description=(
+            "Governed social relationship kind when relationship_type is "
+            "RELATIONSHIP_WITH."
+        ),
+    )
+    relationship_detail: str | None = Field(
+        default=None,
+        description="Source-grounded wording such as brother, girlfriend, or university friend.",
+    )
     property_suggestions: list[PropertyDraft] = Field(default_factory=list)
     affective_fields: AffectiveFields | None = None
     temporal_scope: TemporalScope | None = None
@@ -216,7 +246,9 @@ class CandidatePerceptionDraft(CandidateBaseDraft):
 class CandidateRelationshipContextDraft(CandidateBaseDraft):
     from_ref: str = Field(description="First endpoint of the relationship context.")
     to_ref: str = Field(description="Second endpoint of the relationship context.")
-    relationship_type: str | None = Field(default=None)
+    relationship_type: LLMRelationshipType | None = Field(default=None)
+    relationship_kind: RelationshipKind | None = Field(default=None)
+    relationship_detail: str | None = Field(default=None)
     status: str | None = Field(default=None)
     closeness: str | None = Field(default=None)
     description: str | None = Field(default=None)

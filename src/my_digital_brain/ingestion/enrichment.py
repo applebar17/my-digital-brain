@@ -11,11 +11,8 @@ from my_digital_brain.ingestion.contracts import (
     CandidatePerception,
     CandidateRelationship,
     CandidateRelationshipContext,
-    ClarificationRequest,
     EvidenceRef,
-    ExtractionPlan,
     ExtractionTask,
-    IngestionContextPackage,
     Mention,
     MentionScan,
     SourceRecordRef,
@@ -35,10 +32,7 @@ from my_digital_brain.ingestion.contracts.drafts import (
     CandidateRelationshipContextDraftBatch,
     CandidateRelationshipDraft,
     CandidateRelationshipDraftBatch,
-    ClarificationRequestDraft,
     EvidenceSpanDraft,
-    ExtractionPlanDraft,
-    ExtractionTaskDraft,
     MentionDraft,
     MentionScanDraft,
     PropertyDraft,
@@ -53,27 +47,6 @@ def enrich_mention_scan(draft: MentionScanDraft, source: SourceRecordRef) -> Men
     return MentionScan(
         source_id=source.source_id,
         mentions=[_enrich_mention(mention) for mention in draft.mentions],
-        metadata={"schema_layer": "backend_enriched"},
-    )
-
-
-def enrich_extraction_plan(
-    draft: ExtractionPlanDraft,
-    source: SourceRecordRef,
-    context: IngestionContextPackage,
-) -> ExtractionPlan:
-    return ExtractionPlan(
-        source_id=source.source_id,
-        context_package_id=context.context_package_id,
-        execution_mode=draft.execution_mode,
-        reason=draft.reason,
-        tasks=[_enrich_extraction_task(task, source) for task in draft.tasks],
-        clarification=(
-            _enrich_clarification(draft.clarification)
-            if draft.clarification is not None
-            else None
-        ),
-        context_gaps=list(draft.context_gaps),
         metadata={"schema_layer": "backend_enriched"},
     )
 
@@ -132,34 +105,6 @@ def _enrich_mention(draft: MentionDraft) -> Mention:
     )
 
 
-def _enrich_extraction_task(
-    draft: ExtractionTaskDraft,
-    source: SourceRecordRef,
-) -> ExtractionTask:
-    return ExtractionTask(
-        task_type=draft.task_type,
-        target_ref=draft.target_ref,
-        evidence_text=draft.evidence_text,
-        source_refs=[source.source_id],
-        expected_output=draft.expected_output,
-        required_context_refs=list(draft.required_context_refs),
-        notes=draft.notes,
-        metadata={"schema_layer": "backend_enriched"},
-    )
-
-
-def _enrich_clarification(draft: ClarificationRequestDraft) -> ClarificationRequest:
-    return ClarificationRequest(
-        question=draft.question,
-        reason=draft.reason,
-        target_refs=list(draft.target_refs),
-        options=list(draft.options),
-        free_text_allowed=draft.free_text_allowed,
-        blocking=draft.blocking,
-        metadata={"schema_layer": "backend_enriched"},
-    )
-
-
 def _enrich_entity(
     draft: CandidateEntityDraft,
     source: SourceRecordRef,
@@ -197,6 +142,8 @@ def _enrich_relationship(
         relationship_type=relationship_type,
         from_ref=draft.from_ref,
         to_ref=draft.to_ref,
+        relationship_kind=draft.relationship_kind,
+        relationship_detail=draft.relationship_detail,
         properties=property_suggestions_to_dict(draft.property_suggestions),
         affective_fields=draft.affective_fields,
         temporal_scope=draft.temporal_scope,
@@ -250,6 +197,8 @@ def _enrich_relationship_context(
         from_ref=draft.from_ref,
         to_ref=draft.to_ref,
         relationship_type=draft.relationship_type,
+        relationship_kind=draft.relationship_kind,
+        relationship_detail=draft.relationship_detail,
         status=draft.status,
         closeness=draft.closeness,
         description=draft.description,

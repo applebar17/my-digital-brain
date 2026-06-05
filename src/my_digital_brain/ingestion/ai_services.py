@@ -10,14 +10,14 @@ from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRe
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.contracts import (
     ExtractionPlan,
-    ExtractionPlanDraft,
     IngestionContextPackage,
     MentionScan,
     MentionScanDraft,
+    SemanticIngestionPlanDraft,
     SourceRecordRef,
 )
+from my_digital_brain.ingestion.compiler import SemanticExtractionTaskCompiler
 from my_digital_brain.ingestion.enrichment import (
-    enrich_extraction_plan,
     enrich_mention_scan,
 )
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
@@ -67,11 +67,13 @@ class LLMIngestionPlanner:
         *,
         router: ModelRouter | None = None,
         prompt_builder: IngestionPromptBuilder | None = None,
+        compiler: SemanticExtractionTaskCompiler | None = None,
         model: str | None = None,
     ) -> None:
         self.provider = provider
         self.router = router
         self.prompt_builder = prompt_builder or IngestionPromptBuilder()
+        self.compiler = compiler or SemanticExtractionTaskCompiler()
         self.model = model
 
     @traceable(name="Ingestion Planning", run_type="parser")
@@ -83,7 +85,7 @@ class LLMIngestionPlanner:
     ) -> ExtractionPlan:
         parsed = _structured_call(
             provider=self.provider,
-            output_schema=ExtractionPlanDraft,
+            output_schema=SemanticIngestionPlanDraft,
             system_prompt=self.prompt_builder.planner_system_prompt,
             input_message=self.prompt_builder.planner_input(source, mention_scan, context),
             source=source,
@@ -91,8 +93,8 @@ class LLMIngestionPlanner:
             router=self.router,
             model=self.model,
         )
-        draft = ExtractionPlanDraft.model_validate(parsed)
-        plan = enrich_extraction_plan(draft, source, context)
+        draft = SemanticIngestionPlanDraft.model_validate(parsed)
+        plan = self.compiler.compile(draft, source, mention_scan, context)
         self._validate_plan_aliases(plan, context)
         return plan
 

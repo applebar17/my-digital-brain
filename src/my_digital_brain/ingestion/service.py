@@ -8,12 +8,28 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
+    CandidateClaim,
+    CandidateEntity,
+    CandidateMetadataPatch,
     CandidateOutput,
+    CandidatePerception,
+    CandidateRelationship,
+    CandidateRelationshipContext,
+    ExtractionTask,
+    IngestionContextPackage,
     IngestionResult,
     SourceRecordRef,
     ValidationIssue,
 )
-from my_digital_brain.ingestion.enums import ExtractionExecutionMode, IngestionStatus
+from my_digital_brain.ingestion.enums import (
+    ExtractionExecutionMode,
+    ExtractionTaskType,
+    IngestionStatus,
+)
+from my_digital_brain.ingestion.ontology import (
+    REF_PRODUCING_TASK_TYPES,
+    ontology_prompt_payload,
+)
 from my_digital_brain.ingestion.protocols import (
     CandidateGraphAssembler,
     FocusedExtractor,
@@ -155,7 +171,23 @@ class IngestionService:
 
         candidates: list[CandidateOutput] = []
         missing_extractor_issues: list[ValidationIssue] = []
-        for task_index, task in enumerate(extraction_plan.tasks):
+        ref_validation_issues: list[ValidationIssue] = []
+        candidate_ref_catalog: dict[str, dict[str, object]] = {}
+        previous_action_summaries: list[dict[str, object]] = []
+        execution_tasks = _ordered_tasks_for_execution(extraction_plan.tasks)
+        for task_index, task in enumerate(execution_tasks):
+            task_context = _context_for_task(
+                context,
+                task,
+                candidate_ref_catalog,
+                previous_action_summaries,
+            )
+            task = _task_for_execution(
+                task,
+                task_context,
+                candidate_ref_catalog,
+                previous_action_summaries,
+            )
             extractor = self._find_extractor(task)
             if extractor is None:
                 missing_extractor_issues.append(
@@ -171,7 +203,21 @@ class IngestionService:
                     ),
                 )
                 continue
-            candidates.extend(extractor.extract(source, task, context))
+            task_candidates = list(extractor.extract(source, task, task_context))
+            task_ref_issues = _validate_extracted_refs(
+                task_candidates,
+                candidate_ref_catalog,
+                task_context.aliases,
+                task,
+            )
+            if task_ref_issues:
+                ref_validation_issues.extend(task_ref_issues)
+                continue
+            candidates.extend(task_candidates)
+            _update_candidate_ref_catalog(candidate_ref_catalog, task_candidates, task)
+            previous_action_summaries.append(
+                _task_execution_summary(task, task_candidates),
+            )
 
         log_event(
             logger,
@@ -181,16 +227,20 @@ class IngestionService:
             extraction_plan_id=extraction_plan.extraction_plan_id,
             candidate_count=len(candidates),
             missing_extractor_count=len(missing_extractor_issues),
+            ref_validation_error_count=len(ref_validation_issues),
         )
 
-        if missing_extractor_issues:
+        if missing_extractor_issues or ref_validation_issues:
             return self._finish(
                 IngestionResult(
                     source_id=source.source_id,
                     status=IngestionStatus.VALIDATION_FAILED,
                     mention_scan=mention_scan,
                     extraction_plan=extraction_plan,
-                    validation_errors=missing_extractor_issues,
+                    validation_errors=[
+                        *missing_extractor_issues,
+                        *ref_validation_issues,
+                    ],
                 ),
             )
 
@@ -454,6 +504,247 @@ def _write_plan_counts(write_plan) -> dict[str, int]:
         "relationship_contexts_to_create": len(write_plan.relationship_contexts_to_create),
         "metadata_patches": len(write_plan.metadata_patches),
     }
+
+
+def _ordered_tasks_for_execution(
+    tasks: Sequence[ExtractionTask],
+) -> list[ExtractionTask]:
+    return sorted(
+        tasks,
+        key=lambda task: (
+            0 if _task_type(task) in REF_PRODUCING_TASK_TYPES else 1,
+            int(task.metadata.get("semantic_action_index") or 0),
+            str(_task_type(task)),
+            task.task_id,
+        ),
+    )
+
+
+def _context_for_task(
+    context: IngestionContextPackage,
+    task: ExtractionTask,
+    candidate_ref_catalog: dict[str, dict[str, object]],
+    previous_action_summaries: Sequence[dict[str, object]],
+) -> IngestionContextPackage:
+    return context.model_copy(
+        update={
+            "metadata": {
+                **context.metadata,
+                "ingestion_ontology": ontology_prompt_payload(),
+                "candidate_ref_catalog": list(candidate_ref_catalog.values()),
+                "previous_action_summaries": list(previous_action_summaries[-6:]),
+                "current_action": _current_action_payload(task),
+            },
+        },
+        deep=True,
+    )
+
+
+def _task_for_execution(
+    task: ExtractionTask,
+    context: IngestionContextPackage,
+    candidate_ref_catalog: dict[str, dict[str, object]],
+    previous_action_summaries: Sequence[dict[str, object]],
+) -> ExtractionTask:
+    return task.model_copy(
+        update={
+            "metadata": {
+                **task.metadata,
+                "candidate_ref_catalog": list(candidate_ref_catalog.values()),
+                "previous_action_summaries": list(previous_action_summaries[-6:]),
+                "allowed_graph_aliases": sorted(context.aliases),
+                "ontology": ontology_prompt_payload(),
+            },
+        },
+        deep=True,
+    )
+
+
+def _current_action_payload(task: ExtractionTask) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in {
+            "task_id": task.task_id,
+            "task_type": str(_task_type(task)),
+            "semantic_action_ref": task.metadata.get("semantic_action_ref"),
+            "semantic_action_kind": task.metadata.get("semantic_action_kind"),
+            "semantic_action_goal": task.metadata.get("semantic_action_goal"),
+            "semantic_action_index": task.metadata.get("semantic_action_index"),
+            "ref_policy": task.metadata.get("ref_policy"),
+            "suggested_candidate_refs": task.metadata.get("suggested_candidate_refs"),
+        }.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _validate_extracted_refs(
+    candidates: Sequence[CandidateOutput],
+    candidate_ref_catalog: dict[str, dict[str, object]],
+    aliases: dict[str, str],
+    task: ExtractionTask,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    known_candidate_refs = set(candidate_ref_catalog)
+    known_aliases = set(aliases)
+    for candidate_index, candidate in enumerate(candidates):
+        for field_name, refs in _candidate_external_refs(candidate):
+            for ref_index, ref in enumerate(refs):
+                if not ref:
+                    continue
+                if ref.startswith("CANDIDATE_"):
+                    if ref not in known_candidate_refs:
+                        issues.append(
+                            ValidationIssue(
+                                field_path=(
+                                    f"task[{task.task_id}].candidates[{candidate_index}]"
+                                    f".{field_name}[{ref_index}]"
+                                ),
+                                message=(
+                                    f"Unknown candidate ref '{ref}'. Ref-consuming "
+                                    "extractors may only use candidate refs produced by "
+                                    "earlier extraction actions."
+                                ),
+                                code="unknown_extraction_candidate_ref",
+                                details={
+                                    "ref": ref,
+                                    "task_id": task.task_id,
+                                    "task_type": str(_task_type(task)),
+                                },
+                            ),
+                        )
+                    continue
+                if _looks_like_graph_alias(ref):
+                    if ref not in known_aliases:
+                        issues.append(
+                            ValidationIssue(
+                                field_path=(
+                                    f"task[{task.task_id}].candidates[{candidate_index}]"
+                                    f".{field_name}[{ref_index}]"
+                                ),
+                                message=(
+                                    f"Unknown graph alias '{ref}'. Extractors may only "
+                                    "use aliases supplied in compact graph context."
+                                ),
+                                code="unknown_extraction_graph_alias_ref",
+                                details={
+                                    "ref": ref,
+                                    "task_id": task.task_id,
+                                    "task_type": str(_task_type(task)),
+                                },
+                            ),
+                        )
+                    continue
+                issues.append(
+                    ValidationIssue(
+                        field_path=(
+                            f"task[{task.task_id}].candidates[{candidate_index}]"
+                            f".{field_name}[{ref_index}]"
+                        ),
+                        message=(
+                            f"Unsupported reference '{ref}'. Use a provided graph alias "
+                            "or a candidate ref from an earlier extraction action."
+                        ),
+                        code="unsupported_extraction_ref",
+                        details={
+                            "ref": ref,
+                            "task_id": task.task_id,
+                            "task_type": str(_task_type(task)),
+                        },
+                    ),
+                )
+    return issues
+
+
+def _candidate_external_refs(
+    candidate: CandidateOutput,
+) -> list[tuple[str, list[str]]]:
+    if isinstance(candidate, CandidateRelationship):
+        return [("from_ref", [candidate.from_ref]), ("to_ref", [candidate.to_ref])]
+    if isinstance(candidate, CandidateClaim):
+        return [
+            ("about_refs", list(candidate.about_refs)),
+            ("contradiction_refs", list(candidate.contradiction_refs)),
+        ]
+    if isinstance(candidate, CandidatePerception):
+        return [("target_ref", [candidate.target_ref])]
+    if isinstance(candidate, CandidateRelationshipContext):
+        return [("from_ref", [candidate.from_ref]), ("to_ref", [candidate.to_ref])]
+    if isinstance(candidate, CandidateMetadataPatch):
+        return [("target_ref", [candidate.target_ref])]
+    return []
+
+
+def _update_candidate_ref_catalog(
+    candidate_ref_catalog: dict[str, dict[str, object]],
+    candidates: Sequence[CandidateOutput],
+    task: ExtractionTask,
+) -> None:
+    for candidate in candidates:
+        candidate_ref_catalog[candidate.local_ref] = {
+            key: value
+            for key, value in {
+                "local_ref": candidate.local_ref,
+                "candidate_kind": type(candidate).__name__,
+                "task_type": str(_task_type(task)),
+                "semantic_action_ref": task.metadata.get("semantic_action_ref"),
+                "summary": _candidate_summary(candidate),
+            }.items()
+            if value not in (None, "", [], {})
+        }
+
+
+def _task_execution_summary(
+    task: ExtractionTask,
+    candidates: Sequence[CandidateOutput],
+) -> dict[str, object]:
+    return {
+        "task_id": task.task_id,
+        "task_type": str(_task_type(task)),
+        "semantic_action_ref": task.metadata.get("semantic_action_ref"),
+        "semantic_action_goal": task.metadata.get("semantic_action_goal"),
+        "candidate_count": len(candidates),
+        "candidate_refs": [candidate.local_ref for candidate in candidates],
+        "candidate_summaries": [_candidate_summary(candidate) for candidate in candidates[:5]],
+    }
+
+
+def _candidate_summary(candidate: CandidateOutput) -> str:
+    if isinstance(candidate, CandidateEntity):
+        return _short_text(
+            candidate.display_name
+            or candidate.description
+            or f"{candidate.entity_type} candidate",
+            max_chars=120,
+        )
+    if isinstance(candidate, CandidateRelationship):
+        detail = candidate.relationship_detail or candidate.relationship_kind
+        suffix = f" ({detail})" if detail else ""
+        return _short_text(
+            f"{candidate.from_ref} -{candidate.relationship_type}{suffix}-> {candidate.to_ref}",
+            max_chars=120,
+        )
+    if isinstance(candidate, CandidateClaim):
+        return _short_text(candidate.text, max_chars=120)
+    if isinstance(candidate, CandidatePerception):
+        return _short_text(candidate.description, max_chars=120)
+    if isinstance(candidate, CandidateRelationshipContext):
+        return _short_text(
+            candidate.description
+            or f"Relationship context {candidate.from_ref} / {candidate.to_ref}",
+            max_chars=120,
+        )
+    if isinstance(candidate, CandidateMetadataPatch):
+        return _short_text(candidate.reason or candidate.path, max_chars=120)
+    return candidate.local_ref
+
+
+def _looks_like_graph_alias(ref: str) -> bool:
+    prefixes = ("NODE_", "REL_", "CLAIM_", "SOURCE_", "RELCTX_")
+    return ref.startswith(prefixes)
+
+
+def _task_type(task: ExtractionTask) -> ExtractionTaskType:
+    return ExtractionTaskType(task.task_type)
 
 
 def _validation_issue_summaries(

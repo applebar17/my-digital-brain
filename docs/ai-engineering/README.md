@@ -32,6 +32,23 @@ Rules:
 - Represent arbitrary metadata as typed property suggestions in model-facing
   schemas; backend decides whether they become typed fields or metadata.
 
+Ingestion uses two freedom tiers:
+
+- High-freedom semantic planning: the planner organizes the source narrative
+  into ordered semantic actions, goals, evidence spans, dependencies,
+  ambiguity/context gaps, and clarification needs. It must not choose graph
+  labels, relationship types, write-plan operations, persistence fields, or
+  backend-owned IDs.
+- Low-freedom backend-facing extraction: focused extractors return enum-bound
+  candidate drafts using only ontology values and refs/aliases supplied in the
+  current step. Backend code compiles semantic actions into these constrained
+  calls, injects deterministic IDs/provenance, validates refs and ontology
+  values, and owns graph writes.
+
+The model may use local refs only when the process goal requires orchestration
+between objects. A ref-consuming extraction step may use only refs created by
+earlier steps or graph aliases explicitly provided by the backend.
+
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
 used only to smuggle the schema back to the backend. Tools may still be used

@@ -159,7 +159,7 @@ def test_structured_call_rejects_empty_provider_content() -> None:
 def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None:
     output_schemas = [
         draft_contracts.MentionScanDraft,
-        draft_contracts.ExtractionPlanDraft,
+        draft_contracts.SemanticIngestionPlanDraft,
         draft_contracts.CandidateEntityDraftBatch,
         draft_contracts.CandidateRelationshipDraftBatch,
         draft_contracts.CandidateClaimDraftBatch,

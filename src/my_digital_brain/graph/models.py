@@ -131,6 +131,8 @@ class RelationshipContextNode(GraphNodeModel):
     label: ClassVar[str] = "RelationshipContext"
 
     relationship_type: str | None = None
+    relationship_kind: str | None = None
+    relationship_detail: str | None = None
     status: str | None = None
     closeness: str | None = None
 

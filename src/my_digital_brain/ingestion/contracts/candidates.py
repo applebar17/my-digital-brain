@@ -58,6 +58,8 @@ class CandidateRelationship(CandidateBase):
     relationship_type: str = Field(description="Target graph relationship type.")
     from_ref: str = Field(description="Source endpoint ref, usually a candidate ref or alias.")
     to_ref: str = Field(description="Target endpoint ref, usually a candidate ref or alias.")
+    relationship_kind: str | None = None
+    relationship_detail: str | None = None
     properties: dict[str, Any] = Field(default_factory=dict)
     affective_fields: AffectiveFields | None = None
     temporal_scope: TemporalScope | None = None
@@ -93,6 +95,8 @@ class CandidateRelationshipContext(CandidateBase):
     from_ref: str = Field(description="First endpoint of the relationship context.")
     to_ref: str = Field(description="Second endpoint of the relationship context.")
     relationship_type: str | None = Field(default=None)
+    relationship_kind: str | None = None
+    relationship_detail: str | None = None
     status: str | None = Field(default=None)
     closeness: str | None = Field(default=None)
     description: str | None = Field(default=None)

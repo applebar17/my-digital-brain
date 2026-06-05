@@ -270,7 +270,9 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
         "request_contradiction_review",
         "request_user_clarification",
     ]
-    assert "Plan extraction tasks" in PromptRegistry().load("ingestion_planner").template
+    assert "Plan semantic ingestion actions" in PromptRegistry().load(
+        "ingestion_planner",
+    ).template
 
 
 def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> None:

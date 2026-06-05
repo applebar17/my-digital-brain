@@ -223,6 +223,8 @@ class GraphWritePlanBuilder:
         properties.update(
             {
                 "relationship_type": candidate.relationship_type,
+                "relationship_kind": candidate.relationship_kind,
+                "relationship_detail": candidate.relationship_detail,
                 "status": candidate.status,
                 "closeness": candidate.closeness,
                 "description": candidate.description,
@@ -346,6 +348,10 @@ def _entity_display_properties(candidate: CandidateEntity) -> dict[str, Any]:
 
 def _relationship_candidate_properties(candidate: CandidateRelationship) -> dict[str, Any]:
     properties = dict(candidate.properties)
+    if candidate.relationship_kind:
+        properties["relationship_kind"] = candidate.relationship_kind
+    if candidate.relationship_detail:
+        properties["relationship_detail"] = candidate.relationship_detail
     metadata = dict(properties.pop("metadata", {}))
     for key, value in list(properties.items()):
         if key not in _RELATIONSHIP_PROPERTY_FIELDS:
@@ -402,6 +408,8 @@ def _drop_empty(properties: dict[str, Any]) -> dict[str, Any]:
 _RELATIONSHIP_PROPERTY_FIELDS = {
     "id",
     "description",
+    "relationship_kind",
+    "relationship_detail",
     "valid_from",
     "valid_to",
     "resolved_start",

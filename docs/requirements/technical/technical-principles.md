@@ -67,7 +67,7 @@ Structured ingestion objects should sit between extraction and graph writes. The
 
 Clarification state should be minimal. It exists so the AI Manager can resume a pending ingestion after a later chat message when appropriate, not as a separate clarification subsystem or strict workflow engine.
 
-Ingestion complexity should be decided after a cheap mention scan and compact graph-context retrieval. Raw text alone is not enough to know whether an ingestion is simple, ambiguous, contradictory, or relationship-heavy. The ingestion planner should propose extraction tasks, not graph writes.
+Ingestion complexity should be decided after a cheap mention scan and compact graph-context retrieval. Raw text alone is not enough to know whether an ingestion is simple, ambiguous, contradictory, or relationship-heavy. The ingestion planner should propose semantic actions, not graph writes or DB-shaped extraction tasks. Backend code compiles those actions into constrained extractor calls.
 
 ## Local And Cloud Portability
 

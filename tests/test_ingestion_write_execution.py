@@ -122,6 +122,41 @@ def test_write_plan_builder_maps_candidate_refs_and_is_deterministic() -> None:
     assert plan.idempotency_keys == same_plan.idempotency_keys
 
 
+def test_write_plan_builder_preserves_social_relationship_kind_and_detail() -> None:
+    candidate_graph = _candidate_graph(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Riccardo",
+                source_refs=["source-1"],
+            ),
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_002",
+                entity_type="Person",
+                display_name="Alessia",
+                source_refs=["source-1"],
+            ),
+            CandidateRelationship(
+                local_ref="CANDIDATE_REL_001",
+                relationship_type="RELATIONSHIP_WITH",
+                from_ref="CANDIDATE_PERSON_001",
+                to_ref="CANDIDATE_PERSON_002",
+                relationship_kind="partner",
+                relationship_detail="girlfriend",
+                source_refs=["source-1"],
+            ),
+        ],
+    )
+
+    plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
+    relationship = plan.relationships_to_create[0]
+
+    assert relationship.relationship_type == "RELATIONSHIP_WITH"
+    assert relationship.properties["relationship_kind"] == "partner"
+    assert relationship.properties["relationship_detail"] == "girlfriend"
+
+
 def test_write_plan_builder_uses_existing_resolution_for_relationship_endpoints() -> None:
     existing_id = new_uuid()
     candidate_graph = _candidate_graph(

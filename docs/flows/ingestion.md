@@ -11,17 +11,27 @@ The ingestion flow turns user input into graph updates while preserving source e
 3. If the source is audio, speech-to-text creates a transcript source linked to the original audio.
 4. A cheap mention scan extracts shallow mentions from the source text or transcript.
 5. Context retrieval loads compact graph context for the mentions.
-6. The ingestion planner receives source text plus compact context and returns an `ExtractionPlan`.
-7. The plan selects `simple_single_pass`, `focused_extraction`, `needs_context_expansion`, or `needs_clarification_first`.
-8. Focused extractors create structured candidate objects only for required tasks.
-9. The assembler builds a `CandidateMemoryGraph`.
-10. Validator checks schema, required information, evidence, aliases, allowed labels, and allowed relationship types.
-11. Resolution engine searches for obvious existing graph matches.
-12. If clarification is needed, the ingestion session stores a pending process context.
-13. Later chat messages are processed with that pending context and conversation history available.
-14. The AI Manager can classify a later message as a clarification answer, new memory, question, cancellation, correction, or normal chat, then resume ingestion only when appropriate.
-15. When safe, backend services produce and execute a validated `GraphWritePlan`.
-16. User receives a concise ingestion summary when useful.
+6. The ingestion planner receives source text plus compact context and returns a
+   high-freedom `SemanticIngestionPlanDraft`.
+7. The semantic plan selects `simple_single_pass`, `focused_extraction`,
+   `needs_context_expansion`, or `needs_clarification_first`.
+8. A deterministic backend compiler converts semantic actions into ordered
+   low-freedom `ExtractionTask` calls.
+9. The ingestion service executes actions step by step, carrying compact
+   summaries and a candidate/ref catalog forward.
+10. Focused extractors create structured candidate drafts only for the current
+   constrained task.
+11. Backend enrichment injects source provenance, IDs, and `EvidenceRef`
+   records, then immediately validates refs and ontology values.
+12. The assembler builds a `CandidateMemoryGraph`.
+13. Validator checks schema, required information, evidence, aliases, allowed
+   labels, and allowed relationship types.
+14. Resolution engine searches for obvious existing graph matches.
+15. If clarification is needed, the ingestion session stores a pending process context.
+16. Later chat messages are processed with that pending context and conversation history available.
+17. The AI Manager can classify a later message as a clarification answer, new memory, question, cancellation, correction, or normal chat, then resume ingestion only when appropriate.
+18. When safe, backend services produce and execute a validated `GraphWritePlan`.
+19. User receives a concise ingestion summary when useful.
 
 Complexity is decided after the mention scan and context retrieval. The system must not classify rich versus simple ingestion from raw text alone.
 
@@ -30,6 +40,25 @@ semantic content, evidence text/spans, local candidate refs, and graph aliases.
 Backend code then enriches those drafts with source IDs, generated IDs,
 `EvidenceRef`, status fields, timestamps, and metadata before validation,
 resolution, or graph writes.
+
+The planner does not choose database ontology. It writes semantic actions such
+as "identify anchors", "capture relationship evolution", or "connect these
+people through the source narrative." The backend compiler decides which
+extractor schema to call and what refs are available to that call.
+
+DB-facing extraction is enum/ref constrained. LLM-creatable entity labels are:
+`Person`, `Event`, `Place`, `Organization`, `Object`, `Animal`,
+`SocialCircle`, and `Topic`. Social relationships use `RELATIONSHIP_WITH` plus
+`relationship_kind`:
+
+```text
+friend | family | partner | former_partner | colleague | classmate | acquaintance
+```
+
+Specific wording is preserved in details and property suggestions, not in new
+labels or edge types. For example, "brother" becomes
+`relationship_kind=family` and `relationship_detail=brother`; "girlfriend"
+becomes `relationship_kind=partner` and `relationship_detail=girlfriend`.
 
 ## LLM Action Boundary
 

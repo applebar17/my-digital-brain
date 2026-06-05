@@ -28,12 +28,12 @@ from my_digital_brain.ingestion.ai_services import _is_graph_alias
 from my_digital_brain.ingestion.contracts import (
     ClarificationRequest,
     ExtractionPlan,
-    ExtractionPlanDraft,
     IngestionContextPackage,
     MentionScan,
+    SemanticIngestionPlanDraft,
     SourceRecordRef,
 )
-from my_digital_brain.ingestion.enrichment import enrich_extraction_plan
+from my_digital_brain.ingestion.compiler import SemanticExtractionTaskCompiler
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
 
 
@@ -45,8 +45,8 @@ class AgenticIngestionPlanner:
     """Tool-enabled ingestion planner backed by the agentic runtime foundation.
 
     The planner state may call planning support tools, then this class requests
-    a provider-structured `ExtractionPlanDraft`. Backend code enriches and
-    validates that plan before the ingestion service continues.
+    a provider-structured `SemanticIngestionPlanDraft`. Backend code compiles
+    and validates that plan before the ingestion service continues.
     """
 
     def __init__(
@@ -56,12 +56,14 @@ class AgenticIngestionPlanner:
         structured_provider: StructuredLLMProvider | None = None,
         execution_context_factory: ExecutionContextFactory | None = None,
         history_service: AgenticHistoryService | None = None,
+        compiler: SemanticExtractionTaskCompiler | None = None,
         max_planning_rounds: int = 2,
     ) -> None:
         self.state_runner = state_runner
         self.structured_provider = structured_provider
         self.execution_context_factory = execution_context_factory
         self.history_service = history_service or state_runner.history_service
+        self.compiler = compiler or SemanticExtractionTaskCompiler()
         self.max_planning_rounds = max(1, max_planning_rounds)
 
     @traceable(name="Agentic Ingestion Planning", run_type="chain")
@@ -151,19 +153,20 @@ class AgenticIngestionPlanner:
                 )
                 continue
 
-            plan = self._structured_plan(source, planning_context, context)
+            plan = self._structured_plan(source, mention_scan, planning_context, context)
             self._validate_plan(plan, source, context)
             return plan
 
         raise IngestionValidationError(
             "memory_ingestion_planning exceeded the allowed planning rounds "
-            "without returning a structured ExtractionPlanDraft."
+            "without returning a structured SemanticIngestionPlanDraft."
         )
 
     @traceable(name="Agentic Ingestion Structured Plan", run_type="parser")
     def _structured_plan(
         self,
         source: SourceRecordRef,
+        mention_scan: MentionScan,
         planning_context: PlanningContext,
         context: IngestionContextPackage,
     ) -> ExtractionPlan:
@@ -172,7 +175,7 @@ class AgenticIngestionPlanner:
             raise IngestionValidationError(
                 "memory_ingestion_planning requires a provider that implements "
                 "generate_structured so the final output can be a validated "
-                "ExtractionPlanDraft."
+                "SemanticIngestionPlanDraft."
             )
 
         state_config = self.state_runner.state_configs[
@@ -185,7 +188,7 @@ class AgenticIngestionPlanner:
             source_id=source.source_id,
             prompt_id=state_config.prompt_id,
             prompt_version=state_config.prompt_version,
-            schema_id=ExtractionPlanDraft.__name__,
+            schema_id=SemanticIngestionPlanDraft.__name__,
             metadata={
                 "state_id": state_value,
                 "source_type": str(source.source_type),
@@ -200,7 +203,7 @@ class AgenticIngestionPlanner:
         try:
             result = provider.generate_structured(  # type: ignore[attr-defined]
                 StructuredGenerationRequest(
-                    schema=ExtractionPlanDraft,
+                    schema=SemanticIngestionPlanDraft,
                     system_prompt=prompt,
                     input_message={
                         "state_id": state_value,
@@ -208,7 +211,7 @@ class AgenticIngestionPlanner:
                             AgenticStateId.MEMORY_INGESTION_PLANNING,
                             planning_context,
                         ),
-                        "final_output_contract": "ExtractionPlanDraft",
+                        "final_output_contract": "SemanticIngestionPlanDraft",
                     },
                     model=route.model,
                     temperature=self.state_runner.temperature,
@@ -223,10 +226,10 @@ class AgenticIngestionPlanner:
         except (ValidationError, ValueError) as exc:
             raise IngestionValidationError(
                 "memory_ingestion_planning returned an invalid structured "
-                f"ExtractionPlanDraft: {exc}"
+                f"SemanticIngestionPlanDraft: {exc}"
             ) from exc
-        draft = ExtractionPlanDraft.model_validate(result.parsed)
-        return enrich_extraction_plan(draft, source, context)
+        draft = SemanticIngestionPlanDraft.model_validate(result.parsed)
+        return self.compiler.compile(draft, source, mention_scan, context)
 
     def _execution_context(self, source: SourceRecordRef) -> AgenticToolExecutionContext:
         if self.execution_context_factory is not None:

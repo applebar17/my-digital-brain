@@ -59,7 +59,9 @@
       "properties": {
         "id": "00000000-0000-4000-8000-000000000006",
         "description": "Great relationship during teenage years, now low contact.",
-        "relationship_type": "friendship",
+        "relationship_type": "RELATIONSHIP_WITH",
+        "relationship_kind": "friend",
+        "relationship_detail": "teenage friendship",
         "status": "low_contact",
         "closeness": "historically_close",
         "emotional_summary": "Warm past bond mixed with present distance.",

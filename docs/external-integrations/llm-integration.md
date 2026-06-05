@@ -93,9 +93,9 @@ Required planning flow:
 
 1. Run a cheap mention scan over source text or transcript.
 2. Retrieve compact graph context for the mentions.
-3. Ask the ingestion planner for an `ExtractionPlanDraft`.
-4. Backend-enrich the draft into an `ExtractionPlan`.
-5. Execute the selected backend flow.
+3. Ask the ingestion planner for a `SemanticIngestionPlanDraft`.
+4. Backend-compile the semantic draft into an `ExtractionPlan`.
+5. Execute the selected backend flow with focused extractors.
 
 Planner execution modes:
 
@@ -104,7 +104,9 @@ Planner execution modes:
 - `needs_context_expansion`
 - `needs_clarification_first`
 
-The planner proposes extraction tasks. It does not plan graph writes.
+The planner proposes ordered semantic actions. It does not choose graph labels,
+relationship types, write-plan operations, or graph writes. Backend code
+compiles actions into constrained extraction tasks.
 
 Focused extraction should be used when a source contains affective content, relationship history, temporal nuance, multiple possible targets, or metadata-rich facts. This keeps model calls smaller and reduces hallucination risk.
 
