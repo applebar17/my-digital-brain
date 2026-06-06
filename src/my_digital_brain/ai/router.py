@@ -26,7 +26,7 @@ SMART_MODEL_TASKS = {
     "pending_process_review",
     "query_retrieval_planning",
 }
-REASONING_MODEL_TASKS = {"contradiction_review"}
+REASONING_MODEL_TASKS = {"contradiction_review", "reasoning_checkpoint"}
 DEFAULT_STRUCTURED_TASKS = {
     STRUCTURED_EXTRACTION_TASK,
     "ingestion_claim_extraction",

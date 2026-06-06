@@ -56,6 +56,15 @@ the mention scan, the compiler must synthesize the missing anchor actions before
 running any ref-consuming extractor. This is a backend responsibility, not a
 planner prompt expectation.
 
+Reasoning checkpoints are allowed before important downstream steps when the
+process needs richer context interpretation. A reasoning checkpoint receives
+purpose-specific guidelines, usable history, compact graph context, and caller
+input, then returns structured context augmentations. It may recommend
+clarifications, node-versus-metadata handling, owner/user interpretation,
+profile/perception/relationship treatment, context gaps, and guardrails. It does
+not own graph mutation, write-plan construction, validation, or ontology
+compilation.
+
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
 used only to smuggle the schema back to the backend. Tools may still be used

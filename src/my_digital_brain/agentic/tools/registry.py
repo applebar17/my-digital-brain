@@ -92,6 +92,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
     memory_query_states = [AgenticStateId.MEMORY_QUERY]
     correction_states = [AgenticStateId.CORRECTION_INTAKE]
     contradiction_states = [AgenticStateId.CONTRADICTION_REVIEW]
+    reasoning_states = [AgenticStateId.REASONING_CHECKPOINT]
 
     return [
         _definition(
@@ -182,6 +183,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 AgenticStateId.MEMORY_QUERY,
                 AgenticStateId.CORRECTION_INTAKE,
                 AgenticStateId.CONTRADICTION_REVIEW,
+                AgenticStateId.REASONING_CHECKPOINT,
             ],
             properties={
                 "reason": string_property("Why user input is required before continuing."),
@@ -228,7 +230,12 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             },
             required=["agent_doubt"],
         ),
-        *_graph_read_definitions(memory_query_states, correction_states, contradiction_states),
+        *_graph_read_definitions(
+            memory_query_states,
+            correction_states,
+            contradiction_states,
+            reasoning_states,
+        ),
         _definition(
             "resolve_correction_target",
             "Resolve the graph target for a correction without mutating memory.",
@@ -274,12 +281,13 @@ def _graph_read_definitions(
     memory_query_states: list[AgenticStateId],
     correction_states: list[AgenticStateId],
     contradiction_states: list[AgenticStateId],
+    reasoning_states: list[AgenticStateId],
 ) -> list[AgenticToolDefinition]:
     return [
         _definition(
             "get_context_package",
             "Retrieve a low-noise LLM context package for a seed node.",
-            states=memory_query_states,
+            states=[*memory_query_states, *reasoning_states],
             properties={
                 "node_id": string_property("Seed node id."),
                 "include_history": boolean_property("Include useful history.", default=True),
@@ -291,7 +299,7 @@ def _graph_read_definitions(
         _definition(
             "get_entity_detail",
             "Retrieve frontend-safe entity detail and evidence context.",
-            states=[*memory_query_states, *correction_states],
+            states=[*memory_query_states, *correction_states, *reasoning_states],
             properties=_node_detail_properties(),
             required=["node_id"],
         ),
@@ -326,7 +334,7 @@ def _graph_read_definitions(
         _definition(
             "get_neighborhood_view",
             "Retrieve a bounded graph neighborhood view.",
-            states=[*memory_query_states, *contradiction_states],
+            states=[*memory_query_states, *contradiction_states, *reasoning_states],
             properties={
                 "seed_id": string_property("Seed node id."),
                 "depth": integer_property("Neighborhood depth.", default=1, maximum=3),
@@ -352,7 +360,12 @@ def _graph_read_definitions(
         _definition(
             "get_target_evidence",
             "Retrieve source evidence for a graph target.",
-            states=[*memory_query_states, *correction_states, *contradiction_states],
+            states=[
+                *memory_query_states,
+                *correction_states,
+                *contradiction_states,
+                *reasoning_states,
+            ],
             properties={
                 "target_id": string_property("Target node id."),
                 "limit": integer_property("Maximum evidence records.", default=50),

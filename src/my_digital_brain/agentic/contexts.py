@@ -18,6 +18,8 @@ from my_digital_brain.agentic.enums import (
     ProfileMemoryCategory,
     ProfileMemoryStability,
     ProfileMemoryVisibility,
+    ReasoningInsightKind,
+    ReasoningStorageRecommendationType,
     ResponseRenderStyle,
     ToolResultStatus,
 )
@@ -133,6 +135,97 @@ class GraphContextPackage(AgenticModel):
     evidence_summaries: list[dict[str, Any]] = Field(default_factory=list)
     known_ambiguities: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReasoningPurposeGuidelines(AgenticModel):
+    purpose_id: str = "general"
+    goal: str
+    focus_areas: list[str] = Field(default_factory=list)
+    instructions: list[str] = Field(default_factory=list)
+    output_usage: str | None = None
+    forbidden_assumptions: list[str] = Field(default_factory=list)
+
+
+class ReasoningCheckpointContext(AgenticModel):
+    checkpoint_id: str = Field(default_factory=new_uuid)
+    purpose: ReasoningPurposeGuidelines
+    input_context: dict[str, Any] = Field(default_factory=dict)
+    conversation: ConversationContext | None = None
+    graph_context: GraphContextPackage | None = None
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    prior_tool_outputs: list["ToolResultContext"] = Field(default_factory=list)
+    expected_output_schema: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReasoningInsightContext(AgenticModel):
+    insight_type: ReasoningInsightKind
+    summary: str
+    evidence_text: str | None = None
+    affected_refs: list[str] = Field(default_factory=list)
+    recommended_next_action: str | None = None
+    caution: str | None = None
+
+
+class ReasoningClarificationCandidateContext(AgenticModel):
+    question: str
+    reason: str
+    target_refs: list[str] = Field(default_factory=list)
+    suggested_answers: list[str] = Field(default_factory=list)
+    blocking: bool = True
+
+
+class ReasoningEntityUnderstandingContext(AgenticModel):
+    mention_text: str
+    interpretation: str
+    existing_alias_refs: list[str] = Field(default_factory=list)
+    should_be_node: bool = False
+    possible_node_type: str | None = None
+    metadata_candidate_keys: list[str] = Field(default_factory=list)
+    ambiguity_notes: list[str] = Field(default_factory=list)
+
+
+class ReasoningStorageRecommendationContext(AgenticModel):
+    subject: str
+    recommendation_type: ReasoningStorageRecommendationType
+    reason: str
+    target_refs: list[str] = Field(default_factory=list)
+    suggested_property_keys: list[str] = Field(default_factory=list)
+    guardrails: list[str] = Field(default_factory=list)
+
+
+class ReasoningCheckpointResultContext(AgenticModel):
+    checkpoint_id: str
+    purpose_id: str
+    summary: str
+    insights: list[ReasoningInsightContext] = Field(default_factory=list)
+    clarification_candidates: list[ReasoningClarificationCandidateContext] = Field(
+        default_factory=list,
+    )
+    entity_understandings: list[ReasoningEntityUnderstandingContext] = Field(
+        default_factory=list,
+    )
+    storage_recommendations: list[ReasoningStorageRecommendationContext] = Field(
+        default_factory=list,
+    )
+    context_gaps: list[str] = Field(default_factory=list)
+    next_context_summary: str | None = None
+    recommended_next_action: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "ReasoningCheckpointResultContext":
+        if not self.summary.strip():
+            raise ValueError("Reasoning checkpoint requires a summary.")
+        if not (
+            self.insights
+            or self.clarification_candidates
+            or self.entity_understandings
+            or self.storage_recommendations
+            or self.context_gaps
+        ):
+            raise ValueError("Reasoning checkpoint requires at least one useful output asset.")
+        return self
 
 
 class PlanningContext(AgenticModel):

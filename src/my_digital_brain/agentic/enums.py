@@ -13,6 +13,7 @@ class AgenticNodeKind(StrEnum):
 class AgenticStateId(StrEnum):
     CONVERSATION_ENTRY = "conversation_entry"
     PENDING_PROCESS_REVIEW = "pending_process_review"
+    REASONING_CHECKPOINT = "reasoning_checkpoint"
     MEMORY_INGESTION_PLANNING = "memory_ingestion_planning"
     CONTRADICTION_REVIEW = "contradiction_review"
     MEMORY_QUERY = "memory_query"
@@ -89,6 +90,35 @@ class ContradictionResultIntent(StrEnum):
     NEEDS_CLARIFICATION = "needs_clarification"
     EMIT_VERDICT = "emit_verdict"
     FAIL_SAFE = "fail_safe"
+
+
+class ReasoningInsightKind(StrEnum):
+    CLARIFICATION_NEED = "clarification_need"
+    ENTITY_UNDERSTANDING = "entity_understanding"
+    NODE_VS_METADATA = "node_vs_metadata"
+    RELATIONSHIP_INTENT = "relationship_intent"
+    PROFILE_MEMORY = "profile_memory"
+    PERCEPTION = "perception"
+    CONTRADICTION_RISK = "contradiction_risk"
+    PRIVACY_TRUST = "privacy_trust"
+    PROVENANCE_REQUIREMENT = "provenance_requirement"
+    CONTEXT_GAP = "context_gap"
+    EXTRACTION_STRATEGY = "extraction_strategy"
+    WRITE_GUARDRAIL = "write_guardrail"
+
+
+class ReasoningStorageRecommendationType(StrEnum):
+    CREATE_NODE = "create_node"
+    UPDATE_NODE = "update_node"
+    CREATE_RELATIONSHIP = "create_relationship"
+    CREATE_RELATIONSHIP_CONTEXT = "create_relationship_context"
+    CREATE_CLAIM = "create_claim"
+    CREATE_PERCEPTION = "create_perception"
+    CREATE_PROFILE_MEMORY = "create_profile_memory"
+    STORE_AS_METADATA = "store_as_metadata"
+    ASK_CLARIFICATION = "ask_clarification"
+    REQUEST_MORE_CONTEXT = "request_more_context"
+    SKIP = "skip"
 
 
 class CorrectionAction(StrEnum):

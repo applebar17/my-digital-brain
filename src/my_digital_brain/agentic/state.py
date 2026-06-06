@@ -77,6 +77,38 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             model_task="pending_process_review",
         ),
+        AgenticStateId.REASONING_CHECKPOINT: AgenticStateConfig(
+            state_id=AgenticStateId.REASONING_CHECKPOINT,
+            purpose=(
+                "Augment process context with structured reasoning insights before "
+                "a downstream storage, validation, or orchestration step."
+            ),
+            prompt_id="reasoning_checkpoint",
+            required_context_type="ReasoningCheckpointContext",
+            produced_context_type="ReasoningCheckpointResultContext",
+            allowed_tools=[
+                "get_context_package",
+                "get_entity_detail",
+                "get_neighborhood_view",
+                "get_target_evidence",
+                "request_user_clarification",
+            ],
+            forbidden_tools=[
+                "execute_graph_write_plan",
+                "start_memory_ingestion",
+                "propose_memory_correction",
+                "raw_graph_query",
+                "focused_extraction",
+            ],
+            handoff_targets=[
+                "memory_ingestion_planning",
+                "semantic_task_compiler",
+                "validation_resolution",
+                "clarification_waiting",
+            ],
+            max_tool_calls=2,
+            model_task="reasoning_checkpoint",
+        ),
         AgenticStateId.MEMORY_INGESTION_PLANNING: AgenticStateConfig(
             state_id=AgenticStateId.MEMORY_INGESTION_PLANNING,
             purpose="Plan memory extraction tasks from source context and compact graph context.",

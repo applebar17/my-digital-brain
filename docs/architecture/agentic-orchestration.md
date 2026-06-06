@@ -108,6 +108,13 @@ is the canonical example: it may request context expansion or contradiction
 review, but it must finish by producing a `SemanticIngestionPlanDraft`
 structured output that backend code compiles into an `ExtractionPlan`.
 
+`reasoning_checkpoint` is a reusable structured `AS` that can be plugged before
+storage, validation, correction, or query steps when a process needs richer
+context interpretation. It receives purpose-specific guidelines plus the
+caller-provided context and returns a structured reasoning result. It may expose
+read-only graph/context tools, but it does not mutate state or replace backend
+compilation and validation.
+
 ## Execution Node Labels
 
 The handoff graph uses explicit labels so future implementation sessions do not
@@ -265,6 +272,7 @@ General context rules:
 | --- | --- | --- |
 | `AS: conversation_entry` | Normalized message, full usable conversation history with older compacted summaries when needed, current time/timezone, pending process summary only if relevant, optional backend-only channel metadata; no raw channel metadata in the model-facing prompt. | Assistant reply or top-level tool call with handoff parameters; may preserve, clear, pause, or defer pending process context. |
 | `AS: pending_process_review` | Current message, full usable conversation history with older compacted summaries when needed, active pending process summary if any, up to five newest paused pending summaries, original pending question, pending process type/status, last relevant assistant message, current time/timezone. Backend-only pending snapshots are excluded. | Tool call to resume/start/query/correct/cancel/pause, normal assistant reply, or optional lightweight intent classification sidecar. |
+| `AS: reasoning_checkpoint` | Purpose guidelines, caller-provided input context, usable conversation history when relevant, compact graph context and aliases when provided, prior compact tool outputs, current time/timezone, and optional expected output schema name. | Structured reasoning output with context augmentations: clarifications, entity understanding, node-vs-metadata recommendations, profile/perception/relationship hints, context gaps, provenance and guardrail notes. |
 | `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification context if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
 | `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
 | `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
@@ -1028,6 +1036,7 @@ Boundaries:
 | --- | --- | --- | --- | --- |
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
+| `reasoning_checkpoint` | `AS` | Augment context before a downstream process | read-only graph context tools, clarification interruption, structured reasoning output | mutation, extraction, write planning |
 | `memory_ingestion_planning` | `AS` | Plan semantic ingestion actions | context expansion, contradiction review request, structured `SemanticIngestionPlanDraft` output | graph writes, DB-shaped tasks |
 | `semantic_task_compiler` | `BP` | Compile semantic actions into focused tasks | ontology registry, candidate/ref catalog, compact action summaries | LLM-authored ontology values |
 | `focused_extraction` | `LP` | Produce structured candidates | focused schema input only | resolution, writes, tools |
@@ -1055,6 +1064,7 @@ src/my_digital_brain/prompts/
   templates/
     conversation_entry/v1.system.md
     pending_process_review/v1.system.md
+    reasoning_checkpoint/v1.system.md
     clarification_classifier/v1.system.md
     memory_query/v1.system.md
     query_retrieval_planning/v1.system.md

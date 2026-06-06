@@ -27,13 +27,21 @@ implemented agentic runtime aligned with the locked architecture.
 
 ### Memory Storage Reasoning And User-Related Data
 
-Status: high-priority design and prompt hardening follow-up.
+Status: baseline reasoning checkpoint skeleton implemented; plug-in points and
+owner/user graph policy remain high-priority follow-ups.
 
-- Add an explicit reasoning/checkpoint step before crucial storage phases,
-  especially before extraction task compilation, write-plan assembly, validation,
-  and write execution. The step should identify owner/user references,
-  relationship intent, profile-memory candidates, privacy/trust implications,
-  contradiction risk, missing clarification needs, and provenance requirements.
+- `reasoning_checkpoint` now exists as a reusable agentic state skeleton with:
+  - purpose-specific reasoning guidelines in its input context;
+  - structured output for insights, clarification candidates, entity
+    understanding, node-versus-metadata recommendations, storage hints, context
+    gaps, and guardrails;
+  - optional read-only graph/context tools and structured clarification
+    interruption;
+  - a thin `AgenticReasoningService` wrapper that can run it with the default
+    result schema or a caller-provided Pydantic output schema.
+- Decide where to plug the explicit reasoning/checkpoint step before crucial
+  storage phases, especially before extraction task compilation, write-plan
+  assembly, validation, and write execution.
 - Analyze weird or low-quality storage behaviors from real traces and ingestion
   outputs, then adjust system prompts, structured contracts, validators, and
   write-plan compilation rules accordingly.

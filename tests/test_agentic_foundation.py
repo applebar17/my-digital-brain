@@ -79,6 +79,7 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
 
     entry = configs[AgenticStateId.CONVERSATION_ENTRY]
     pending = configs[AgenticStateId.PENDING_PROCESS_REVIEW]
+    reasoning = configs[AgenticStateId.REASONING_CHECKPOINT]
 
     assert entry.prompt_id == "conversation_entry"
     assert entry.allowed_tools == [
@@ -92,6 +93,12 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert "pause_pending_process" in pending.allowed_tools
     assert "cancel_pending_process" in pending.allowed_tools
     assert pending.required_context_type == "ConversationContext"
+    assert reasoning.prompt_id == "reasoning_checkpoint"
+    assert reasoning.required_context_type == "ReasoningCheckpointContext"
+    assert reasoning.produced_context_type == "ReasoningCheckpointResultContext"
+    assert "get_context_package" in reasoning.allowed_tools
+    assert "request_user_clarification" in reasoning.allowed_tools
+    assert "execute_graph_write_plan" in reasoning.forbidden_tools
 
 
 def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path: Path) -> None:
@@ -100,6 +107,9 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
 
     assert prompt.prompt_id == "conversation_entry"
     assert "top-level tools" in prompt.template
+    assert "structured output schema" in default_registry.load(
+        "reasoning_checkpoint",
+    ).template
 
     prompt_dir = tmp_path / "example"
     prompt_dir.mkdir()

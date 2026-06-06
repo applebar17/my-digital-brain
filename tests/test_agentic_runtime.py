@@ -4,6 +4,7 @@ from typing import Any
 
 from my_digital_brain.agentic import (
     AgenticRuntime,
+    AgenticReasoningService,
     AgenticStateId,
     AgenticStateInvocation,
     AgenticStateRunner,
@@ -14,6 +15,8 @@ from my_digital_brain.agentic import (
     NeutralConversationMessage,
     PendingProcessContext,
     QueryRetrievalPlanningContext,
+    ReasoningCheckpointContext,
+    ReasoningPurposeGuidelines,
 )
 from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
 from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
@@ -432,6 +435,72 @@ def test_state_runner_accepts_specialist_context_and_records_tool_events() -> No
     assert result.status == "ok"
     assert result.tool_events[0].tool_name == "build_correction_proposal"
     assert result.tool_events[0].data["proposal"]["requires_confirmation"] is True
+
+
+def test_reasoning_checkpoint_service_runs_structured_state() -> None:
+    provider = ScriptedToolCallingProvider(
+        [],
+        structured_payloads=[
+            {
+                "checkpoint_id": "checkpoint-1",
+                "purpose_id": "memory_storage_precheck",
+                "summary": "The memory contains an owner relationship to Alessia.",
+                "insights": [
+                    {
+                        "insight_type": "relationship_intent",
+                        "summary": "The phrase 'my girlfriend' expresses a relationship.",
+                        "evidence_text": "Alessia is my girlfriend",
+                    }
+                ],
+                "entity_understandings": [
+                    {
+                        "mention_text": "Alessia",
+                        "interpretation": "Person anchor mentioned by the user.",
+                        "should_be_node": True,
+                        "possible_node_type": "Person",
+                    }
+                ],
+                "storage_recommendations": [
+                    {
+                        "subject": "Alessia relationship",
+                        "recommendation_type": "create_relationship_context",
+                        "reason": "The user described a meaningful personal relationship.",
+                        "guardrails": ["Backend must decide owner/self graph representation."],
+                    }
+                ],
+                "next_context_summary": (
+                    "Preserve Alessia as a person anchor and girlfriend as relationship detail."
+                ),
+            }
+        ],
+    )
+    service = AgenticReasoningService(_runner(provider))
+    context = ReasoningCheckpointContext(
+        checkpoint_id="checkpoint-1",
+        purpose=ReasoningPurposeGuidelines(
+            purpose_id="memory_storage_precheck",
+            goal="Identify owner references and node-versus-metadata choices.",
+            focus_areas=["owner relationship", "node versus metadata"],
+        ),
+        conversation=_conversation("Alessia is my girlfriend."),
+        input_context={"source_text": "Alessia is my girlfriend."},
+        timezone="Europe/Rome",
+    )
+
+    result = service.reason(context, AgenticToolExecutionContext())
+
+    assert result.status == "ok"
+    assert result.state_id == AgenticStateId.REASONING_CHECKPOINT.value
+    assert result.structured_output is not None
+    assert result.structured_output["purpose_id"] == "memory_storage_precheck"
+    assert result.structured_output["insights"][0]["insight_type"] == "relationship_intent"
+    structured_call = provider.structured_calls[0]
+    assert structured_call.context.purpose == "reasoning_checkpoint"
+    assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
+    assert structured_call.input_message["context"]["purpose"]["focus_areas"] == [
+        "owner relationship",
+        "node versus metadata",
+    ]
 
 
 def test_contradiction_review_question_becomes_pending_process_hint() -> None:

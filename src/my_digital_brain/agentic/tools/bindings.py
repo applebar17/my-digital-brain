@@ -933,6 +933,7 @@ def _clarification_resume_strategy(state_id: str) -> str:
         AgenticStateId.MEMORY_QUERY.value: "memory_query",
         AgenticStateId.CORRECTION_INTAKE.value: "correction_intake",
         AgenticStateId.PENDING_PROCESS_REVIEW.value: "pending_process_review",
+        AgenticStateId.REASONING_CHECKPOINT.value: "reasoning_checkpoint",
     }.get(state_id, "pending_process_review")
 
 

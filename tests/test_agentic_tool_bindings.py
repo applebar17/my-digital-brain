@@ -264,6 +264,7 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
     registry.validate_state_configs(configs)
 
     planning = configs[AgenticStateId.MEMORY_INGESTION_PLANNING]
+    reasoning = configs[AgenticStateId.REASONING_CHECKPOINT]
     assert planning.prompt_id == "ingestion_planner"
     assert planning.allowed_tools == [
         "request_graph_context_expansion",
@@ -272,6 +273,16 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
     ]
     assert "Plan semantic ingestion actions" in PromptRegistry().load(
         "ingestion_planner",
+    ).template
+    assert reasoning.allowed_tools == [
+        "get_context_package",
+        "get_entity_detail",
+        "get_neighborhood_view",
+        "get_target_evidence",
+        "request_user_clarification",
+    ]
+    assert "reusable reasoning checkpoint" in PromptRegistry().load(
+        "reasoning_checkpoint",
     ).template
 
 
