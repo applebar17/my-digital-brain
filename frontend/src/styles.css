@@ -2075,7 +2075,8 @@ p {
 }
 
 .memory-graph-workspace {
-  min-height: 100vh;
+  height: calc(100dvh - (var(--space-6) * 2));
+  min-height: 0;
   margin: calc(var(--space-6) * -1);
   gap: 0;
   overflow: hidden;
@@ -2095,6 +2096,7 @@ p {
 }
 
 .memory-context-bar {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(170px, 220px) minmax(220px, 1fr) 112px 128px 78px auto auto 92px minmax(220px, auto) auto;
   gap: var(--space-3);
@@ -2228,15 +2230,19 @@ p {
 }
 
 .memory-graph-layout {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(520px, 1fr) 328px;
-  min-height: calc(100vh - 81px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .memory-graph-stage {
   display: grid;
   grid-template-rows: minmax(0, 1fr) 192px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid var(--graph-border);
 }
 
@@ -2251,7 +2257,10 @@ p {
 }
 
 .memory-window {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background: var(--graph-window);
   color: var(--graph-text);
@@ -2293,6 +2302,7 @@ p {
 }
 
 .memory-window-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2345,9 +2355,14 @@ p {
 
 .memory-result-list,
 .memory-inspector-body {
+  flex: 1 1 auto;
   display: grid;
+  align-content: start;
   gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--space-4);
+  overscroll-behavior: contain;
 }
 
 .memory-result {
@@ -2949,7 +2964,7 @@ p {
 }
 
 .memory-inspector-body {
-  max-height: calc(100vh - 82px);
+  max-height: none;
   overflow-y: auto;
 }
 
@@ -3163,12 +3178,16 @@ p {
 }
 
 .memory-dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   border-top: 1px solid var(--graph-border);
   background: var(--graph-panel);
 }
 
 .memory-dock-tabs {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -3206,17 +3225,22 @@ p {
 }
 
 .memory-dock-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   padding: var(--space-4);
 }
 
 .memory-timeline-rail {
   position: relative;
+  flex: 1 1 auto;
   display: flex;
   align-items: flex-start;
   gap: var(--space-5);
-  min-width: 720px;
+  min-width: 0;
   padding: var(--space-6) var(--space-5);
-  overflow-x: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .memory-timeline-rail::before {
@@ -3232,6 +3256,7 @@ p {
 .memory-timeline-node {
   position: relative;
   z-index: 1;
+  flex: 0 0 132px;
   display: grid;
   justify-items: center;
   gap: var(--space-1);
@@ -3302,7 +3327,7 @@ p {
 
   .memory-inspector-body {
     grid-template-columns: 1fr;
-    max-height: calc(100vh - 82px);
+    max-height: none;
   }
 
   .memory-inspector-body > .badge-row,
@@ -3350,6 +3375,7 @@ p {
 
   .memory-graph-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 360px;
   }
 
   .memory-search-window,
@@ -3359,7 +3385,7 @@ p {
   }
 
   .memory-graph-side-pane {
-    min-height: 420px;
+    min-height: 0;
     border-top: 1px solid var(--graph-border);
     border-left: 0;
   }
@@ -3525,6 +3551,7 @@ p {
   }
 
   .memory-graph-workspace {
+    height: calc(100dvh - (var(--space-4) * 2));
     margin: calc(var(--space-4) * -1);
   }
 
@@ -3550,11 +3577,11 @@ p {
   }
 
   .memory-graph-stage {
-    grid-template-rows: minmax(500px, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) 168px;
   }
 
   .memory-canvas {
-    min-height: 500px;
+    min-height: 0;
   }
 
   .memory-dock-summary {
