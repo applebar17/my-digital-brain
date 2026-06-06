@@ -1,0 +1,660 @@
+My Digital Brain - UAT Graph Status
+====================================
+
+Reference Memory:
+2 giorni fa era la festa della repubblica, allora mio fratello (lorenzo tordini) ha organizzato un barbeque con gli amici, c'era il suo gruppo e il gruppo di gianluca ripari, nostro cugino. di base hanno griglieto e fatto festa, il tempo era comunque bello, c'era sole e la temperatura mi verrebbe da dire ottimale. c'erano diego cardu, amos, gabriele, alessio e altra gente che adesso non ricordo. io sono rimasto un po' defilato che ero impegnato in un progetto personale (creare una versione consumabile di ricordi personali), poi mi sono allenato (corda e boxe), doccia e mi sono cucinato uova zucchine e peperoni. finito sono stato un po' con loro, mi sono allungato un po' sul divano e sono andato verso le 16.30 al mare. C'erano Giulio zega e jacopo galletta che mettevano la musica ma il moon non era dei migliori: sono stato sotto l'ombrellone a giocare a bang duel con merc (matteo mercoldi) e bri (andrea bricca) per un'oretta. c'erano anche jacopo brutti, elena pollastrelli e il suo ragazzo matteo morichetti, e il fabione (riccardo cau). i primi verso le 18 sono andati al bar mariò, mentre il fabione è rimasto sotto l'ombrellone al cellulare. quando stavamo per finire la partita è arrivata alessia (la ragazza del fabione) e sono andati via. finita la partita sono rimasto con bri, ci siamo fatti una birra guardando la pista da ballo e alla fine ce ne siamo andati poco prima di cena. la sera non ho fatto un granchè, sono rimasto sul divano al computer e poi me ne sono andato a dormire.
+====================================
+
+Generated at: 2026-06-06T14:09:25+00:00
+API base URL: http://localhost:8000
+Include archived: False
+
+Graph Analytics
+---------------
+Total nodes: 65
+Total relationships: 1
+Unresolved contradictions: 0
+
+Nodes by label:
+  Event: 3
+  Object: 10
+  Perception: 1
+  Person: 33
+  Place: 8
+  SocialCircle: 2
+  Topic: 8
+
+Relationships by type:
+  PERCEPTION_OF: 1
+
+Top connected nodes:
+  16afdb17-7f65-54df-af43-a10c7ea1c412 (Perception: The user perceived the beach gathering atmosphere as not being very good.): 1
+  400ba4ca-39a3-5d0a-b59a-c2870a0fb05a (Event: Beach outing with music and Bang Duel): 1
+
+Top emotion tags:
+  friend: 14
+  game: 3
+  personale: 3
+  partner: 2
+  positivo: 2
+  music: 2
+  nickname: 2
+  relationship: 2
+  socialità: 2
+  relax: 2
+  salute: 1
+  comodità: 1
+  gioco: 1
+  divertimento: 1
+  cousin: 1
+  ombrellone: 1
+  boxe: 1
+  cucinato: 1
+  mare: 1
+  cibo: 1
+  divano: 1
+  family: 1
+  allenamento: 1
+  bar: 1
+  atmosfera: 1
+
+Graph Node Sample
+-----------------
+1. Lorenzo Tordini
+   id: 4940e5c3-4bf8-586c-81ac-f7c83e3fb347
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+2. uova con zucchine e peperoni
+   id: 71374fb2-319c-5690-a90f-1fe5e1d07343
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+3. ombrellone
+   id: 3f970987-8065-5d3a-a329-44dd6b6c4b0a
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+4. Bang Duel
+   id: edd55913-ad8e-5dac-b612-f5722ffde62a
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+   description: A game played on the beach under the umbrella as described.
+5. cellulare
+   id: e413a04a-e547-518a-918a-064a2b23a417
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+6. bar Mariò
+   id: c4d2feb1-6386-5d3e-9c10-1008829d1d1e
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+7. mare
+   id: 019ccf3e-b68d-53bc-8ecf-c16afb34cf6c
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+8. divano
+   id: 72973f19-3c31-501d-aa6b-1965ef2adfdf
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+9. progetto personale
+   id: f66c8331-f795-50d1-9dbb-1c34e3a7987b
+   label: Topic
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Dedizione personale
+   original_user_words: ero impegnato in un progetto personale (creare una versione consumabile di ricordi personali)
+   description: Impegno in un progetto personale
+10. creare una versione consumabile di ricordi personali
+   id: 7a950b15-05f5-5aec-b47c-ac97c7a7ac52
+   label: Topic
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Aspirazione creativa
+   original_user_words: creare una versione consumabile di ricordi personali
+   description: Obiettivo specifico del progetto personale
+11. allenato (corda e boxe)
+   id: 956b0aa1-3683-5db9-a496-0172e91bfae8
+   label: Topic
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Senso di cura personale
+   original_user_words: poi mi sono allenato (corda e boxe)
+   description: Attività fisica svolta
+12. musica
+   id: 70b5d587-a83d-5919-8f39-0d8583d838d6
+   label: Topic
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Elemento atmosferico
+   original_user_words: Giulio Zega e Jacopo Galletta che mettevano la musica
+   description: Musica presente durante l'evento
+13. uova con zucchine e peperoni
+   id: ca562c94-875d-5d69-af1e-08ae0002ed72
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Soddisfazione personale
+   original_user_words: uova con zucchine e peperoni
+   description: Pasto cucinato personalmente
+14. ombrellone
+   id: 800def0f-e9e4-5cd2-9fd8-bc947a21bdb9
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Comfort
+   original_user_words: ombrellone
+   description: Oggetto presente durante il gioco
+15. Bang Duel
+   id: ab42c1eb-e87d-5067-9b1e-79f925b3db07
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Divertimento
+   original_user_words: Bang Duel
+   description: Gioco da tavolo giocato
+16. cellulare
+   id: 96f19ace-c4fe-5799-ba4e-6e67207f0873
+   label: Object
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza tecnologica
+   original_user_words: cellulare
+   description: Oggetto utilizzato
+17. bar Mariò
+   id: cdb26184-de16-5c08-be47-b858ce9b70a7
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Socialità
+   original_user_words: bar Mariò
+   description: Luogo di ritrovo successivo
+18. mare
+   id: d320b24a-2240-5136-9e23-01bb696528f3
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Relax
+   original_user_words: mare
+   description: Luogo visitato nel pomeriggio
+19. divano
+   id: 6be8cbbd-5222-513e-a76a-5488e2f80d9c
+   label: Place
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Conforto e relax
+   original_user_words: divano
+   description: Luogo dove ci si è rilassati
+20. Gianluca Ripari
+   id: 66972a38-750f-5d30-86ea-2f8ead42b355
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza familiare
+   original_user_words: nostro cugino Gianluca Ripari
+   description: Cugino di riferimento, parte del gruppo al barbecue.
+21. Diego Cardu
+   id: b80e05d7-6fe2-51b6-a11f-bde761483ff5
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza amichevole
+   original_user_words: Diego Cardu
+   description: Amico presente al barbecue.
+22. Amos
+   id: 839d0451-b545-54e9-80a0-3172b71e1b80
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza amichevole
+   original_user_words: Amos
+   description: Amico partecipante al barbecue.
+23. Gabriele
+   id: d5d91c90-bd24-512b-880e-c617ce1a84a8
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza amichevole
+   original_user_words: Gabriele
+   description: Amico presente al barbecue.
+24. Alessio
+   id: 14fa96fa-7344-5816-92a7-6b3a4ff1bc3e
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza amichevole
+   original_user_words: Alessio
+   description: Amico presente al barbecue.
+25. Giulio Zega
+   id: af187191-bee0-563d-ad7c-f821803c9504
+   label: Person
+   lifecycle_state: active
+   privacy_level: normal
+   emotional_summary: Presenza e contributo amichevole
+   original_user_words: Giulio Zega
+   description: Responsabile musica al barbecue.
+
+Random Graph Sample
+-------------------
+Requested limit: 50
+Node pool fetched: 65
+Relationship pool fetched from selected nodes: 1
+Random seed: system entropy
+
+Random nodes:
+  1. Jacopo Galletta
+     id: 6a2704a7-37d1-5916-a730-b55da16f58a2
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza e contributo amichevole
+     description: Responsabile musica al barbecue.
+  2. divano
+     id: 1dfb62a2-1e2c-55d7-b363-9a6ddb216829
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+  3. ombrellone
+     id: 800def0f-e9e4-5cd2-9fd8-bc947a21bdb9
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Comfort
+     description: Oggetto presente durante il gioco
+  4. progetto personale
+     id: 25da553f-8a37-538f-8633-23077e0d6d4a
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+  5. Beach outing with music and Bang Duel
+     id: 400ba4ca-39a3-5d0a-b59a-c2870a0fb05a
+     label: Event
+     lifecycle_state: active
+     privacy_level: normal
+     description: Beach outing starting around 16:30 on 2026-06-03 including participants Giulio Zega, Jacopo Galletta, Matteo Mercoldi (Merc), Andrea Bricca (Bri), with music and playing Bang Duel under the umbrella.
+  6. Matteo Mercoldi
+     id: 8ba6dd6a-e7b5-52ed-a780-1fe639138ebf
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole e gioco
+     description: Partecipante al gioco durante il barbecue.
+  7. Elena Pollastrelli
+     id: f9cd9005-8e28-56a4-90c9-7c80aa9a6a97
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amica presente all'evento.
+  8. Alessio
+     id: 14fa96fa-7344-5816-92a7-6b3a4ff1bc3e
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico presente al barbecue.
+  9. mare
+     id: 019ccf3e-b68d-53bc-8ecf-c16afb34cf6c
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+  10. Diego Cardu
+     id: b80e05d7-6fe2-51b6-a11f-bde761483ff5
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico presente al barbecue.
+  11. uova con zucchine e peperoni
+     id: 71374fb2-319c-5690-a90f-1fe5e1d07343
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+  12. Bang Duel
+     id: 629c5348-1db3-5585-bc00-2f14b8267499
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+     description: Card game played during the beach outing under the umbrella.
+  13. Matteo Mercoldi
+     id: 1d555c39-3088-567e-b473-44a89d7e9aad
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  14. Barbecue con gli amici organizzato da Lorenzo Tordini
+     id: 7f2ed4ae-46ad-5476-bd45-2cb6cdc481e5
+     label: Event
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Festa allegra e serena all'aperto con amici e famiglia.
+     description: Ricordo positivo di un barbecue con amici e parenti in una giornata di bel tempo.
+  15. allenato (corda e boxe)
+     id: 956b0aa1-3683-5db9-a496-0172e91bfae8
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Senso di cura personale
+     description: Attività fisica svolta
+  16. Gabriele
+     id: 6934412b-090d-5bce-ba00-7a3870d151d2
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  17. Bri
+     id: b4fcfa40-6a92-580c-a377-b32684ef3bae
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  18. Ombrellone
+     id: b196366e-6695-5d46-872a-1da2ad92b04c
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+     description: Umbrella under which the beach outing participants played games and spent time.
+  19. bar Mari f2
+     id: 339d0670-f1d4-52c7-aeb7-9eeb07824b3d
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+  20. Bri
+     id: e1955462-c0ca-5882-b0b3-c191479f862f
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole e giochi
+     description: Compagno di gioco e amico presente durante il barbecue.
+  21. Elena Pollastrelli
+     id: d735d48e-aabe-5e25-9314-d4e476597b93
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  22. Jacopo Brutti
+     id: 3816d038-4c0b-5784-9df9-ccae2f34c183
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico presente all'evento.
+  23. bar Mariò
+     id: cdb26184-de16-5c08-be47-b858ce9b70a7
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Socialità
+     description: Luogo di ritrovo successivo
+  24. Merc
+     id: 385d0fe3-5f14-5d68-bd95-c29a3441f867
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole e gioco
+     description: Compagno di gioco durante la partita di Bang Duel.
+  25. Alessio
+     id: c18dee81-eb5d-5699-8d6b-9bb166917d7c
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  26. divano
+     id: 6be8cbbd-5222-513e-a76a-5488e2f80d9c
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Conforto e relax
+     description: Luogo dove ci si è rilassati
+  27. cellulare
+     id: 96f19ace-c4fe-5799-ba4e-6e67207f0873
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza tecnologica
+     description: Oggetto utilizzato
+  28. mare
+     id: d320b24a-2240-5136-9e23-01bb696528f3
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Relax
+     description: Luogo visitato nel pomeriggio
+  29. Alessia
+     id: f2bfde6c-3299-510d-a64f-1cf44e5c0fa2
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Relazione di coppia positiva
+     description: Partner di Fabione, entrata verso la fine del barbecue.
+  30. bar Mariò
+     id: c4d2feb1-6386-5d3e-9c10-1008829d1d1e
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+  31. Gianluca Ripari
+     id: 66972a38-750f-5d30-86ea-2f8ead42b355
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza familiare
+     description: Cugino di riferimento, parte del gruppo al barbecue.
+  32. Riccardo Cau
+     id: 6deec8f8-f9a8-59a5-98eb-846eb5426be8
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Conosciuto come Fabione, parte del gruppo di amici.
+  33. Riccardo Cau
+     id: e196c42b-f524-5f46-a6a2-e003d05a4d4e
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  34. divano
+     id: 72973f19-3c31-501d-aa6b-1965ef2adfdf
+     label: Place
+     lifecycle_state: active
+     privacy_level: normal
+  35. Fabione
+     id: 015c6aa2-8139-50b6-b290-82ba5afef581
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico soprannominato Fabione.
+  36. cellulare
+     id: e413a04a-e547-518a-918a-064a2b23a417
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+  37. Jacopo Galletta
+     id: 6e03de73-39d4-5867-ab8e-d122c23f78af
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  38. creare una versione consumabile di ricordi personali
+     id: 8ce03a33-8d94-5586-a742-d9f34dcb854a
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+  39. Matteo Morichetti
+     id: d2b0c710-92cc-5ca1-88a4-0d88520dfff3
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Relazione di coppia positiva
+     description: Partner di Elena Pollastrelli, parte del gruppo amichevole.
+  40. Gruppo di Gianluca Ripari
+     id: 975ee975-d092-53a8-8dd8-0e150386288c
+     label: SocialCircle
+     lifecycle_state: active
+     privacy_level: normal
+     description: The group of friends related to Gianluca Ripari, cousin of the narrator.
+  41. uova con zucchine e peperoni
+     id: ca562c94-875d-5d69-af1e-08ae0002ed72
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Soddisfazione personale
+     description: Pasto cucinato personalmente
+  42. Gabriele
+     id: d5d91c90-bd24-512b-880e-c617ce1a84a8
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico presente al barbecue.
+  43. Lorenzo Tordini
+     id: 4940e5c3-4bf8-586c-81ac-f7c83e3fb347
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  44. musica
+     id: 70b5d587-a83d-5919-8f39-0d8583d838d6
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Elemento atmosferico
+     description: Musica presente durante l'evento
+  45. creare una versione consumabile di ricordi personali
+     id: 7a950b15-05f5-5aec-b47c-ac97c7a7ac52
+     label: Topic
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Aspirazione creativa
+     description: Obiettivo specifico del progetto personale
+  46. ombrellone
+     id: 3f970987-8065-5d3a-a329-44dd6b6c4b0a
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+  47. Gianluca Ripari
+     id: 9257a9f1-863b-5ad9-8e4c-3e61e8f75194
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+  48. Amos
+     id: 839d0451-b545-54e9-80a0-3172b71e1b80
+     label: Person
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Presenza amichevole
+     description: Amico partecipante al barbecue.
+  49. Bang Duel
+     id: ab42c1eb-e87d-5067-9b1e-79f925b3db07
+     label: Object
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Divertimento
+     description: Gioco da tavolo giocato
+  50. The user perceived the beach gathering atmosphere as not being very good.
+     id: 16afdb17-7f65-54df-af43-a10c7ea1c412
+     label: Perception
+     lifecycle_state: active
+     privacy_level: normal
+     emotional_summary: Slightly negative evaluation of the overall mood at the beach.
+     description: The user perceived the beach gathering atmosphere as not being very good.
+
+Random edges:
+  1. e4ea6e9b-a2e8-5cde-8896-77fe0c03f252 PERCEPTION_OF 16afdb17-7f65-54df-af43-a10c7ea1c412 -> 400ba4ca-39a3-5d0a-b59a-c2870a0fb05a
+     lifecycle_state: active
+
+Open Contradictions
+-------------------
+GET http://localhost:8000/graph/contradictions?status=open&limit=20 failed with HTTP 400:
+{"detail":"Unsupported contradiction status: open"}
+
+Proposed Merges
+---------------
+No records returned.
+
+Hybrid Retrieval Probes
+-----------------------
+Query: mio fratello
+  hits: 10
+  rendered nodes: 0
+  rendered edges: 0
+  retrieval hits:
+    #1 score=0.830 source=property label=Event id=7f2ed4ae-46ad-5476-bd45-2cb6cdc481e5
+      title: Barbecue con gli amici organizzato da Lorenzo Tordini
+      text: Ricordo positivo di un barbecue con amici e parenti in una giornata di bel tempo.
+    #2 score=0.586 source=semantic label=Person id=66972a38-750f-5d30-86ea-2f8ead42b355
+      title: Gianluca Ripari
+      text: Cugino di riferimento, parte del gruppo al barbecue.
+    #3 score=0.558 source=semantic label=Person id=d2b0c710-92cc-5ca1-88a4-0d88520dfff3
+      title: Matteo Morichetti
+      text: Partner di Elena Pollastrelli, parte del gruppo amichevole.
+    #4 score=0.554 source=semantic label=Person id=385d0fe3-5f14-5d68-bd95-c29a3441f867
+      title: Merc
+      text: Compagno di gioco durante la partita di Bang Duel.
+    #5 score=0.553 source=semantic label=Person id=015c6aa2-8139-50b6-b290-82ba5afef581
+      title: Fabione
+      text: Amico soprannominato Fabione.
+    #6 score=0.553 source=semantic label=Person id=14fa96fa-7344-5816-92a7-6b3a4ff1bc3e
+      title: Alessio
+      text: Amico presente al barbecue.
+    #7 score=0.552 source=semantic label=Person id=d5d91c90-bd24-512b-880e-c617ce1a84a8
+      title: Gabriele
+      text: Amico presente al barbecue.
+    #8 score=0.550 source=semantic label=Person id=8ba6dd6a-e7b5-52ed-a780-1fe639138ebf
+      title: Matteo Mercoldi
+      text: Partecipante al gioco durante il barbecue.
+    #9 score=0.550 source=semantic label=Person id=6deec8f8-f9a8-59a5-98eb-846eb5426be8
+      title: Riccardo Cau
+      text: Conosciuto come Fabione, parte del gruppo di amici.
+    #10 score=0.549 source=semantic label=Person id=d282fccc-c623-55a7-a372-05b688751574
+      title: Andrea Bricca
+      text: Partecipante al gioco, amico presente al barbecue.
+  graph assembly:
+    mode=adaptive algorithm=otsu reason=otsu_between_class_variance threshold=0.708
+    selected: 7f2ed4ae-46ad-5476-bd45-2cb6cdc481e5
+    excluded: 66972a38-750f-5d30-86ea-2f8ead42b355, d2b0c710-92cc-5ca1-88a4-0d88520dfff3, 385d0fe3-5f14-5d68-bd95-c29a3441f867, 015c6aa2-8139-50b6-b290-82ba5afef581, 14fa96fa-7344-5816-92a7-6b3a4ff1bc3e, d5d91c90-bd24-512b-880e-c617ce1a84a8, 8ba6dd6a-e7b5-52ed-a780-1fe639138ebf, 6deec8f8-f9a8-59a5-98eb-846eb5426be8, d282fccc-c623-55a7-a372-05b688751574
+
+Query: coinquilino
+  hits: 10
+  rendered nodes: 0
+  rendered edges: 0
+  retrieval hits:
+    #1 score=0.558 source=semantic label=Person id=66972a38-750f-5d30-86ea-2f8ead42b355
+      title: Gianluca Ripari
+      text: Cugino di riferimento, parte del gruppo al barbecue.
+    #2 score=0.558 source=semantic label=Person id=385d0fe3-5f14-5d68-bd95-c29a3441f867
+      title: Merc
+      text: Compagno di gioco durante la partita di Bang Duel.
+    #3 score=0.556 source=semantic label=Person id=6deec8f8-f9a8-59a5-98eb-846eb5426be8
+      title: Riccardo Cau
+      text: Conosciuto come Fabione, parte del gruppo di amici.
+    #4 score=0.555 source=semantic label=Person id=b80e05d7-6fe2-51b6-a11f-bde761483ff5
+      title: Diego Cardu
+      text: Amico presente al barbecue.
+    #5 score=0.552 source=semantic label=Person id=d282fccc-c623-55a7-a372-05b688751574
+      title: Andrea Bricca
+      text: Partecipante al gioco, amico presente al barbecue.
+    #6 score=0.552 source=semantic label=Person id=015c6aa2-8139-50b6-b290-82ba5afef581
+      title: Fabione
+      text: Amico soprannominato Fabione.
+    #7 score=0.550 source=semantic label=Person id=d2b0c710-92cc-5ca1-88a4-0d88520dfff3
+      title: Matteo Morichetti
+      text: Partner di Elena Pollastrelli, parte del gruppo amichevole.
+    #8 score=0.550 source=semantic label=Person id=6a2704a7-37d1-5916-a730-b55da16f58a2
+      title: Jacopo Galletta
+      text: Responsabile musica al barbecue.
+    #9 score=0.550 source=semantic label=Person id=e1955462-c0ca-5882-b0b3-c191479f862f
+      title: Bri
+      text: Compagno di gioco e amico presente durante il barbecue.
+    #10 score=0.550 source=semantic label=Person id=3816d038-4c0b-5784-9df9-ccae2f34c183
+      title: Jacopo Brutti
+      text: Amico presente all'evento.
+  graph assembly:
+    mode=adaptive algorithm=otsu reason=otsu_between_class_variance threshold=0.553
+    selected: 66972a38-750f-5d30-86ea-2f8ead42b355, 385d0fe3-5f14-5d68-bd95-c29a3441f867, 6deec8f8-f9a8-59a5-98eb-846eb5426be8, b80e05d7-6fe2-51b6-a11f-bde761483ff5
+    excluded: d282fccc-c623-55a7-a372-05b688751574, 015c6aa2-8139-50b6-b290-82ba5afef581, d2b0c710-92cc-5ca1-88a4-0d88520dfff3, 6a2704a7-37d1-5916-a730-b55da16f58a2, e1955462-c0ca-5882-b0b3-c191479f862f, 3816d038-4c0b-5784-9df9-ccae2f34c183
+
+UAT Review Notes
+----------------
+- Check whether important people, relationships, perceptions, and profile memories are visible.
+- Check whether relationship_kind/detail fields capture family, roommate, friend, colleague, and similar intents.
+- Check whether emotional summaries and original user words are present where useful, but not over-inferred.
+- Check whether unresolved contradictions or proposed merges need prompt/validator tuning.
+- Check whether hybrid retrieval probes render graph nodes/edges that explain the query.
+- Check whether graph assembly selected/excluded ids match expected score concentration.
