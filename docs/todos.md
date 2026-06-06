@@ -189,6 +189,15 @@ Status: implemented.
 - Keep these tests opt-in because they require real credentials and provider
   cost.
 
+## Retrieval Rendering Follow-Up
+
+- Compare Otsu thresholding, knee detection, Jenks natural breaks, and small 1D
+  clustering approaches for selecting which retrieval hits should drive graph
+  workspace rendering.
+- Keep agentic memory retrieval broader than UI graph rendering, then enrich
+  answer context through graph context packages instead of narrowing the
+  retrieval result too early.
+
 ## Observability And LangSmith Tracing
 
 Status: baseline implemented.
