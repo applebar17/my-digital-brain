@@ -25,6 +25,38 @@ Potential follow-ups after hands-on usage:
 These items are not broad future enhancements. They are required to keep the
 implemented agentic runtime aligned with the locked architecture.
 
+### Memory Storage Reasoning And User-Related Data
+
+Status: high-priority design and prompt hardening follow-up.
+
+- Add an explicit reasoning/checkpoint step before crucial storage phases,
+  especially before extraction task compilation, write-plan assembly, validation,
+  and write execution. The step should identify owner/user references,
+  relationship intent, profile-memory candidates, privacy/trust implications,
+  contradiction risk, missing clarification needs, and provenance requirements.
+- Analyze weird or low-quality storage behaviors from real traces and ingestion
+  outputs, then adjust system prompts, structured contracts, validators, and
+  write-plan compilation rules accordingly.
+- Decide the owner/user modeling policy:
+  - keep a canonical owner-specific graph node available for edgeable memories
+    such as perceptions, relationship contexts, profile memories, and explicit
+    owner-to-entity relationships;
+  - keep owner scoping/provenance fields on memory-bearing nodes and sources so
+    ordinary facts do not need noisy edges to the owner by default;
+  - avoid burying user-specific facts in arbitrary metadata when they affect
+    retrieval, correction, privacy, prompting, or graph traversal.
+- Answer and codify: how do we allow user-related data storage?
+  - durable traits, preferences, habits, communication style, and goals should
+    become `ProfileMemory` records linked to the owner;
+  - subjective views should become `Perception` records with user-stated versus
+    inferred provenance and links to the perceived target;
+  - meaningful relationships involving the owner should become
+    `RelationshipContext` or typed relationships that can edge from the owner to
+    the other entity;
+  - ordinary events, claims, places, objects, and entities should keep source
+    provenance and owner scope, while only adding explicit owner edges when the
+    relationship itself is semantically useful.
+
 ### Pending Process State Application
 
 Status: implemented as the baseline lifecycle foundation.
