@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { EmptyState } from "../../../components/EmptyState";
 import type { GraphViewNode, GraphViewResult } from "../../../types/graph";
 import {
@@ -20,6 +21,11 @@ interface NodePosition {
   y: number;
 }
 
+interface CursorPosition {
+  x: number;
+  y: number;
+}
+
 export function MemoryGraphCanvas({
   graph,
   selectedNodeId,
@@ -27,12 +33,49 @@ export function MemoryGraphCanvas({
   onSelectNode
 }: MemoryGraphCanvasProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string>();
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition>();
   const [zoom, setZoom] = useState(1);
+  const frameRef = useRef<number | undefined>(undefined);
+  const pendingCursorRef = useRef<CursorPosition | undefined>(undefined);
   const width = 1280;
   const height = 780;
   const positions = useMemo<Map<string, NodePosition>>(() => {
     return graph ? buildPositions(graph.nodes, graph.seed_id, width, height) : new Map<string, NodePosition>();
   }, [graph]);
+  const displayedPositions = useMemo(() => {
+    return cursorPosition ? displacePositions(positions, cursorPosition) : positions;
+  }, [cursorPosition, positions]);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current !== undefined) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - rect.left) / rect.width) * width;
+    const svgY = ((event.clientY - rect.top) / rect.height) * height;
+    pendingCursorRef.current = {
+      x: width / 2 + (svgX - width / 2) / zoom,
+      y: height / 2 + (svgY - height / 2) / zoom
+    };
+    if (frameRef.current !== undefined) {
+      return;
+    }
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = undefined;
+      setCursorPosition(pendingCursorRef.current);
+    });
+  }
+
+  function handlePointerLeave() {
+    pendingCursorRef.current = undefined;
+    setCursorPosition(undefined);
+    setHoveredNodeId(undefined);
+  }
 
   if (!graph) {
     return (
@@ -56,7 +99,14 @@ export function MemoryGraphCanvas({
         <span>{graph.relationships.length} edges</span>
         {isLoading && <span>Syncing</span>}
       </div>
-      <svg className="memory-canvas" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Focused graph neighborhood">
+      <svg
+        className="memory-canvas"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Focused graph neighborhood"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+      >
         <defs>
           <filter id="nodeGlow" x="-80%" y="-80%" width="260%" height="260%">
             <feGaussianBlur stdDeviation="4" result="blur" />
@@ -68,8 +118,8 @@ export function MemoryGraphCanvas({
         </defs>
         <g transform={`translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {graph.relationships.map((relationship) => {
-            const from = positions.get(relationship.from_id);
-            const to = positions.get(relationship.to_id);
+            const from = displayedPositions.get(relationship.from_id);
+            const to = displayedPositions.get(relationship.to_id);
             if (!from || !to) {
               return null;
             }
@@ -92,7 +142,7 @@ export function MemoryGraphCanvas({
           })}
 
           {graph.nodes.map((node) => {
-            const position = positions.get(node.id);
+            const position = displayedPositions.get(node.id);
             if (!position) {
               return null;
             }
@@ -106,7 +156,7 @@ export function MemoryGraphCanvas({
                 key={node.id}
                 role="button"
                 tabIndex={0}
-                transform={`translate(${position.x} ${position.y})`}
+                style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
                 onClick={() => onSelectNode(node.id)}
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(undefined)}
@@ -159,4 +209,42 @@ function buildPositions(
   });
 
   return positions;
+}
+
+function displacePositions(
+  positions: Map<string, NodePosition>,
+  cursor: CursorPosition
+): Map<string, NodePosition> {
+  const next = new Map<string, NodePosition>();
+  positions.forEach((position, nodeId) => {
+    const dx = position.x - cursor.x;
+    const dy = position.y - cursor.y;
+    const distance = Math.hypot(dx, dy);
+    const radius = 190;
+    if (distance > radius) {
+      next.set(nodeId, position);
+      return;
+    }
+    const strength = Math.pow(1 - distance / radius, 2);
+    const safeDistance = Math.max(distance, 1);
+    const unitX = dx / safeDistance;
+    const unitY = dy / safeDistance;
+    const phase = deterministicPhase(nodeId);
+    const ripple = Math.sin(cursor.x * 0.014 + cursor.y * 0.011 + phase) * 0.45;
+    const push = 11 * strength;
+    const swirl = 5 * strength * ripple;
+    next.set(nodeId, {
+      x: position.x + unitX * push - unitY * swirl,
+      y: position.y + unitY * push + unitX * swirl
+    });
+  });
+  return next;
+}
+
+function deterministicPhase(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 997;
+  }
+  return hash / 997 * Math.PI * 2;
 }
