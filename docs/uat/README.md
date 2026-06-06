@@ -16,20 +16,24 @@ docs/uat/current-graph-status.txt
 
 The current report includes:
 
+- reference memory/source text and reference chat history placeholders;
 - graph analytics: node counts, relationship counts, connected nodes, emotion
   tags, unresolved contradictions;
 - graph node sample: major display, lifecycle, privacy, trust, relationship,
   temporal, affective, and source-language fields;
 - optional random graph sample: up to `N` random nodes and up to `N` random
   edges, without semantic search criteria;
-- open contradictions;
+- detected contradictions;
 - proposed merges;
 - hybrid retrieval probes with hit scores, graph assembly selection, rendered
   nodes, and rendered edges;
 - review notes for prompt, validator, storage, and retrieval tuning.
 
-The script redacts likely secret-looking property keys such as tokens, secrets,
-passwords, credentials, API keys, and authorization values.
+By default the report hides technical references such as node ids, endpoint
+URLs, and selected/excluded graph ids. Use `--include-technical` when debugging
+API payloads or backend graph assembly. The script also redacts likely
+secret-looking property keys such as tokens, secrets, passwords, credentials,
+API keys, and authorization values.
 
 ## PowerShell
 
@@ -54,6 +58,14 @@ python scripts/render_uat_graph_status.py `
   --probe "mio fratello" `
   --probe "coinquilino" `
   --probe "universita"
+```
+
+Include reference memory and reference chat history files:
+
+```powershell
+python scripts/render_uat_graph_status.py `
+  --reference-memory-file docs/uat/reference-memory.txt `
+  --reference-chat-history-file docs/uat/reference-chat-history.txt
 ```
 
 Render up to 12 random nodes and 12 random edges, without semantic criteria:
@@ -95,6 +107,13 @@ python scripts/render_uat_graph_status.py `
   --token $env:MY_DIGITAL_BRAIN_TOKEN
 ```
 
+Include technical references for backend debugging:
+
+```powershell
+python scripts/render_uat_graph_status.py `
+  --include-technical
+```
+
 ## Bash
 
 Generate the default report:
@@ -118,6 +137,14 @@ python scripts/render_uat_graph_status.py \
   --probe "mio fratello" \
   --probe "coinquilino" \
   --probe "universita"
+```
+
+Include reference memory and reference chat history files:
+
+```bash
+python scripts/render_uat_graph_status.py \
+  --reference-memory-file docs/uat/reference-memory.txt \
+  --reference-chat-history-file docs/uat/reference-chat-history.txt
 ```
 
 Render up to 12 random nodes and 12 random edges, without semantic criteria:
@@ -159,12 +186,26 @@ python scripts/render_uat_graph_status.py \
   --token "$MY_DIGITAL_BRAIN_TOKEN"
 ```
 
+Include technical references for backend debugging:
+
+```bash
+python scripts/render_uat_graph_status.py \
+  --include-technical
+```
+
 ## Option Reference
 
 ```text
 --api-base-url URL       Backend API base URL. Default: http://localhost:8000
 --output PATH           Text report path. Default: docs/uat/current-graph-status.txt
 --token TOKEN           Optional bearer token for protected API deployments.
+--reference-memory TEXT Reference memory/source text to include.
+--reference-memory-file PATH
+                        File containing reference memory/source text.
+--reference-chat-history TEXT
+                        Reference chat history text to include.
+--reference-chat-history-file PATH
+                        File containing reference chat history.
 --node-limit N          Number of sample graph nodes to include.
 --issue-limit N         Number of contradiction/merge records to include.
 --search-limit N        Retrieval hit limit for each probe query.
@@ -173,5 +214,6 @@ python scripts/render_uat_graph_status.py \
 --random-pool-limit N   Maximum node pool fetched before random sampling.
 --random-seed TEXT      Optional seed for reproducible random samples.
 --include-archived      Include archived/hidden graph data when supported.
+--include-technical     Include ids, endpoint URLs, and graph assembly ids.
 --timeout SECONDS       HTTP timeout in seconds.
 ```
