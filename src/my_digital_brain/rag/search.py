@@ -483,6 +483,13 @@ class SemanticMemorySearchService:
                 for relationship in neighborhood.relationships
                 if include_archived or not self.projection.is_hidden_relationship(relationship)
             )
+            if not any(node.properties.get("id") == seed_id for node in neighborhood.nodes):
+                try:
+                    seed_node = self.graph_service.get_node(seed_id)
+                except Exception:
+                    continue
+                if include_archived or not self.projection.is_hidden_node(seed_node):
+                    nodes.append(seed_node)
         if not expand_related_targets:
             existing_node_ids = {node.properties.get("id") for node in nodes}
             for related_id in _dedupe(related_seed_ids):

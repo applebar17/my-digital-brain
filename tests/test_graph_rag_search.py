@@ -202,6 +202,34 @@ def test_search_can_focus_rendered_graph_without_narrowing_retrieval_hits(tmp_pa
     assert trace.data["excluded_target_ids"] == ["claim-1"]
 
 
+def test_adaptive_search_graph_keeps_isolated_focus_hit_visible(tmp_path) -> None:
+    graph = FakeSearchGraphService()
+    vector_store = FakeSearchVectorStore(
+        [{"id": "memory_documents:claim_summary:claim-1", "distance": 0.02}]
+    )
+    record_store = _record_store(tmp_path)
+    record_store.upsert(
+        VectorRecordData(
+            vector_id="memory_documents:claim_summary:claim-1",
+            embedding_scope="claim_summary",
+            primary_target_id="claim-1",
+            primary_target_label="Claim",
+            builder_version="claim_summary.v1",
+            document_checksum="sha256:claim",
+        )
+    )
+
+    result = _service(graph, vector_store, record_store).search_semantic(
+        "Marco",
+        graph_focus="adaptive",
+        limit=5,
+    )
+
+    assert [hit.primary_target_id for hit in result.hits] == ["claim-1"]
+    assert [node.id for node in result.graph_view.nodes] == ["claim-1"]
+    assert result.graph_view.relationships == []
+
+
 def test_hidden_vector_records_are_excluded_by_default(tmp_path) -> None:
     vector_store = FakeSearchVectorStore(
         [{"id": "memory_documents:claim_summary:claim-1", "distance": 0.1}]
