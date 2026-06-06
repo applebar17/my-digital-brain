@@ -17,6 +17,7 @@ from my_digital_brain.graph.models import (
     RelationshipResult,
 )
 from my_digital_brain.graph.projection import GraphProjection
+from my_digital_brain.rag.graph_focus import GraphFocusMode, SearchGraphFocusSelector
 from my_digital_brain.rag.models import (
     MEMORY_DOCUMENTS_COLLECTION,
     VECTOR_STORE_CHROMA,
@@ -45,6 +46,7 @@ class SemanticMemorySearchService:
         vector_record_store: VectorRecordStore,
         model_router: ModelRouter | None = None,
         projection: GraphProjection | None = None,
+        graph_focus_selector: SearchGraphFocusSelector | None = None,
         collection: str = MEMORY_DOCUMENTS_COLLECTION,
         vector_store_name: str = VECTOR_STORE_CHROMA,
     ) -> None:
@@ -54,6 +56,7 @@ class SemanticMemorySearchService:
         self.vector_record_store = vector_record_store
         self.model_router = model_router or StaticModelRouter()
         self.projection = projection or GraphProjection()
+        self.graph_focus_selector = graph_focus_selector or SearchGraphFocusSelector()
         self.collection = collection
         self.vector_store_name = vector_store_name
 
@@ -65,6 +68,7 @@ class SemanticMemorySearchService:
         limit: int = 10,
         include_archived: bool = False,
         include_history: bool = False,
+        graph_focus: GraphFocusMode = "broad",
     ) -> SemanticMemorySearchResult:
         return self._search(
             query,
@@ -72,6 +76,7 @@ class SemanticMemorySearchService:
             limit=limit,
             include_archived=include_archived,
             include_history=include_history,
+            graph_focus=graph_focus,
         )
 
     @traceable(name="Graph RAG Hybrid Search", run_type="retriever")
@@ -83,6 +88,7 @@ class SemanticMemorySearchService:
         limit: int = 10,
         include_archived: bool = False,
         include_history: bool = False,
+        graph_focus: GraphFocusMode = "broad",
     ) -> SemanticMemorySearchResult:
         return self._search(
             query,
@@ -91,6 +97,7 @@ class SemanticMemorySearchService:
             limit=limit,
             include_archived=include_archived,
             include_history=include_history,
+            graph_focus=graph_focus,
         )
 
     @traceable(name="Graph RAG Search Pipeline", run_type="retriever")
@@ -103,6 +110,7 @@ class SemanticMemorySearchService:
         limit: int,
         include_archived: bool,
         include_history: bool,
+        graph_focus: GraphFocusMode,
     ) -> SemanticMemorySearchResult:
         query = _clean_query(query)
         limit = _bounded_limit(limit)
@@ -161,14 +169,39 @@ class SemanticMemorySearchService:
             )
 
         hits = self._dedupe_and_rank_hits(hits, limit=limit)
-        neighborhoods = self._expanded_neighborhood(hits, include_archived=include_archived)
+        focus = self.graph_focus_selector.select(hits, mode=graph_focus)
+        neighborhoods = self._expanded_neighborhood(
+            list(focus.selected_hits),
+            include_archived=include_archived,
+            expand_related_targets=graph_focus == "broad",
+        )
+        graph_seed_id = focus.selected_target_ids[0] if focus.selected_target_ids else ""
         graph_view = self.projection.to_graph_view_result(
-            seed_id=hits[0].primary_target_id if hits else "",
+            seed_id=graph_seed_id,
             neighborhood=neighborhoods,
             include_history=include_history,
             include_archived=include_archived,
         )
         context_packages = self._context_packages(hits, limit=min(limit, 5), trace=trace)
+        trace.append(
+            _trace(
+                "graph_assembly",
+                "Selected retrieval hits used to assemble the rendered graph view.",
+                focus_mode=focus.mode,
+                focus_algorithm=focus.algorithm,
+                focus_reason=focus.reason,
+                focus_threshold=focus.threshold,
+                selected_hit_count=len(focus.selected_hits),
+                excluded_hit_count=len(focus.excluded_hits),
+                selected_target_ids=focus.selected_target_ids,
+                excluded_target_ids=focus.excluded_target_ids,
+                graph_seed_id=graph_view.seed_id,
+                graph_node_ids=[node.id for node in graph_view.nodes],
+                graph_relationship_ids=[
+                    relationship.id for relationship in graph_view.relationships
+                ],
+            )
+        )
         trace.append(
             _trace(
                 "ranking",
@@ -422,15 +455,14 @@ class SemanticMemorySearchService:
         hits: list[SemanticMemoryHit],
         *,
         include_archived: bool,
+        expand_related_targets: bool = True,
     ) -> NeighborhoodResult:
         nodes: list[NodeSearchResult] = []
         relationships: list[RelationshipResult] = []
+        primary_seed_ids = [hit.canonical_target_id or hit.primary_target_id for hit in hits]
+        related_seed_ids = [related_id for hit in hits for related_id in hit.related_target_ids]
         seed_ids = _dedupe(
-            [
-                hit.canonical_target_id or hit.primary_target_id
-                for hit in hits
-            ]
-            + [related_id for hit in hits for related_id in hit.related_target_ids]
+            primary_seed_ids + (related_seed_ids if expand_related_targets else [])
         )
         for seed_id in seed_ids:
             try:
@@ -451,6 +483,18 @@ class SemanticMemorySearchService:
                 for relationship in neighborhood.relationships
                 if include_archived or not self.projection.is_hidden_relationship(relationship)
             )
+        if not expand_related_targets:
+            existing_node_ids = {node.properties.get("id") for node in nodes}
+            for related_id in _dedupe(related_seed_ids):
+                if related_id in existing_node_ids:
+                    continue
+                try:
+                    related_node = self.graph_service.get_node(related_id)
+                except Exception:
+                    continue
+                if include_archived or not self.projection.is_hidden_node(related_node):
+                    nodes.append(related_node)
+                    existing_node_ids.add(related_id)
         return NeighborhoodResult(
             nodes=_dedupe_nodes(nodes),
             relationships=_dedupe_relationships(relationships),

@@ -69,6 +69,7 @@ def test_semantic_search_hydrates_vector_hits_and_expands_graph(tmp_path) -> Non
     assert [event.stage for event in result.trace] == [
         "query_embedding",
         "vector_search",
+        "graph_assembly",
         "ranking",
     ]
 
@@ -152,6 +153,55 @@ def test_hybrid_search_combines_semantic_and_property_matches(tmp_path) -> None:
     assert any(event.stage == "property_search" for event in result.trace)
 
 
+def test_search_can_focus_rendered_graph_without_narrowing_retrieval_hits(tmp_path) -> None:
+    graph = FakeSearchGraphService()
+    vector_store = FakeSearchVectorStore(
+        [
+            {"id": "memory_documents:relationship_context_summary:relctx-1", "distance": 0.02},
+            {"id": "memory_documents:claim_summary:claim-1", "distance": 1.3},
+        ]
+    )
+    record_store = _record_store(tmp_path)
+    record_store.upsert(
+        VectorRecordData(
+            vector_id="memory_documents:relationship_context_summary:relctx-1",
+            embedding_scope="relationship_context_summary",
+            primary_target_id="relctx-1",
+            primary_target_label="RelationshipContext",
+            related_target_ids=["person-1"],
+            source_ids=["source-1"],
+            relationship_ids=["relationship-1"],
+            embedding_model="text-embedding-3-small",
+            builder_version="relationship_context_summary.v1",
+            document_checksum="sha256:relctx",
+        )
+    )
+    record_store.upsert(
+        VectorRecordData(
+            vector_id="memory_documents:claim_summary:claim-1",
+            embedding_scope="claim_summary",
+            primary_target_id="claim-1",
+            primary_target_label="Claim",
+            builder_version="claim_summary.v1",
+            document_checksum="sha256:claim",
+        )
+    )
+
+    result = _service(graph, vector_store, record_store).search_semantic(
+        "mio fratello",
+        graph_focus="adaptive",
+        limit=5,
+    )
+
+    assert [hit.primary_target_id for hit in result.hits] == ["relctx-1", "claim-1"]
+    assert {node.id for node in result.graph_view.nodes} == {"relctx-1", "person-1"}
+    trace = next(event for event in result.trace if event.stage == "graph_assembly")
+    assert trace.data["focus_mode"] == "adaptive"
+    assert trace.data["focus_algorithm"] == "otsu"
+    assert trace.data["selected_target_ids"] == ["relctx-1"]
+    assert trace.data["excluded_target_ids"] == ["claim-1"]
+
+
 def test_hidden_vector_records_are_excluded_by_default(tmp_path) -> None:
     vector_store = FakeSearchVectorStore(
         [{"id": "memory_documents:claim_summary:claim-1", "distance": 0.1}]
@@ -187,6 +237,7 @@ def test_graph_semantic_search_api_uses_search_dependency(tmp_path) -> None:
     assert response.status_code == 200
     assert response.json()["query"] == "Alessandro"
     assert service.semantic_queries == ["Alessandro"]
+    assert service.semantic_kwargs[0]["graph_focus"] == "adaptive"
 
 
 def test_graph_hybrid_search_api_uses_search_dependency() -> None:
@@ -201,6 +252,7 @@ def test_graph_hybrid_search_api_uses_search_dependency() -> None:
     assert response.status_code == 200
     assert response.json()["mode"] == "hybrid"
     assert service.hybrid_queries == [("Alessandro", "Person")]
+    assert service.hybrid_kwargs[0]["graph_focus"] == "adaptive"
 
 
 class FakeSearchVectorStore:
@@ -321,13 +373,17 @@ class StaticSemanticSearchService:
     def __init__(self) -> None:
         self.semantic_queries: list[str] = []
         self.hybrid_queries: list[tuple[str, str | None]] = []
+        self.semantic_kwargs: list[dict[str, object]] = []
+        self.hybrid_kwargs: list[dict[str, object]] = []
 
     def search_semantic(self, query: str, **_kwargs: object) -> SemanticMemorySearchResult:
         self.semantic_queries.append(query)
+        self.semantic_kwargs.append(_kwargs)
         return _empty_search_result(query, mode="semantic")
 
     def search_hybrid(self, query: str, label: str | None = None, **_kwargs: object) -> SemanticMemorySearchResult:
         self.hybrid_queries.append((query, label))
+        self.hybrid_kwargs.append(_kwargs)
         return _empty_search_result(query, mode="hybrid")
 
 

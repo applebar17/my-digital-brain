@@ -141,6 +141,7 @@ def semantic_search(
             include_archived=include_archived,
             include_history=include_history,
             limit=limit,
+            graph_focus="adaptive",
         )
     except Exception as exc:
         raise graph_http_error(exc) from exc
@@ -162,6 +163,7 @@ def hybrid_search(
             include_archived=include_archived,
             include_history=include_history,
             limit=limit,
+            graph_focus="adaptive",
         )
     except Exception as exc:
         raise graph_http_error(exc) from exc
