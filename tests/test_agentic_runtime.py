@@ -4,6 +4,7 @@ from typing import Any
 
 from my_digital_brain.agentic import (
     AgenticRuntime,
+    AgenticPlanningService,
     AgenticReasoningService,
     AgenticStateId,
     AgenticStateInvocation,
@@ -14,6 +15,10 @@ from my_digital_brain.agentic import (
     CorrectionIntakeContext,
     NeutralConversationMessage,
     PendingProcessContext,
+    PlanningActionContext,
+    PlanningPurposeGuidelines,
+    PlanningTransformContext,
+    PlanningTransformResultContext,
     QueryRetrievalPlanningContext,
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
@@ -501,6 +506,60 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
         "owner relationship",
         "node versus metadata",
     ]
+
+
+def test_planning_checkpoint_service_runs_structured_state() -> None:
+    provider = ScriptedToolCallingProvider(
+        [],
+        structured_payloads=[
+            {
+                "planning_id": "planning-1",
+                "purpose_id": "entity_ingestion_planning",
+                "summary": "Plan one entity action for Matteo Mercoldi.",
+                "actions": [
+                    {
+                        "action_ref": "ACTION_001",
+                        "goal": "Extract Matteo Mercoldi as one person candidate.",
+                        "action_kind": "extract_entity",
+                        "target_refs": ["NODE_000001"],
+                        "evidence_text": "Merc is Matteo Mercoldi.",
+                    }
+                ],
+                "next_context_summary": "Merc is an alias hint for Matteo Mercoldi.",
+            }
+        ],
+    )
+    service = AgenticPlanningService(_runner(provider))
+    context = PlanningTransformContext(
+        planning_id="planning-1",
+        purpose=PlanningPurposeGuidelines(
+            purpose_id="entity_ingestion_planning",
+            goal="Plan entity extraction without relationships.",
+            focus_areas=["aliases", "duplicate hints"],
+        ),
+        input_context={
+            "source_text": "Merc is Matteo Mercoldi.",
+            "graph_context_view": {"aliases": ["Merc -> Matteo Mercoldi"]},
+        },
+        reasoning_artifact={
+            "summary": "Merc is a nickname for Matteo Mercoldi.",
+        },
+        timezone="Europe/Rome",
+    )
+
+    result = service.plan(context, output_schema=PlanningTransformResultContext)
+
+    assert result.status == "ok"
+    assert result.state_id == AgenticStateId.PLANNING_CHECKPOINT.value
+    assert result.structured_output is not None
+    assert result.structured_output["purpose_id"] == "entity_ingestion_planning"
+    assert result.structured_output["actions"][0]["action_ref"] == "ACTION_001"
+    structured_call = provider.structured_calls[0]
+    assert structured_call.context.purpose == "planning_checkpoint"
+    assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
+    assert structured_call.input_message["context"]["expected_output_schema"] == (
+        "PlanningTransformResultContext"
+    )
 
 
 def test_contradiction_review_question_becomes_pending_process_hint() -> None:

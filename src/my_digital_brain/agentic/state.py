@@ -109,6 +109,38 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             max_tool_calls=2,
             model_task="reasoning_checkpoint",
         ),
+        AgenticStateId.PLANNING_CHECKPOINT: AgenticStateConfig(
+            state_id=AgenticStateId.PLANNING_CHECKPOINT,
+            purpose=(
+                "Convert caller-provided goals, context, and reasoning artifacts into "
+                "ordered structured process actions without mutating storage."
+            ),
+            prompt_id="planning_checkpoint",
+            required_context_type="PlanningTransformContext",
+            produced_context_type="PlanningTransformResultContext",
+            allowed_tools=[
+                "get_context_package",
+                "get_entity_detail",
+                "get_neighborhood_view",
+                "get_target_evidence",
+                "request_user_clarification",
+            ],
+            forbidden_tools=[
+                "execute_graph_write_plan",
+                "start_memory_ingestion",
+                "propose_memory_correction",
+                "raw_graph_query",
+                "focused_extraction",
+            ],
+            handoff_targets=[
+                "entity_ingestion_planning",
+                "relationship_ingestion_planning",
+                "missing_entity_planning",
+                "clarification_waiting",
+            ],
+            max_tool_calls=2,
+            model_task="planning_checkpoint",
+        ),
         AgenticStateId.MEMORY_INGESTION_PLANNING: AgenticStateConfig(
             state_id=AgenticStateId.MEMORY_INGESTION_PLANNING,
             purpose="Plan memory extraction tasks from source context and compact graph context.",

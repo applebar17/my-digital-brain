@@ -153,6 +153,13 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert "get_context_package" in reasoning.allowed_tools
     assert "request_user_clarification" in reasoning.allowed_tools
     assert "execute_graph_write_plan" in reasoning.forbidden_tools
+    planning = configs[AgenticStateId.PLANNING_CHECKPOINT]
+    assert planning.prompt_id == "planning_checkpoint"
+    assert planning.required_context_type == "PlanningTransformContext"
+    assert planning.produced_context_type == "PlanningTransformResultContext"
+    assert "get_context_package" in planning.allowed_tools
+    assert "request_user_clarification" in planning.allowed_tools
+    assert "focused_extraction" in planning.forbidden_tools
 
 
 def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path: Path) -> None:
@@ -163,6 +170,9 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
     assert "top-level tools" in prompt.template
     assert "structured output schema" in default_registry.load(
         "reasoning_checkpoint",
+    ).template
+    assert "reusable planning checkpoint" in default_registry.load(
+        "planning_checkpoint",
     ).template
 
     prompt_dir = tmp_path / "example"

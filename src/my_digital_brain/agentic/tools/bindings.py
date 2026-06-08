@@ -928,6 +928,7 @@ def _clarification_process_kind(state_id: str, pending_context: Any | None) -> s
 
 def _clarification_resume_strategy(state_id: str) -> str:
     return {
+        AgenticStateId.PLANNING_CHECKPOINT.value: "planning_checkpoint",
         AgenticStateId.MEMORY_INGESTION_PLANNING.value: "memory_ingestion_planning",
         AgenticStateId.CONTRADICTION_REVIEW.value: "contradiction_review",
         AgenticStateId.MEMORY_QUERY.value: "memory_query",

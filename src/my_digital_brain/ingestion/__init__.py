@@ -74,6 +74,7 @@ from my_digital_brain.ingestion.contracts import (
     ValidationResult,
 )
 from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
+from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
     ClarificationStatus,
@@ -87,6 +88,16 @@ from my_digital_brain.ingestion.enums import (
     SourceType,
 )
 from my_digital_brain.ingestion.mention_scanner import LLMMentionScanner
+from my_digital_brain.ingestion.planning_contexts import (
+    build_entity_planning_context,
+    build_missing_entity_planning_context,
+    build_relationship_planning_context,
+)
+from my_digital_brain.ingestion.planning_guidelines import (
+    entity_ingestion_planning_guidelines,
+    missing_entity_planning_guidelines,
+    relationship_ingestion_planning_guidelines,
+)
 from my_digital_brain.ingestion.planner import LLMIngestionPlanner
 from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
@@ -143,6 +154,7 @@ __all__ = [
     "GraphContextMemoryItem",
     "GraphContextPack",
     "GraphContextPackRenderer",
+    "GraphContextPackRendererService",
     "GraphContextPackView",
     "GraphContextRelationshipItem",
     "GraphContextRelationshipSnippetItem",
@@ -188,4 +200,10 @@ __all__ = [
     "TemporalScope",
     "ValidationIssue",
     "ValidationResult",
+    "build_entity_planning_context",
+    "build_missing_entity_planning_context",
+    "build_relationship_planning_context",
+    "entity_ingestion_planning_guidelines",
+    "missing_entity_planning_guidelines",
+    "relationship_ingestion_planning_guidelines",
 ]

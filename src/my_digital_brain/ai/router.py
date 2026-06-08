@@ -24,6 +24,7 @@ SMART_MODEL_TASKS = {
     "memory_ingestion_planning",
     "memory_query",
     "pending_process_review",
+    "planning_checkpoint",
     "query_retrieval_planning",
 }
 REASONING_MODEL_TASKS = {"contradiction_review", "reasoning_checkpoint"}
