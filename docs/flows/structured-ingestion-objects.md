@@ -15,10 +15,11 @@ Use two layers:
 
 - `*Draft` contracts are LLM-facing structured outputs. They contain semantic
   content, local candidate refs, graph aliases, evidence text/spans, ambiguity
-  flags, and typed property suggestions.
+  flags, and typed property suggestions. They must stay light,
+  field-described, generation-friendly, and metadata-poor.
 - Backend records are enriched objects. They add generated IDs, `source_id`,
   `source_refs`, `EvidenceRef`, extraction run refs, timestamps, statuses,
-  metadata, and persistence-ready provenance.
+  metadata, validation state, and persistence-ready provenance.
 
 The LLM must not output backend-owned fields such as `source_id`,
 `mention_scan_id`, `extraction_plan_id`, `task_id`, candidate IDs,
@@ -29,6 +30,12 @@ Free-form LLM metadata is not allowed in draft schemas. When the model sees an
 additional property worth storing, it returns a typed property suggestion:
 `key`, `value_text`, `value_kind`, and optional `reason`. Backend code decides
 whether that suggestion becomes a typed field, governed metadata, or is ignored.
+
+Draft objects may be deterministically enriched through conversion or
+inheritance, but provider structured-output schemas must always use the light
+draft class. Enriched backend fields such as IDs, source refs, provenance,
+validation state, and persistence metadata must not leak into model-facing
+schemas.
 
 ### SourceRecord
 
@@ -118,8 +125,8 @@ Wave-1 baseline input:
 Core fields:
 
 - `context_pack_id`
-- `source_id`
-- `retrieval_strategy`: `whole_source_hybrid`
+- `source_id` for backend ownership, not normally rendered to the LLM
+- `retrieval_strategy`: `whole_source_hybrid`, not normally rendered to the LLM
 - `retrieved_entities`
 - `retrieved_relationships`
 - `retrieved_memories`
@@ -139,6 +146,44 @@ Rules:
 If implementation already uses `GraphContextPackage`, that contract can be
 reused for this purpose as long as the ingestion-specific v1 strategy and
 low-noise fields are preserved.
+
+### GraphContextPackRenderer
+
+`GraphContextPack` is a backend context object. It should not be injected into
+LLM payloads wholesale. Dedicated renderer services must produce task-specific
+LLM-friendly views.
+
+Renderer examples:
+
+- `render_for_reasoning`
+- `render_for_entity_planning`
+- `render_for_relationship_planning`
+- `render_for_missing_entity_planning`
+- `render_for_entity_extraction`
+- `render_for_relationship_extraction`
+
+Each renderer chooses the minimum useful fields for the receiving process. Some
+calls may need only `compact_summary`; others may need aliases plus duplicate
+hints, or only relationship snippets around resolved entities.
+
+Usually exclude from LLM payload views:
+
+- `source_id`
+- retrieval strategy
+- raw metadata
+- internal graph IDs
+- trace/debug fields
+- unrelated retrieved entities or relationships
+
+Usually include when relevant:
+
+- compact summary
+- LLM-facing aliases
+- known aliases or nicknames
+- relevant entities
+- relevant relationships
+- duplicate hints
+- relationship context snippets
 
 ### Reusable LLM Transform Package
 
@@ -184,7 +229,6 @@ Core fields:
 - `timezone`
 - `prior_tool_outputs`
 - `expected_output_schema`
-- `metadata`
 
 Rules:
 
@@ -203,19 +247,21 @@ planning. It interprets the source in the presence of the `GraphContextPack`.
 
 LLM draft fields:
 
-- `entity_understanding`
-- `alias_interpretations`
-- `duplicate_concerns`
-- `relationship_hypotheses`
-- `node_vs_metadata_recommendations`
-- `user_owner_involvement`
-- `storage_cautions`
+- `summary`
+- `entity_notes`
+- `alias_notes`
+- `relationship_notes`
+- `duplicate_notes`
+- `node_vs_detail_notes`
+- `user_owner_notes`
 - `context_gaps`
-- `ambiguity_flags`
+- `clarification_candidates`
+- `next_context_summary`
 
 The reasoning checkpoint is not a graph mutation and not a write plan. It
-should produce concise decision notes and interpretations that help later model
-steps avoid confusion.
+should produce concise free-text notes and interpretations that help later
+model steps avoid confusion. Do not over-structure v1 reasoning; detailed
+storage behavior belongs in guidelines and backend validation.
 
 Example:
 
@@ -272,11 +318,20 @@ LLM draft fields:
 
 - `reason`
 - `entity_actions`
-- `alias_actions`
-- `details_to_keep_as_metadata`
-- `possible_duplicate_refs`
 - `clarification`
 - `context_gaps`
+
+Each entity action should stay minimal:
+
+- `action_ref`
+- `goal`
+- `mention_text`
+- `suggested_entity_type`
+- `alias_notes`
+- `duplicate_hint_refs`
+- `details_to_keep_as_context`
+- `evidence_text`
+- `notes`
 
 Rules:
 
@@ -302,14 +357,23 @@ Inputs:
 LLM draft fields:
 
 - `reason`
-- `relationship_actions`
-- `relationship_context_actions`
-- `perception_actions`
-- `event_link_actions`
-- `metadata_link_actions`
-- `missing_entity_required`
+- `actions`
+- `missing_entities`
 - `clarification`
 - `context_gaps`
+
+Each relationship action should stay minimal:
+
+- `action_ref`
+- `goal`
+- `from_ref`
+- `to_ref`
+- `relationship_intent`
+- `storage_shape`: direct_relationship, relationship_context, perception,
+  event_link, place_link, or metadata_note.
+- `evidence_text`
+- `depends_on`
+- `notes`
 
 Rules:
 
@@ -317,9 +381,37 @@ Rules:
   entity map.
 - Reference only resolved local refs, staged entity refs, or provided graph
   aliases.
-- Emit `missing_entity_required` when a necessary endpoint is missing.
+- Emit `MissingEntityRequiredDraft` when a necessary endpoint is missing.
 - Do not freely create new entities.
 - Do not produce graph write operations.
+
+### MissingEntityRequiredDraft
+
+A lightweight relationship-planning output used when a blocked relationship
+needs an endpoint that was not produced by the entity plan.
+
+Core fields:
+
+- `missing_ref`
+- `reason`
+- `mention_text`
+- `suggested_entity_type`
+- `needed_for_relationship_ref`
+- `relationship_goal`
+- `source_evidence`
+- `required_resolution_hint`
+- `blocking`
+
+Process intent:
+
+```text
+relationship planning emits MissingEntityRequiredDraft
+  -> missing-entity planning receives it as structured guidance
+  -> only missing entities are planned and validated
+  -> resolved entity map is updated
+  -> blocked relationship actions are reprocessed
+  -> relationship plans are merged
+```
 
 ### ExtractionPlan
 
@@ -404,6 +496,17 @@ LLM draft fields:
 `Perception`, `RelationshipContext`, `Source`, `ExtractionRun`,
 `ChangeRecord`, `ContradictionRecord`, and `MergeRecord` are not generic entity
 choices for the model.
+
+Alias semantics:
+
+- LLM-facing `aliases` are extraction, retrieval, resolution, and
+  context-building hints.
+- Aliases do not define node identity.
+- Aliases are not automatically writable node properties.
+- Backend services decide whether aliases become canonical aliases, search
+  aliases, governed metadata, description text, or are ignored.
+- If a target node type does not support aliases, validation/write planning
+  must not copy draft aliases directly onto that node.
 
 ### CandidateRelationship
 
@@ -645,6 +748,11 @@ Relationship planning may only use refs that resolve to existing graph aliases
 or staged create/update operations. Pending or rejected refs are not valid
 relationship endpoints.
 
+Relationship-planning payloads should receive a rendered view of the map:
+usable refs, display labels, entity types, duplicate/ambiguity notes, and only
+the minimum staged status needed to plan relationships. Backend-heavy staged
+operation payloads should remain outside the LLM view.
+
 ### GraphWritePlan
 
 The deterministic write plan generated after validation and resolution.
@@ -716,10 +824,12 @@ The first implementation does not need every field above, but it should establis
 - `MentionScan`
 - `Mention`
 - `GraphContextPack` or an equivalent low-noise `GraphContextPackage`
+- `GraphContextPackRenderer`
 - `PlanningTransformContext`
 - `StructuredReasoningCheckpoint`
 - `EntityIngestionPlanDraft`
 - `RelationshipIngestionPlanDraft`
+- `MissingEntityRequiredDraft`
 - `ExtractionPlan`
 - `ExtractionTask`
 - `CandidateEntity`

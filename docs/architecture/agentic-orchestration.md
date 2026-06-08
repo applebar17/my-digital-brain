@@ -162,6 +162,13 @@ process context.
 
 ## State Handoff Graph
 
+The ingestion branch below is the target refined flow. The contract-first slice
+does not implement these handoffs. It only locks documentation,
+contracts/schemas, context renderers, exports, and schema tests. Runtime flow,
+agent routing, prompt wiring, extraction orchestration, validation, and writes
+remain on the existing planner-first behavior until a later implementation
+wave.
+
 ```mermaid
 flowchart TD
     M[Incoming chat message] --> CE{AS: conversation_entry}
@@ -373,7 +380,7 @@ Critical boundary:
 
 ```text
 Whole-source hybrid retrieval -> Graph Context Pack
-Reasoning checkpoint -> structured interpretations and storage cautions
+Reasoning checkpoint -> concise interpretations and next-context notes
 Entity planner -> entity-only plan
 Entity candidate preparation -> enum/ref-constrained entity drafts
 Entity validation/resolution -> ResolvedEntityMap + staged entity ops
@@ -904,7 +911,7 @@ The agent can:
 - use read-only graph/context tools only when explicitly configured
 - return structured reasoning about entity understanding, aliases, duplicate
   concerns, relationship hypotheses, node-versus-metadata recommendations,
-  owner/user involvement, ambiguity, and storage cautions
+  owner/user involvement, ambiguity, and next-context notes
 
 The agent cannot:
 

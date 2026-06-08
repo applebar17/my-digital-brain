@@ -55,6 +55,20 @@ high-priority implementation follow-ups.
   - caller-provided structured output schema;
   - strict boundary: planning produces ordered process actions only, not
     candidates, validation, duplicate resolution, write plans, or mutations.
+- Complete the contract-first documentation and implementation sequence:
+  - lock docs for the contract/schema baseline;
+  - implement lightweight LLM-facing draft contracts and backend-enriched
+    handoff records;
+  - add schema tests and exports only;
+  - add context-rendering services for LLM-friendly payload views;
+  - defer flow, agent, prompt, extraction, validation, and write orchestration
+    until after the contract/modeling slice.
+- Implement context renderers for `GraphContextPack` so model payloads receive
+  only task-relevant views such as compact summaries, aliases, relationship
+  snippets, duplicate hints, or missing-entity guidance.
+- Lock alias handling in validation/write planning: aliases are extraction,
+  retrieval, resolution, and context-building hints, not node identity and not
+  automatically writable node properties.
 - Decide where to plug the explicit reasoning/checkpoint step before crucial
   storage phases, especially before extraction task compilation, write-plan
   assembly, validation, and write execution.

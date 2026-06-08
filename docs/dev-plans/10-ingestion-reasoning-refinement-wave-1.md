@@ -106,6 +106,50 @@ Planning baseline:
   candidates, validate candidates, resolve duplicates, build write plans, or
   mutate storage.
 
+## Contract And Schema Baseline
+
+This refinement starts with documentation and contract/schema modeling only.
+Runtime flow changes, prompt wiring, agent routing, extraction orchestration,
+and write behavior are deferred until the contract slice is implemented and
+tested.
+
+Execution order:
+
+1. Lock the documentation baseline for the contract/schema wave.
+2. Add lightweight contracts, exports, and schema tests.
+3. Add context-rendering services for LLM payloads.
+4. Later wire flows, agents, prompts, extraction, validation, and write
+   orchestration onto the new contracts.
+
+Draft/enriched object rule:
+
+- LLM-facing `*Draft` objects are light, field-described,
+  generation-friendly, and metadata-poor.
+- Backend-enriched records add deterministic IDs, source refs, provenance,
+  metadata, validation status, timestamps, and persistence fields.
+- Provider structured-output schemas must use the light draft classes, not
+  enriched backend records.
+- Enrichment may use inheritance or conversion, but backend-owned fields must
+  not leak into model-facing schemas.
+
+Context rendering rule:
+
+- `GraphContextPack` may contain structured backend context.
+- LLM payloads must receive rendered views from dedicated context-rendering
+  services.
+- Renderers select the task-relevant subset, such as compact summary, aliases,
+  relationships, duplicate hints, or relationship-context snippets.
+- Most LLM calls do not need `source_id`, retrieval strategy, raw metadata,
+  internal IDs, or trace/debug fields.
+
+Alias rule:
+
+- Aliases are extraction, retrieval, resolution, and context-building hints.
+- Aliases do not define node identity.
+- Aliases are not automatically writable node properties.
+- Backend services decide whether aliases become canonical aliases, search
+  aliases, governed metadata, description text, or are ignored.
+
 ## Locked Principles
 
 1. **Graph context v1 stays simple.**
@@ -113,11 +157,12 @@ Planning baseline:
    Do not generate multiple natural-language graph queries in wave 1. Embed the
    whole source text and retrieve the top-k graph items through hybrid search.
 
-2. **The Graph Context Pack is compact and model-facing.**
+2. **The Graph Context Pack is compact and renderer-ready.**
 
    It should contain useful nearby graph state, not raw graph dumps. It should
    summarize relevant existing entities, aliases, known relationships, nearby
-   memories or events, and potential duplicate hints.
+   memories or events, and potential duplicate hints. LLM calls receive
+   task-specific rendered views of this pack, not the raw pack by default.
 
 3. **Reasoning comes before planning.**
 
@@ -267,14 +312,16 @@ Purpose:
 
 Required output themes:
 
-- entity understanding
-- alias and nickname interpretation
-- candidate duplicate concerns
-- relationship hypotheses
-- node-versus-metadata recommendations
-- user/owner involvement
-- missing context or ambiguity
-- storage cautions
+- summary
+- entity notes
+- alias notes
+- relationship notes
+- duplicate notes
+- node-versus-detail notes
+- user/owner notes
+- context gaps
+- clarification candidates when needed
+- next context summary
 
 Example expected reasoning:
 
@@ -286,7 +333,9 @@ separate Person node.
 ```
 
 The checkpoint must not output hidden chain-of-thought. It should output
-structured decision notes, interpretations, and storage implications.
+concise notes and interpretations that later planning or extraction steps can
+consume. Keep the structure light; detailed storage policy belongs in
+guidelines and backend validation, not in a heavy reasoning object.
 
 ### 4. Entity Plan
 
@@ -390,14 +439,14 @@ Input:
 
 Output:
 
-- relationship-only ingestion plan
+- relationship-only ingestion plan with simple ordered actions
 
 Allowed:
 
 - plan relationships between resolved/staged entities
-- choose whether a relationship belongs as a direct edge,
-  `RelationshipContext`, `Perception`, event participation, place link, or
-  metadata suggestion
+- describe the minimum processing needed for each relationship action
+- choose a coarse storage shape such as direct relationship,
+  relationship context, perception, event link, place link, or metadata note
 - emit `missing_entity_required` when an endpoint is missing
 
 Forbidden:
@@ -406,6 +455,37 @@ Forbidden:
 - relationships to unknown refs
 - unsupported edge types
 - graph write operations
+
+Minimal relationship action fields:
+
+- `action_ref`
+- `goal`
+- `from_ref`
+- `to_ref`
+- `relationship_intent`
+- `storage_shape`
+- `evidence_text`
+- `depends_on`
+- `notes`
+
+Missing-entity loop:
+
+```text
+plan entities
+  -> validate entities
+  -> resolve entity map
+  -> plan relationships
+  -> missing_entity_required
+  -> re-plan only the missing entity from MissingEntityRequiredDraft
+  -> validate only new entities
+  -> update resolved entity map
+  -> process blocked relationship actions
+  -> merge relationship plans
+```
+
+`MissingEntityRequiredDraft` must carry enough structured guidance to plan the
+missing entity and resume the blocked relationship action after the entity map
+is updated.
 
 ### 9. Relationship Candidates
 
@@ -516,18 +596,19 @@ Wave 1 should implement or align:
 
 - reusable planning primitive mirroring the existing reusable reasoning
   checkpoint package
-- whole-source hybrid graph retrieval for ingestion context
+- lightweight LLM-facing draft contracts and backend-enriched handoff records
 - compact `GraphContextPack`
-- ingestion-specific structured reasoning checkpoint
-- entity-only planning
-- entity candidate preparation
-- staged entity resolution map
-- deterministic entity validation
-- relationship-only planning after entity resolution
-- relationship candidate preparation
-- deterministic relationship validation
-- `missing_entity_required` loop
-- write execution from validated backend operations only
+- context-rendering service interfaces for LLM-friendly payloads
+- lightweight ingestion-specific reasoning output
+- entity-only planning draft
+- relationship-only planning draft
+- staged entity resolution map contract
+- deterministic validation contract boundaries
+- `MissingEntityRequiredDraft`
+
+The first implementation slice under this wave is contract/schema-only. It
+must not alter runtime flow, prompt execution, agent routing, extraction
+orchestration, or write behavior.
 
 ## Explicitly Out Of Scope For Wave 1
 
@@ -543,29 +624,23 @@ Wave 1 should implement or align:
 
 ## Implementation Order
 
-1. Confirm the existing reusable reasoning checkpoint is the baseline pattern:
+1. Lock documentation for the contract/schema baseline.
+2. Confirm the existing reusable reasoning checkpoint is the baseline pattern:
    general template, purpose guidelines, dedicated context, history when
    relevant, model routing, and caller-selected output schema.
-2. Add a reusable planning primitive that mirrors the reasoning package:
+3. Add a reusable planning primitive contract that mirrors the reasoning
+   package:
    general planning template, purpose guidelines, dedicated context, history
    when relevant, model routing, and caller-selected output schema.
-3. Add or update structured contracts for `GraphContextPack`,
+4. Add or update structured contracts for `GraphContextPack`,
    `StructuredReasoningCheckpoint`, `PlanningTransformContext`, entity plan,
-   relationship plan, `ResolvedEntityMap`, and `missing_entity_required`.
-4. Build whole-source hybrid retrieval context for ingestion.
-5. Compact retrieved graph state into the Graph Context Pack.
-6. Plug the structured reasoning checkpoint before planning.
-7. Split planning into entity plan and relationship plan through the reusable
-   planning primitive.
-8. Run entity candidate preparation before relationship candidate preparation.
-9. Build the resolved entity map after deterministic validation/resolution.
-10. Make relationship planning consume only the resolved entity map.
-11. Add deterministic validation for entity fields, relationship endpoints, and
-   allowed ontology values.
-12. Route `missing_entity_required` into supplemental entity candidate handling.
-13. Keep old ingestion flow available as fallback until UAT proves the new flow.
-14. Add focused UAT cases and report outputs for duplicate and relationship
-   quality.
+   relationship plan, `ResolvedEntityMap`, and `MissingEntityRequiredDraft`.
+5. Add context-rendering service interfaces for process-specific LLM payload
+   views.
+6. Add exports and schema tests only.
+7. Keep the old planner-first runtime behavior untouched.
+8. Later wire retrieval, reasoning, planning, extraction, validation, and
+   write orchestration onto the new contracts.
 
 ## UAT Signals
 

@@ -6,6 +6,12 @@ The ingestion flow turns user input into graph updates while preserving source e
 
 ## Refined Baseline Flow
 
+This section describes the target refined ingestion flow. The immediate
+contract-first slice only locks documentation and contract/schema modeling.
+Runtime flow changes, agent handoffs, prompt wiring, extraction orchestration,
+and write behavior are deferred until after contracts and context renderers are
+implemented and tested.
+
 1. User sends a message through Telegram or another channel.
 2. System stores the raw message as a `Source`.
 3. If the source is audio, speech-to-text creates a transcript source linked to the original audio.
@@ -17,8 +23,8 @@ The ingestion flow turns user input into graph updates while preserving source e
    context when relevant, current time/timezone, and the `GraphContextPack`.
 7. The reasoning checkpoint returns structured interpretation: entity
    understanding, aliases, duplicate concerns, relationship hypotheses,
-   user/owner involvement, node-versus-metadata recommendations, ambiguity, and
-   storage cautions.
+   user/owner involvement, node-versus-detail recommendations, ambiguity, and
+   next-context notes.
 8. The reusable planning primitive receives the source, graph context,
    entity-focused reasoning, and entity-planning guidelines, then returns an
    entity-only plan.
@@ -54,6 +60,13 @@ The dedicated wave-1 implementation plan is
 Generated natural-language graph query fan-out is intentionally out of scope
 for the first refinement baseline; whole-source hybrid retrieval is the v1
 context strategy.
+
+Implementation sequence:
+
+1. Documentation baseline lock.
+2. Contract/schema modeling and tests.
+3. Context-rendering services for LLM-friendly payloads.
+4. Later flow, agent, prompt, extraction, validation, and write orchestration.
 
 LLM-backed steps return draft objects, not backend records. The model extracts
 semantic content, evidence text/spans, local candidate refs, and graph aliases.
