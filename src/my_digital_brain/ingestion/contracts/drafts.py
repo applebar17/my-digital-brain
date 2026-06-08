@@ -189,7 +189,14 @@ class CandidateEntityDraft(CandidateBaseDraft):
         default=None,
         description="Memory-bearing description when available.",
     )
-    aliases: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Alias or nickname hints for extraction, retrieval, resolution, and context "
+            "building. Aliases do not define node identity and are not automatically "
+            "writable node properties."
+        ),
+    )
     property_suggestions: list[PropertyDraft] = Field(default_factory=list)
     affective_fields: AffectiveFields | None = Field(
         default=None,

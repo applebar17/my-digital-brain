@@ -64,6 +64,12 @@ from my_digital_brain.agentic.messages import (
     ToolCall,
     ToolOutput,
 )
+from my_digital_brain.agentic.planning_contracts import (
+    PlanningActionContext,
+    PlanningPurposeGuidelines,
+    PlanningTransformContext,
+    PlanningTransformResultContext,
+)
 from my_digital_brain.agentic.history import (
     AgenticHistoryService,
     HistoryProjectionPolicy,
@@ -150,7 +156,11 @@ __all__ = [
     "NeutralMessageKind",
     "PendingMessageIntent",
     "PendingProcessContext",
+    "PlanningActionContext",
     "PlanningContext",
+    "PlanningPurposeGuidelines",
+    "PlanningTransformContext",
+    "PlanningTransformResultContext",
     "ProfileExtractionContext",
     "ProfileExtractionResultContext",
     "ProfileMemoryCandidateContext",

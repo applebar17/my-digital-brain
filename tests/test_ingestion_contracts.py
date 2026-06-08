@@ -2,22 +2,44 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import pytest
+from pydantic import ValidationError
+
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
     AffectiveFields,
     CandidateEntity,
+    CandidateEntityDraft,
     CandidateOutput,
     CandidateRelationship,
     ClarificationRequest,
+    EntityIngestionActionDraft,
+    EntityIngestionPlanDraft,
     EvidenceRef,
     ExtractionPlan,
     ExtractionTask,
+    GraphContextDuplicateHintItem,
+    GraphContextEntityItem,
+    GraphContextKnownAliasItem,
+    GraphContextMemoryItem,
+    GraphContextPack,
+    GraphContextPackView,
+    GraphContextRelationshipItem,
+    GraphContextRelationshipSnippetItem,
+    GraphContextRenderPurpose,
     GraphNodeWrite,
     GraphRelationshipWrite,
     GraphWritePlan,
     IngestionContextPackage,
+    IngestionReasoningCheckpointDraft,
     Mention,
     MentionScan,
+    MissingEntityRequiredDraft,
+    RelationshipIngestionActionDraft,
+    RelationshipIngestionPlanDraft,
+    ResolvedEntityMap,
+    ResolvedEntityMapEntry,
+    ResolvedEntityStatus,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.enums import (
@@ -280,6 +302,212 @@ def test_ingestion_components_match_runtime_protocols() -> None:
     assert isinstance(StaticContextRetriever(), IngestionContextRetriever)
     assert isinstance(StaticPlanner(_plan()), IngestionPlanner)
     assert isinstance(StaticExtractor([]), FocusedExtractor)
+
+
+def test_graph_context_pack_is_backend_owned_and_view_is_llm_friendly() -> None:
+    pack = GraphContextPack(
+        source_id="source-1",
+        retrieval_strategy="whole_source_hybrid",
+        compact_summary="Context around Matteo Mercoldi and his known aliases.",
+        known_aliases=[
+            GraphContextKnownAliasItem(
+                alias="Merc",
+                target_ref="graph:person:matteo",
+                source_id="source-1",
+                retrieval_strategy="alias_lookup",
+            ),
+        ],
+        entities=[
+            GraphContextEntityItem(
+                ref="graph:person:matteo",
+                display_label="Matteo Mercoldi",
+                entity_type="Person",
+                compact_summary="A person known by the alias Merc.",
+                aliases=["Merc"],
+                source_id="source-1",
+                retrieval_strategy="hybrid",
+                score=0.98,
+            ),
+        ],
+        relationships=[
+            GraphContextRelationshipItem(
+                ref="rel:friend",
+                from_ref="graph:person:user",
+                to_ref="graph:person:matteo",
+                relationship_type="RELATIONSHIP_WITH",
+                relationship_detail="friend",
+                source_id="source-1",
+                retrieval_strategy="hybrid",
+            ),
+        ],
+        memories=[
+            GraphContextMemoryItem(
+                ref="memory:1",
+                compact_summary="The user mentioned Merc as Matteo Mercoldi.",
+                related_refs=["graph:person:matteo"],
+                source_id="source-1",
+                retrieval_strategy="history",
+            ),
+        ],
+        duplicate_hints=[
+            GraphContextDuplicateHintItem(
+                candidate_text="Merc",
+                possible_match_refs=["graph:person:matteo"],
+                reason="Alias match.",
+                score=0.92,
+                source_id="source-1",
+                retrieval_strategy="alias_lookup",
+            ),
+        ],
+        relationship_context_snippets=[
+            GraphContextRelationshipSnippetItem(
+                ref="snippet:1",
+                endpoint_refs=["graph:person:user", "graph:person:matteo"],
+                compact_summary="Merc appears as Matteo in prior context.",
+                source_id="source-1",
+                retrieval_strategy="nearby_context",
+            ),
+        ],
+    )
+    view = GraphContextPackView(
+        purpose=GraphContextRenderPurpose.ENTITY_PLANNING,
+        compact_summary=pack.compact_summary,
+        aliases=["Merc -> Matteo Mercoldi"],
+        selected_entities=["Matteo Mercoldi (Person): known as Merc."],
+        selected_relationships=["User relationship with Matteo: friend."],
+        duplicate_hints=["Merc may match Matteo Mercoldi."],
+        relationship_context_snippets=["Merc appears as Matteo in prior context."],
+        notes=["Use aliases as hints only."],
+    )
+    rendered = view.model_dump(mode="json", exclude_none=True)
+
+    assert pack.source_id == "source-1"
+    assert pack.entities[0].source_id == "source-1"
+    assert rendered["purpose"] == "entity_planning"
+    assert "source_id" not in rendered
+    assert "retrieval_strategy" not in rendered
+    assert "source_id" not in GraphContextPackView.model_fields
+    assert "retrieval_strategy" not in GraphContextPackView.model_fields
+
+
+def test_lightweight_ingestion_reasoning_and_plan_drafts_validate_signal() -> None:
+    reasoning = IngestionReasoningCheckpointDraft(
+        summary="Merc likely refers to Matteo Mercoldi.",
+        alias_notes=["Merc is an alias hint for Matteo Mercoldi."],
+    )
+    entity_plan = EntityIngestionPlanDraft(
+        reason="The source names a person with an alias.",
+        actions=[
+            EntityIngestionActionDraft(
+                action_ref="ENTITY_ACTION_001",
+                goal="Extract Matteo Mercoldi as a person candidate.",
+                mention_text="Matteo Mercoldi",
+                suggested_entity_type="Person",
+                aliases=["Merc"],
+                evidence_text="Merc is Matteo Mercoldi.",
+            ),
+        ],
+    )
+    missing = MissingEntityRequiredDraft(
+        missing_ref="MISSING_ENTITY_001",
+        reason="The relationship endpoint has not been resolved yet.",
+        mention_text="mio fratello",
+        suggested_entity_type="Person",
+        needed_for_relationship_ref="REL_ACTION_001",
+        relationship_goal="Represent the brother relationship.",
+        relationship_endpoint_role="to",
+        evidence_text="mio fratello vive a Milano",
+        entity_planning_guidance="Plan extraction for the brother endpoint.",
+        relationship_resume_guidance="Resume the brother relationship after resolution.",
+    )
+    relationship_plan = RelationshipIngestionPlanDraft(
+        reason="A relationship is present but needs one endpoint.",
+        missing_entities=[missing],
+    )
+
+    assert reasoning.alias_notes == ["Merc is an alias hint for Matteo Mercoldi."]
+    assert entity_plan.actions[0].aliases == ["Merc"]
+    assert relationship_plan.missing_entities[0].missing_ref == "MISSING_ENTITY_001"
+
+    with pytest.raises(ValidationError, match="at least one note"):
+        IngestionReasoningCheckpointDraft(summary="Only a summary.")
+    with pytest.raises(ValidationError, match="requires actions"):
+        EntityIngestionPlanDraft(reason="No next step.")
+    with pytest.raises(ValidationError, match="requires actions"):
+        RelationshipIngestionPlanDraft(reason="No next step.")
+
+
+def test_relationship_plan_accepts_simple_actions_and_missing_entity_blockers() -> None:
+    plan = RelationshipIngestionPlanDraft(
+        reason="Resolved refs allow a direct relationship action.",
+        actions=[
+            RelationshipIngestionActionDraft(
+                action_ref="REL_ACTION_001",
+                goal="Connect the user with the brother entity.",
+                from_ref="graph:user",
+                to_ref="CANDIDATE_PERSON_001",
+                relationship_intent="The candidate is the user's brother.",
+                storage_shape="direct_relationship",
+                evidence_text="mio fratello",
+            ),
+        ],
+    )
+
+    assert plan.actions[0].relationship_intent == "The candidate is the user's brother."
+
+
+def test_resolved_entity_map_marks_relationship_usable_refs() -> None:
+    resolved_map = ResolvedEntityMap(
+        entries=[
+            ResolvedEntityMapEntry(
+                local_ref="CANDIDATE_PERSON_001",
+                status=ResolvedEntityStatus.MATCHED_EXISTING,
+                display_label="Matteo Mercoldi",
+                entity_type="Person",
+                graph_alias="graph:person:matteo",
+            ),
+            ResolvedEntityMapEntry(
+                local_ref="CANDIDATE_PLACE_001",
+                status=ResolvedEntityStatus.STAGED_CREATE,
+                display_label="Milan",
+                entity_type="Place",
+            ),
+            ResolvedEntityMapEntry(
+                local_ref="CANDIDATE_PERSON_002",
+                status=ResolvedEntityStatus.PENDING_DUPLICATE_REVIEW,
+                display_label="Merc",
+                entity_type="Person",
+                duplicate_notes=["Could duplicate Matteo Mercoldi."],
+            ),
+            ResolvedEntityMapEntry(
+                local_ref="CANDIDATE_BAD_001",
+                status=ResolvedEntityStatus.REJECTED,
+                display_label="unsupported",
+                entity_type="Unknown",
+            ),
+        ],
+    )
+
+    assert resolved_map.relationship_usable_refs == {
+        "CANDIDATE_PERSON_001": "graph:person:matteo",
+        "CANDIDATE_PLACE_001": "CANDIDATE_PLACE_001",
+    }
+    assert resolved_map.relationship_ref_for("CANDIDATE_PERSON_002") is None
+    assert resolved_map.entry_for("CANDIDATE_BAD_001") is not None
+
+
+def test_candidate_entity_alias_schema_locks_hint_semantics() -> None:
+    description = CandidateEntityDraft.model_fields["aliases"].description or ""
+    draft = CandidateEntityDraft(
+        local_ref="CANDIDATE_PERSON_001",
+        entity_type="Person",
+        aliases=["Merc"],
+    )
+
+    assert draft.aliases == ["Merc"]
+    assert "hints" in description
+    assert "do not define node identity" in description
+    assert "not automatically writable node properties" in description
 
 
 class StaticScanner:

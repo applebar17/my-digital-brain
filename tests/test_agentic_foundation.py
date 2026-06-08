@@ -14,6 +14,10 @@ from my_digital_brain.agentic import (
     NeutralConversationMessage,
     PendingMessageIntent,
     PendingProcessContext,
+    PlanningActionContext,
+    PlanningPurposeGuidelines,
+    PlanningTransformContext,
+    PlanningTransformResultContext,
     ResponseRenderStyle,
     ToolResultStatus,
     default_state_configs,
@@ -72,6 +76,56 @@ def test_conversation_context_excludes_backend_channel_metadata_from_model_paylo
     assert "channel_metadata" not in payload
     assert payload["channel_projection"]["render_style"] == "short_chat"
     assert payload["timezone"] == "Europe/Rome"
+
+
+def test_generic_planning_contracts_accept_caller_context_and_schema() -> None:
+    purpose = PlanningPurposeGuidelines(
+        purpose_id="entity_planning",
+        goal="Plan lightweight entity extraction from source text.",
+        focus_areas=["entities", "aliases"],
+        instructions=["Keep metadata out of the plan."],
+        output_usage="EntityIngestionPlanDraft",
+        forbidden_assumptions=["Do not treat aliases as identity."],
+    )
+    context = PlanningTransformContext(
+        purpose=purpose,
+        input_context={"source_text": "Merc is Matteo Mercoldi.", "graph_view": []},
+        reasoning_artifact={"summary": "Merc may be an alias for Matteo Mercoldi."},
+        timezone="Europe/Rome",
+        expected_output_schema={"title": "EntityIngestionPlanDraft"},
+    )
+    result = PlanningTransformResultContext(
+        planning_id=context.planning_id,
+        purpose_id=purpose.purpose_id,
+        summary="Plan one entity action.",
+        actions=[
+            PlanningActionContext(
+                action_ref="ACTION_001",
+                goal="Extract Matteo Mercoldi as a person candidate.",
+                action_kind="extract_entity",
+                target_refs=["source_text"],
+                evidence_text="Merc is Matteo Mercoldi.",
+            ),
+        ],
+    )
+
+    assert context.input_context["source_text"] == "Merc is Matteo Mercoldi."
+    assert context.expected_output_schema == {"title": "EntityIngestionPlanDraft"}
+    assert result.actions[0].action_ref == "ACTION_001"
+
+    with pytest.raises(ValidationError, match="summary"):
+        PlanningTransformResultContext(
+            planning_id=context.planning_id,
+            purpose_id=purpose.purpose_id,
+            summary=" ",
+            context_gaps=["missing source text"],
+        )
+    with pytest.raises(ValidationError, match="useful signal"):
+        PlanningTransformResultContext(
+            planning_id=context.planning_id,
+            purpose_id=purpose.purpose_id,
+            summary="No useful payload.",
+        )
 
 
 def test_default_state_configs_lock_wave1_toolboxes() -> None:
