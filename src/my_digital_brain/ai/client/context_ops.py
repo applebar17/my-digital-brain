@@ -176,12 +176,17 @@ class GenAIContextMixin:
             ],
             "max_tokens": max_tokens,
         }
+        params = self._prepare_chat_completion_params(params)
         try:
             response = self.client.chat.completions.create(**params)
         except Exception as exc:
             if self._should_retry_with_max_completion_tokens(exc, params):
                 response = self.client.chat.completions.create(
                     **self._replace_max_tokens(params)
+                )
+            elif self._should_retry_with_max_tokens(exc, params):
+                response = self.client.chat.completions.create(
+                    **self._replace_max_completion_tokens(params)
                 )
             else:
                 raise

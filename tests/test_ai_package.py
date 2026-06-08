@@ -156,6 +156,26 @@ def test_structured_call_rejects_empty_provider_content() -> None:
         )
 
 
+def test_structured_call_uses_max_tokens_when_sdk_signature_rejects_max_completion() -> None:
+    completion = LegacyChatCompletion()
+    client = object.__new__(GenAIClient)
+    client.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completion),
+    )
+
+    parsed = client._call_structured_once(
+        MentionScanDraft,
+        messages=[{"role": "user", "content": "scan"}],
+        model="capco-ch-uat-openai-gpt5.2",
+        temperature=None,
+        max_tokens=200,
+    )
+
+    assert parsed.mentions == []
+    assert completion.params["max_tokens"] == 200
+    assert "max_completion_tokens" not in completion.params
+
+
 def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None:
     output_schemas = [
         draft_contracts.MentionScanDraft,
@@ -214,6 +234,40 @@ class CapturingChatCompletion:
                     message=SimpleNamespace(
                         content=content,
                     )
+                )
+            ]
+        )
+
+
+class LegacyChatCompletion:
+    def __init__(self) -> None:
+        self.params = {}
+
+    def create(
+        self,
+        *,
+        model,
+        messages,
+        response_format=None,
+        max_tokens=None,
+        temperature=None,
+    ):
+        self.params = {
+            key: value
+            for key, value in {
+                "model": model,
+                "messages": messages,
+                "response_format": response_format,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }.items()
+            if value is not None
+        }
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=json.dumps({"mentions": []})),
                 )
             ]
         )
