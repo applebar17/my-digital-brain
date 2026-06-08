@@ -45,16 +45,28 @@ Ingestion uses two freedom tiers:
   calls, injects deterministic IDs/provenance, validates refs and ontology
   values, and owns graph writes.
 
+The ingestion reasoning refinement adds a stricter baseline for memory-writing
+work:
+
+- Whole-source hybrid graph retrieval builds compact context before reasoning.
+- A structured reasoning checkpoint interprets entities, aliases,
+  relationships, user/owner involvement, salience, ambiguity, and storage
+  cautions before planning.
+- Entity planning and relationship planning are separate model steps.
+- Entity candidates are prepared and validated before relationship planning.
+- Relationship planning receives a resolved entity map and must not invent
+  unresolved endpoints.
+- Durable writes happen only after backend validation and write-plan assembly.
+
 The model may use local refs only when the process goal requires orchestration
 between objects. A ref-consuming extraction step may use only refs created by
 earlier steps or graph aliases explicitly provided by the backend.
 
-The backend task compiler must guarantee executable ordering. If a high-freedom
-semantic plan contains ref-consuming actions such as relationships, perceptions,
-claims, or metadata updates, but omits the anchor extraction actions implied by
-the mention scan, the compiler must synthesize the missing anchor actions before
-running any ref-consuming extractor. This is a backend responsibility, not a
-planner prompt expectation.
+The backend must guarantee executable ordering. In the refined ingestion
+baseline, relationship planning starts only after entity validation has produced
+a resolved entity map. If a relationship step discovers that a required endpoint
+is missing, it must emit `missing_entity_required` and loop back through
+supplemental entity handling before any relationship candidate is accepted.
 
 Reasoning checkpoints are allowed before important downstream steps when the
 process needs richer context interpretation. A reasoning checkpoint receives
@@ -64,6 +76,11 @@ clarifications, node-versus-metadata handling, owner/user interpretation,
 profile/perception/relationship treatment, context gaps, and guardrails. It does
 not own graph mutation, write-plan construction, validation, or ontology
 compilation.
+
+Reasoning outputs should be structured decision notes and interpretations, not
+hidden chain-of-thought. Their purpose is to reduce later ambiguity, such as
+clarifying that `Merc` is an alias for Matteo Mercoldi instead of a separate
+person.
 
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
@@ -101,13 +118,14 @@ Large overloaded prompts increase hallucination risk and make failures harder to
 
 Prefer modular steps when useful:
 
-- Cheap mention scanning.
-- Compact context retrieval.
-- Context-aware planning.
-- Context building.
+- Whole-source hybrid context retrieval.
+- Compact context packaging.
+- Structured reasoning checkpoints.
+- Entity planning.
 - Entity extraction.
-- Relationship extraction.
 - Entity resolution support.
+- Relationship planning.
+- Relationship extraction.
 - Contradiction detection.
 - Answer generation.
 - Tool selection.
@@ -118,10 +136,19 @@ Modularity should reduce cognitive load for the model, but it should not add unn
 
 For ingestion, complexity is decided after lightweight context retrieval. Raw text alone is not enough to know whether a memory is simple or ambiguous. The expected sequence is:
 
-1. Cheap mention scan.
-2. Compact graph-context retrieval.
-3. Context-aware extraction plan.
-4. Focused extraction only when needed.
+1. Whole-source hybrid graph retrieval for wave-1 ingestion context.
+2. Compact Graph Context Pack construction.
+3. Structured reasoning checkpoint.
+4. Entity-only planning.
+5. Entity candidate preparation.
+6. Deterministic entity validation and duplicate handling.
+7. Relationship-only planning from the resolved entity map.
+8. Relationship candidate preparation.
+9. Deterministic relationship validation.
+10. Backend write-plan assembly and execution.
+
+Generated natural-language graph query fan-out may be explored later. It is not
+required for the wave-1 ingestion refinement baseline.
 
 ### 4. Use AI Dynamically Where It Adds Value
 
@@ -157,6 +184,12 @@ Context may include:
 The context builder should ask: what information does this model call need to do this job well, and what information would distract or bias it?
 
 For memory-writing calls, context should include enough nearby graph state for the agent to notice possible contradictions: similar entities, current facts, historical states, related sources, relationship contexts, perceptions, time context, and place context. This context enables agentic suspicion before a contradiction judge is invoked.
+
+For the wave-1 ingestion refinement, the first graph context strategy is
+whole-source hybrid retrieval. The resulting context must be compacted before it
+is injected into reasoning, so later model steps receive useful aliases,
+relationships, duplicate hints, and memory summaries instead of noisy graph
+payloads.
 
 ### 6. Tooling Enables Dynamic Processes
 
@@ -298,10 +331,11 @@ Each state configuration should define:
 - Prompt guidelines.
 - Tool-call or structured-output contract.
 
-For example, memory ingestion planning needs the user source text, usable
-conversation history, mention scan, compact graph context, current time/timezone,
-and pending clarification answer when resuming. It should not receive raw
-database records, unrelated metadata blobs, or internal transport details.
+For example, the ingestion reasoning checkpoint needs the user source text,
+usable conversation history when relevant, the compact Graph Context Pack,
+current time/timezone, and a pending clarification answer when resuming. It
+should not receive raw database records, unrelated metadata blobs, or internal
+transport details.
 
 ### 12. Separate Pending Summaries From Resumable Snapshots
 

@@ -4,13 +4,16 @@
 
 Define the transport-neutral backend services that turn stored text or transcript sources into validated memory graph changes.
 
-This plan does not define the Telegram bot or the user-facing chat loop. The chat layer will call these ingestion services through a small, strict tool surface. The ingestion package owns memory extraction, context-aware planning, validation, resolution, clarification proposals, and graph write plans.
+This plan does not define the Telegram bot or the user-facing chat loop. The chat layer will call these ingestion services through a small, strict tool surface. The ingestion package owns graph-context retrieval, structured reasoning, entity and relationship planning, candidate preparation, validation, resolution, clarification proposals, and graph write plans.
+
+The next ingestion quality baseline is defined in
+[Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md).
 
 ## Locked Architecture Decisions
 
 - Ingestion is a backend service layer, not a Telegram-specific flow.
 - `ai/` remains provider infrastructure only. It supplies LLM, embedding, model routing, and speech-to-text capabilities through protocols.
-- The ingestion package contains application business logic: memory extraction contracts, planning, candidate assembly, validation, resolution, and write-plan execution.
+- The ingestion package contains application business logic: memory extraction contracts, graph-context packaging, structured reasoning, planning, candidate assembly, validation, resolution, and write-plan execution.
 - The conversational LLM chooses actions and proposes parameters. Backend services validate parameters and perform all state changes.
 - The LLM never writes directly to the graph, relational store, source files, or vector store.
 - LLM structured outputs use `*Draft` contracts. Backend code enriches those
@@ -30,7 +33,10 @@ This plan does not define the Telegram bot or the user-facing chat loop. The cha
   - `propose_memory_correction`
 - Resume, cancel, expire, clarification handling, write-plan validation, and write execution are process states or backend service operations. They are not broad top-level LLM tools.
 - Pending ingestion state is context for resumption, not a rigid chat workflow. The chat/runtime layer decides whether a later message resumes the pending process.
-- Complexity is not classified from raw user text alone. Complexity is decided after a cheap mention scan and compact graph-context retrieval.
+- Complexity is not classified from raw user text alone. For the wave-1
+  refinement baseline, the source is first embedded as a whole, retrieved
+  through hybrid graph search, compacted into a Graph Context Pack, and then
+  interpreted by a structured reasoning checkpoint.
 - Graph writes are always deterministic backend operations applied from a validated `GraphWritePlan`.
 - Voice messages are first transcribed into text through the AI provider layer. The transcript then enters the same ingestion path as typed text while preserving evidence links to the original audio.
 
@@ -58,7 +64,10 @@ Responsibilities:
 
 - Create or resume ingestion sessions.
 - Store source references received from the caller.
-- Run mention scan, context retrieval, planning, extraction, assembly, validation, resolution, and write-plan execution.
+- Run source storage, whole-source hybrid graph-context retrieval, structured
+  reasoning, entity planning, entity candidate preparation, entity
+  validation/resolution, relationship planning, relationship candidate
+  preparation, relationship validation, and write-plan execution.
 - Return either an ingestion result, a clarification request, or a failure state.
 - Persist only the minimal process state needed for resumption and auditability.
 
@@ -66,42 +75,55 @@ Responsibilities:
 
 These are backend services, not general-purpose LLM tools:
 
-- `MentionScanner`
 - `IngestionContextRetriever`
-- `IngestionPlanner`
-- focused extractors
+- `StructuredReasoningService`
+- `EntityIngestionPlanner`
+- `RelationshipIngestionPlanner`
+- entity candidate preparers
+- relationship candidate preparers
 - `CandidateMemoryGraphAssembler`
 - `IngestionValidator`
 - `ResolutionService`
 - `GraphWritePlanExecutor`
 
-## Context-Aware Complexity Flow
+## Refined Reasoning Flow
 
-The system must not run an expensive rich extraction blindly for every source. It should first collect enough context to choose the correct extraction path.
+The system must not run extraction blindly from raw source text. It should first
+collect graph context, reason over the source and context, then split entity and
+relationship work.
 
-Required flow:
+Required target flow:
 
 1. Store source text or transcript.
-2. Run a cheap mention scan over the source.
-3. Retrieve compact graph context for mentioned people, places, events, organizations, topics, relationship contexts, and likely duplicates.
-4. Run an ingestion planner with source text plus compact graph context.
-5. The planner returns an `ExtractionPlan` with execution mode and focused tasks.
-6. Backend selects the flow from the plan.
-7. Focused extractors run only for required tasks.
-8. Backend assembles candidates into a `CandidateMemoryGraph`.
-9. Validation and resolution produce either a `ClarificationRequest` or a deterministic `GraphWritePlan`.
-10. Backend executes the validated write plan through graph services.
+2. Embed the whole source text.
+3. Retrieve top-k relevant graph items through hybrid search.
+4. Hydrate and compact retrieved graph state into a `GraphContextPack`.
+5. Run a structured reasoning checkpoint.
+6. Run an entity-only ingestion planner.
+7. Prepare entity candidates.
+8. Validate entity candidate schemas and deterministic constraints.
+9. Resolve obvious existing entity matches and stage entity create/update ops.
+10. Produce a `ResolvedEntityMap`.
+11. Run relationship-only planning from the resolved entity map.
+12. Prepare relationship, relationship-context, perception, event-link, or
+    metadata-link candidates.
+13. If a required endpoint is missing, emit `missing_entity_required` and loop
+    through supplemental entity handling.
+14. Validate relationship schemas, allowed ontology values, and endpoints.
+15. Produce a deterministic `GraphWritePlan` or `ClarificationRequest`.
+16. Execute the validated write plan through graph services.
 
-The planner should decide among these execution modes:
+Generated natural-language graph query fan-out is out of scope for this
+baseline. The source-as-a-whole hybrid search is the first context strategy.
 
-- `simple_single_pass`: low ambiguity, small memory, few entities, no rich affective or relationship-history content.
-- `focused_extraction`: source contains multiple targets, affective content, relationship history, temporal nuance, or richer metadata.
-- `needs_context_expansion`: initial graph context is insufficient for a safe plan.
-- `needs_clarification_first`: ambiguity blocks useful extraction or safe resolution.
+The backend may override or reject any model-produced plan if it is invalid,
+too large, unsafe, unsupported, or inconsistent with deterministic validation.
 
-The backend may override or reject an execution mode if the plan is invalid, too large, unsafe, or unsupported.
+## Legacy Example Flows
 
-## Example Flows
+The following examples describe the earlier planner-first implementation shape.
+They remain useful for understanding existing tests and current code paths, but
+the target quality baseline is the refined reasoning flow above.
 
 ### Simple Single Pass
 

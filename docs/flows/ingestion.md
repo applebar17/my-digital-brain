@@ -4,36 +4,54 @@
 
 The ingestion flow turns user input into graph updates while preserving source evidence, handling ambiguity, and avoiding duplicate entities.
 
-## Basic Flow
+## Refined Baseline Flow
 
 1. User sends a message through Telegram or another channel.
 2. System stores the raw message as a `Source`.
 3. If the source is audio, speech-to-text creates a transcript source linked to the original audio.
-4. A cheap mention scan extracts shallow mentions from the source text or transcript.
-5. Context retrieval loads compact graph context for the mentions.
-6. The ingestion planner receives source text plus compact context and returns a
-   high-freedom `SemanticIngestionPlanDraft`.
-7. The semantic plan selects `simple_single_pass`, `focused_extraction`,
-   `needs_context_expansion`, or `needs_clarification_first`.
-8. A deterministic backend compiler converts semantic actions into ordered
-   low-freedom `ExtractionTask` calls.
-9. The ingestion service executes actions step by step, carrying compact
-   summaries and a candidate/ref catalog forward.
-10. Focused extractors create structured candidate drafts only for the current
-   constrained task.
-11. Backend enrichment injects source provenance, IDs, and `EvidenceRef`
-   records, then immediately validates refs and ontology values.
-12. The assembler builds a `CandidateMemoryGraph`.
-13. Validator checks schema, required information, evidence, aliases, allowed
-   labels, and allowed relationship types.
-14. Resolution engine searches for obvious existing graph matches.
-15. If clarification is needed, the ingestion session stores a pending process context.
-16. Later chat messages are processed with that pending context and conversation history available.
-17. The AI Manager can classify a later message as a clarification answer, new memory, question, cancellation, correction, or normal chat, then resume ingestion only when appropriate.
-18. When safe, backend services produce and execute a validated `GraphWritePlan`.
+4. For wave-1 refinement, backend retrieval embeds the whole source text and
+   retrieves top-k relevant graph items through hybrid search.
+5. Backend code compacts the hydrated retrieval result into a model-facing
+   `GraphContextPack`.
+6. A structured reasoning checkpoint receives source text, usable conversation
+   context when relevant, current time/timezone, and the `GraphContextPack`.
+7. The reasoning checkpoint returns structured interpretation: entity
+   understanding, aliases, duplicate concerns, relationship hypotheses,
+   user/owner involvement, node-versus-metadata recommendations, ambiguity, and
+   storage cautions.
+8. The entity planner receives the source, graph context, and entity-focused
+   reasoning, then returns an entity-only plan.
+9. Entity candidate preparation creates schema-compatible entity drafts with
+   local refs, aliases, property suggestions, evidence text/spans, missing
+   fields, and ambiguity flags.
+10. Backend entity validation and duplicate handling run before durable entity
+   creation. In wave 1 this step is deterministic and conservative.
+11. Backend code produces a resolved entity map that links local refs to
+   existing graph aliases or staged create/update operations.
+12. The relationship planner receives the source, relationship-focused
+   reasoning, compact graph relationships, and the resolved entity map.
+13. Relationship candidate preparation creates relationships, relationship
+   contexts, perceptions, event links, place links, or metadata suggestions only
+   against resolved refs.
+14. If a required relationship endpoint is missing, the relationship step emits
+   `missing_entity_required`, which loops back into supplemental entity
+   candidate handling.
+15. Backend relationship validation checks schema, allowed ontology values,
+   resolved endpoints, forbidden fields, and exact duplicate edges.
+16. Backend services assemble and execute a validated `GraphWritePlan`.
+17. If clarification is needed, the ingestion session stores a pending process
+   context.
+18. Later chat messages are processed with that pending context and
+   conversation history available. The AI Manager can classify a later message
+   as a clarification answer, new memory, question, cancellation, correction, or
+   normal chat, then resume ingestion only when appropriate.
 19. User receives a concise ingestion summary when useful.
 
-Complexity is decided after the mention scan and context retrieval. The system must not classify rich versus simple ingestion from raw text alone.
+The dedicated wave-1 implementation plan is
+[Ingestion reasoning refinement wave 1](../dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
+Generated natural-language graph query fan-out is intentionally out of scope
+for the first refinement baseline; whole-source hybrid retrieval is the v1
+context strategy.
 
 LLM-backed steps return draft objects, not backend records. The model extracts
 semantic content, evidence text/spans, local candidate refs, and graph aliases.
@@ -41,10 +59,15 @@ Backend code then enriches those drafts with source IDs, generated IDs,
 `EvidenceRef`, status fields, timestamps, and metadata before validation,
 resolution, or graph writes.
 
-The planner does not choose database ontology. It writes semantic actions such
-as "identify anchors", "capture relationship evolution", or "connect these
-people through the source narrative." The backend compiler decides which
-extractor schema to call and what refs are available to that call.
+The planner does not choose database ontology. In the refined baseline, entity
+planning and relationship planning are separate model tasks. Entity planning
+decides which entities, aliases, and entity-like details require candidate
+preparation. Relationship planning runs only after entity validation has
+produced a resolved entity map, then decides which relationships or
+relationship-like memory objects require candidate preparation.
+
+The backend compiler decides which extractor schema to call and what refs are
+available to that call.
 
 DB-facing extraction is enum/ref constrained. LLM-creatable entity labels are:
 `Person`, `Event`, `Place`, `Organization`, `Object`, `Animal`,
@@ -130,6 +153,14 @@ Backend-enriched candidate records add source references and evidence refs after
 the draft is validated.
 
 This allows validation and resolution before permanent graph writes.
+
+In the refined baseline, the candidate graph is assembled in stages:
+
+1. entity candidates first;
+2. deterministic entity validation and duplicate handling;
+3. resolved entity map;
+4. relationship candidates using only resolved refs;
+5. deterministic relationship validation.
 
 The candidate graph should be represented through structured ingestion objects rather than free-form model output. See [Structured ingestion objects](structured-ingestion-objects.md).
 
@@ -231,7 +262,7 @@ The AI Manager can still decide that a message is not a valid clarification answ
 
 ## Duplicate Prevention
 
-Before creating new entities, the system should search for:
+Before creating new entities, the system should search or compare against:
 
 - Exact matches.
 - Alias matches.
@@ -243,6 +274,14 @@ Before creating new entities, the system should search for:
 - Existing unresolved candidates.
 
 Potential duplicates should be staged for confirmation when confidence is not high enough.
+
+Wave 1 reserves a duplicate-judge process slot before durable entity creation,
+but only simple deterministic checks are required initially. Later qualitative
+judging should decide whether a candidate is a confirmed duplicate, suspected
+duplicate requiring user confirmation, or a new entity. When a duplicate is
+confirmed, aliases, useful relationships, metadata or activity references, and
+embedding refreshes should apply to the canonical existing node instead of
+creating a new node.
 
 ## Idempotency
 

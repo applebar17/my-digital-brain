@@ -82,6 +82,7 @@ It decides how to use those capabilities in a controlled conversational flow.
 - [Chat consumers and runtime](03-chat-interface-and-db-tooling.md) wires Telegram/web chat to backend tools.
 - [Backend ingestion pipeline](02-backend-ingestion-pipeline.md) provides structured extraction, validation, resolution, and write-plan execution.
 - [AI provider foundation](07-ai-provider-foundation.md) provides LLM, structured generation, speech-to-text, embeddings, and routing abstractions.
+- [Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md) supersedes the planner-first target flow for future ingestion quality work.
 - [LLM integration](../external-integrations/llm-integration.md) defines model usage boundaries and structured-output principles.
 - [AI engineering principles](../ai-engineering/README.md) define the engineering rules this plan must follow.
 
@@ -252,6 +253,12 @@ Still intentionally deferred:
   policies.
 
 Deferred follow-ups are tracked in [Project TODOs](../todos.md).
+
+For future ingestion changes, use
+[Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md)
+as the target process. The planner-first details in this document describe the
+implemented agentic foundation and remain useful as historical/current-state
+context, not as the next quality baseline.
 
 ## Agent And Process Catalog
 

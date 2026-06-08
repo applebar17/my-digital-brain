@@ -27,8 +27,11 @@ implemented agentic runtime aligned with the locked architecture.
 
 ### Memory Storage Reasoning And User-Related Data
 
-Status: baseline reasoning checkpoint skeleton implemented; plug-in points and
-owner/user graph policy remain high-priority follow-ups.
+Status: baseline reasoning checkpoint skeleton implemented; the dedicated
+refinement baseline is locked in
+[Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
+Plug-in points, owner/user graph policy, and duplicate handling remain
+high-priority implementation follow-ups.
 
 - `reasoning_checkpoint` now exists as a reusable agentic state skeleton with:
   - purpose-specific reasoning guidelines in its input context;
@@ -42,6 +45,18 @@ owner/user graph policy remain high-priority follow-ups.
 - Decide where to plug the explicit reasoning/checkpoint step before crucial
   storage phases, especially before extraction task compilation, write-plan
   assembly, validation, and write execution.
+- Apply the wave-1 ingestion refinement baseline:
+  - retrieve whole-source hybrid graph context before reasoning;
+  - compact it into a Graph Context Pack;
+  - run structured reasoning before planning;
+  - split entity planning/candidates from relationship planning/candidates;
+  - stage entity creation until deterministic validation and duplicate handling
+    have run;
+  - plan relationships only from the resolved entity map.
+- Reserve the duplicate-judge process slot before durable entity writes.
+  Wave 1 keeps this deterministic and conservative; qualitative duplicate
+  judging, user confirmation, merge application, metadata transfer, and
+  re-embedding are later follow-ups.
 - Analyze weird or low-quality storage behaviors from real traces and ingestion
   outputs, then adjust system prompts, structured contracts, validators, and
   write-plan compilation rules accordingly.
@@ -108,15 +123,19 @@ Status: implemented as a reusable foundation.
   - top-level states get full usable conversation history or compacted history;
   - specialist states get only the relevant parent history and process context;
   - nested tool/provider traces are compacted upward into concise tool outputs.
-- Memory ingestion planning receives source text, usable conversation context,
-  mention scan, compact graph context, current time/timezone, pending
-  clarification answer when present, and prior relevant tool outputs.
+- Memory ingestion context building is centralized. The current planner
+  foundation used mention scan and compact graph context; the wave-1 refinement
+  moves ingestion toward whole-source hybrid graph context, structured
+  reasoning, entity planning, and relationship planning.
 - Backend-only channel/session metadata is removed from model-facing payloads
   unless a deliberate `ChannelContextProjection` is built.
 
 ### Planner Structured Output Refactor
 
-Status: implemented in the planner foundation.
+Status: implemented in the planner foundation. This remains useful as the
+current structured-output foundation, but the target ingestion flow is now the
+reasoning-first/entity-first refinement in
+[Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
 
 - `submit_extraction_plan` has been removed from the
   `memory_ingestion_planning` toolbox.

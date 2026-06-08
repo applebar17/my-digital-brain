@@ -15,6 +15,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [AI provider foundation](07-ai-provider-foundation.md)
 - [Agentic process design and definition](08-agentic-process-design.md)
 - [Graph-RAG and vector retrieval](09-graph-rag-and-vector-retrieval.md)
+- [Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md)
 
 ## Wave Meaning
 
@@ -29,6 +30,8 @@ The listed topic areas are enough for now. The main cross-cutting concerns are:
 
 - AI provider boundaries, model/tool orchestration, and speech-to-text.
 - Agentic behavioral protocols, toolboxes, and process guardrails.
+- Reasoning-first memory ingestion, duplicate handling, and entity/relationship
+  staging.
 - Local deployment and containerization.
 - Observability and debugging.
 - Privacy, trust, and provider boundaries.

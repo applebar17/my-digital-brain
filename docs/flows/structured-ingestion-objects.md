@@ -104,9 +104,76 @@ Backend record fields:
 
 LLM draft fields are the same semantic fields without `mention_id` or metadata.
 
+### GraphContextPack
+
+An ingestion-specific compact context object built before structured reasoning.
+It is produced by backend retrieval and compaction, not by the model.
+
+Wave-1 baseline input:
+
+- whole source text or transcript embedded as one query;
+- hybrid graph search top-k results;
+- hydrated graph targets and nearby relationships.
+
+Core fields:
+
+- `context_pack_id`
+- `source_id`
+- `retrieval_strategy`: `whole_source_hybrid`
+- `retrieved_entities`
+- `retrieved_relationships`
+- `retrieved_memories`
+- `known_aliases`
+- `known_relationship_contexts`
+- `potential_duplicate_hints`
+- `llm_alias_map`
+- `compact_summary`
+
+Rules:
+
+- Prefer short LLM-facing aliases such as `NODE_000001`.
+- Exclude raw UUID-heavy graph payloads unless a backend step needs them.
+- Exclude provider traces, raw metadata blobs, and unrelated neighborhoods.
+- Do not require generated natural-language graph queries in wave 1.
+
+If implementation already uses `GraphContextPackage`, that contract can be
+reused for this purpose as long as the ingestion-specific v1 strategy and
+low-noise fields are preserved.
+
+### StructuredReasoningCheckpoint
+
+A structured model output produced before planning. It interprets the source in
+the presence of the `GraphContextPack`.
+
+LLM draft fields:
+
+- `entity_understanding`
+- `alias_interpretations`
+- `duplicate_concerns`
+- `relationship_hypotheses`
+- `node_vs_metadata_recommendations`
+- `user_owner_involvement`
+- `storage_cautions`
+- `context_gaps`
+- `ambiguity_flags`
+
+The reasoning checkpoint is not a graph mutation and not a write plan. It
+should produce concise decision notes and interpretations that help later model
+steps avoid confusion.
+
+Example:
+
+```text
+Mention "Merc" is likely the user's nickname for Matteo Mercoldi. Treat it as
+an alias candidate for Matteo Mercoldi, not as a separate Person.
+```
+
 ### SemanticIngestionPlanDraft
 
-The high-freedom model-facing planner output.
+The older high-freedom model-facing planner output. It remains useful as the
+generic planning concept, but the wave-1 ingestion refinement splits planning
+into entity and relationship phases so one planner call does not own the whole
+memory-writing problem.
 
 LLM draft fields:
 
@@ -132,25 +199,92 @@ The semantic planner may organize the narrative and identify dependencies, but
 it must not choose graph labels, relationship types, write-plan operations,
 persistence fields, or backend-owned IDs.
 
+### EntityIngestionPlanDraft
+
+The model-facing entity-only planning output for the refined baseline.
+
+Inputs:
+
+- source text or transcript;
+- `GraphContextPack`;
+- `StructuredReasoningCheckpoint`;
+- current time/timezone when relevant.
+
+LLM draft fields:
+
+- `reason`
+- `entity_actions`
+- `alias_actions`
+- `details_to_keep_as_metadata`
+- `possible_duplicate_refs`
+- `clarification`
+- `context_gaps`
+
+Rules:
+
+- Plan entity candidates only.
+- Identify aliases and nicknames as aliases, not separate entities.
+- Identify low-salience details that should remain event/context metadata.
+- Do not produce relationship candidates.
+- Do not output backend IDs, graph write operations, or unsupported node fields.
+
+### RelationshipIngestionPlanDraft
+
+The model-facing relationship-only planning output for the refined baseline.
+
+Inputs:
+
+- source text or transcript;
+- relationship-focused reasoning from the reasoning checkpoint;
+- resolved entity map;
+- compact graph relationship context.
+
+LLM draft fields:
+
+- `reason`
+- `relationship_actions`
+- `relationship_context_actions`
+- `perception_actions`
+- `event_link_actions`
+- `metadata_link_actions`
+- `missing_entity_required`
+- `clarification`
+- `context_gaps`
+
+Rules:
+
+- Plan relationships only after entity resolution has produced a resolved
+  entity map.
+- Reference only resolved local refs, staged entity refs, or provided graph
+  aliases.
+- Emit `missing_entity_required` when a necessary endpoint is missing.
+- Do not freely create new entities.
+- Do not produce graph write operations.
+
 ### ExtractionPlan
 
-The backend-compiled plan produced from `SemanticIngestionPlanDraft` after
-mention scan and compact graph-context retrieval.
+The generic backend-compiled plan for focused extraction work. In the older
+planner-first flow, it was produced from `SemanticIngestionPlanDraft`. In the
+wave-1 refined flow, backend compilation may produce separate entity and
+relationship extraction plans from `EntityIngestionPlanDraft` and
+`RelationshipIngestionPlanDraft`.
 
 Backend record fields:
 
 - `extraction_plan_id`
 - `source_id`
 - `context_package_id`
-- `execution_mode`: simple_single_pass, focused_extraction, needs_context_expansion, needs_clarification_first.
+- `execution_mode`: entity_preparation, relationship_preparation,
+  supplemental_entity_preparation, simple_single_pass, focused_extraction,
+  needs_context_expansion, needs_clarification_first.
 - `reason`
 - `tasks`
 - `clarification`
 - `context_gaps`
 - `created_at`
 
-The deterministic compiler creates tasks from semantic actions, schedules
-anchor/ref-producing tasks before ref-consuming tasks, and injects ontology,
+The deterministic compiler creates tasks from structured plan actions, schedules
+entity/ref-producing tasks before ref-consuming tasks, and injects ontology,
 allowed aliases, candidate refs, previous compact action summaries, and source
 refs into backend task metadata.
 
@@ -247,6 +381,10 @@ friend | family | partner | former_partner | colleague | classmate | acquaintanc
 
 Preserve source wording in `relationship_detail`, for example `brother`,
 `girlfriend`, or `university friend`.
+
+In the refined baseline, relationship candidates are produced only after entity
+validation has produced a resolved entity map. Relationship drafts must not point
+to unknown local refs.
 
 ### CandidateClaim
 
@@ -417,6 +555,36 @@ Core fields:
 - `requires_confirmation`
 - `decided_at`
 
+### ResolvedEntityMap
+
+The backend handoff object produced after entity candidate validation and
+resolution. It is consumed by relationship planning and extraction.
+
+Core fields:
+
+- `resolved_entity_map_id`
+- `source_id`
+- `candidate_entity_refs`
+- `local_ref_to_target`
+- `staged_creates`
+- `staged_updates`
+- `matched_existing`
+- `rejected_candidates`
+- `pending_duplicate_reviews`
+- `validation_errors`
+
+Each map entry should explain whether the local ref points to:
+
+- an existing graph alias;
+- a staged create operation;
+- a staged update operation;
+- a rejected candidate;
+- a pending duplicate review.
+
+Relationship planning may only use refs that resolve to existing graph aliases
+or staged create/update operations. Pending or rejected refs are not valid
+relationship endpoints.
+
 ### GraphWritePlan
 
 The deterministic write plan generated after validation and resolution.
@@ -453,6 +621,18 @@ Before writing to the graph:
 - External enrichment must include provider provenance.
 - Idempotency keys must be present for source-derived writes.
 
+For the refined wave-1 ingestion baseline:
+
+- Entity candidates are validated before relationship planning.
+- Entity creation remains staged until deterministic validation and duplicate
+  handling complete.
+- Relationship candidates must reference only the resolved entity map or
+  provided graph aliases.
+- `missing_entity_required` is the only allowed way for relationship planning
+  to request a new endpoint.
+- Qualitative duplicate judging and user confirmation are reserved for later
+  waves.
+
 ## Why This Matters
 
 Without structured ingestion objects, the system will be hard to debug. A bad graph write could come from extraction, resolution, clarification, or persistence, but there would be no clean boundary to inspect.
@@ -475,6 +655,10 @@ The first implementation does not need every field above, but it should establis
 - `ExtractionRun`
 - `MentionScan`
 - `Mention`
+- `GraphContextPack` or an equivalent low-noise `GraphContextPackage`
+- `StructuredReasoningCheckpoint`
+- `EntityIngestionPlanDraft`
+- `RelationshipIngestionPlanDraft`
 - `ExtractionPlan`
 - `ExtractionTask`
 - `CandidateEntity`
@@ -486,6 +670,7 @@ The first implementation does not need every field above, but it should establis
 - `ContradictionJudgeDecision`
 - `ClarificationRequest`
 - `ResolutionDecision`
+- `ResolvedEntityMap`
 - `GraphWritePlan`
 
 `CandidateClaim`, `CandidateMetadataPatch`, and enrichment-specific objects can become mandatory once the first text ingestion path is stable.

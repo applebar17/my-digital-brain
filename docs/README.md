@@ -9,6 +9,7 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
 - [Agentic orchestration architecture](architecture/agentic-orchestration.md): purpose-oriented agentic states, state handoffs, toolboxes, and prompt scaffolding.
 - [Agentic process implementation plan](dev-plans/08-agentic-process-design.md): implementation roadmap derived from the architecture design.
+- [Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md): locked baseline for whole-source graph context, structured reasoning, entity-first staging, duplicate handling, and relationship planning.
 - [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
 - [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
@@ -65,6 +66,9 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 - Affective memory is core and not person-only: perceptions, emotional summaries, emotional valence, and original user wording should be modeled explicitly for any memory-bearing node or important relationship when present.
 - LLM output is treated as a proposal until validated by rules, confidence thresholds, user clarification, or explicit confirmation.
 - Structured ingestion objects are required between LLM extraction and graph writes.
+- Ingestion should move through whole-source graph-context retrieval,
+  structured reasoning, entity-first staging, duplicate handling, and
+  relationship planning before writing.
 - Duplicate handling and entity unification are first-class requirements, not cleanup tasks.
 - Sensitive and mutable metadata, such as contact details, should be modeled with provenance and validity rather than buried in arbitrary metadata.
 - Memory lifecycle should preserve memories by default while still allowing correction, dispute, expiration, and deletion.

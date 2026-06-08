@@ -103,10 +103,11 @@ structured and auditable.
 
 Some `AS` states may use tools during execution and still end with a required
 structured output. In that case, tools are side-effect-bounded support actions,
-while the final state result is a validated schema. `memory_ingestion_planning`
-is the canonical example: it may request context expansion or contradiction
-review, but it must finish by producing a `SemanticIngestionPlanDraft`
-structured output that backend code compiles into an `ExtractionPlan`.
+while the final state result is a validated schema. The older
+`memory_ingestion_planning` path used this pattern with a
+`SemanticIngestionPlanDraft`. The wave-1 ingestion refinement keeps the same
+boundary but splits the work into structured reasoning, entity planning, staged
+entity resolution, and relationship planning from the resolved entity map.
 
 `reasoning_checkpoint` is a reusable structured `AS` that can be plugged before
 storage, validation, correction, or query steps when a process needs richer
@@ -152,22 +153,24 @@ flowchart TD
     PPR -->|cancel / skip| CP[BP: cancel_pending_process]
     PPR -->|structured clarification tool| CW
 
-    MIP --> MS[LP: mention_scan]
-    MS --> GCR[BP: graph_context_retrieval]
-    GCR --> MPLAN[AS: memory_ingestion_planning]
+    MIP --> GCR[BP: whole_source_hybrid_graph_context]
+    GCR --> RCK[AS: reasoning_checkpoint]
+    RCK --> EPLAN[AS: entity_ingestion_planning]
+    EPLAN --> EC[LP: entity_candidate_preparation]
+    EC --> EV[BP: entity_validation_resolution]
+    EV -->|resolved entity map| RPLAN[AS: relationship_ingestion_planning]
+    EV -->|needs clarification| CW[RS: clarification_waiting]
+    EV -->|validation failed| IF[RS: ingestion_failed]
 
-    MPLAN -->|simple_single_pass| SE[LP: simple_extraction]
-    MPLAN -->|focused_extraction| FE[LP: focused_extraction]
-    MPLAN -->|needs_context_expansion| GCR
-    MPLAN -->|structured clarification tool| CW[RS: clarification_waiting]
-
-    SE --> CA[BP: candidate_assembly]
-    FE --> CA
-    CA --> VR[BP: validation_resolution]
-    VR -->|write plan ready| WPR[RS: write_plan_ready]
-    VR -->|needs clarification| CW
-    VR -->|contradiction doubt| CJ[AS: contradiction_review]
-    VR -->|validation failed| IF[RS: ingestion_failed]
+    RPLAN -->|relationship plan| RC[LP: relationship_candidate_preparation]
+    RPLAN -->|missing_entity_required| SEC[LP: supplemental_entity_candidate]
+    RPLAN -->|structured clarification tool| CW
+    SEC --> EV
+    RC --> RV[BP: relationship_validation]
+    RV -->|write plan ready| WPR[RS: write_plan_ready]
+    RV -->|needs clarification| CW
+    RV -->|contradiction doubt| CJ[AS: contradiction_review]
+    RV -->|validation failed| IF
 
     CJ -->|allow write| WPR
     CJ -->|ask user| CW
@@ -274,14 +277,13 @@ General context rules:
 | `AS: pending_process_review` | Current message, full usable conversation history with older compacted summaries when needed, active pending process summary if any, up to five newest paused pending summaries, original pending question, pending process type/status, last relevant assistant message, current time/timezone. Backend-only pending snapshots are excluded. | Tool call to resume/start/query/correct/cancel/pause, normal assistant reply, or optional lightweight intent classification sidecar. |
 | `AS: reasoning_checkpoint` | Purpose guidelines, caller-provided input context, usable conversation history when relevant, compact graph context and aliases when provided, prior compact tool outputs, current time/timezone, and optional expected output schema name. | Structured reasoning output with context augmentations: clarifications, entity understanding, node-vs-metadata recommendations, profile/perception/relationship hints, context gaps, provenance and guardrail notes. |
 | `BP: memory_ingestion_precheck` | Source text or transcript, source/media refs, pending clarification context if resuming, current time/timezone, full usable conversation history or compacted state from the caller, backend-owned channel/session metadata. | Source context, ingestion session ref, source record refs, normalized text/transcript, source timing metadata. |
-| `LP: mention_scan` | Source context, normalized text/transcript, current time/timezone, minimum history needed to interpret pronouns or follow-up wording. | Shallow mentions with kind, surface text, evidence spans, rough temporal/place/person hints; no final candidates. |
-| `BP: graph_context_retrieval` | Mention scan, source context, entity/place/time hints, privacy/lifecycle filters, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | Compact graph context: candidate entities with aliases, canonical refs, relevant relationship contexts, recent memories, source/evidence summaries, known ambiguities. |
-| `AS: memory_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, mention scan output, compact graph context, pending clarification context if present, current time/timezone, prior tool outputs relevant to ingestion. | `SemanticIngestionPlanDraft`: execution mode, ordered semantic actions, evidence spans, dependencies, ambiguity/context gaps, or structured clarification interruption. |
-| `BP: semantic_task_compiler` | `SemanticIngestionPlanDraft`, mention scan, compact graph context, current candidate/ref catalog policy, ontology registry. | Backend `ExtractionPlan` with ordered focused tasks, synthesized missing anchor tasks before ref-consuming actions, allowed refs, ontology constraints, and compact per-action metadata. |
-| `LP: simple_extraction` | Source context, full but compact evidence payload, backend-compiled task schema, relevant graph aliases, temporal basis, allowed candidate refs. | Candidate objects for simple low-ambiguity memories. |
-| `LP: focused_extraction` | Source context, selected evidence span, one focused Pydantic contract per task, relevant graph aliases only, prior candidate refs if needed for local linking. | Focused candidate objects with evidence, original user words, missing fields, ambiguity flags, local refs, and enum-bound ontology values. |
-| `BP: candidate_assembly` | Extraction plan, focused/simple candidates, local candidate refs, source refs, evidence refs, step summaries. | `CandidateMemoryGraph` with resolved local references and grouped entity/relationship/perception candidates. |
-| `BP: validation_resolution` | `CandidateMemoryGraph`, graph registries, compact graph context, source/evidence refs, resolver constraints, pending answer context if resumed. | `GraphWritePlan`, `ClarificationRequest`, contradiction doubt package, validation errors, or resolution result. |
+| `BP: whole_source_hybrid_graph_context` | Source context, normalized text/transcript, privacy/lifecycle filters, owner scope, current time/timezone, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | `GraphContextPack`: compact graph context from whole-source hybrid retrieval, candidate entities with aliases, relevant relationships, nearby memories, source/evidence summaries, known ambiguities, and duplicate hints. |
+| `AS: entity_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, `GraphContextPack`, structured reasoning checkpoint, pending clarification context if present, current time/timezone. | Entity-only plan: entity actions, alias actions, details to keep as metadata, possible duplicate refs, ambiguity/context gaps, or structured clarification interruption. |
+| `LP: entity_candidate_preparation` | Source context, entity plan, entity-focused reasoning, graph aliases, duplicate hints, temporal basis. | Entity candidate drafts with local refs, aliases, property suggestions, evidence, missing fields, and ambiguity flags. |
+| `BP: entity_validation_resolution` | Entity candidates, `GraphContextPack`, graph registries, resolver constraints, source/evidence refs, pending answer context if resumed. | `ResolvedEntityMap`, staged create/update operations, rejected candidates, pending duplicate-review items, validation errors, or clarification request. |
+| `AS: relationship_ingestion_planning` | Source context, relationship-focused reasoning, compact graph relationship context, current time/timezone, and `ResolvedEntityMap`. | Relationship-only plan, relationship context/perception/event-link actions, `missing_entity_required`, context gaps, or structured clarification interruption. |
+| `LP: relationship_candidate_preparation` | Source context, relationship plan, resolved entity map, allowed relationship ontology, graph aliases, temporal basis. | Relationship, relationship-context, perception, event-link, place-link, or metadata-link candidate drafts that reference only resolved refs. |
+| `BP: relationship_validation` | Relationship candidates, `ResolvedEntityMap`, graph registries, source/evidence refs, ontology constraints, resolver constraints. | `GraphWritePlan`, `ClarificationRequest`, contradiction doubt package, validation errors, or relationship resolution result. |
 | `AS: contradiction_review` | Proposed candidate/write intent, validator explanation of the doubt, retrieved graph context, source evidence, affected target aliases, relevant change/relationship history. | Grounded contradiction assessment and recommended action: continue, mark disputed, ask user, request more context, or fail safely. |
 | `RS: clarification_waiting` | Clarification question text, reason, target refs/aliases, original source context, process/session refs, expiration timestamp. | Stored pending context for the next chat turn; no model output by itself. |
 | `RS: write_plan_ready` | Validated write plan, source refs, resolution summary, optional confirmation requirement. | Write execution input or confirmation-waiting context. |
@@ -313,19 +315,25 @@ sequenceDiagram
 
     U->>R: "Yesterday I met Marco in Milan"
     R->>O: message + history refs + pending context
-    O->>I: mention_scan
-    I-->>O: shallow mentions
-    O->>G: compact graph context for mentions
-    G-->>O: Marco candidates, Milan context
-    O->>I: memory_ingestion_planning
-    I-->>O: SemanticIngestionPlanDraft compiled to ExtractionPlan
-    alt Ambiguity blocks safe extraction
+    O->>G: whole-source hybrid graph retrieval
+    G-->>O: compact Graph Context Pack
+    O->>I: structured reasoning checkpoint
+    I-->>O: entity and relationship reasoning
+    O->>I: entity ingestion planning
+    I-->>O: entity-only plan
+    O->>I: entity candidate preparation
+    I-->>O: entity candidates
+    O->>I: deterministic entity validation/resolution
+    I-->>O: resolved entity map
+    alt Ambiguity blocks safe entity resolution
         O-->>R: assistant clarification text + pending process context
         R-->>U: "Which Marco?"
-    else Safe extraction path
-        O->>I: focused or simple extraction
-        I-->>O: CandidateMemoryGraph
-        O->>I: validation + resolution
+    else Safe relationship path
+        O->>I: relationship ingestion planning
+        I-->>O: relationship plan or missing_entity_required
+        O->>I: relationship candidate preparation
+        I-->>O: relationship candidates
+        O->>I: deterministic relationship validation
         I-->>O: GraphWritePlan or ClarificationRequest
         O->>G: execute validated write plan
         G-->>O: write result
@@ -337,21 +345,24 @@ sequenceDiagram
 Critical boundary:
 
 ```text
-Planner -> SemanticIngestionPlanDraft
-Compiler -> backend ExtractionPlan + candidate/ref catalog policy
-Focused extractors -> enum/ref-constrained candidate drafts
-Assembler -> CandidateMemoryGraph
-Validator/resolver -> GraphWritePlan or ClarificationRequest
+Whole-source hybrid retrieval -> Graph Context Pack
+Reasoning checkpoint -> structured interpretations and storage cautions
+Entity planner -> entity-only plan
+Entity candidate preparation -> enum/ref-constrained entity drafts
+Entity validation/resolution -> ResolvedEntityMap + staged entity ops
+Relationship planner -> relationship-only plan from resolved refs
+Relationship candidate preparation -> enum/ref-constrained relationship drafts
+Relationship validation -> GraphWritePlan or ClarificationRequest
 Executor -> graph mutation
 ```
 
 The LLM never authors the final write plan.
 
-The compiler also owns executable ordering. If the semantic plan contains a
-relationship, perception, claim, or metadata action but the planner did not
-include the anchor action needed to create local candidate refs, the compiler
-synthesizes the missing anchor action from the mention scan before focused
-extraction starts.
+The backend owns executable ordering. Relationship planning starts only after
+the resolved entity map exists. If a relationship needs an endpoint that was
+missed by entity planning, the relationship planner emits
+`missing_entity_required`, which loops back into supplemental entity candidate
+handling before relationship candidates are prepared.
 
 ## Baseline Runtime Configurations
 
@@ -519,134 +530,201 @@ Paused pending process notes:
 - Proactive follow-up behavior is a later design topic and should not make the
   MVP chat flow feel like a task manager.
 
-### `memory_ingestion_planning` (`AS`)
+### `whole_source_hybrid_graph_context` (`BP`)
 
 Purpose:
 
-Plan semantic ingestion actions from source text plus compact graph context.
+Build the first ingestion context pack by embedding the whole source text and
+retrieving top-k relevant graph items through hybrid search.
+
+This is a `BP`, not an `AS`: retrieval, hydration, filtering, and compaction are
+backend-owned.
 
 Required context:
 
 - source text or transcript
-- cheap mention scan
-- compact graph context for mentions
-- full usable conversation history or compacted caller-provided history
+- owner scope
+- privacy and lifecycle filters
+- current time/timezone
+- pending target refs when resuming
+
+Output:
+
+- compact `GraphContextPack`
+
+Forbidden:
+
+- generated query fan-out in wave 1
+- raw graph dump as model context
+- graph mutation
+
+### `entity_ingestion_planning` (`AS`)
+
+Purpose:
+
+Plan entity preparation from source text, graph context, and structured
+reasoning.
+
+Required context:
+
+- source text or transcript
+- `GraphContextPack`
+- structured reasoning checkpoint
+- full usable conversation history or compacted caller-provided history when
+  relevant
 - pending clarification answer when resuming
 - current time/timezone
 
 Allowed outputs:
 
-- `simple_single_pass`
-- `focused_extraction`
-- `needs_context_expansion`
-- `needs_clarification_first`
+- entity actions
+- alias actions
+- details to keep as metadata or event context
+- possible duplicate refs
+- context gaps
+- structured clarification interruption
 
 Allowed tools:
 
-- `request_graph_context_expansion`
-- `request_contradiction_review`
-
-Final output rule:
-
-- `SemanticIngestionPlanDraft` is the only accepted final planner output. The
-  planner may call tools while reasoning, but the final state result must be a
-  structured semantic draft validated by backend code before extraction
-  continues.
-- The planner organizes narrative actions and evidence. It must not choose
-  graph labels, relationship types, write-plan operations, persistence fields,
-  or backend-owned IDs.
-- Backend code compiles the semantic draft into an `ExtractionPlan` with
-  focused tasks, allowed refs, ontology constraints, clarification, and context
-  gaps.
-- Free-form assistant text alone is not a valid planning result.
-
-Clarification behavior:
-
-- Clarification is returned as part of the `SemanticIngestionPlanDraft` or via
-  the `request_user_clarification` tool when ambiguity blocks safe extraction.
-- The assistant asks the user with a normal conversational message.
-- The runtime stores minimal pending context so a later message can resume the
-  process if appropriate.
+- read-only context expansion when explicitly configured
+- `request_user_clarification` when entity ambiguity blocks useful storage
 
 Forbidden:
 
+- relationship candidates
 - graph write execution
 - merge application
+- backend IDs
 - arbitrary graph query
 
-### `focused_extraction` (`LP`)
+### `entity_candidate_preparation` (`LP`)
 
 Purpose:
 
-Run small schema-focused extraction tasks selected by the backend compiler.
+Produce schema-compatible entity candidate drafts from the entity plan.
 
-This is an `LP`, not an `AS`: it receives source text, evidence, schema, and
-relevant aliases, then returns structured candidate objects. It has no tools and
-cannot hand off to other states. Its output schemas expose enum-constrained
-entity labels, relationship types, relationship kinds, and allowed refs only.
+This is an `LP`, not an `AS`: it receives source text, entity-focused reasoning,
+allowed aliases/refs, and one focused output contract.
 
-Allowed task families:
+Allowed output:
 
-- person
-- place
-- event
-- organization
-- object
-- animal
-- social circle
-- claim
-- perception
-- relationship
-- relationship context
-- relationship state
-- metadata patch
-
-Required context:
-
-- source text
-- selected evidence span
-- task schema
-- relevant graph context aliases only
-
-Extraction parametrization:
-
-- Each focused extraction call receives the exact structured contract for the
-  task being performed.
-- If the plan requires one person and one place, the backend should call the
-  extractor with the person contract for the person task and the place contract
-  for the place task.
-- Combined extraction is allowed only as an optimization for simple inputs. The
-  baseline quality rule is focused task, focused Pydantic object, focused field
-  descriptions.
+- entity candidate drafts with local refs, aliases, property suggestions,
+  evidence, missing fields, and ambiguity flags
 
 Forbidden:
 
+- relationship candidates
 - duplicate merge decisions
 - graph write-plan creation
 - graph mutation
 
-### `validation_resolution` (`BP`)
+### `entity_validation_resolution` (`BP`)
 
 Purpose:
 
-Use deterministic backend services to validate candidates, resolve obvious
-matches, and produce either a `GraphWritePlan` or a `ClarificationRequest`.
+Validate entity candidates, perform conservative duplicate handling, and produce
+the resolved entity map consumed by relationship planning.
 
-This is a `BP`, not an `AS`: it is backend-owned and deterministic. If it finds
-a contradiction doubt that requires reasoning, it hands off to
-`contradiction_review`.
+Wave-1 validation is deterministic:
 
-Allowed services:
+- schema fields allowed for the node type
+- required fields present or explicitly unknown
+- aliases accepted only on node types that support aliases
+- local refs unique
+- obvious exact duplicate names or aliases detected
+- candidate entity type allowed
 
-- candidate validation
-- candidate-local reference validation
-- conservative resolution
-- graph write-plan construction
+Output:
+
+- `ResolvedEntityMap`
+- staged create/update operations
+- rejected candidates
+- pending duplicate-review items
+- clarification request
+- validation errors
+
+Forbidden:
+
+- qualitative duplicate judging in wave 1
+- unsafe merge execution
+- graph mutation before write-plan execution
+
+### `relationship_ingestion_planning` (`AS`)
+
+Purpose:
+
+Plan relationship preparation only after entity validation has produced a
+resolved entity map.
+
+Required context:
+
+- source text or transcript
+- relationship-focused reasoning
+- compact graph relationship context
+- `ResolvedEntityMap`
+- current time/timezone
+
+Allowed outputs:
+
+- relationship actions
+- relationship context actions
+- perception actions
+- event/place link actions
+- metadata link actions
+- `missing_entity_required`
+- context gaps
+- structured clarification interruption
+
+Forbidden:
+
+- free creation of new entities
+- relationships to unknown refs
+- graph write execution
+- backend IDs
+
+### `relationship_candidate_preparation` (`LP`)
+
+Purpose:
+
+Produce schema-compatible relationship, relationship-context, perception, event
+link, place link, or metadata-link drafts from the relationship plan.
+
+Required context:
+
+- source text
+- relationship plan
+- resolved entity map
+- allowed relationship ontology
+- graph aliases
+- temporal basis
+
+Forbidden:
+
+- references to unresolved endpoints
+- duplicate merge decisions
+- graph write-plan creation
+- graph mutation
+
+### `relationship_validation` (`BP`)
+
+Purpose:
+
+Validate relationship candidates and produce either a `GraphWritePlan`,
+`ClarificationRequest`, contradiction doubt package, or validation error.
+
+Wave-1 validation is deterministic:
+
+- endpoints resolve through the `ResolvedEntityMap` or provided graph aliases
+- relationship type is allowed
+- relationship kind/detail fit the allowed ontology
+- forbidden fields are absent
+- exact duplicate edges are not created
 
 Forbidden:
 
 - LLM-authored write plans
-- unsafe merge execution
+- qualitative contradiction judging unless handed off to `contradiction_review`
+- graph mutation before write-plan execution
 
 ### `contradiction_review` (`AS`)
 
@@ -790,31 +868,65 @@ The agent cannot:
 - call extraction tools directly
 - execute graph mutations
 
-### `AS: memory_ingestion_planning`
+### `AS: reasoning_checkpoint`
 
 The agent can:
 
-- inspect source text, mention scan output, compact graph context, and pending
-  clarification answers
-- call `request_graph_context_expansion` when context is insufficient for a safe
-  plan
-- call `request_contradiction_review` when source text plus graph context raises
-  a grounded ambiguity or conflict that needs judgment
-- call `request_user_clarification` when ambiguity blocks safe extraction and
-  user input is required before continuing
-- choose the extraction mode: `simple_single_pass`, `focused_extraction`,
-  `needs_context_expansion`, or `needs_clarification_first`
-- return a structured `SemanticIngestionPlanDraft` with ordered semantic
-  actions, evidence spans, dependencies, and ambiguity/context gaps
+- inspect source text, compact Graph Context Pack, relevant conversation
+  history, current time/timezone, and pending clarification answers
+- use read-only graph/context tools only when explicitly configured
+- return structured reasoning about entity understanding, aliases, duplicate
+  concerns, relationship hypotheses, node-versus-metadata recommendations,
+  owner/user involvement, ambiguity, and storage cautions
 
 The agent cannot:
 
+- produce candidates
 - produce final graph write commands
-- choose graph labels, relationship types, write-plan operations, or backend IDs
+- decide merges
+- mutate graph state
+- replace backend validation
+- finish through unstructured assistant text alone
+
+### `AS: entity_ingestion_planning`
+
+The agent can:
+
+- inspect source text, Graph Context Pack, structured reasoning checkpoint, and
+  pending clarification answers
+- call `request_user_clarification` when entity ambiguity blocks useful storage
+- return an entity-only plan with entity actions, alias actions, details to keep
+  as metadata, possible duplicate refs, context gaps, and ambiguity notes
+
+The agent cannot:
+
+- produce relationship candidates
+- produce final graph write commands
+- choose backend IDs or persistence fields
 - decide non-destructive merges
 - mutate graph state
-- run arbitrary graph queries outside the context-expansion tool
-- finish planning through unstructured assistant text alone
+- run arbitrary graph queries outside configured read-only context tools
+
+### `AS: relationship_ingestion_planning`
+
+The agent can:
+
+- inspect source text, relationship-focused reasoning, compact graph
+  relationship context, and the resolved entity map
+- plan direct relationships, relationship contexts, perceptions, event links,
+  place links, or metadata links
+- emit `missing_entity_required` when a required endpoint was not produced by
+  the entity track
+- call `request_user_clarification` when relationship ambiguity blocks useful
+  storage
+
+The agent cannot:
+
+- freely create new entities
+- produce relationships to unknown refs
+- produce final graph write commands
+- choose backend IDs or persistence fields
+- mutate graph state
 
 ### `AS: contradiction_review`
 
@@ -1001,9 +1113,9 @@ Assistant message ownership:
   `ContradictionJudgeResultContext` with one intent: `needs_context`,
   `needs_clarification`, `emit_verdict`, or `fail_safe`. The runtime applies
   that intent explicitly instead of inferring behavior from assistant wording.
-- `memory_query`, `correction_intake`, ingestion planning, contradiction
-  review, and backend processes are not final public-message owners in normal
-  completion paths.
+- `memory_query`, `correction_intake`, ingestion reasoning/planning,
+  contradiction review, and backend processes are not final public-message
+  owners in normal completion paths.
 
 Boundaries:
 
@@ -1016,10 +1128,11 @@ Boundaries:
 - Nested tool/provider traces are compacted into runtime results. Parent prompts
   should receive concise tool outputs, not raw internal traces.
 - The full LLM ingestion workflow runs through the ingestion service when
-  configured: source normalization/transcript handling, mention scan, graph
-  context retrieval, tool-enabled planning, extraction, candidate assembly,
-  validation/resolution, write-plan creation, optional write execution,
-  clarification, and summary.
+  configured: source normalization/transcript handling, whole-source hybrid
+  graph context retrieval, structured reasoning, entity planning, entity
+  candidate preparation, entity validation/resolution, relationship planning,
+  relationship candidate preparation, relationship validation, write-plan
+  creation, optional write execution, clarification, and summary.
 - Resume for memory ingestion enters that same ingestion service path with the
   current message and recent history as clarification context. It must refresh
   graph context and rerun validation/resolution before write execution.
@@ -1037,10 +1150,13 @@ Boundaries:
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
 | `reasoning_checkpoint` | `AS` | Augment context before a downstream process | read-only graph context tools, clarification interruption, structured reasoning output | mutation, extraction, write planning |
-| `memory_ingestion_planning` | `AS` | Plan semantic ingestion actions | context expansion, contradiction review request, structured `SemanticIngestionPlanDraft` output | graph writes, DB-shaped tasks |
-| `semantic_task_compiler` | `BP` | Compile semantic actions into focused tasks | ontology registry, candidate/ref catalog, compact action summaries | LLM-authored ontology values |
-| `focused_extraction` | `LP` | Produce structured candidates | focused schema input only | resolution, writes, tools |
-| `validation_resolution` | `BP` | Deterministic validation and write-plan construction | validator, resolver, write-plan builder | LLM-authored writes |
+| `whole_source_hybrid_graph_context` | `BP` | Build ingestion graph context | hybrid retrieval, hydration, compaction | generated query fan-out in wave 1, raw graph dumps |
+| `entity_ingestion_planning` | `AS` | Plan entity preparation | optional read-only context, clarification interruption, entity-only structured output | relationships, graph writes, DB-shaped tasks |
+| `entity_candidate_preparation` | `LP` | Produce entity candidates | focused entity schema input only | relationships, resolution, writes, tools |
+| `entity_validation_resolution` | `BP` | Validate and resolve entities | deterministic validator, resolver, duplicate slot, resolved entity map builder | qualitative duplicate judging in wave 1, LLM-authored writes |
+| `relationship_ingestion_planning` | `AS` | Plan relationships from resolved refs | clarification interruption, `missing_entity_required`, relationship-only structured output | free entity creation, graph writes, unknown refs |
+| `relationship_candidate_preparation` | `LP` | Produce relationship candidates | focused relationship schema input only, resolved entity map | unresolved endpoints, resolution, writes, tools |
+| `relationship_validation` | `BP` | Validate relationships and build write plan | endpoint validation, ontology validation, write-plan builder | LLM-authored writes |
 | `contradiction_review` | `AS` | Judge grounded doubt | read-only graph/source tools | direct mutation |
 | `memory_query` | `AS` | Retrieve and answer | query context, graph views, answer provider | mutation |
 | `correction_intake` | `AS` | Propose safe correction | correction proposal, graph reads | direct mutation |
@@ -1069,12 +1185,15 @@ src/my_digital_brain/prompts/
     memory_query/v1.system.md
     query_retrieval_planning/v1.system.md
     answer_generation/v1.system.md
-    ingestion_planner/v1.system.md
-    focused_extraction/person/v1.system.md
-    focused_extraction/place/v1.system.md
-    focused_extraction/event/v1.system.md
-    focused_extraction/perception/v1.system.md
-    focused_extraction/relationship_context/v1.system.md
+    entity_ingestion_planner/v1.system.md
+    relationship_ingestion_planner/v1.system.md
+    entity_candidate_preparation/person/v1.system.md
+    entity_candidate_preparation/place/v1.system.md
+    entity_candidate_preparation/event/v1.system.md
+    entity_candidate_preparation/social_circle/v1.system.md
+    relationship_candidate_preparation/relationship/v1.system.md
+    relationship_candidate_preparation/perception/v1.system.md
+    relationship_candidate_preparation/relationship_context/v1.system.md
     correction_intake/v1.system.md
     correction_proposal/v1.system.md
     contradiction_review/v1.system.md
@@ -1101,12 +1220,12 @@ Usage pattern:
 
 ```python
 prompt = prompt_registry.render(
-    prompt_id="ingestion_planner",
+    prompt_id="entity_ingestion_planner",
     version="v1",
     variables={
         "source_text": source_text,
-        "mention_scan": mention_scan,
-        "graph_context": compact_context,
+        "graph_context_pack": graph_context_pack,
+        "structured_reasoning": structured_reasoning,
     },
 )
 ```
@@ -1134,7 +1253,7 @@ Recommended order:
 7. Optional LLM router using provider abstractions.
 8. Integration point between `ChatRuntime` and the agentic state layer.
 
-The ingestion planner, mention scan, focused extractors, assembler, validator,
-resolver, and executor already belong to the ingestion package. The agentic
-layer configures and coordinates those capabilities; it should not duplicate
-them.
+The graph-context builder, reasoning checkpoint, entity and relationship
+planners, candidate preparation calls, validators, resolvers, and executor
+belong to the ingestion package. The agentic layer configures and coordinates
+those capabilities; it should not duplicate them.

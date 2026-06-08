@@ -30,15 +30,57 @@ The engine can return:
 - `reject`: candidate is invalid or not useful.
 - `propose_merge`: candidate or existing entities appear duplicated but require confirmation.
 
+In the refined ingestion baseline, these outcomes are produced before durable
+entity creation. Entity candidates become either matched existing refs, staged
+create/update operations, rejected candidates, or pending duplicate-review
+items. Relationship planning consumes only the resulting resolved entity map.
+
 ## Resolution Stages
 
-1. Normalize candidate fields such as names, dates, places, and aliases.
-2. Search for deterministic matches from external IDs or exact aliases.
-3. Search for fuzzy matches using names, embeddings, and graph context.
-4. Score candidates with explainable match reasons.
-5. Apply policy thresholds.
-6. Ask clarification if confidence is insufficient or the action is risky.
-7. Write the selected resolution decision with provenance.
+1. Receive entity candidates after the structured reasoning and entity planning
+   stages.
+2. Normalize candidate fields such as names, dates, places, and aliases.
+3. Compare candidates with the pre-retrieved `GraphContextPack` and current
+   graph state.
+4. Search for deterministic matches from external IDs or exact aliases.
+5. Search for fuzzy matches using names, embeddings, and graph context.
+6. Score candidates with explainable match reasons.
+7. Apply policy thresholds.
+8. Return a resolved entity map with matched existing refs, staged creates,
+   staged updates, rejected candidates, and pending duplicate-review items.
+9. Ask clarification if confidence is insufficient or the action is risky.
+10. Write the selected resolution decision with provenance only when the
+    downstream write process is allowed to proceed.
+
+## Duplicate Judge Slot
+
+Duplicate handling is a required process slot before durable entity writes.
+
+Wave 1 keeps this conservative and deterministic:
+
+- exact name matches;
+- exact alias matches;
+- unsupported duplicate fields rejected by schema validation;
+- local ref collisions rejected;
+- obvious exact duplicate candidates collapsed or staged.
+
+Later waves may introduce a qualitative duplicate judge that compares new
+candidates with current graph state and decides:
+
+```text
+confirmed duplicate -> update existing node
+suspected duplicate -> ask user confirmation
+not duplicate -> create new node
+```
+
+When a duplicate is confirmed, useful information should transfer to the
+canonical node instead of creating a parallel entity:
+
+- aliases;
+- relationships;
+- additional metadata;
+- log or activity references;
+- refreshed embeddings.
 
 ## Homonymous People
 
