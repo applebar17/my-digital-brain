@@ -19,8 +19,9 @@ The ingestion flow turns user input into graph updates while preserving source e
    understanding, aliases, duplicate concerns, relationship hypotheses,
    user/owner involvement, node-versus-metadata recommendations, ambiguity, and
    storage cautions.
-8. The entity planner receives the source, graph context, and entity-focused
-   reasoning, then returns an entity-only plan.
+8. The reusable planning primitive receives the source, graph context,
+   entity-focused reasoning, and entity-planning guidelines, then returns an
+   entity-only plan.
 9. Entity candidate preparation creates schema-compatible entity drafts with
    local refs, aliases, property suggestions, evidence text/spans, missing
    fields, and ambiguity flags.
@@ -28,8 +29,9 @@ The ingestion flow turns user input into graph updates while preserving source e
    creation. In wave 1 this step is deterministic and conservative.
 11. Backend code produces a resolved entity map that links local refs to
    existing graph aliases or staged create/update operations.
-12. The relationship planner receives the source, relationship-focused
-   reasoning, compact graph relationships, and the resolved entity map.
+12. The reusable planning primitive receives the source, relationship-focused
+   reasoning, compact graph relationships, relationship-planning guidelines,
+   and the resolved entity map.
 13. Relationship candidate preparation creates relationships, relationship
    contexts, perceptions, event links, place links, or metadata suggestions only
    against resolved refs.

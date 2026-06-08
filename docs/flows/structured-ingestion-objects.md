@@ -140,10 +140,66 @@ If implementation already uses `GraphContextPackage`, that contract can be
 reused for this purpose as long as the ingestion-specific v1 strategy and
 low-noise fields are preserved.
 
+### Reusable LLM Transform Package
+
+Reasoning and planning objects should be produced through reusable LLM-backed
+information-transform packages, not one-off ingestion-only prompts.
+
+Baseline transform input:
+
+- general system prompt template;
+- dedicated purpose/guidelines;
+- dedicated context information;
+- usable conversation history when relevant;
+- optional prior compact tool outputs;
+- current time/timezone when relevant;
+- selected model route;
+- dedicated structured output model.
+
+Baseline transform output:
+
+- a structured reasoning artifact, or
+- a structured planning artifact.
+
+The current reasoning checkpoint implementation already follows this shape. The
+planning side should mirror it so ingestion entity plans, ingestion relationship
+plans, query retrieval plans, correction plans, maintenance plans, and later
+duplicate-review plans can share one backend planning primitive with different
+guidelines, context, model route, and output schema.
+
+### PlanningTransformContext
+
+A generic model-facing planning context for the reusable planning primitive.
+This is the planning analogue of the reusable reasoning checkpoint context.
+
+Core fields:
+
+- `planning_id`
+- `purpose_guidelines`
+- `goal`
+- `input_context`
+- `reasoning_artifact`
+- `conversation`
+- `current_time`
+- `timezone`
+- `prior_tool_outputs`
+- `expected_output_schema`
+- `metadata`
+
+Rules:
+
+- `input_context` is caller-shaped and process-specific.
+- `reasoning_artifact` is optional but should be provided when planning follows
+  a reasoning step.
+- The output schema is caller-selected.
+- The planner returns ordered process actions only.
+- The planner must not extract candidates, validate candidates, resolve
+  duplicates, build write plans, or mutate storage.
+
 ### StructuredReasoningCheckpoint
 
-A structured model output produced before planning. It interprets the source in
-the presence of the `GraphContextPack`.
+A structured model output produced by the reusable reasoning transform before
+planning. It interprets the source in the presence of the `GraphContextPack`.
 
 LLM draft fields:
 
@@ -201,7 +257,9 @@ persistence fields, or backend-owned IDs.
 
 ### EntityIngestionPlanDraft
 
-The model-facing entity-only planning output for the refined baseline.
+The model-facing entity-only planning output for the refined baseline. It
+should be produced by the reusable planning transform with entity-specific
+guidelines, context, and output schema.
 
 Inputs:
 
@@ -230,7 +288,9 @@ Rules:
 
 ### RelationshipIngestionPlanDraft
 
-The model-facing relationship-only planning output for the refined baseline.
+The model-facing relationship-only planning output for the refined baseline. It
+should be produced by the reusable planning transform with relationship-specific
+guidelines, resolved entity context, and output schema.
 
 Inputs:
 
@@ -656,6 +716,7 @@ The first implementation does not need every field above, but it should establis
 - `MentionScan`
 - `Mention`
 - `GraphContextPack` or an equivalent low-noise `GraphContextPackage`
+- `PlanningTransformContext`
 - `StructuredReasoningCheckpoint`
 - `EntityIngestionPlanDraft`
 - `RelationshipIngestionPlanDraft`

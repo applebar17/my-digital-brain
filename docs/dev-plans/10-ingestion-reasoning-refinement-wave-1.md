@@ -14,6 +14,8 @@ Locked baseline:
 - Source context is retrieved before reasoning.
 - Reasoning, planning, candidate preparation, validation, and write execution
   are separate activities.
+- Reasoning and planning are reusable LLM-backed information-transform
+  primitives, not ingestion-only one-off components.
 - Entity work happens before relationship work.
 - Entity creation is staged until duplicate handling and deterministic
   validation have run.
@@ -54,6 +56,56 @@ relationship plan
   -> relationship candidates
 ```
 
+## Reusable Reasoning And Planning Pillar
+
+Reasoning and planning are logical process steps that can be re-engaged at
+different points of ingestion, correction, maintenance, duplicate review,
+querying, and future graph operations. They must therefore be implemented as
+simple reusable packages for transforming information, not as hardcoded
+ingestion-only agents.
+
+Baseline package shape for every reusable reasoning or planning call:
+
+```text
+general system prompt template
+  + dedicated purpose/guidelines
+  + dedicated context information
+  + usable history when relevant
+  + optional prior compact tool outputs
+  + selected model route
+  + dedicated structured output model
+  -> structured reasoning or planning artifact
+```
+
+Current implementation check:
+
+- `reasoning_checkpoint` already follows this baseline:
+  - general prompt template: `reasoning_checkpoint/v1.system.md`;
+  - purpose-specific `ReasoningPurposeGuidelines`;
+  - caller-provided `input_context`;
+  - optional `ConversationContext`;
+  - optional compact `GraphContextPackage`;
+  - optional prior `ToolResultContext` outputs;
+  - `AgenticReasoningService.reason(..., output_schema=...)` supports the
+    default result schema or a caller-provided Pydantic output schema.
+- Planning does not yet fully follow this baseline. Current ingestion and query
+  planning are separate purpose-specific implementations. Wave 1 must introduce
+  or align a generalized planning primitive that mirrors the reasoning package.
+
+Planning baseline:
+
+- The base planning prompt explains planning responsibilities and boundaries.
+- Purpose-specific guidelines explain the concrete process being planned.
+- Caller context contains the relevant process state and constraints.
+- Conversation/history is included when it affects the plan.
+- The caller selects the output schema, such as `EntityIngestionPlanDraft`,
+  `RelationshipIngestionPlanDraft`, `QueryRetrievalPlan`, or a later duplicate
+  review plan.
+- The caller selects or allows routing for the model task.
+- The planner produces ordered process actions only. It does not extract
+  candidates, validate candidates, resolve duplicates, build write plans, or
+  mutate storage.
+
 ## Locked Principles
 
 1. **Graph context v1 stays simple.**
@@ -83,61 +135,67 @@ relationship plan
    It does not write memory, decide database IDs, emit graph write operations,
    or bypass validation.
 
-6. **Planning and extraction are split by target type.**
+6. **Planning is a reusable structured transform.**
+
+   Entity and relationship planning must use the generalized planning package
+   with dedicated guidelines, dedicated context, history when relevant, model
+   routing, and dedicated output models.
+
+7. **Planning and extraction are split by target type.**
 
    Entity planning/extraction and relationship planning/extraction are separate
    model tasks with separate contracts.
 
-7. **Entity work happens first.**
+8. **Entity work happens first.**
 
    Relationships are planned only after the entity track has produced a
    resolved entity map or staged entity operations.
 
-8. **Entity creation is staged.**
+9. **Entity creation is staged.**
 
    Candidate entities are not durable nodes until duplicate handling and
    deterministic validation complete.
 
-9. **Duplicate handling is a required process slot.**
+10. **Duplicate handling is a required process slot.**
 
    Before injecting new candidates, the system must compare them against the
    retrieved graph context and current graph state.
 
-10. **V1 duplicate handling is conservative.**
+11. **V1 duplicate handling is conservative.**
 
    Wave 1 reserves the duplicate-judge slot, but only deterministic validation
    is required initially. Qualitative duplicate judging and user confirmation
    are later work.
 
-11. **Duplicate merge behavior is a target capability.**
+12. **Duplicate merge behavior is a target capability.**
 
    When a candidate is judged to be a duplicate in a later wave, useful
    information should transfer to the existing node: aliases, relationships,
    additional metadata, log or activity references, and refreshed embeddings.
 
-12. **Relationship planning uses resolved references only.**
+13. **Relationship planning uses resolved references only.**
 
    The relationship planner receives the resolved entity map and should produce
    relationships only between known local refs or existing graph aliases.
 
-13. **Missing endpoints are explicit.**
+14. **Missing endpoints are explicit.**
 
    If a relationship requires an entity that was not created or resolved, the
    relationship step emits `missing_entity_required` instead of inventing an
    endpoint silently.
 
-14. **V1 validation is deterministic.**
+15. **V1 validation is deterministic.**
 
    Validation should check schema compatibility, required fields, forbidden
    fields, allowed ontology values, resolved endpoints, and exact duplicate
    edges. It should not attempt qualitative semantic judging yet.
 
-15. **No full qualitative traceability requirement in v1.**
+16. **No full qualitative traceability requirement in v1.**
 
    Evidence and source grounding remain useful, but wave 1 does not require a
    complete qualitative trace-back system or LLM judge for every write.
 
-16. **The process should reduce hallucination through context shaping.**
+17. **The process should reduce hallucination through context shaping.**
 
    Each step receives only the context required for its responsibility:
    reasoning receives the source and compact graph context; entity planning
@@ -400,6 +458,18 @@ The write step owns:
 Prompting should be detailed but not overloaded. Each prompt must describe only
 the current step's responsibility.
 
+Prompt layering:
+
+```text
+base reasoning or planning template
+  + step-specific guidelines
+  + step-specific context
+  + selected structured output schema
+```
+
+Do not duplicate whole prompts for every use case when the reusable base
+template plus dedicated guidelines can express the step.
+
 Required examples:
 
 - nickname/alias handling:
@@ -444,6 +514,8 @@ The prompts should include explicit rules for:
 
 Wave 1 should implement or align:
 
+- reusable planning primitive mirroring the existing reusable reasoning
+  checkpoint package
 - whole-source hybrid graph retrieval for ingestion context
 - compact `GraphContextPack`
 - ingestion-specific structured reasoning checkpoint
@@ -463,28 +535,36 @@ Wave 1 should implement or align:
 - qualitative LLM duplicate judge
 - user confirmation UI for suspected duplicates
 - full merge/split application logic
-- broad prompt optimization framework
+- broad prompt optimization framework beyond the base reusable
+  reasoning/planning template pattern
 - source-level qualitative trace-back for every decision
 - ontology expansion beyond the currently allowed node and relationship types
 - replacing the graph/vector retrieval architecture
 
 ## Implementation Order
 
-1. Add or update structured contracts for `GraphContextPack`,
-   `StructuredReasoningCheckpoint`, entity plan, relationship plan,
-   `ResolvedEntityMap`, and `missing_entity_required`.
-2. Build whole-source hybrid retrieval context for ingestion.
-3. Compact retrieved graph state into the Graph Context Pack.
-4. Plug the structured reasoning checkpoint before planning.
-5. Split planning into entity plan and relationship plan.
-6. Run entity candidate preparation before relationship candidate preparation.
-7. Build the resolved entity map after deterministic validation/resolution.
-8. Make relationship planning consume only the resolved entity map.
-9. Add deterministic validation for entity fields, relationship endpoints, and
+1. Confirm the existing reusable reasoning checkpoint is the baseline pattern:
+   general template, purpose guidelines, dedicated context, history when
+   relevant, model routing, and caller-selected output schema.
+2. Add a reusable planning primitive that mirrors the reasoning package:
+   general planning template, purpose guidelines, dedicated context, history
+   when relevant, model routing, and caller-selected output schema.
+3. Add or update structured contracts for `GraphContextPack`,
+   `StructuredReasoningCheckpoint`, `PlanningTransformContext`, entity plan,
+   relationship plan, `ResolvedEntityMap`, and `missing_entity_required`.
+4. Build whole-source hybrid retrieval context for ingestion.
+5. Compact retrieved graph state into the Graph Context Pack.
+6. Plug the structured reasoning checkpoint before planning.
+7. Split planning into entity plan and relationship plan through the reusable
+   planning primitive.
+8. Run entity candidate preparation before relationship candidate preparation.
+9. Build the resolved entity map after deterministic validation/resolution.
+10. Make relationship planning consume only the resolved entity map.
+11. Add deterministic validation for entity fields, relationship endpoints, and
    allowed ontology values.
-10. Route `missing_entity_required` into supplemental entity candidate handling.
-11. Keep old ingestion flow available as fallback until UAT proves the new flow.
-12. Add focused UAT cases and report outputs for duplicate and relationship
+12. Route `missing_entity_required` into supplemental entity candidate handling.
+13. Keep old ingestion flow available as fallback until UAT proves the new flow.
+14. Add focused UAT cases and report outputs for duplicate and relationship
    quality.
 
 ## UAT Signals

@@ -116,6 +116,33 @@ caller-provided context and returns a structured reasoning result. It may expose
 read-only graph/context tools, but it does not mutate state or replace backend
 compilation and validation.
 
+The checked implementation already follows this reusable reasoning shape:
+`ReasoningCheckpointContext` carries `ReasoningPurposeGuidelines`,
+caller-provided `input_context`, optional `ConversationContext`, optional
+compact `GraphContextPackage`, optional prior `ToolResultContext` outputs,
+current time/timezone, and an expected output schema name.
+`AgenticReasoningService.reason(...)` runs the configured
+`reasoning_checkpoint` state and accepts a caller-provided Pydantic output
+schema.
+
+Planning should follow the same reusable package pattern. A generalized
+planning primitive should receive:
+
+- a general planning system prompt template;
+- purpose-specific planning guidelines;
+- caller-provided process context;
+- usable conversation history when relevant;
+- optional compact prior tool outputs;
+- current time/timezone when relevant;
+- selected model route;
+- caller-provided structured output schema.
+
+The generalized planner returns ordered process actions only. It does not
+extract candidates, validate candidates, resolve duplicates, build write plans,
+or mutate storage. Ingestion-specific plans such as entity planning and
+relationship planning should be produced by this reusable planning primitive
+with dedicated guidelines, context, and output models.
+
 ## Execution Node Labels
 
 The handoff graph uses explicit labels so future implementation sessions do not
@@ -888,6 +915,29 @@ The agent cannot:
 - replace backend validation
 - finish through unstructured assistant text alone
 
+### `AS: planning_checkpoint`
+
+The agent can:
+
+- inspect a caller-provided goal, dedicated process context, relevant reasoning
+  artifact, usable history, current time/timezone, and prior compact tool
+  outputs
+- use configured read-only support tools when the planning purpose explicitly
+  allows them
+- return a caller-selected structured planning output model
+- produce ordered process actions, dependencies, context gaps, clarification
+  needs, and next-step recommendations
+
+The agent cannot:
+
+- extract candidate payloads
+- validate candidate payloads
+- resolve duplicates
+- build graph write plans
+- choose backend IDs or persistence fields
+- mutate graph state
+- finish through unstructured assistant text alone
+
 ### `AS: entity_ingestion_planning`
 
 The agent can:
@@ -1150,6 +1200,7 @@ Boundaries:
 | `conversation_entry` | `AS` | Choose next state and parameters | top-level action surface, direct answer | extraction internals, writes |
 | `pending_process_review` | `AS` | Classify message against pending context | resume/start/query/correction/pause/cancel commands | extraction, writes |
 | `reasoning_checkpoint` | `AS` | Augment context before a downstream process | read-only graph context tools, clarification interruption, structured reasoning output | mutation, extraction, write planning |
+| `planning_checkpoint` | `AS` | Convert goal, context, and reasoning into ordered process actions | optional read-only support tools, structured planning output selected by caller | extraction, validation, resolution, writes |
 | `whole_source_hybrid_graph_context` | `BP` | Build ingestion graph context | hybrid retrieval, hydration, compaction | generated query fan-out in wave 1, raw graph dumps |
 | `entity_ingestion_planning` | `AS` | Plan entity preparation | optional read-only context, clarification interruption, entity-only structured output | relationships, graph writes, DB-shaped tasks |
 | `entity_candidate_preparation` | `LP` | Produce entity candidates | focused entity schema input only | relationships, resolution, writes, tools |
@@ -1181,6 +1232,7 @@ src/my_digital_brain/prompts/
     conversation_entry/v1.system.md
     pending_process_review/v1.system.md
     reasoning_checkpoint/v1.system.md
+    planning_checkpoint/v1.system.md
     clarification_classifier/v1.system.md
     memory_query/v1.system.md
     query_retrieval_planning/v1.system.md

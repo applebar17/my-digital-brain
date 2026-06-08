@@ -128,6 +128,12 @@ and which implementation artifacts must exist for each wave.
   context, but model-facing prompts should not receive it for now. If a model
   needs channel details later, the backend must create a deliberate
   `ChannelContextProjection`.
+- Reasoning and planning are reusable LLM-backed information-transform
+  primitives. The existing reasoning checkpoint already uses a general template,
+  purpose guidelines, caller context, optional history/tool context, model
+  routing, and caller-selected structured output schema. Planning should be
+  refactored to the same reusable package shape instead of adding more one-off
+  planner states.
 
 ## Canonical Architecture Design
 

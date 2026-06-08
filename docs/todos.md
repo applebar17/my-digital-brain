@@ -35,6 +35,9 @@ high-priority implementation follow-ups.
 
 - `reasoning_checkpoint` now exists as a reusable agentic state skeleton with:
   - purpose-specific reasoning guidelines in its input context;
+  - caller-provided dedicated context plus optional conversation/history,
+    compact graph context, prior tool outputs, current time/timezone, and model
+    routing;
   - structured output for insights, clarification candidates, entity
     understanding, node-versus-metadata recommendations, storage hints, context
     gaps, and guardrails;
@@ -42,6 +45,16 @@ high-priority implementation follow-ups.
     interruption;
   - a thin `AgenticReasoningService` wrapper that can run it with the default
     result schema or a caller-provided Pydantic output schema.
+- Build the matching reusable planning primitive before finalizing the wave-1
+  ingestion split:
+  - general planning system template;
+  - purpose-specific planning guidelines;
+  - caller-provided dedicated context;
+  - optional conversation/history and prior tool-output context;
+  - selected model route;
+  - caller-provided structured output schema;
+  - strict boundary: planning produces ordered process actions only, not
+    candidates, validation, duplicate resolution, write plans, or mutations.
 - Decide where to plug the explicit reasoning/checkpoint step before crucial
   storage phases, especially before extraction task compilation, write-plan
   assembly, validation, and write execution.

@@ -77,6 +77,7 @@ These are backend services, not general-purpose LLM tools:
 
 - `IngestionContextRetriever`
 - `StructuredReasoningService`
+- reusable `PlanningService`
 - `EntityIngestionPlanner`
 - `RelationshipIngestionPlanner`
 - entity candidate preparers
@@ -99,12 +100,14 @@ Required target flow:
 3. Retrieve top-k relevant graph items through hybrid search.
 4. Hydrate and compact retrieved graph state into a `GraphContextPack`.
 5. Run a structured reasoning checkpoint.
-6. Run an entity-only ingestion planner.
+6. Run an entity-only ingestion planner through the reusable planning
+   primitive.
 7. Prepare entity candidates.
 8. Validate entity candidate schemas and deterministic constraints.
 9. Resolve obvious existing entity matches and stage entity create/update ops.
 10. Produce a `ResolvedEntityMap`.
-11. Run relationship-only planning from the resolved entity map.
+11. Run relationship-only planning from the resolved entity map through the
+    reusable planning primitive.
 12. Prepare relationship, relationship-context, perception, event-link, or
     metadata-link candidates.
 13. If a required endpoint is missing, emit `missing_entity_required` and loop

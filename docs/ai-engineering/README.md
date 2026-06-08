@@ -82,6 +82,28 @@ hidden chain-of-thought. Their purpose is to reduce later ambiguity, such as
 clarifying that `Merc` is an alias for Matteo Mercoldi instead of a separate
 person.
 
+Reasoning and planning should both be treated as reusable LLM-backed
+information transforms. The baseline package shape is:
+
+```text
+general system prompt template
+  + dedicated purpose/guidelines
+  + dedicated context information
+  + usable history when relevant
+  + optional prior compact tool outputs
+  + selected model route
+  + dedicated structured output model
+  -> structured artifact
+```
+
+The existing reasoning checkpoint already follows this shape through purpose
+guidelines, caller input context, optional conversation and graph context, prior
+tool outputs, model routing, and caller-selected output schemas. Planning should
+mirror the same pattern: a generalized planning primitive should convert a
+goal, context, reasoning artifact, and constraints into ordered process actions.
+It should not extract candidates, validate candidates, resolve duplicates, build
+write plans, or mutate storage.
+
 If a state needs a structured artifact as its final useful result, that artifact
 should be the state's validated structured output, not a fake "submit" tool
 used only to smuggle the schema back to the backend. Tools may still be used
