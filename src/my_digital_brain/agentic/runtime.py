@@ -55,7 +55,7 @@ class AgenticStateRunner:
     tool_registry: AgenticToolRegistry = field(default_factory=default_agentic_tool_registry)
     history_service: AgenticHistoryService = field(default_factory=AgenticHistoryService)
     temperature: float = 0.2
-    max_tokens: int = 800
+    max_tokens: int | None = None
 
     @traceable(name="Agentic State Run", run_type="chain")
     def run_state(self, invocation: AgenticStateInvocation) -> AgenticStateRunResult:
@@ -262,18 +262,7 @@ class AgenticStateRunner:
                 StructuredGenerationRequest(
                     schema=output_schema,
                     system_prompt=prompt,
-                    input_message={
-                        "state_id": state_value,
-                        "runtime": {
-                            **invocation.metadata,
-                            "structured_output": True,
-                            "output_schema": output_schema.__name__,
-                        },
-                        "context": self.history_service.model_payload_for_state(
-                            state_id,
-                            invocation.context_payload,
-                        ),
-                    },
+                    input_message={"context": model_context_payload},
                     model=route.model,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,

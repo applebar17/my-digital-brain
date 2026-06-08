@@ -208,7 +208,7 @@ def test_agentic_ingestion_planner_returns_structured_plan_without_submit_tool()
     assert provider.structured_requests[0].output_schema.__name__ == (
         "SemanticIngestionPlanDraft"
     )
-    assert provider.structured_requests[0].max_tokens == 2000
+    assert provider.structured_requests[0].max_tokens is None
 
 
 def test_agentic_ingestion_planner_preserves_support_tool_outputs_for_structured_plan() -> None:

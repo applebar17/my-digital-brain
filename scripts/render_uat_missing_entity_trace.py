@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from uat_refined_trace_common import (
@@ -9,11 +10,13 @@ from uat_refined_trace_common import (
     load_entity_candidates,
     load_graph_context_pack,
     source_from_file,
+    write_failure_report,
     write_report,
 )
 
 
 DEFAULT_OUTPUT = Path("docs/uat/missing-entity-trace.txt")
+logger = logging.getLogger("uat_refined_trace")
 
 
 def main() -> int:
@@ -30,27 +33,42 @@ def main() -> int:
         env_file=Path(args.env_file) if args.env_file else None,
         override_env=args.env_override,
     )
-    result = service.process_source_with_entity_candidates(
-        source,
-        entity_candidates,
-        graph_context_pack=graph_context_pack,
-    )
+    route = {
+        "route": "local_uat_missing_entity_relationship_trace",
+        "selected_path": "predefined entities -> relationship planning -> missing entity loop -> relationship candidates",
+        "reason": (
+            "This script starts from fixture entity candidates so the "
+            "relationship planner can be inspected in a controlled missing-endpoint "
+            "scenario without backend API, graph database, vector database, or "
+            "persisted memory dependencies."
+        ),
+        "env_file": args.env_file,
+        "env_override": args.env_override,
+    }
+    try:
+        result = service.process_source_with_entity_candidates(
+            source,
+            entity_candidates,
+            graph_context_pack=graph_context_pack,
+        )
+    except Exception as exc:
+        logger.exception("Missing-entity UAT trace failed.")
+        write_failure_report(
+            Path(args.output),
+            title="My Digital Brain - Missing Entity UAT Trace",
+            source=source,
+            route=route,
+            error=exc,
+            structured_calls=provider.structured_calls,
+            initial_entities=entity_candidates,
+        )
+        print(f"Wrote failed missing-entity UAT trace to {args.output}")
+        return 1
     write_report(
         Path(args.output),
         title="My Digital Brain - Missing Entity UAT Trace",
         source=source,
-        route={
-            "route": "local_uat_missing_entity_relationship_trace",
-            "selected_path": "predefined entities -> relationship planning -> missing entity loop -> relationship candidates",
-            "reason": (
-                "This script starts from fixture entity candidates so the "
-                "relationship planner can be inspected in a controlled missing-endpoint "
-                "scenario without backend API, graph database, vector database, or "
-                "persisted memory dependencies."
-            ),
-            "env_file": args.env_file,
-            "env_override": args.env_override,
-        },
+        route=route,
         result=result,
         structured_calls=provider.structured_calls,
         initial_entities=entity_candidates,

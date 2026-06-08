@@ -502,6 +502,8 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "reasoning_checkpoint"
     assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
+    assert set(structured_call.input_message) == {"context"}
+    assert "checkpoint_id" not in structured_call.input_message["context"]
     assert structured_call.input_message["context"]["purpose"]["focus_areas"] == [
         "owner relationship",
         "node versus metadata",
@@ -557,6 +559,8 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "planning_checkpoint"
     assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
+    assert set(structured_call.input_message) == {"context"}
+    assert "planning_id" not in structured_call.input_message["context"]
     assert structured_call.input_message["context"]["expected_output_schema"] == (
         "PlanningTransformResultContext"
     )

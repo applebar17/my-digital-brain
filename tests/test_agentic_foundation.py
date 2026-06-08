@@ -111,6 +111,7 @@ def test_generic_planning_contracts_accept_caller_context_and_schema() -> None:
 
     assert context.input_context["source_text"] == "Merc is Matteo Mercoldi."
     assert context.expected_output_schema == {"title": "EntityIngestionPlanDraft"}
+    assert "planning_id" not in context.model_facing_payload()
     assert result.actions[0].action_ref == "ACTION_001"
 
     with pytest.raises(ValidationError, match="summary"):

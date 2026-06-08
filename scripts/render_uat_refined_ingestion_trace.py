@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from uat_refined_trace_common import (
@@ -8,11 +9,13 @@ from uat_refined_trace_common import (
     build_trace_service,
     load_graph_context_pack,
     source_from_file,
+    write_failure_report,
     write_report,
 )
 
 
 DEFAULT_OUTPUT = Path("docs/uat/refined-ingestion-trace.txt")
+logger = logging.getLogger("uat_refined_trace")
 
 
 def main() -> int:
@@ -28,22 +31,36 @@ def main() -> int:
         env_file=Path(args.env_file) if args.env_file else None,
         override_env=args.env_override,
     )
-    result = service.process_source(source)
+    route = {
+        "route": "local_uat_refined_ingestion",
+        "selected_path": "reasoning -> entity planning -> entity candidates -> relationship planning -> relationship candidates",
+        "reason": (
+            "This script treats the input text as a memory-ingestion source "
+            "and avoids backend API, graph database, vector database, and "
+            "persisted memory dependencies."
+        ),
+        "env_file": args.env_file,
+        "env_override": args.env_override,
+    }
+    try:
+        result = service.process_source(source)
+    except Exception as exc:
+        logger.exception("Refined ingestion UAT trace failed.")
+        write_failure_report(
+            Path(args.output),
+            title="My Digital Brain - Refined Ingestion UAT Trace",
+            source=source,
+            route=route,
+            error=exc,
+            structured_calls=provider.structured_calls,
+        )
+        print(f"Wrote failed refined ingestion UAT trace to {args.output}")
+        return 1
     write_report(
         Path(args.output),
         title="My Digital Brain - Refined Ingestion UAT Trace",
         source=source,
-        route={
-            "route": "local_uat_refined_ingestion",
-            "selected_path": "reasoning -> entity planning -> entity candidates -> relationship planning -> relationship candidates",
-            "reason": (
-                "This script treats the input text as a memory-ingestion source "
-                "and avoids backend API, graph database, vector database, and "
-                "persisted memory dependencies."
-            ),
-            "env_file": args.env_file,
-            "env_override": args.env_override,
-        },
+        route=route,
         result=result,
         structured_calls=provider.structured_calls,
     )

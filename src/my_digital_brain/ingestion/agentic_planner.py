@@ -38,7 +38,6 @@ from my_digital_brain.ingestion.exceptions import IngestionValidationError
 
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
-PLANNER_STRUCTURED_OUTPUT_MIN_TOKENS = 2_000
 
 
 class AgenticIngestionPlanner:
@@ -215,10 +214,7 @@ class AgenticIngestionPlanner:
                     },
                     model=route.model,
                     temperature=self.state_runner.temperature,
-                    max_tokens=max(
-                        self.state_runner.max_tokens,
-                        PLANNER_STRUCTURED_OUTPUT_MIN_TOKENS,
-                    ),
+                    max_tokens=self.state_runner.max_tokens,
                     context=request_context,
                     metadata={"route": route.model_dump(mode="json", exclude_none=True)},
                 ),

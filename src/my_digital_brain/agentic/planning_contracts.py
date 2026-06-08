@@ -80,6 +80,20 @@ class PlanningTransformContext(AgenticModel):
         ),
     )
 
+    def model_facing_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "purpose": self.purpose,
+                "input_context": self.input_context,
+                "reasoning_artifact": self.reasoning_artifact,
+                "conversation": self.conversation,
+                "current_time": self.current_time,
+                "timezone": self.timezone,
+                "prior_tool_outputs": self.prior_tool_outputs,
+                "expected_output_schema": self.expected_output_schema,
+            },
+        )
+
 
 class PlanningActionContext(AgenticModel):
     """Default lightweight action shape for generic planning use."""
@@ -152,3 +166,28 @@ class PlanningTransformResultContext(AgenticModel):
         ):
             raise ValueError("Planning transform result requires at least one useful signal.")
         return self
+
+
+def _compact_prompt_payload(value: Any) -> Any:
+    if hasattr(value, "model_facing_payload"):
+        return _compact_prompt_payload(value.model_facing_payload())
+    if hasattr(value, "model_dump"):
+        return _compact_prompt_payload(value.model_dump(mode="json", exclude_none=True))
+    if isinstance(value, dict):
+        compacted = {
+            key: _compact_prompt_payload(item)
+            for key, item in value.items()
+            if key != "metadata"
+        }
+        return {
+            key: item
+            for key, item in compacted.items()
+            if item not in (None, "", [], {})
+        }
+    if isinstance(value, list):
+        return [
+            item
+            for item in (_compact_prompt_payload(item) for item in value)
+            if item not in (None, "", [], {})
+        ]
+    return value

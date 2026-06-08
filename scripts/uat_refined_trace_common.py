@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -14,6 +15,8 @@ SRC_ROOT = PROJECT_ROOT / "src"
 DEFAULT_ENV_FILE = SRC_ROOT / "my_digital_brain" / ".env"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+
+logger = logging.getLogger("uat_refined_trace")
 
 from my_digital_brain.agentic import (  # noqa: E402
     AgenticPlanningService,
@@ -50,6 +53,7 @@ class CapturedStructuredCall:
     system_prompt: str
     input_message: Any
     output: Any | None = None
+    error: dict[str, Any] | None = None
 
 
 class TraceStructuredProvider:
@@ -69,7 +73,19 @@ class TraceStructuredProvider:
             input_message=request.input_message,
         )
         self.structured_calls.append(call)
-        result = self.delegate.generate_structured(request)
+        try:
+            result = self.delegate.generate_structured(request)
+        except Exception as exc:
+            call.error = {
+                "error_type": exc.__class__.__name__,
+                "message": str(exc),
+            }
+            logger.exception(
+                "Structured call failed for schema %s and purpose %s.",
+                call.schema,
+                call.purpose or "unknown",
+            )
+            raise
         call.output = result.parsed.model_dump(mode="json", exclude_none=True)
         return result
 
@@ -100,6 +116,8 @@ def build_trace_service(
     env_file: Path | None = DEFAULT_ENV_FILE,
     override_env: bool = False,
 ) -> tuple[RefinedIngestionService, TraceStructuredProvider]:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env_file(env_file, override=override_env)
     settings = Settings()
     provider = TraceStructuredProvider(build_ai_provider(settings))
@@ -205,15 +223,7 @@ def write_report(
     structured_calls: list[CapturedStructuredCall],
     initial_entities: list[CandidateEntity] | None = None,
 ) -> None:
-    lines: list[str] = [
-        title,
-        "=" * len(title),
-        "",
-        f"Generated at: {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}",
-        "Graph/database integrations: disabled",
-        "Provider-generated sections are non-deterministic.",
-        "",
-    ]
+    lines = _base_report_lines(title)
     _append_text_block(lines, "User Request", source.raw_text or source.content_ref or "")
     _append_json_block(lines, "Routing", route)
     if initial_entities is not None:
@@ -226,6 +236,50 @@ def write_report(
     _append_structured_calls(lines, structured_calls)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_failure_report(
+    output: Path,
+    *,
+    title: str,
+    source: SourceRecordRef,
+    route: dict[str, Any],
+    error: Exception,
+    structured_calls: list[CapturedStructuredCall],
+    initial_entities: list[CandidateEntity] | None = None,
+) -> None:
+    lines = _base_report_lines(title)
+    _append_text_block(lines, "User Request", source.raw_text or source.content_ref or "")
+    _append_json_block(lines, "Routing", route)
+    if initial_entities is not None:
+        _append_json_block(
+            lines,
+            "Initial Predefined Entity Candidates",
+            [candidate.model_dump(mode="json", exclude_none=True) for candidate in initial_entities],
+        )
+    _append_json_block(
+        lines,
+        "Execution Error",
+        {
+            "error_type": error.__class__.__name__,
+            "message": str(error),
+        },
+    )
+    _append_structured_calls(lines, structured_calls)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _base_report_lines(title: str) -> list[str]:
+    return [
+        title,
+        "=" * len(title),
+        "",
+        f"Generated at: {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}",
+        "Graph/database integrations: disabled",
+        "Provider-generated sections are non-deterministic.",
+        "",
+    ]
 
 
 def _append_result_summary(lines: list[str], result: RefinedIngestionResult) -> None:
@@ -273,6 +327,8 @@ def _append_structured_calls(
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
         _append_json_block(lines, "Input", call.input_message)
+        if call.error is not None:
+            _append_json_block(lines, "Error / Diagnostics", call.error)
         _append_json_block(lines, "Output", call.output)
 
 

@@ -26,6 +26,19 @@ from my_digital_brain.agentic.enums import (
 from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.core.ids import new_uuid
 
+BACKEND_ONLY_KEYS = {
+    "metadata",
+    "checkpoint_id",
+    "context_id",
+    "package_id",
+    "mention_scan_id",
+    "process_id",
+    "candidate_id",
+    "extraction_id",
+    "review_id",
+    "suggestion_id",
+}
+
 
 class ChannelSessionMetadata(AgenticModel):
     """Backend-owned channel/session metadata.
@@ -157,6 +170,20 @@ class ReasoningCheckpointContext(AgenticModel):
     prior_tool_outputs: list["ToolResultContext"] = Field(default_factory=list)
     expected_output_schema: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_facing_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "purpose": self.purpose,
+                "input_context": self.input_context,
+                "conversation": self.conversation,
+                "graph_context": self.graph_context,
+                "current_time": self.current_time,
+                "timezone": self.timezone,
+                "prior_tool_outputs": self.prior_tool_outputs,
+                "expected_output_schema": self.expected_output_schema,
+            },
+        )
 
 
 class ReasoningInsightContext(AgenticModel):
@@ -509,3 +536,28 @@ class MaintenanceReviewResultContext(AgenticModel):
         if not self.suggestions and not self.no_action_reason:
             raise ValueError("Maintenance review requires suggestions or no_action_reason.")
         return self
+
+
+def _compact_prompt_payload(value: Any) -> Any:
+    if hasattr(value, "model_facing_payload"):
+        return _compact_prompt_payload(value.model_facing_payload())
+    if hasattr(value, "model_dump"):
+        return _compact_prompt_payload(value.model_dump(mode="json", exclude_none=True))
+    if isinstance(value, dict):
+        compacted = {
+            key: _compact_prompt_payload(item)
+            for key, item in value.items()
+            if key not in BACKEND_ONLY_KEYS
+        }
+        return {
+            key: item
+            for key, item in compacted.items()
+            if item not in (None, "", [], {})
+        }
+    if isinstance(value, list):
+        return [
+            item
+            for item in (_compact_prompt_payload(item) for item in value)
+            if item not in (None, "", [], {})
+        ]
+    return value
