@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from typing import Any
 
@@ -21,7 +22,7 @@ from .compatibility import apply_chat_completion_compatibility
 
 class GenAIRetryMixin:
     def _call_with_retries(self, params: dict[str, Any]):
-        params = apply_chat_completion_compatibility(params)
+        params = self._prepare_chat_completion_params(params)
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
@@ -55,6 +56,16 @@ class GenAIRetryMixin:
                     )
                     continue
                 if (
+                    not adjusted_for_max_tokens
+                    and self._should_retry_with_max_tokens(exc, params)
+                ):
+                    adjusted_for_max_tokens = True
+                    params = self._replace_max_completion_tokens(params)
+                    self.logger.warning(
+                        "OpenAI SDK rejected max_completion_tokens; retrying with max_tokens."
+                    )
+                    continue
+                if (
                     not adjusted_for_context
                     and self._should_retry_after_context_compaction(exc, params)
                 ):
@@ -83,7 +94,7 @@ class GenAIRetryMixin:
     @traceable(name="Structured LLM Call", run_type="parser")
     def _call_structured_response_with_retries(self, params: dict[str, Any]):
         params = self._normalize_structured_response_format(params)
-        params = apply_chat_completion_compatibility(params)
+        params = self._prepare_chat_completion_params(params)
         adjusted_for_temperature = False
         adjusted_for_max_tokens = False
         adjusted_for_context = False
@@ -141,6 +152,17 @@ class GenAIRetryMixin:
                     self.logger.warning(
                         "OpenAI model rejected max_tokens; retrying structured "
                         "call with max_completion_tokens."
+                    )
+                    continue
+                if (
+                    not adjusted_for_max_tokens
+                    and self._should_retry_with_max_tokens(exc, params)
+                ):
+                    adjusted_for_max_tokens = True
+                    params = self._replace_max_completion_tokens(params)
+                    self.logger.warning(
+                        "OpenAI SDK rejected max_completion_tokens; retrying structured "
+                        "call with max_tokens."
                     )
                     continue
                 if (
@@ -218,12 +240,9 @@ class GenAIRetryMixin:
                         "structured parse call without temperature."
                     )
                     continue
-                if (
-                    not adjusted_for_max_tokens
-                    and self._should_retry_with_max_completion_tokens(
-                        exc,
-                        {"model": model, "max_tokens": max_tokens},
-                    )
+                if not adjusted_for_max_tokens and self._should_retry_with_max_completion_tokens(
+                    exc,
+                    {"model": model, "max_tokens": max_tokens},
                 ):
                     adjusted_for_max_tokens = True
                     self.logger.warning(
@@ -234,6 +253,22 @@ class GenAIRetryMixin:
                         None if max_tokens is None else int(max_tokens)
                     )
                     max_tokens = None
+                    continue
+                if not adjusted_for_max_tokens and self._should_retry_with_max_tokens(
+                    exc,
+                    {"model": model, "max_completion_tokens": max_completion_tokens},
+                ):
+                    adjusted_for_max_tokens = True
+                    self.logger.warning(
+                        "OpenAI SDK rejected max_completion_tokens; retrying structured "
+                        "parse call with max_tokens."
+                    )
+                    max_tokens = (
+                        None
+                        if max_completion_tokens is None
+                        else int(max_completion_tokens)
+                    )
+                    max_completion_tokens = None
                     continue
                 if not adjusted_for_context and is_context_length_error(exc):
                     adjusted_for_context = True
@@ -289,7 +324,7 @@ class GenAIRetryMixin:
             params["max_tokens"] = max_tokens
         if max_completion_tokens is not None:
             params["max_completion_tokens"] = max_completion_tokens
-        params = apply_chat_completion_compatibility(params)
+        params = self._prepare_chat_completion_params(params)
         record_openai_payload(params, metadata={"structured_schema": schema.__name__})
         response = self.client.chat.completions.create(**params)
         record_openai_response(response, metadata={"structured_schema": schema.__name__})
@@ -359,6 +394,26 @@ class GenAIRetryMixin:
         )
         return any(marker in message for marker in unsupported_markers)
 
+    def _should_retry_with_max_tokens(
+        self,
+        exc: Exception,
+        params: dict[str, Any],
+    ) -> bool:
+        if "max_completion_tokens" not in params:
+            return False
+
+        message = str(exc).lower()
+        if "max_completion_tokens" not in message:
+            return False
+
+        unsupported_markers = (
+            "unexpected keyword argument",
+            "unsupported_parameter",
+            "unrecognized request argument",
+            "not supported",
+        )
+        return any(marker in message for marker in unsupported_markers)
+
     def _should_retry_after_context_compaction(
         self,
         exc: Exception,
@@ -375,6 +430,35 @@ class GenAIRetryMixin:
         if max_tokens is not None:
             updated["max_completion_tokens"] = max_tokens
         return updated
+
+    def _replace_max_completion_tokens(self, params: dict[str, Any]) -> dict[str, Any]:
+        updated = dict(params)
+        max_completion_tokens = updated.pop("max_completion_tokens", None)
+        if max_completion_tokens is not None and "max_tokens" not in updated:
+            updated["max_tokens"] = max_completion_tokens
+        return updated
+
+    def _prepare_chat_completion_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        updated = apply_chat_completion_compatibility(params)
+        if (
+            "max_completion_tokens" in updated
+            and not self._chat_completion_create_accepts("max_completion_tokens")
+        ):
+            return self._replace_max_completion_tokens(updated)
+        return updated
+
+    def _chat_completion_create_accepts(self, parameter_name: str) -> bool:
+        try:
+            signature = inspect.signature(self.client.chat.completions.create)
+        except (AttributeError, TypeError, ValueError):
+            return True
+        parameters = signature.parameters
+        if parameter_name in parameters:
+            return True
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
 
     def _is_retryable_error(self, exc: Exception) -> bool:
         message = str(exc).lower()

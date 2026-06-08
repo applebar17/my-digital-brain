@@ -18,7 +18,6 @@ from my_digital_brain.ai.tools import ToolBox, build_chat_toolbox
 from my_digital_brain.ai.tracing import traceable, wrap_openai_client
 
 from .context_ops import GenAIContextMixin
-from .compatibility import apply_chat_completion_compatibility
 from .diagnostics import _llm_prompt_diagnostics
 from .errors import _provider_error_details
 from .retrying import GenAIRetryMixin
@@ -72,7 +71,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
             params["temperature"] = temperature
         if max_tokens is not None:
             params["max_tokens"] = max_tokens
-        params = apply_chat_completion_compatibility(params)
+        params = self._prepare_chat_completion_params(params)
         self._ensure_context_budget(params)
         messages = params.get("messages") or messages
         max_tokens = params.get("max_tokens")
@@ -169,7 +168,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         if "tools" not in params:
             params.pop("parallel_tool_calls", None)
 
-        params = apply_chat_completion_compatibility(params)
+        params = self._prepare_chat_completion_params(params)
         self._ensure_context_budget(params)
         return params
 
