@@ -61,6 +61,7 @@ from my_digital_brain.ingestion.contracts import (
     RelationshipIngestionActionDraft,
     RelationshipIngestionPlanDraft,
     RelationshipStorageShape,
+    RefinedIngestionResult,
     ResolvedEntityMap,
     ResolvedEntityMapEntry,
     ResolvedEntityStatus,
@@ -75,6 +76,7 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
+from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
     ClarificationStatus,
@@ -100,6 +102,8 @@ from my_digital_brain.ingestion.planning_guidelines import (
 )
 from my_digital_brain.ingestion.planner import LLMIngestionPlanner
 from my_digital_brain.ingestion.resolution import ConservativeResolutionService
+from my_digital_brain.ingestion.refined_resolution import DeterministicResolvedEntityMapBuilder
+from my_digital_brain.ingestion.refined_service import RefinedIngestionService
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.validation import IngestionValidator
@@ -186,6 +190,8 @@ __all__ = [
     "RelationshipIngestionActionDraft",
     "RelationshipIngestionPlanDraft",
     "RelationshipStorageShape",
+    "RefinedIngestionResult",
+    "RefinedIngestionService",
     "ResolvedEntityMap",
     "ResolvedEntityMapEntry",
     "ResolvedEntityStatus",
@@ -200,10 +206,12 @@ __all__ = [
     "TemporalScope",
     "ValidationIssue",
     "ValidationResult",
+    "WholeSourceGraphContextPackBuilder",
     "build_entity_planning_context",
     "build_missing_entity_planning_context",
     "build_relationship_planning_context",
     "entity_ingestion_planning_guidelines",
     "missing_entity_planning_guidelines",
     "relationship_ingestion_planning_guidelines",
+    "DeterministicResolvedEntityMapBuilder",
 ]

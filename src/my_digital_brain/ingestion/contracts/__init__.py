@@ -79,6 +79,7 @@ from my_digital_brain.ingestion.contracts.results import (
     IngestionResult,
     IngestionSessionSnapshot,
 )
+from my_digital_brain.ingestion.contracts.refined_runtime import RefinedIngestionResult
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
 from my_digital_brain.ingestion.contracts.source import (
     EvidenceRef,
@@ -159,6 +160,7 @@ __all__ = [
     "RelationshipIngestionActionDraft",
     "RelationshipIngestionPlanDraft",
     "RelationshipStorageShape",
+    "RefinedIngestionResult",
     "ResolvedEntityMap",
     "ResolvedEntityMapEntry",
     "ResolvedEntityStatus",
