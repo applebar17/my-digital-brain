@@ -28,7 +28,7 @@ from my_digital_brain.ingestion.contracts import (
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.enums import IngestionStatus, SourceChannel, SourceType
-from my_digital_brain.ingestion.extractors import EntityExtractor
+from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
 
 
 def test_whole_source_graph_context_pack_builder_compacts_hybrid_search_result() -> None:
@@ -131,7 +131,7 @@ def test_refined_runtime_matches_merc_alias_to_existing_entity_before_relationsh
         _source("Merc is Matteo Mercoldi."),
     )
 
-    assert result.status == IngestionStatus.PLANNED
+    assert result.status == IngestionStatus.CANDIDATE_READY
     assert result.reasoning is not None
     assert result.entity_plan is not None
     assert result.resolved_entity_map is not None
@@ -140,6 +140,10 @@ def test_refined_runtime_matches_merc_alias_to_existing_entity_before_relationsh
     )
     assert result.resolved_entity_map.entries[0].graph_alias == "NODE_000001"
     assert result.relationship_plan is not None
+    assert result.relationship_extraction_plan is not None
+    assert result.relationship_extraction_plan.tasks == []
+    assert result.candidate_graph is not None
+    assert result.candidate_graph.candidate_entities
     assert provider.requests[0].output_schema.__name__ == "IngestionReasoningCheckpointDraft"
     assert provider.requests[1].output_schema.__name__ == "EntityIngestionPlanDraft"
     assert provider.requests[2].output_schema.__name__ == "CandidateEntityDraftBatch"
@@ -189,6 +193,18 @@ def test_refined_runtime_plans_brother_relationship_against_staged_entity_ref() 
                     },
                 ],
             },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_RELATIONSHIP_001",
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_ref": "OWNER",
+                        "to_ref": "CANDIDATE_PERSON_001",
+                        "relationship_kind": "family",
+                        "relationship_detail": "brother",
+                    },
+                ],
+            },
         ],
     )
 
@@ -196,7 +212,7 @@ def test_refined_runtime_plans_brother_relationship_against_staged_entity_ref() 
         _source("My brother Lorenzo lives in Milan."),
     )
 
-    assert result.status == IngestionStatus.PLANNED
+    assert result.status == IngestionStatus.CANDIDATE_READY
     assert result.resolved_entity_map is not None
     assert result.resolved_entity_map.relationship_usable_refs == {
         "CANDIDATE_PERSON_001": "CANDIDATE_PERSON_001",
@@ -206,9 +222,14 @@ def test_refined_runtime_plans_brother_relationship_against_staged_entity_ref() 
     assert result.relationship_plan.actions[0].relationship_intent == (
         "Lorenzo is the user's brother."
     )
+    assert result.relationship_extraction_plan is not None
+    assert result.relationship_extraction_plan.tasks[0].task_type == "relationship"
+    assert len(result.relationship_candidates) == 1
+    assert result.candidate_graph is not None
+    assert len(result.candidate_graph.candidate_relationships) == 1
 
 
-def test_refined_runtime_allows_relationship_planning_to_emit_missing_entity_required() -> None:
+def test_refined_runtime_resolves_missing_entity_before_relationship_candidates() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -236,6 +257,53 @@ def test_refined_runtime_allows_relationship_planning_to_emit_missing_entity_req
                     },
                 ],
             },
+            {
+                "reason": "The missing brother endpoint must be prepared first.",
+                "actions": [
+                    {
+                        "action_ref": "ENTITY_ACTION_MISSING_001",
+                        "goal": "Extract the user's brother as a person endpoint.",
+                        "mention_text": "my brother",
+                        "suggested_entity_type": "Person",
+                        "evidence_text": "my brother",
+                    },
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "The user's brother",
+                    },
+                ],
+            },
+            {
+                "reason": "The supplemental entity map now has the brother endpoint.",
+                "actions": [
+                    {
+                        "action_ref": "REL_ACTION_001",
+                        "goal": "Represent the user's brother relationship.",
+                        "from_ref": "OWNER",
+                        "to_ref": "CANDIDATE_PERSON_001",
+                        "relationship_intent": "The unnamed person is the user's brother.",
+                        "storage_shape": "direct_relationship",
+                        "evidence_text": "my brother",
+                    },
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_RELATIONSHIP_001",
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_ref": "OWNER",
+                        "to_ref": "CANDIDATE_PERSON_001",
+                        "relationship_kind": "family",
+                        "relationship_detail": "brother",
+                    },
+                ],
+            },
         ],
     )
 
@@ -243,13 +311,17 @@ def test_refined_runtime_allows_relationship_planning_to_emit_missing_entity_req
         _source("My brother lives in Milan."),
     )
 
-    assert result.status == IngestionStatus.PLANNED
+    assert result.status == IngestionStatus.CANDIDATE_READY
     assert result.entity_candidates == []
     assert result.resolved_entity_map is not None
-    assert result.resolved_entity_map.relationship_usable_refs == {}
+    assert result.resolved_entity_map.relationship_usable_refs == {
+        "CANDIDATE_PERSON_001": "CANDIDATE_PERSON_001",
+    }
+    assert len(result.supplemental_entity_candidates) == 1
     assert result.relationship_plan is not None
-    assert result.relationship_plan.missing_entities[0].missing_ref == "MISSING_ENTITY_001"
-    assert len(provider.requests) == 3
+    assert result.relationship_plan.missing_entities == []
+    assert len(result.relationship_candidates) == 1
+    assert len(provider.requests) == 7
 
 
 def test_refined_runtime_keeps_low_salience_details_out_of_entity_candidates() -> None:
@@ -276,10 +348,48 @@ def test_refined_runtime_keeps_low_salience_details_out_of_entity_candidates() -
         _source("I ate eggs with zucchini and peppers."),
     )
 
-    assert result.status == IngestionStatus.PLANNED
+    assert result.status == IngestionStatus.CANDIDATE_READY
     assert result.entity_candidates == []
     assert result.relationship_plan is not None
     assert result.relationship_plan.actions == []
+
+
+def test_refined_runtime_rejects_relationship_actions_with_unknown_endpoints() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "summary": "The source has a relationship but no resolved endpoint.",
+                "relationship_notes": ["The endpoint Lorenzo is not resolved."],
+            },
+            {
+                "reason": "No entity action was prepared.",
+                "context_gaps": ["No resolved entity endpoint."],
+            },
+            {
+                "reason": "This plan incorrectly uses a raw endpoint.",
+                "actions": [
+                    {
+                        "action_ref": "REL_ACTION_001",
+                        "goal": "Represent a brother relationship.",
+                        "from_ref": "OWNER",
+                        "to_ref": "Lorenzo",
+                        "relationship_intent": "Lorenzo is the user's brother.",
+                        "storage_shape": "direct_relationship",
+                        "evidence_text": "brother Lorenzo",
+                    },
+                ],
+            },
+        ],
+    )
+
+    result = _service(provider, GraphContextPack(source_id="source-1")).process_source(
+        _source("My brother Lorenzo lives in Milan."),
+    )
+
+    assert result.status == IngestionStatus.VALIDATION_FAILED
+    assert result.relationship_candidates == []
+    assert result.validation_errors[0].code == "unknown_relationship_endpoint"
+    assert len(provider.requests) == 3
 
 
 def test_refined_entity_resolver_rejected_entries_are_not_relationship_usable() -> None:
@@ -353,6 +463,7 @@ def _service(provider: QueuedStructuredProvider, pack: GraphContextPack) -> Refi
         planning_service=AgenticPlanningService(runner),
         graph_context_builder=StaticGraphContextBuilder(pack),
         entity_extractors=[EntityExtractor(provider)],
+        relationship_extractors=[RelationshipExtractor(provider)],
     )
 
 

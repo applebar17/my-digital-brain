@@ -5,7 +5,11 @@ from typing import Any
 from pydantic import Field
 
 from my_digital_brain.ingestion.contracts.base import IngestionModel
-from my_digital_brain.ingestion.contracts.candidates import CandidateEntity, CandidateMemoryGraph
+from my_digital_brain.ingestion.contracts.candidates import (
+    CandidateEntity,
+    CandidateMemoryGraph,
+    CandidateOutput,
+)
 from my_digital_brain.ingestion.contracts.context import GraphContextPack, GraphContextPackView
 from my_digital_brain.ingestion.contracts.planning import ClarificationRequest, ExtractionPlan
 from my_digital_brain.ingestion.contracts.refined_drafts import (
@@ -28,8 +32,14 @@ class RefinedIngestionResult(IngestionModel):
     entity_extraction_plan: ExtractionPlan | None = None
     entity_candidates: list[CandidateEntity] = Field(default_factory=list)
     entity_candidate_graph: CandidateMemoryGraph | None = None
+    supplemental_entity_plans: list[EntityIngestionPlanDraft] = Field(default_factory=list)
+    supplemental_entity_extraction_plans: list[ExtractionPlan] = Field(default_factory=list)
+    supplemental_entity_candidates: list[CandidateEntity] = Field(default_factory=list)
     resolved_entity_map: ResolvedEntityMap | None = None
     relationship_plan: RelationshipIngestionPlanDraft | None = None
+    relationship_extraction_plan: ExtractionPlan | None = None
+    relationship_candidates: list[CandidateOutput] = Field(default_factory=list)
+    candidate_graph: CandidateMemoryGraph | None = None
     clarification: ClarificationRequest | None = None
     validation_errors: list[ValidationIssue] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

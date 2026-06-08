@@ -166,6 +166,16 @@ class IngestionPromptBuilder:
             "candidate_ref_catalog",
             "previous_action_summaries",
             "allowed_graph_aliases",
+            "relationship_action_ref",
+            "relationship_action_goal",
+            "relationship_action_index",
+            "relationship_intent",
+            "storage_shape",
+            "original_from_ref",
+            "original_to_ref",
+            "resolved_from_ref",
+            "resolved_to_ref",
+            "relationship_depends_on",
             "ontology",
         }
         return {

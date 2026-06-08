@@ -327,6 +327,9 @@ Rules:
   needed.
 - Moving upward: compact internal activity into a concise tool output result.
 - Persist full internal traces for audit, debugging, and replay when useful.
+- Local UAT trace reports may render prompts, inputs, outputs, candidates, and
+  missing-entity handling for human review; they are diagnostic artifacts, not
+  model-facing history or production API contracts.
 - Do not expose noisy nested tool chatter to future top-level prompts unless a
   state explicitly needs it.
 - Tool output summaries must preserve the achieved result, unresolved questions,

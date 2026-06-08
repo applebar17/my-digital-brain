@@ -80,6 +80,12 @@ high-priority implementation follow-ups.
   - stage entity creation until deterministic validation and duplicate handling
     have run;
   - plan relationships only from the resolved entity map.
+- Use the wave-4 local UAT trace scripts during hands-on review to tune
+  reasoning, planning, entity extraction, missing-entity handling, relationship
+  extraction, and final candidate summaries.
+- Plan the next refined-ingestion wave for write-plan generation, validation
+  hardening, durable graph writes, duplicate-judge integration, and production
+  orchestration.
 - Reserve the duplicate-judge process slot before durable entity writes.
   Wave 1 keeps this deterministic and conservative; qualitative duplicate
   judging, user confirmation, merge application, metadata transfer, and

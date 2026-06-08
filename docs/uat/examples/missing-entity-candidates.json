@@ -1,0 +1,10 @@
+{
+  "candidates": [
+    {
+      "local_ref": "CANDIDATE_PERSON_001",
+      "entity_type": "Person",
+      "display_name": "Marco",
+      "description": "Person explicitly mentioned in the fictitious UAT request."
+    }
+  ]
+}

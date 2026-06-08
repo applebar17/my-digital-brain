@@ -12,6 +12,56 @@ Default output:
 docs/uat/current-graph-status.txt
 ```
 
+## Wave 4 Local Trace Reports
+
+Wave 4 adds graph/database-free UAT scripts for inspecting the refined ingestion
+process from local fixtures. These scripts use the project's provider/model
+environment configuration, but do not require the backend API, graph database,
+vector database, or persisted memory state.
+
+Local conversation-entry trace:
+
+```powershell
+python scripts/render_uat_refined_ingestion_trace.py `
+  --input docs/uat/examples/user-message.txt `
+  --output docs/uat/refined-ingestion-trace.txt
+```
+
+```bash
+python scripts/render_uat_refined_ingestion_trace.py \
+  --input docs/uat/examples/user-message.txt \
+  --output docs/uat/refined-ingestion-trace.txt
+```
+
+The report should show the user request, routing, reasoning
+system-prompt/input/output, entity-planning system-prompt/input/output, entity
+candidate preparation, resolved entity map, relationship-planning
+system-prompt/input/output, relationship candidate preparation, and final
+candidate summary.
+
+Missing-entity relationship trace:
+
+```powershell
+python scripts/render_uat_missing_entity_trace.py `
+  --input docs/uat/examples/missing-entity-request.txt `
+  --entities docs/uat/examples/missing-entity-candidates.json `
+  --output docs/uat/missing-entity-trace.txt
+```
+
+```bash
+python scripts/render_uat_missing_entity_trace.py \
+  --input docs/uat/examples/missing-entity-request.txt \
+  --entities docs/uat/examples/missing-entity-candidates.json \
+  --output docs/uat/missing-entity-trace.txt
+```
+
+The report should show the fictitious request, predefined entity candidates or
+initial resolved map, relationship planner prompt/input/output,
+`MissingEntityRequiredDraft`, missing-entity planning prompt/input/output,
+supplemental entity candidate output, updated resolved map, resumed
+relationship planning/extraction, and final entity plus relationship
+candidates.
+
 ## Report Contents
 
 The current report includes:

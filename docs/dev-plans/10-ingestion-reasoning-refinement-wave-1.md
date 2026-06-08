@@ -533,6 +533,116 @@ The write step owns:
 - graph persistence
 - vector refresh triggers when implemented
 
+## Wave 4 Scope: Relationship Candidates And UAT Traces
+
+Wave 4 should make the refined ingestion path inspectable and relationship-ready
+without relying on graph/database integrations for UAT. The slice should focus
+on relationship candidate preparation, missing-entity detection, and local text
+reports that expose the process under the hood.
+
+Runtime boundary:
+
+- The old graph/database write behavior remains outside this wave.
+- The UAT scripts may call configured model providers through the project
+  environment, but they must not require graph or database access.
+- The scripts render local, committable `.txt` reports for human review.
+- Reports are diagnostic artifacts, not production telemetry or API contracts.
+
+Relationship-candidate scope:
+
+- compile `RelationshipIngestionPlanDraft` actions into relationship extraction
+  requests;
+- enforce resolved endpoint usage through `ResolvedEntityMap`;
+- emit and consume `MissingEntityRequiredDraft` when a relationship endpoint is
+  missing;
+- re-plan only the missing entity from the missing-entity guidance;
+- update the resolved entity map with the supplemental entity result;
+- resume blocked relationship planning/extraction after the entity map is
+  complete;
+- produce final entity and relationship candidate summaries;
+- keep write-plan generation and durable writes deferred to a later wave.
+
+### UAT Script 1: Local Conversation Entry Trace
+
+Add a local script for a provided text file acting as the user's message.
+Suggested path:
+
+```text
+scripts/render_uat_refined_ingestion_trace.py
+```
+
+Inputs:
+
+- `--input`: local `.txt` source file;
+- `--output`: local `.txt` report path;
+- optional provider/model/env overrides following existing project
+  configuration patterns;
+- optional empty or fixture-based graph-context placeholder.
+
+The script should process the text as a conversation entry and render:
+
+1. user request/source text;
+2. routing decision and selected ingestion path;
+3. graph context placeholder or empty rendered pack;
+4. reasoning system prompt, model input, and model output;
+5. entity-planning system prompt, model input, and model output;
+6. entity extraction or candidate-preparation input and output;
+7. resolved entity map;
+8. relationship-planning system prompt, model input, and model output;
+9. relationship extraction or candidate-preparation input and output;
+10. final candidate graph summary.
+
+Acceptance criteria:
+
+- running the script does not require backend API, graph database, vector
+  database, or persisted memory state;
+- the report is readable without raw UUID-heavy metadata by default;
+- prompt/input/output blocks are visible enough to debug model behavior;
+- the script clearly marks provider-generated content as non-deterministic.
+
+### UAT Script 2: Missing-Entity Relationship Trace
+
+Add a second local script for a controlled missing-entity scenario. Suggested
+path:
+
+```text
+scripts/render_uat_missing_entity_trace.py
+```
+
+Inputs:
+
+- `--input`: fictitious ingestion request text;
+- `--entities`: fixture file containing predefined entity candidates or a
+  prebuilt resolved entity map;
+- `--output`: local `.txt` report path;
+- optional provider/model/env overrides following existing project
+  configuration patterns.
+
+The fixture must intentionally omit one relationship endpoint so the
+relationship planner has to decide whether a `MissingEntityRequiredDraft` is
+needed before relationship candidates are prepared.
+
+The report should render:
+
+1. fictitious user request/source text;
+2. predefined entity candidates or initial resolved entity map;
+3. relationship-planning system prompt, model input, and model output;
+4. detected `MissingEntityRequiredDraft` values;
+5. missing-entity planning system prompt, model input, and model output;
+6. supplemental entity extraction or candidate-preparation output;
+7. updated resolved entity map;
+8. resumed relationship plan or relationship extraction output;
+9. final entity and relationship candidate summary.
+
+Acceptance criteria:
+
+- the missing endpoint is visible in the report before supplemental entity
+  planning starts;
+- relationship candidates are not produced against unresolved refs;
+- the final report shows whether the planner detected the missing entity before
+  preparing the relationship;
+- the script remains graph/database-free.
+
 ## Prompt And Contract Requirements
 
 Prompting should be detailed but not overloaded. Each prompt must describe only
@@ -639,8 +749,12 @@ orchestration, or write behavior.
    views.
 6. Add exports and schema tests only.
 7. Keep the old planner-first runtime behavior untouched.
-8. Later wire retrieval, reasoning, planning, extraction, validation, and
-   write orchestration onto the new contracts.
+8. Wire the refined runtime up to relationship planning and entity resolution,
+   without durable write changes.
+9. Implement wave-4 relationship candidate preparation, missing-entity loop
+   handling, and the two graph/database-free UAT trace scripts.
+10. Later wire write-plan generation, validation hardening, durable writes, and
+   production orchestration onto the new contracts.
 
 ## UAT Signals
 
@@ -656,6 +770,9 @@ Wave 1 should improve the following visible behaviors:
 - low-salience objects are less likely to become standalone nodes
 - graph search for relationship-heavy queries has relevant connected nodes and
   edges to render
+- local UAT trace reports expose routing, prompts, inputs, outputs, entity
+  candidates, relationship candidates, and missing-entity handling without
+  requiring graph/database integrations
 
 ## Future Follow-Ups
 
