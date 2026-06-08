@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
+DEFAULT_ENV_FILE = SRC_ROOT / "my_digital_brain" / ".env"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
@@ -95,7 +97,10 @@ class StaticGraphContextBuilder:
 def build_trace_service(
     *,
     graph_context_pack: GraphContextPack,
+    env_file: Path | None = DEFAULT_ENV_FILE,
+    override_env: bool = False,
 ) -> tuple[RefinedIngestionService, TraceStructuredProvider]:
+    load_env_file(env_file, override=override_env)
     settings = Settings()
     provider = TraceStructuredProvider(build_ai_provider(settings))
     router = StaticModelRouter(
@@ -117,6 +122,37 @@ def build_trace_service(
         ],
     )
     return service, provider
+
+
+def load_env_file(path: Path | None, *, override: bool = False) -> Path | None:
+    if path is None:
+        return None
+    path = path.expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    if not path.exists():
+        return None
+    values = _read_env_values(path)
+    for key, value in values.items():
+        if override or key not in os.environ:
+            os.environ[key] = value
+    return path
+
+
+def _read_env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped.removeprefix("export ").strip()
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = value.strip().strip('"').strip("'")
+    return values
 
 
 def source_from_file(path: Path, *, timezone_name: str) -> SourceRecordRef:

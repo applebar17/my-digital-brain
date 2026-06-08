@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from uat_refined_trace_common import (
+    DEFAULT_ENV_FILE,
     build_trace_service,
     load_entity_candidates,
     load_graph_context_pack,
@@ -24,7 +25,11 @@ def main() -> int:
         Path(args.graph_context) if args.graph_context else None,
         source_id=source.source_id,
     )
-    service, provider = build_trace_service(graph_context_pack=graph_context_pack)
+    service, provider = build_trace_service(
+        graph_context_pack=graph_context_pack,
+        env_file=Path(args.env_file) if args.env_file else None,
+        override_env=args.env_override,
+    )
     result = service.process_source_with_entity_candidates(
         source,
         entity_candidates,
@@ -43,6 +48,8 @@ def main() -> int:
                 "scenario without backend API, graph database, vector database, or "
                 "persisted memory dependencies."
             ),
+            "env_file": args.env_file,
+            "env_override": args.env_override,
         },
         result=result,
         structured_calls=provider.structured_calls,
@@ -70,6 +77,16 @@ def parse_args() -> argparse.Namespace:
         "--graph-context",
         default=None,
         help="Optional GraphContextPack JSON fixture. Defaults to an empty local pack.",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=str(DEFAULT_ENV_FILE),
+        help="Env file loaded before provider setup. Defaults to src/my_digital_brain/.env.",
+    )
+    parser.add_argument(
+        "--env-override",
+        action="store_true",
+        help="Override already-set process environment variables with --env-file values.",
     )
     parser.add_argument("--timezone", default="Europe/Rome")
     return parser.parse_args()

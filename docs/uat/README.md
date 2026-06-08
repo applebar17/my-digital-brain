@@ -15,9 +15,10 @@ docs/uat/current-graph-status.txt
 ## Wave 4 Local Trace Reports
 
 Wave 4 adds graph/database-free UAT scripts for inspecting the refined ingestion
-process from local fixtures. These scripts use the project's provider/model
-environment configuration, but do not require the backend API, graph database,
-vector database, or persisted memory state.
+process from local fixtures. These scripts load `src/my_digital_brain/.env`
+before provider setup by default and use the project's provider/model
+configuration, but do not require the backend API, graph database, vector
+database, or persisted memory state.
 
 Local conversation-entry trace:
 
@@ -61,6 +62,24 @@ initial resolved map, relationship planner prompt/input/output,
 supplemental entity candidate output, updated resolved map, resumed
 relationship planning/extraction, and final entity plus relationship
 candidates.
+
+Use another env file or force file values over already-set shell variables:
+
+```powershell
+python scripts/render_uat_refined_ingestion_trace.py `
+  --input local/user.txt `
+  --output local/refined-ingestion-trace.txt `
+  --env-file src/my_digital_brain/.env `
+  --env-override
+```
+
+```bash
+python scripts/render_uat_refined_ingestion_trace.py \
+  --input local/user.txt \
+  --output local/refined-ingestion-trace.txt \
+  --env-file src/my_digital_brain/.env \
+  --env-override
+```
 
 ## Report Contents
 
