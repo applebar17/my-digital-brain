@@ -56,16 +56,22 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         self,
         schema: type[BaseModel],
         system_prompt: str,
-        chat_message: str | dict[str, Any] | list[dict[str, Any]],
+        chat_message: str | dict[str, Any] | list[dict[str, Any]] | None = None,
         *,
+        messages: list[dict[str, Any]] | None = None,
         model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int | None = None,
     ) -> BaseModel:
-        messages = self._build_messages(system_prompt, chat_message)
+        if messages is not None:
+            built_messages = self._build_messages(system_prompt, messages)
+        elif chat_message is not None:
+            built_messages = self._build_messages(system_prompt, chat_message)
+        else:
+            raise ValueError("Structured generation requires messages or chat_message.")
         params: dict[str, Any] = {
             "model": model or self._default_chat_model(),
-            "messages": messages,
+            "messages": built_messages,
         }
         if temperature is not None:
             params["temperature"] = temperature
@@ -73,13 +79,13 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
             params["max_tokens"] = max_tokens
         params = self._prepare_chat_completion_params(params)
         self._ensure_context_budget(params)
-        messages = params.get("messages") or messages
+        built_messages = params.get("messages") or built_messages
         max_tokens = params.get("max_tokens")
         max_completion_tokens = params.get("max_completion_tokens")
         temperature = params.get("temperature")
         return self._call_structured_with_retries(
             schema,
-            messages=messages,
+            messages=built_messages,
             model=params["model"],
             temperature=temperature,
             max_tokens=max_tokens,

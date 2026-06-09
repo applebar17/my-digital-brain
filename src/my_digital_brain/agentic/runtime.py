@@ -94,7 +94,27 @@ class AgenticStateRunner:
             state_id,
             invocation.context_payload,
         )
-        prompt = self.system_prompt_with_runtime_context(prompt, model_context_payload)
+        prompt_context_payload = self.history_service.model_prompt_context_for_state(
+            state_id,
+            invocation.context_payload,
+        )
+        model_messages = self.history_service.model_messages_for_state(
+            state_id,
+            invocation.context_payload,
+            current_text=invocation.execution_context.current_text,
+        )
+        expected_output = {
+            "allowed_tools": sorted(toolbox.tools_by_name),
+            "max_tool_calls": 0 if tools_disabled else state_config.max_tool_calls,
+            "owner_finalization": bool(invocation.metadata.get("owner_finalization")),
+        }
+        prompt = self.system_prompt_with_runtime_context(
+            prompt,
+            model_context_payload,
+            prompt_context=prompt_context_payload,
+            runtime_metadata=invocation.metadata,
+            expected_output=expected_output,
+        )
         record_ai_flow_event(
             title=f"{state_value} - State Input",
             call_kind="agentic_state_input",
@@ -104,17 +124,20 @@ class AgenticStateRunner:
             prompt_id=state_config.prompt_id,
             toolbox_name=toolbox.name,
             sections=[
-                _trace_json_section("STATE INPUT", model_context_payload),
-                _trace_json_section(
-                    "EXPECTED OUTPUT",
-                    {
-                        "allowed_tools": sorted(toolbox.tools_by_name),
-                        "max_tool_calls": 0 if tools_disabled else state_config.max_tool_calls,
-                        "owner_finalization": bool(
-                            invocation.metadata.get("owner_finalization"),
-                        ),
-                    },
+                AIFlowTraceSection(
+                    title="SYSTEM PROMPT",
+                    content=prompt,
+                    content_type="text",
                 ),
+                _trace_json_section(
+                    "MESSAGES",
+                    [
+                        message.model_dump(mode="json", exclude_none=True)
+                        for message in model_messages
+                    ],
+                ),
+                _trace_json_section("STATE CONTEXT", prompt_context_payload),
+                _trace_json_section("EXPECTED OUTPUT", expected_output),
             ],
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
@@ -124,18 +147,7 @@ class AgenticStateRunner:
             max_tokens=self.max_tokens,
             messages=[
                 ChatMessage(role="system", content=prompt),
-                ChatMessage(
-                    role="user",
-                    content=json.dumps(
-                        {
-                            "state_id": state_value,
-                            "runtime": invocation.metadata,
-                            "context": model_context_payload,
-                        },
-                        ensure_ascii=True,
-                        sort_keys=True,
-                    ),
-                ),
+                *model_messages,
             ],
             context=context,
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
@@ -228,7 +240,23 @@ class AgenticStateRunner:
             state_id,
             invocation.context_payload,
         )
-        prompt = self.system_prompt_with_runtime_context(prompt, model_context_payload)
+        prompt_context_payload = self.history_service.model_prompt_context_for_state(
+            state_id,
+            invocation.context_payload,
+        )
+        model_messages = self.history_service.model_messages_for_state(
+            state_id,
+            invocation.context_payload,
+            current_text=invocation.execution_context.current_text,
+        )
+        expected_output = {"schema": output_schema.__name__}
+        prompt = self.system_prompt_with_runtime_context(
+            prompt,
+            model_context_payload,
+            prompt_context=prompt_context_payload,
+            runtime_metadata=invocation.metadata,
+            expected_output=expected_output,
+        )
         record_ai_flow_event(
             title=f"{state_value} - Structured State Input",
             call_kind="agentic_structured_state_input",
@@ -238,8 +266,20 @@ class AgenticStateRunner:
             prompt_id=state_config.prompt_id,
             schema_id=output_schema.__name__,
             sections=[
-                _trace_json_section("STATE INPUT", model_context_payload),
-                _trace_json_section("EXPECTED OUTPUT", {"schema": output_schema.__name__}),
+                AIFlowTraceSection(
+                    title="SYSTEM PROMPT",
+                    content=prompt,
+                    content_type="text",
+                ),
+                _trace_json_section(
+                    "MESSAGES",
+                    [
+                        message.model_dump(mode="json", exclude_none=True)
+                        for message in model_messages
+                    ],
+                ),
+                _trace_json_section("STATE CONTEXT", prompt_context_payload),
+                _trace_json_section("EXPECTED OUTPUT", expected_output),
             ],
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
@@ -264,7 +304,7 @@ class AgenticStateRunner:
                 StructuredGenerationRequest(
                     schema=output_schema,
                     system_prompt=prompt,
-                    input_message={"context": model_context_payload},
+                    messages=model_messages,
                     model=route.model,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
@@ -320,8 +360,22 @@ class AgenticStateRunner:
         )
         return state_run_result
 
-    def system_prompt_with_runtime_context(self, prompt: str, payload: Any) -> str:
-        return _system_prompt_with_runtime_context(prompt, payload)
+    def system_prompt_with_runtime_context(
+        self,
+        prompt: str,
+        payload: Any,
+        *,
+        prompt_context: Any | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        expected_output: dict[str, Any] | None = None,
+    ) -> str:
+        return _system_prompt_with_runtime_context(
+            prompt,
+            payload,
+            prompt_context=prompt_context,
+            runtime_metadata=runtime_metadata,
+            expected_output=expected_output,
+        )
 
 
 @dataclass(slots=True)
@@ -873,14 +927,39 @@ def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
     )
 
 
-def _system_prompt_with_runtime_context(prompt: str, payload: Any) -> str:
+def _system_prompt_with_runtime_context(
+    prompt: str,
+    payload: Any,
+    *,
+    prompt_context: Any | None = None,
+    runtime_metadata: dict[str, Any] | None = None,
+    expected_output: dict[str, Any] | None = None,
+) -> str:
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
     timezone = _find_prompt_value(payload, "timezone") or "UTC"
+    sections = [
+        prompt.rstrip(),
+        (
+            "Runtime context:\n"
+            f"- current_time: {current_time}\n"
+            f"- timezone: {timezone}"
+        ),
+    ]
+    if runtime_metadata:
+        sections.append(_system_json_section("Runtime metadata", runtime_metadata))
+    if prompt_context not in (None, "", [], {}):
+        sections.append(_system_json_section("Process context", prompt_context))
+    if expected_output:
+        sections.append(_system_json_section("Expected output", expected_output))
+    return "\n\n".join(section for section in sections if section).rstrip() + "\n"
+
+
+def _system_json_section(title: str, payload: Any) -> str:
     return (
-        f"{prompt.rstrip()}\n\n"
-        "Runtime context:\n"
-        f"- current_time: {current_time}\n"
-        f"- timezone: {timezone}\n"
+        f"{title}:\n"
+        "```json\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n"
+        "```"
     )
 
 

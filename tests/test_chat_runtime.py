@@ -288,13 +288,15 @@ def test_agentic_context_contains_compact_pending_overview_without_backend_snaps
     )
 
     response = runtime.handle_message(_message(text="Marco from university"))
-    payload = provider.calls[0]["request"].messages[1].content
+    system_prompt = provider.calls[0]["request"].messages[0].content
+    latest_user_message = provider.calls[0]["request"].messages[1].content
 
     assert response.metadata["visited_states"] == ["pending_process_review"]
-    assert "pending_processes" in payload
-    assert "Trying to store a memory about Marco in Milan." in payload
-    assert "candidate_graph_snapshot" not in payload
-    assert "Yesterday I met Marco in Milan." not in payload
+    assert latest_user_message == "Marco from university"
+    assert "pending_processes" in system_prompt
+    assert "Trying to store a memory about Marco in Milan." in system_prompt
+    assert "candidate_graph_snapshot" not in system_prompt
+    assert "Yesterday I met Marco in Milan." not in system_prompt
 
 
 def test_runtime_commands_route_to_query_correction_and_cancel() -> None:

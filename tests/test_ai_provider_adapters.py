@@ -50,6 +50,7 @@ class StubGenAIClient:
         self.max_tool_calls: int | None = None
         self.embed_call: dict[str, Any] | None = None
         self.transcribe_call: dict[str, Any] | None = None
+        self.structured_call: dict[str, Any] | None = None
 
     def call_openai(
         self,
@@ -79,10 +80,20 @@ class StubGenAIClient:
         self,
         schema: type[BaseModel],
         system_prompt: str,
-        input_message: str,
+        input_message: str | None = None,
         **kwargs: Any,
     ) -> BaseModel:
-        return schema.model_validate({"title": f"{system_prompt}:{input_message}"})
+        messages = kwargs.get("messages")
+        self.structured_call = {
+            "system_prompt": system_prompt,
+            "input_message": input_message,
+            "messages": messages,
+        }
+        if messages:
+            content = messages[-1].get("content")
+        else:
+            content = input_message
+        return schema.model_validate({"title": f"{system_prompt}:{content}"})
 
     def embed(
         self,
@@ -155,7 +166,7 @@ def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
         StructuredGenerationRequest(
             schema=ExampleStructuredOutput,
             system_prompt="extract",
-            input_message="memory",
+            messages=[ChatMessage(role="user", content="memory")],
             model="structured-model",
         )
     )
@@ -178,6 +189,10 @@ def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
     assert chat.content == "chat response"
     assert chat.usage.total_tokens == 6
     assert structured.parsed.title == "extract:memory"
+    assert client.structured_call["input_message"] is None
+    assert client.structured_call["messages"] == [
+        {"role": "user", "content": "memory"},
+    ]
     assert len(embeddings.embeddings[0]) == 4
     assert client.embed_call == {
         "texts": ["alpha", "beta"],

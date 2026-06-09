@@ -14,7 +14,7 @@ class GenAIContextMixin:
     def _build_messages(
         self,
         system_prompt: str,
-        chat_message: str | dict[str, Any] | list[dict[str, Any]],
+        chat_message: str | dict[str, Any] | list[Any],
     ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
@@ -196,16 +196,26 @@ class GenAIContextMixin:
 _ALLOWED_CHAT_ROLES = {"system", "developer", "user", "assistant", "tool"}
 
 
-def _message_or_user_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _message_or_user_payload(payload: Any) -> dict[str, Any]:
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(mode="json", exclude_none=True)
+    if not isinstance(payload, dict):
+        return _user_payload(payload)
     if "role" not in payload:
         return _user_payload(payload)
     return _normalize_message_dict(payload)
 
 
-def _messages_or_user_payload(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if all(isinstance(item, dict) and "role" in item for item in payload):
-        return [_normalize_message_dict(item) for item in payload]
-    return [_user_payload(payload)]
+def _messages_or_user_payload(payload: list[Any]) -> list[dict[str, Any]]:
+    normalized_items = [
+        item.model_dump(mode="json", exclude_none=True)
+        if hasattr(item, "model_dump")
+        else item
+        for item in payload
+    ]
+    if all(isinstance(item, dict) and "role" in item for item in normalized_items):
+        return [_normalize_message_dict(item) for item in normalized_items]
+    return [_user_payload(normalized_items)]
 
 
 def _normalize_message_dict(message: dict[str, Any]) -> dict[str, Any]:

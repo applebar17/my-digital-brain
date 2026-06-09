@@ -282,7 +282,7 @@ def test_registry_validates_default_state_configs_and_memory_planning_state() ->
         "get_target_evidence",
         "request_user_clarification",
     ]
-    assert "reusable reasoning checkpoint" in PromptRegistry().load(
+    assert "reasoning checkpoint for a network graph process" in PromptRegistry().load(
         "reasoning_checkpoint",
     ).template
     assert generic_planning.prompt_id == "planning_checkpoint"

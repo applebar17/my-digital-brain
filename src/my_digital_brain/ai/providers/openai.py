@@ -133,10 +133,16 @@ class OpenAIProvider:
         started_at = datetime.now(UTC)
         start = time.monotonic()
         with self._trace_structured_context(request):
+            messages = (
+                [_chat_message_to_dict(message) for message in request.messages]
+                if request.messages
+                else None
+            )
             parsed = self.client.generate_structured(
                 request.output_schema,
                 request.system_prompt,
                 request.input_message,
+                messages=messages,
                 model=request.model,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,

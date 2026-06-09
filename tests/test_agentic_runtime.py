@@ -210,7 +210,8 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     ]
     assert provider.calls[2]["tool_names"] == []
     assert provider.calls[2]["max_tool_calls"] == 0
-    assert '"owner_finalization": true' in provider.calls[2]["request"].messages[1].content
+    assert provider.calls[2]["request"].messages[1].content == "I met Marco yesterday."
+    assert "owner_finalization" in provider.calls[2]["request"].messages[0].content
 
 
 def test_correction_handoff_reaches_confirmation_aware_specialist_state() -> None:
@@ -501,9 +502,15 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
     assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
     assert "Runtime context:" in structured_call.system_prompt
     assert "timezone: Europe/Rome" in structured_call.system_prompt
-    assert set(structured_call.input_message) == {"context"}
-    assert "checkpoint_id" not in structured_call.input_message["context"]
-    assert structured_call.input_message["context"]["purpose"]["focus_areas"] == [
+    assert structured_call.input_message is None
+    assert structured_call.messages[-1].role == "user"
+    assert structured_call.messages[-1].content == "Alessia is my girlfriend."
+    assert "Process context:" in structured_call.system_prompt
+    assert "checkpoint_id" not in structured_call.system_prompt
+    assert "source_text" not in structured_call.system_prompt
+    assert "owner relationship" in structured_call.system_prompt
+    assert "node versus metadata" in structured_call.system_prompt
+    assert context.purpose.focus_areas == [
         "owner relationship",
         "node versus metadata",
     ]
@@ -559,11 +566,14 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
     assert "Runtime context:" in structured_call.system_prompt
     assert "timezone: Europe/Rome" in structured_call.system_prompt
-    assert set(structured_call.input_message) == {"context"}
-    assert "planning_id" not in structured_call.input_message["context"]
-    assert structured_call.input_message["context"]["expected_output_schema"] == (
-        "PlanningTransformResultContext"
-    )
+    assert structured_call.input_message is None
+    assert len(structured_call.messages) == 1
+    assert structured_call.messages[0].role == "user"
+    assert structured_call.messages[0].content == "Merc is Matteo Mercoldi."
+    assert "Process context:" in structured_call.system_prompt
+    assert "planning_id" not in structured_call.system_prompt
+    assert "source_text" not in structured_call.system_prompt
+    assert "PlanningTransformResultContext" in structured_call.system_prompt
 
 
 def test_contradiction_review_question_becomes_pending_process_hint() -> None:

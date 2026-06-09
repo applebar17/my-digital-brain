@@ -19,6 +19,7 @@ from my_digital_brain.agentic.enums import (
 )
 from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult, AgenticToolEvent
+from my_digital_brain.ai.schemas import ChatMessage
 from my_digital_brain.core.ids import new_uuid
 
 
@@ -28,6 +29,15 @@ BACKEND_ONLY_KEYS = {
     "graph_service",
     "ingestion_service",
     "chat_store",
+}
+
+PROMPT_CONTEXT_EXCLUDED_KEYS = {
+    "channel_metadata",
+    "conversation",
+    "current_message",
+    "history",
+    "raw_text",
+    "source_text",
 }
 
 
@@ -198,6 +208,34 @@ class AgenticHistoryService:
             return self._model_payload(projected)
         return self._model_payload(payload)
 
+    def model_prompt_context_for_state(
+        self,
+        state_id: AgenticStateId | str,
+        payload: Any,
+    ) -> Any:
+        """Return process context for system-prompt sections, not chat messages."""
+
+        projected = self.model_payload_for_state(state_id, payload)
+        return self._drop_prompt_context_message_keys(projected)
+
+    def model_messages_for_state(
+        self,
+        state_id: AgenticStateId | str,
+        payload: Any,
+        *,
+        current_text: str | None = None,
+    ) -> list[ChatMessage]:
+        """Render role-preserved conversation messages for a model call."""
+
+        state = AgenticStateId(state_id)
+        conversation = self._conversation_for_messages(state, payload)
+        if conversation is not None:
+            return self._chat_messages_from_conversation(conversation)
+        source_text = self._source_text_from_payload(payload) or current_text
+        if source_text and source_text.strip():
+            return [ChatMessage(role="user", content=source_text.strip())]
+        return []
+
     def tool_result_contexts_from_events(
         self,
         events: Iterable[AgenticToolEvent],
@@ -332,6 +370,117 @@ class AgenticHistoryService:
         if isinstance(value, list):
             return [self._drop_backend_only_keys(item) for item in value]
         return value
+
+    def _drop_prompt_context_message_keys(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: self._drop_prompt_context_message_keys(item)
+                for key, item in value.items()
+                if key not in PROMPT_CONTEXT_EXCLUDED_KEYS
+            }
+        if isinstance(value, list):
+            return [self._drop_prompt_context_message_keys(item) for item in value]
+        return value
+
+    def _conversation_for_messages(
+        self,
+        state: AgenticStateId,
+        payload: Any,
+    ) -> ConversationContext | None:
+        conversation: ConversationContext | None = None
+        if isinstance(payload, ConversationContext):
+            conversation = payload
+        else:
+            possible = getattr(payload, "conversation", None)
+            if isinstance(possible, ConversationContext):
+                conversation = possible
+        if conversation is None:
+            return None
+        if state not in {
+            AgenticStateId.CONVERSATION_ENTRY,
+            AgenticStateId.PENDING_PROCESS_REVIEW,
+        }:
+            return self.child_conversation_context(conversation)
+        return conversation
+
+    def _chat_messages_from_conversation(
+        self,
+        conversation: ConversationContext,
+    ) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
+        open_tool_call_ids: set[str] = set()
+        for message in [*conversation.history, conversation.current_message]:
+            rendered = self._chat_message_from_neutral(message, open_tool_call_ids)
+            if rendered is not None:
+                messages.append(rendered)
+        return messages
+
+    def _chat_message_from_neutral(
+        self,
+        message: NeutralConversationMessage,
+        open_tool_call_ids: set[str],
+    ) -> ChatMessage | None:
+        if message.kind == NeutralMessageKind.USER:
+            return ChatMessage(role="user", content=message.content or "")
+        if message.kind == NeutralMessageKind.ASSISTANT:
+            return ChatMessage(role="assistant", content=message.content or "")
+        if message.kind == NeutralMessageKind.ASSISTANT_TOOL_CALL and message.tool_call:
+            call = message.tool_call
+            open_tool_call_ids.add(call.tool_call_id)
+            return ChatMessage(
+                role="assistant",
+                content=message.content,
+                tool_calls=[
+                    {
+                        "id": call.tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(
+                                call.arguments,
+                                ensure_ascii=True,
+                                sort_keys=True,
+                                default=str,
+                            ),
+                        },
+                    }
+                ],
+            )
+        if message.kind == NeutralMessageKind.TOOL_OUTPUT and message.tool_output:
+            output = message.tool_output
+            if output.tool_call_id not in open_tool_call_ids:
+                return None
+            open_tool_call_ids.discard(output.tool_call_id)
+            return ChatMessage(
+                role="tool",
+                tool_call_id=output.tool_call_id,
+                content=output.content or json.dumps(
+                    output.model_dump(mode="json", exclude_none=True),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    default=str,
+                ),
+            )
+        return None
+
+    def _source_text_from_payload(self, payload: Any) -> str | None:
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(mode="json", exclude_none=True)
+        if isinstance(payload, dict):
+            for key in ("source_text", "raw_text", "text", "question", "correction_text"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            for item in payload.values():
+                found = self._source_text_from_payload(item)
+                if found:
+                    return found
+        if isinstance(payload, list):
+            for item in payload:
+                found = self._source_text_from_payload(item)
+                if found:
+                    return found
+        return None
 
     def _compact_tool_data(self, data: dict[str, Any]) -> dict[str, Any]:
         try:

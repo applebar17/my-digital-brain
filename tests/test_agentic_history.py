@@ -69,6 +69,57 @@ def test_history_service_child_projection_removes_channel_metadata() -> None:
     assert payload["history"][0]["content"] == "Marco is a friend."
 
 
+def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> None:
+    service = AgenticHistoryService()
+    tool_call = NeutralConversationMessage.assistant_tool_call(
+        "query_memory_context",
+        {"question": "What about Marco?"},
+    )
+    tool_output = NeutralConversationMessage.tool_output_message(
+        tool_call_id=tool_call.tool_call.tool_call_id,
+        name="query_memory_context",
+        content='{"status":"ok"}',
+    )
+    conversation = ConversationContext(
+        current_message=NeutralConversationMessage.user("And Alessia?"),
+        history=[
+            NeutralConversationMessage.user("What about Marco?"),
+            tool_call,
+            tool_output,
+            NeutralConversationMessage.assistant("Marco is a university friend."),
+        ],
+        channel_metadata=ChannelSessionMetadata(
+            channel="web",
+            conversation_id="conversation-1",
+            owner_id="owner-1",
+        ),
+        compacted_summary="Older memory discussion.",
+    )
+
+    messages = service.model_messages_for_state(
+        AgenticStateId.CONVERSATION_ENTRY,
+        conversation,
+    )
+    prompt_context = service.model_prompt_context_for_state(
+        AgenticStateId.CONVERSATION_ENTRY,
+        conversation,
+    )
+
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "user",
+    ]
+    assert messages[1].tool_calls[0]["function"]["name"] == "query_memory_context"
+    assert messages[2].tool_call_id == tool_call.tool_call.tool_call_id
+    assert messages[-1].content == "And Alessia?"
+    assert "history" not in prompt_context
+    assert "current_message" not in prompt_context
+    assert "channel_metadata" not in prompt_context
+
+
 def test_history_service_compacts_tool_events_for_planning_context() -> None:
     service = AgenticHistoryService(HistoryProjectionPolicy(tool_data_chars=80))
     planning_context = PlanningContext(

@@ -66,10 +66,15 @@ class FakeLLMProvider:
         request: StructuredGenerationRequest,
     ) -> StructuredGenerationResult:
         parsed = request.output_schema.model_validate(self.structured_payload)
+        input_text = (
+            " ".join(str(message.content or "") for message in request.messages)
+            if request.messages
+            else str(request.input_message or "")
+        )
         return StructuredGenerationResult(
             parsed=parsed,
             usage=ProviderUsage(
-                input_tokens=len(str(request.input_message).split()),
+                input_tokens=len(input_text.split()),
                 output_tokens=len(str(self.structured_payload).split()),
             ),
             metadata=ProviderCallMetadata.fake(model=request.model or self.model),
