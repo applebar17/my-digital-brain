@@ -16,7 +16,10 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enrichment import enrich_candidate_batch
 from my_digital_brain.ingestion.enums import ExtractionTaskType
-from my_digital_brain.ingestion.prompt_builders import IngestionPromptBuilder
+from my_digital_brain.ingestion.prompt_builders import (
+    IngestionPromptBuilder,
+    system_prompt_with_runtime_context,
+)
 
 
 class FocusedLLMExtractor:
@@ -67,7 +70,10 @@ class FocusedLLMExtractor:
         result = self.provider.generate_structured(
             StructuredGenerationRequest(
                 schema=self.output_schema,
-                system_prompt=self.prompt_builder.extractor_system_prompt,
+                system_prompt=system_prompt_with_runtime_context(
+                    self.prompt_builder.extractor_system_prompt,
+                    source,
+                ),
                 input_message=self.prompt_builder.extraction_input(source, task, context),
                 model=self.model or (route.model if route else None),
                 context=request_context,

@@ -473,9 +473,6 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
                         "guardrails": ["Backend must decide owner/self graph representation."],
                     }
                 ],
-                "next_context_summary": (
-                    "Preserve Alessia as a person anchor and girlfriend as relationship detail."
-                ),
             }
         ],
     )
@@ -502,6 +499,8 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "reasoning_checkpoint"
     assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
+    assert "Runtime context:" in structured_call.system_prompt
+    assert "timezone: Europe/Rome" in structured_call.system_prompt
     assert set(structured_call.input_message) == {"context"}
     assert "checkpoint_id" not in structured_call.input_message["context"]
     assert structured_call.input_message["context"]["purpose"]["focus_areas"] == [
@@ -527,7 +526,6 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
                         "evidence_text": "Merc is Matteo Mercoldi.",
                     }
                 ],
-                "next_context_summary": "Merc is an alias hint for Matteo Mercoldi.",
             }
         ],
     )
@@ -559,6 +557,8 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "planning_checkpoint"
     assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
+    assert "Runtime context:" in structured_call.system_prompt
+    assert "timezone: Europe/Rome" in structured_call.system_prompt
     assert set(structured_call.input_message) == {"context"}
     assert "planning_id" not in structured_call.input_message["context"]
     assert structured_call.input_message["context"]["expected_output_schema"] == (

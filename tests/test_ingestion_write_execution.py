@@ -507,7 +507,9 @@ def test_process_store_records_source_snapshots_and_expires_pending_sessions() -
     snapshot = store.get_session(result.ingestion_id)
     assert snapshot is not None
     assert store.sources["source-1"].raw_text == "I met Marco in Milan."
-    assert snapshot.pending_question == "Which existing memory should this refer to?"
+    assert snapshot.pending_question == (
+        "The candidate may refer to more than one existing memory."
+    )
 
     expired_snapshot = snapshot.model_copy(
         update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)}

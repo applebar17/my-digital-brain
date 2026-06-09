@@ -359,32 +359,36 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         operation: str,
     ) -> ChatToolResult:
         if result.status == IngestionStatus.NEEDS_CLARIFICATION and result.clarification:
+            clarification_text = result.clarification.doubt
+            clarification_summary = result.clarification.reason
+            if result.clarification.options:
+                clarification_summary = (
+                    f"{clarification_summary} Possible interpretations: "
+                    f"{result.clarification.options}"
+                )
             packet = build_clarification_packet(
                 process_id=result.ingestion_id,
                 origin_state_id="memory_ingestion_planning",
                 reason=result.clarification.reason,
                 questions=[
                     {
-                        "question": result.clarification.question,
-                        "options": [
-                            {"label": option, "recommended": index == 0}
-                            for index, option in enumerate(result.clarification.options)
-                        ],
-                        "free_text_allowed": result.clarification.free_text_allowed,
+                        "question": clarification_text,
+                        "options": [],
+                        "free_text_allowed": True,
                         "required": result.clarification.blocking,
                         "selection_mode": "single",
                     }
                 ],
-                compact_summary=result.clarification.reason,
+                compact_summary=clarification_summary,
                 target_refs=result.clarification.target_refs,
             )
             return ChatToolResult(
                 status=ChatResponseStatus.NEEDS_USER_INPUT,
-                primary_text=result.clarification.question,
+                primary_text=clarification_text,
                 pending_process=PendingProcessRef(
                     process_id=result.ingestion_id,
                     kind=PendingProcessKind.MEMORY_INGESTION,
-                    question=result.clarification.question,
+                    question=clarification_text,
                     metadata={
                         "source_id": source.source_id,
                         "reason": result.clarification.reason,

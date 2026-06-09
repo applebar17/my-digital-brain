@@ -45,10 +45,6 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
         default_factory=list,
         description="Clarifications that may be needed before safe ingestion.",
     )
-    next_context_summary: str | None = Field(
-        default=None,
-        description="Compact carry-forward summary for the next planning transform.",
-    )
 
     @model_validator(mode="after")
     def _validate_useful_signal(self) -> "IngestionReasoningCheckpointDraft":
@@ -63,7 +59,6 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
             or self.user_owner_notes
             or self.context_gaps
             or self.clarification_candidates
-            or self.next_context_summary
         ):
             raise ValueError("Ingestion reasoning checkpoint requires at least one note.")
         return self

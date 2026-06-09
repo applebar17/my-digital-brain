@@ -44,10 +44,10 @@ class ConservativeResolutionService:
         clarification = None
         if clarification_targets:
             clarification = ClarificationRequest(
-                question="Which existing memory should this refer to?",
+                doubt="The candidate may refer to more than one existing memory.",
                 reason="; ".join(reasons),
                 target_refs=clarification_targets,
-                options=sorted(set(clarification_options)),
+                options="; ".join(sorted(set(clarification_options))) or None,
                 blocking=True,
             )
 

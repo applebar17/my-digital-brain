@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from my_digital_brain.ingestion.contracts import (
@@ -18,6 +19,20 @@ INGESTION_CLAIM_EXTRACTION_TASK = "ingestion_claim_extraction"
 INGESTION_PERCEPTION_EXTRACTION_TASK = "ingestion_perception_extraction"
 INGESTION_RELATIONSHIP_CONTEXT_EXTRACTION_TASK = "ingestion_relationship_context_extraction"
 INGESTION_METADATA_PATCH_EXTRACTION_TASK = "ingestion_metadata_patch_extraction"
+
+
+def system_prompt_with_runtime_context(
+    system_prompt: str,
+    source: SourceRecordRef,
+) -> str:
+    timezone = str(source.metadata.get("timezone") or "UTC")
+    current_time = datetime.now(UTC).replace(microsecond=0).isoformat()
+    return (
+        f"{system_prompt.rstrip()}\n\n"
+        "Runtime context:\n"
+        f"- current_time: {current_time}\n"
+        f"- timezone: {timezone}\n"
+    )
 
 
 class IngestionPromptBuilder:

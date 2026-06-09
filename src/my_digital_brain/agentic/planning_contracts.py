@@ -144,10 +144,6 @@ class PlanningTransformResultContext(AgenticModel):
         default_factory=list,
         description="Missing context that blocks or weakens planning.",
     )
-    next_context_summary: str | None = Field(
-        default=None,
-        description="Compact carry-forward context for later transforms.",
-    )
     recommended_next_action: str | None = Field(
         default=None,
         description="Optional backend-readable next action suggestion.",
@@ -161,7 +157,6 @@ class PlanningTransformResultContext(AgenticModel):
             self.actions
             or self.clarification_candidates
             or self.context_gaps
-            or self.next_context_summary
             or self.recommended_next_action
         ):
             raise ValueError("Planning transform result requires at least one useful signal.")

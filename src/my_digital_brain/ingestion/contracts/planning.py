@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
@@ -45,17 +45,26 @@ class MentionScan(IngestionModel):
 
 class ClarificationRequest(IngestionModel):
     clarification_id: str = Field(default_factory=new_uuid)
-    question: str = Field(description="Single user-facing question needed to proceed.")
-    reason: str = Field(description="Why this clarification is needed.")
+    doubt: str = Field(
+        description=(
+            "Backend-facing clarification doubt. State the uncertainty to resolve; "
+            "do not phrase it as an authoritative user question."
+        ),
+        validation_alias=AliasChoices("doubt", "question"),
+        serialization_alias="doubt",
+    )
+    reason: str = Field(description="Why this clarification may be needed.")
     target_refs: list[str] = Field(
         default_factory=list,
-        description="Candidate refs, graph aliases, or source refs affected by the question.",
+        description="Candidate refs, graph aliases, or source refs affected by the doubt.",
     )
-    options: list[str] = Field(
-        default_factory=list,
-        description="Optional suggested answers. Free text remains allowed by default.",
+    options: str | None = Field(
+        default=None,
+        description=(
+            "Concise description of plausible interpretations or answer directions "
+            "supported by context. Not exhaustive and not authoritative."
+        ),
     )
-    free_text_allowed: bool = Field(default=True)
     blocking: bool = Field(
         default=True,
         description="Whether ingestion should wait before producing graph write candidates.",
@@ -64,6 +73,22 @@ class ClarificationRequest(IngestionModel):
     created_at: datetime | None = None
     expires_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def question(self) -> str:
+        return self.doubt
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_payload(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        normalized.pop("free_text_allowed", None)
+        options = normalized.get("options")
+        if isinstance(options, list):
+            normalized["options"] = "; ".join(str(option) for option in options if option)
+        return normalized
 
 
 class ExtractionTask(IngestionModel):

@@ -286,8 +286,8 @@ def test_agentic_ingestion_planner_maps_clarification_tool_to_plan() -> None:
 
     assert plan.execution_mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
     assert plan.clarification is not None
-    assert plan.clarification.question == "Which Marco do you mean?"
-    assert plan.clarification.options == ["Marco from university", "Marco from work"]
+    assert plan.clarification.doubt == "Which Marco do you mean?"
+    assert plan.clarification.options == "Marco from university; Marco from work"
     assert "clarification_packet" in plan.clarification.metadata
     assert provider.structured_requests == []
 

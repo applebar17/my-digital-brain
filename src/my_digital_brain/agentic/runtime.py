@@ -94,6 +94,7 @@ class AgenticStateRunner:
             state_id,
             invocation.context_payload,
         )
+        prompt = self.system_prompt_with_runtime_context(prompt, model_context_payload)
         record_ai_flow_event(
             title=f"{state_value} - State Input",
             call_kind="agentic_state_input",
@@ -227,6 +228,7 @@ class AgenticStateRunner:
             state_id,
             invocation.context_payload,
         )
+        prompt = self.system_prompt_with_runtime_context(prompt, model_context_payload)
         record_ai_flow_event(
             title=f"{state_value} - Structured State Input",
             call_kind="agentic_structured_state_input",
@@ -317,6 +319,9 @@ class AgenticStateRunner:
             metadata=state_run_result.metadata,
         )
         return state_run_result
+
+    def system_prompt_with_runtime_context(self, prompt: str, payload: Any) -> str:
+        return _system_prompt_with_runtime_context(prompt, payload)
 
 
 @dataclass(slots=True)
@@ -853,7 +858,7 @@ def _structured_summary(parsed: BaseModel) -> str:
         if parsed.clarification_question:
             return parsed.clarification_question
         return parsed.reason
-    for field_name in ("summary", "reason", "question"):
+    for field_name in ("summary", "reason", "doubt", "question"):
         value = getattr(parsed, field_name, None)
         if isinstance(value, str) and value.strip():
             return value
@@ -866,3 +871,31 @@ def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
         content=json.dumps(payload, ensure_ascii=False, indent=2, default=str),
         content_type="json",
     )
+
+
+def _system_prompt_with_runtime_context(prompt: str, payload: Any) -> str:
+    current_time = _find_prompt_value(payload, "current_time") or "unknown"
+    timezone = _find_prompt_value(payload, "timezone") or "UTC"
+    return (
+        f"{prompt.rstrip()}\n\n"
+        "Runtime context:\n"
+        f"- current_time: {current_time}\n"
+        f"- timezone: {timezone}\n"
+    )
+
+
+def _find_prompt_value(payload: Any, key: str) -> Any:
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            return value
+        for item in payload.values():
+            found = _find_prompt_value(item, key)
+            if found not in (None, "", [], {}):
+                return found
+    if isinstance(payload, list):
+        for item in payload:
+            found = _find_prompt_value(item, key)
+            if found not in (None, "", [], {}):
+                return found
+    return None

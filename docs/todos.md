@@ -162,6 +162,53 @@ Status: implemented as a reusable foundation.
   reasoning, entity planning, and relationship planning.
 - Backend-only channel/session metadata is removed from model-facing payloads
   unless a deliberate `ChannelContextProjection` is built.
+- Refactor `AgenticStateRunner.run_state` and `run_structured_state` message
+  rendering so live agent calls receive a proper role-preserved conversation
+  shape:
+  - conversation history should be rendered as prior user/assistant messages or
+    a compact history summary, with the latest user message represented once as
+    the current message;
+  - process-specific context should be rendered as concise, human-readable
+    system/context sections instead of a large JSON-wrapped `context` user
+    message;
+  - structured-output calls should follow the same history/current-message
+    policy while still passing the required output schema to the provider;
+  - backend-only metadata, IDs, transport fields, and raw tool traces should
+    remain excluded unless a state explicitly asks for a compact diagnostic
+    view.
+
+### Prompt Scaffolding Cleanup
+
+Status: prompt registry and initial scaffolding exist, but several prompt
+templates are contract placeholders rather than active runtime entry points.
+Keep them for now, then revise once the refined ingestion and query/answer
+pipeline wiring is stabilized.
+
+- Document and clean up the current prompt inventory:
+  - active runtime state prompts:
+    `conversation_entry`, `pending_process_review`, `memory_query`,
+    `correction_intake`, `contradiction_review`, `reasoning_checkpoint`, and
+    `planning_checkpoint`;
+  - legacy-but-still-wired prompt:
+    `ingestion_planner`, to be removed when the refined reasoning-first
+    ingestion pipeline replaces the old planner;
+  - scaffold/planned LP prompts:
+    `query_retrieval_planning`, `correction_proposal`,
+    `profile_memory_extraction`, `maintenance_review`, and
+    `clarification_classifier`;
+  - duplicated answer prompt surface:
+    `answer_generation` exists as a template, but current graph-context answer
+    generation is performed by `LLMGraphContextAnswerGenerator` with an inline
+    prompt.
+- Decide whether planned LP prompts should remain under `prompts/templates/`,
+  move to a clearly marked planned/scaffold namespace, or be removed until
+  actual invocation services exist.
+- Wire `LLMGraphContextAnswerGenerator` to the file-backed
+  `answer_generation` template if the answer-generation LP remains in scope,
+  then remove the inline prompt body.
+- Update architecture/dev-plan docs after cleanup so prompt files, state
+  configs, LP contracts, and real runtime invocation paths describe the same
+  system.
 
 ### Planner Structured Output Refactor
 

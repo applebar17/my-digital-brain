@@ -25,6 +25,7 @@ from my_digital_brain.ingestion.prompt_builders import (
     INGESTION_MENTION_SCAN_TASK,
     INGESTION_PLANNING_TASK,
     IngestionPromptBuilder,
+    system_prompt_with_runtime_context,
 )
 
 GRAPH_ALIAS_PATTERN = re.compile(r"^(NODE|REL|CLAIM|SOURCE|RELCTX)_[0-9]{3,6}$")
@@ -49,7 +50,10 @@ class LLMMentionScanner:
         parsed = _structured_call(
             provider=self.provider,
             output_schema=MentionScanDraft,
-            system_prompt=self.prompt_builder.mention_scan_system_prompt,
+            system_prompt=system_prompt_with_runtime_context(
+                self.prompt_builder.mention_scan_system_prompt,
+                source,
+            ),
             input_message=self.prompt_builder.mention_scan_input(source),
             source=source,
             purpose=INGESTION_MENTION_SCAN_TASK,
@@ -86,7 +90,10 @@ class LLMIngestionPlanner:
         parsed = _structured_call(
             provider=self.provider,
             output_schema=SemanticIngestionPlanDraft,
-            system_prompt=self.prompt_builder.planner_system_prompt,
+            system_prompt=system_prompt_with_runtime_context(
+                self.prompt_builder.planner_system_prompt,
+                source,
+            ),
             input_message=self.prompt_builder.planner_input(source, mention_scan, context),
             source=source,
             purpose=INGESTION_PLANNING_TASK,

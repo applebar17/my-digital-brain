@@ -199,6 +199,14 @@ class AgenticIngestionPlanner:
             state_config.prompt_id,
             state_config.prompt_version,
         ).template
+        model_context_payload = self.history_service.model_payload_for_state(
+            AgenticStateId.MEMORY_INGESTION_PLANNING,
+            planning_context,
+        )
+        prompt = self.state_runner.system_prompt_with_runtime_context(
+            prompt,
+            model_context_payload,
+        )
         try:
             result = provider.generate_structured(  # type: ignore[attr-defined]
                 StructuredGenerationRequest(
@@ -206,10 +214,7 @@ class AgenticIngestionPlanner:
                     system_prompt=prompt,
                     input_message={
                         "state_id": state_value,
-                        "context": self.history_service.model_payload_for_state(
-                            AgenticStateId.MEMORY_INGESTION_PLANNING,
-                            planning_context,
-                        ),
+                        "context": model_context_payload,
                         "final_output_contract": "SemanticIngestionPlanDraft",
                     },
                     model=route.model,
@@ -358,22 +363,22 @@ def _clarification_plan_from_state_result(
         if not isinstance(questions, list) or not questions:
             continue
         first_question = questions[0]
-        options = [
+        option_labels = [
             str(option.get("label"))
             for option in first_question.get("options", [])
             if isinstance(option, dict) and option.get("label")
         ]
+        options = "; ".join(option_labels) if option_labels else None
         return ExtractionPlan(
             source_id=source.source_id,
             context_package_id=context.context_package_id,
             execution_mode="needs_clarification_first",
             reason=str(packet.get("reason") or "Clarification required before extraction."),
             clarification=ClarificationRequest(
-                question=str(first_question.get("question") or "Can you clarify?"),
+                doubt=str(first_question.get("question") or "Clarification is needed."),
                 reason=str(packet.get("reason") or "Clarification required before extraction."),
                 target_refs=list(packet.get("target_refs") or []),
                 options=options,
-                free_text_allowed=bool(first_question.get("free_text_allowed", True)),
                 blocking=True,
                 metadata={"clarification_packet": packet},
             ),

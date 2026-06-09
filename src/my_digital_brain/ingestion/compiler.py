@@ -130,11 +130,10 @@ class SemanticExtractionTaskCompiler:
         if draft is None:
             return None
         return ClarificationRequest(
-            question=draft.question,
+            doubt=draft.doubt,
             reason=draft.reason,
             target_refs=list(draft.target_refs),
-            options=list(draft.options),
-            free_text_allowed=draft.free_text_allowed,
+            options=draft.options,
             blocking=draft.blocking,
             metadata={"schema_layer": "backend_compiled"},
         )

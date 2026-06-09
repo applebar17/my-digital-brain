@@ -25,7 +25,6 @@ def entity_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
         forbidden_assumptions=[
             "Do not assume a nickname is a separate Person.",
             "Do not create SocialCircle actions for vague groups unless meaningful.",
-            "Do not decide durable graph writes.",
         ],
     )
 

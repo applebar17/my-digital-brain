@@ -256,12 +256,20 @@ LLM draft fields:
 - `user_owner_notes`
 - `context_gaps`
 - `clarification_candidates`
-- `next_context_summary`
 
 The reasoning checkpoint is not a graph mutation and not a write plan. It
 should produce concise free-text notes and interpretations that help later
 model steps avoid confusion. Do not over-structure v1 reasoning; detailed
 storage behavior belongs in guidelines and backend validation.
+
+Clarification candidates use a doubt-oriented shape:
+
+- `doubt`: what the model is unsure about.
+- `reason`: why resolving the doubt may matter.
+- `target_refs`: affected local refs or graph aliases.
+- `options`: one prose string describing plausible interpretations supported
+  by context, not an authoritative option list.
+- `blocking`: whether the process must wait before candidate generation.
 
 Example:
 
@@ -656,16 +664,18 @@ The candidate graph is not a write plan. It is the structured proposal that vali
 
 ### ClarificationRequest
 
-A question that must be answered before a decision is safe or useful.
+A doubt that may need user clarification before a decision is safe or useful.
+All clarification handling allows free text; ingestion contracts do not carry a
+`free_text_allowed` flag.
 
 Core fields:
 
 - `clarification_id`
-- `question`
+- `doubt`
 - `reason`
 - `target_refs`
-- `options`
-- `free_text_allowed`
+- `options`: one prose string describing plausible interpretations, not an
+  authoritative option array.
 - `blocking`
 - `created_at`
 - `expires_at`

@@ -35,8 +35,13 @@ from my_digital_brain.ingestion.contracts import (
     ValidationIssue,
 )
 from my_digital_brain.ingestion.enums import ExtractionExecutionMode, IngestionStatus
-from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
-from my_digital_brain.ingestion.ontology import ontology_prompt_payload, task_type_for_entity_type
+from my_digital_brain.ingestion.graph_context_pack import (
+    WholeSourceGraphContextPackBuilder,
+)
+from my_digital_brain.ingestion.ontology import (
+    ontology_prompt_payload,
+    task_type_for_entity_type,
+)
 from my_digital_brain.ingestion.planning_contexts import (
     build_entity_planning_context,
     build_missing_entity_planning_context,
@@ -47,9 +52,10 @@ from my_digital_brain.ingestion.refined_relationships import (
     build_relationship_extraction_plan,
     normalize_relationship_candidate_refs,
 )
-from my_digital_brain.ingestion.refined_resolution import DeterministicResolvedEntityMapBuilder
+from my_digital_brain.ingestion.refined_resolution import (
+    DeterministicResolvedEntityMapBuilder,
+)
 from my_digital_brain.ingestion.validation import IngestionValidator
-
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
 
@@ -69,7 +75,9 @@ class RefinedIngestionService:
     entity_resolver: DeterministicResolvedEntityMapBuilder = field(
         default_factory=DeterministicResolvedEntityMapBuilder,
     )
-    assembler: CandidateMemoryGraphAssembler = field(default_factory=CandidateMemoryGraphAssembler)
+    assembler: CandidateMemoryGraphAssembler = field(
+        default_factory=CandidateMemoryGraphAssembler
+    )
     validator: IngestionValidator = field(default_factory=IngestionValidator)
     execution_context_factory: ExecutionContextFactory | None = None
 
@@ -105,7 +113,9 @@ class RefinedIngestionService:
                 metadata={"refined_stage": "entity_planning_clarification"},
             )
 
-        entity_extraction_plan = _entity_extraction_plan(source, graph_context_pack, entity_plan)
+        entity_extraction_plan = _entity_extraction_plan(
+            source, graph_context_pack, entity_plan
+        )
         entity_candidates, extraction_issues = self._extract_entities(
             source,
             graph_context_pack,
@@ -152,7 +162,9 @@ class RefinedIngestionService:
                 metadata={"refined_stage": "entity_validation"},
             )
 
-        resolved_entity_map = self.entity_resolver.resolve(entity_candidates, graph_context_pack)
+        resolved_entity_map = self.entity_resolver.resolve(
+            entity_candidates, graph_context_pack
+        )
         relationship_view = self.context_renderer.render(
             graph_context_pack,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
@@ -182,7 +194,9 @@ class RefinedIngestionService:
                 entity_candidate_graph=candidate_graph,
                 resolved_entity_map=resolved_entity_map,
                 relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(relationship_plan.clarification),
+                clarification=_clarification_from_draft(
+                    relationship_plan.clarification
+                ),
                 metadata={"refined_stage": "relationship_planning_clarification"},
             )
 
@@ -275,7 +289,9 @@ class RefinedIngestionService:
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
                 relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(relationship_plan.clarification),
+                clarification=_clarification_from_draft(
+                    relationship_plan.clarification
+                ),
                 metadata={"refined_stage": "relationship_planning_clarification"},
             )
         if relationship_plan.missing_entities:
@@ -333,11 +349,13 @@ class RefinedIngestionService:
                 metadata={"refined_stage": "relationship_candidate_preparation"},
             )
 
-        relationship_candidates, extraction_issues = self._extract_relationship_candidates(
-            source,
-            graph_context_pack,
-            plan_build.extraction_plan,
-            resolved_entity_map,
+        relationship_candidates, extraction_issues = (
+            self._extract_relationship_candidates(
+                source,
+                graph_context_pack,
+                plan_build.extraction_plan,
+                resolved_entity_map,
+            )
         )
         if extraction_issues:
             return RefinedIngestionResult(
@@ -530,7 +548,10 @@ class RefinedIngestionService:
                     entity_candidate_graph=entity_candidate_graph,
                     supplemental_entity_plans=supplemental_plans,
                     supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=[*supplemental_candidates, *candidates],
+                    supplemental_entity_candidates=[
+                        *supplemental_candidates,
+                        *candidates,
+                    ],
                     resolved_entity_map=resolved_entity_map,
                     relationship_plan=relationship_plan,
                     validation_errors=validation.issues,
@@ -563,7 +584,9 @@ class RefinedIngestionService:
         """
 
         graph_context_pack = (
-            graph_context_pack.model_copy(update={"source_id": source.source_id}, deep=True)
+            graph_context_pack.model_copy(
+                update={"source_id": source.source_id}, deep=True
+            )
             if graph_context_pack is not None
             else self.graph_context_builder.build(source)
         )
@@ -634,7 +657,9 @@ class RefinedIngestionService:
                 entity_candidate_graph=entity_candidate_graph,
                 resolved_entity_map=resolved_entity_map,
                 relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(relationship_plan.clarification),
+                clarification=_clarification_from_draft(
+                    relationship_plan.clarification
+                ),
                 metadata={"refined_stage": "relationship_planning_clarification"},
             )
         return self._complete_relationship_candidate_preparation(
@@ -672,7 +697,6 @@ class RefinedIngestionService:
                     "user/owner perspective",
                 ],
                 forbidden_assumptions=[
-                    "Do not write graph memory.",
                     "Do not treat aliases as identity.",
                     "Do not invent graph refs.",
                 ],
@@ -698,7 +722,9 @@ class RefinedIngestionService:
                 "reasoning",
                 result.assistant_text or "Reasoning checkpoint failed.",
             )
-        return IngestionReasoningCheckpointDraft.model_validate(result.structured_output)
+        return IngestionReasoningCheckpointDraft.model_validate(
+            result.structured_output
+        )
 
     def _plan_entities(
         self,
@@ -800,7 +826,10 @@ class RefinedIngestionService:
                             f"No entity extractor registered for task type '{task.task_type}'."
                         ),
                         code="missing_refined_entity_extractor",
-                        details={"task_id": task.task_id, "task_type": str(task.task_type)},
+                        details={
+                            "task_id": task.task_id,
+                            "task_type": str(task.task_type),
+                        },
                     ),
                 )
                 continue
@@ -843,7 +872,10 @@ class RefinedIngestionService:
                             f"'{task.task_type}'."
                         ),
                         code="missing_refined_relationship_extractor",
-                        details={"task_id": task.task_id, "task_type": str(task.task_type)},
+                        details={
+                            "task_id": task.task_id,
+                            "task_type": str(task.task_type),
+                        },
                     ),
                 )
                 continue
@@ -874,7 +906,9 @@ class RefinedIngestionService:
                 return extractor
         return None
 
-    def _find_relationship_extractor(self, task: ExtractionTask) -> FocusedExtractor | None:
+    def _find_relationship_extractor(
+        self, task: ExtractionTask
+    ) -> FocusedExtractor | None:
         for extractor in self.relationship_extractors:
             if extractor.supports(task):
                 return extractor
@@ -898,7 +932,9 @@ class RefinedIngestionService:
         combined_plan = _combined_extraction_plan(source, graph_context_pack, plans)
         return self.assembler.assemble(source, combined_plan, candidates)
 
-    def _execution_context(self, source: SourceRecordRef) -> AgenticToolExecutionContext:
+    def _execution_context(
+        self, source: SourceRecordRef
+    ) -> AgenticToolExecutionContext:
         context = (
             self.execution_context_factory(source)
             if self.execution_context_factory is not None
@@ -1021,10 +1057,7 @@ def _legacy_context_package(
 ) -> IngestionContextPackage:
     return IngestionContextPackage(
         source_id=source.source_id,
-        aliases={
-            entity.ref: entity.ref
-            for entity in graph_context_pack.entities
-        },
+        aliases={entity.ref: entity.ref for entity in graph_context_pack.entities},
         entities=[
             entity.model_dump(mode="json", exclude_none=True)
             for entity in graph_context_pack.entities
@@ -1047,11 +1080,10 @@ def _clarification_from_draft(
     if draft is None:
         return None
     return ClarificationRequest(
-        question=draft.question,
+        doubt=draft.doubt,
         reason=draft.reason,
         target_refs=list(draft.target_refs),
-        options=list(draft.options),
-        free_text_allowed=draft.free_text_allowed,
+        options=draft.options,
         blocking=draft.blocking,
         metadata={"schema_layer": "refined_ingestion"},
     )

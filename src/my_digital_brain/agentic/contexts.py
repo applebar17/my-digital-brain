@@ -237,7 +237,6 @@ class ReasoningCheckpointResultContext(AgenticModel):
         default_factory=list,
     )
     context_gaps: list[str] = Field(default_factory=list)
-    next_context_summary: str | None = None
     recommended_next_action: str | None = None
 
     @model_validator(mode="after")
