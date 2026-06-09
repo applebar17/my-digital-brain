@@ -238,6 +238,8 @@ Good tools should:
 - Have narrow responsibilities.
 - Use clear input schemas.
 - Return structured outputs.
+- Preserve the provider message protocol: assistant tool calls are followed by
+  matching `tool` messages keyed by `tool_call_id`.
 - Be auditable when they change state.
 - Fail explicitly.
 - Avoid hidden side effects.
@@ -317,6 +319,23 @@ Every state or tool invocation has a clear start and end. When it completes, it
 returns exactly one tool output to its invoker, and the invoker appends that tool
 output to the conversation/process history before the next invocation. That is
 the normal context handoff across states.
+
+Within one LLM state, tool calling follows the provider message protocol:
+
+```text
+assistant message with tool_calls
+-> backend executes mapped tool function
+-> tool message with the same tool_call_id
+-> next model call
+-> assistant message or another tool call
+```
+
+The backend maps tool names to partially initialized functions or methods,
+validates and parses the tool arguments, executes the function, and serializes
+the result as the `tool` message content. This loop may repeat autonomously
+inside the state until the model returns a final assistant message or requests a
+handoff. The runtime should preserve the state-local assistant/tool message
+delta for tracing, replay, and later context construction.
 
 Deterministic backend tools should return a structured activity summary: status,
 important operations performed, validation errors, created or updated refs, and

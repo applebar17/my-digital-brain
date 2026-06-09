@@ -11,6 +11,7 @@ from ..client import GenAIClient
 from ..client.settings import GenAISettings, get_genai_settings
 from ..models import ToolResult
 from ..schemas import (
+    ChatMessage,
     ChatRequest,
     ChatResult,
     EmbeddingRequest,
@@ -61,6 +62,7 @@ class OpenAIProvider:
             latency_ms = int((time.monotonic() - start) * 1000)
             result = ChatResult(
                 content=_response_content(response),
+                message_delta=[_response_message_to_chat_message(response)],
                 usage=_usage_from_response(response),
                 metadata=self._metadata(
                     model=params["model"],
@@ -99,6 +101,7 @@ class OpenAIProvider:
             toolbox_name=toolbox.name,
             metadata={"max_tool_calls": max_tool_calls},
         ):
+            initial_message_count = len(params.get("messages") or [])
             response = self.client.call_openai(
                 params,
                 tools_mapping=tools_mapping,
@@ -106,8 +109,14 @@ class OpenAIProvider:
                 max_tool_calls=max_tool_calls,
             )
             latency_ms = int((time.monotonic() - start) * 1000)
+            message_delta = _message_delta_from_params(
+                params,
+                initial_message_count=initial_message_count,
+                final_response=response,
+            )
             result = ChatResult(
                 content=_response_content(response),
+                message_delta=message_delta,
                 usage=_usage_from_response(response),
                 metadata=self._metadata(
                     model=params["model"],
@@ -324,6 +333,73 @@ def _chat_message_to_dict(message: Any) -> dict[str, Any]:
         raise TypeError(f"Unsupported chat message type: {type(message)!r}")
     payload.pop("metadata", None)
     return payload
+
+
+def _chat_message_from_dict(payload: dict[str, Any]) -> ChatMessage:
+    return ChatMessage.model_validate(
+        {
+            key: value
+            for key, value in payload.items()
+            if key in {"role", "content", "name", "tool_calls", "tool_call_id", "metadata"}
+        }
+    )
+
+
+def _message_delta_from_params(
+    params: dict[str, Any],
+    *,
+    initial_message_count: int,
+    final_response: Any,
+) -> list[ChatMessage]:
+    messages = params.get("messages") or []
+    delta: list[ChatMessage] = []
+    for payload in messages[initial_message_count:]:
+        if isinstance(payload, dict):
+            delta.append(_chat_message_from_dict(payload))
+    delta.append(_response_message_to_chat_message(final_response))
+    return delta
+
+
+def _response_message_to_chat_message(response: Any) -> ChatMessage:
+    choice = _first_choice(response)
+    message = _value(choice, "message")
+    if isinstance(message, dict):
+        payload = {
+            "role": message.get("role") or "assistant",
+            "content": message.get("content"),
+            "tool_calls": message.get("tool_calls"),
+        }
+    else:
+        payload = {
+            "role": getattr(message, "role", "assistant") or "assistant",
+            "content": getattr(message, "content", None),
+            "tool_calls": _tool_calls_to_dict(getattr(message, "tool_calls", None)),
+        }
+    return _chat_message_from_dict(payload)
+
+
+def _tool_calls_to_dict(tool_calls: Any) -> Any:
+    if tool_calls is None:
+        return None
+    if not isinstance(tool_calls, list):
+        return tool_calls
+    serialized: list[dict[str, Any]] = []
+    for call in tool_calls:
+        if isinstance(call, dict):
+            serialized.append(call)
+            continue
+        function = getattr(call, "function", None)
+        serialized.append(
+            {
+                "id": getattr(call, "id", None),
+                "type": getattr(call, "type", "function"),
+                "function": {
+                    "name": getattr(function, "name", None),
+                    "arguments": getattr(function, "arguments", None),
+                },
+            }
+        )
+    return serialized
 
 
 def _state_id_from_request_context(context: Any) -> str | None:

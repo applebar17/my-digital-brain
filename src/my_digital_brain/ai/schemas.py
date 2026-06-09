@@ -85,6 +85,13 @@ class ChatRequest(BaseModel):
 
 class ChatResult(BaseModel):
     content: str
+    message_delta: list[ChatMessage] = Field(
+        default_factory=list,
+        description=(
+            "Assistant/tool messages produced by this provider call, excluding "
+            "the caller-supplied prompt/history messages."
+        ),
+    )
     usage: ProviderUsage | None = None
     metadata: ProviderCallMetadata
     raw_response: dict[str, Any] | None = None

@@ -179,11 +179,22 @@ Status: implemented as a reusable foundation.
 
 ### Contextual Tool Handoff Audit
 
-Status: required follow-up after the ingestion runtime promotion.
+Status: message-delta foundation implemented; audit remains required after the
+ingestion runtime promotion.
+
+- Provider chat results now expose state-local `message_delta` entries produced
+  during a tool loop: assistant `tool_calls`, matching `tool` outputs, and final
+  assistant messages.
+- Agentic state results carry that delta alongside compact `AgenticToolEvent`
+  records. Tool events remain useful for diagnostics and routing; message deltas
+  are the provider-compatible conversation record.
 
 - Audit all agentic states and backend tools for the locked handoff rule:
   every state/tool starts, completes, returns one compact tool output to its
   invoker, and the invoker appends that output before the next state invocation.
+- Normalize remaining internal subprocess handoffs so state-local message
+  deltas are kept for trace/replay while only one compact tool output is passed
+  upward to the invoking state.
 - Deterministic processes should return structured activity logs with status,
   important operations, errors, refs, and next action.
 - LLM-backed subprocesses should return their final assistant/process result

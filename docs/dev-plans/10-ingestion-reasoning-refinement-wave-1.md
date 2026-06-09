@@ -25,6 +25,9 @@ Locked baseline:
   durable graph writes.
 - Tool/state completion returns one compact tool output to the invoking
   conversation state, which then continues the normal message/tool-output loop.
+- Provider tool loops preserve assistant `tool_calls`, matching `tool`
+  messages, and final assistant messages as state-local message deltas for
+  tracing, replay, and downstream context construction.
 - V1 keeps validation simple and deterministic. Qualitative duplicate judging,
   richer merge decisions, and user confirmation workflows are reserved for a
   later wave.

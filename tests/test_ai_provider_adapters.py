@@ -136,6 +136,60 @@ class StubGenAIClient:
         }
 
 
+class ToolLoopGenAIClient(StubGenAIClient):
+    def call_openai(
+        self,
+        params: dict[str, Any],
+        *,
+        tools_mapping: dict[str, Any] | None = None,
+        toolbox: ToolBox | None = None,
+        max_tool_calls: int | None = None,
+    ):
+        self.chat_params = params
+        self.tools_mapping = tools_mapping
+        self.toolbox = toolbox
+        self.max_tool_calls = max_tool_calls
+        params["messages"].append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "example_tool",
+                            "arguments": "{}",
+                        },
+                    },
+                ],
+            }
+        )
+        params["messages"].append(
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": '{"status":"ok","output":"done"}',
+            }
+        )
+        return SimpleNamespace(
+            id="chat-request-1",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        role="assistant",
+                        content="Tool completed.",
+                    )
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=3,
+                total_tokens=13,
+            ),
+        )
+
+
 class StubTranscriptions:
     def __init__(self) -> None:
         self.params: dict[str, Any] | None = None
@@ -247,6 +301,54 @@ def test_openai_provider_passes_toolbox_and_mapping_to_genai_client() -> None:
     assert client.toolbox is toolbox
     assert client.tools_mapping is mapping
     assert client.max_tool_calls == 2
+
+
+def test_openai_provider_returns_tool_loop_message_delta() -> None:
+    client = ToolLoopGenAIClient()
+    provider = OpenAIProvider(
+        client=client,
+        settings=GenAISettings(openai_api_key="test"),
+    )
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "example_tool",
+            "description": "Run an example tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }
+    toolbox = ToolBox(
+        name="test",
+        tools=[tool],
+        tools_by_name=build_tool_index([tool]),
+    )
+
+    chat = provider.generate_chat_with_tools(
+        ChatRequest(
+            messages=[ChatMessage(role="user", content="hello")],
+            model="chat-model",
+        ),
+        toolbox=toolbox,
+        tools_mapping={"example_tool": lambda: ToolResult(status="ok", output="done")},
+        max_tool_calls=2,
+    )
+
+    assert [message.role for message in chat.message_delta] == [
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert chat.message_delta[0].content is None
+    assert chat.message_delta[0].tool_calls[0]["id"] == "call-1"
+    assert chat.message_delta[1].tool_call_id == "call-1"
+    assert chat.message_delta[1].content == '{"status":"ok","output":"done"}'
+    assert chat.message_delta[2].content == "Tool completed."
 
 
 def test_gpt5_chat_params_use_supported_token_and_temperature_shape() -> None:

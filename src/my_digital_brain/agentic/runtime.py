@@ -167,6 +167,7 @@ class AgenticStateRunner:
         state_run_result = AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
+            message_delta=list(result.message_delta),
             tool_events=tool_events,
             handoff_target=handoff_target,
             handoff_arguments=handoff_arguments,
@@ -192,6 +193,13 @@ class AgenticStateRunner:
                     title="LLM OUTPUT",
                     content=state_run_result.assistant_text or "",
                     content_type="text",
+                ),
+                _trace_json_section(
+                    "MESSAGE DELTA",
+                    [
+                        message.model_dump(mode="json", exclude_none=True)
+                        for message in state_run_result.message_delta
+                    ],
                 ),
                 _trace_json_section(
                     "TOOL OUTPUTS",
@@ -326,9 +334,11 @@ class AgenticStateRunner:
             )
         parsed = result.parsed
         structured_output = parsed.model_dump(mode="json", exclude_none=True)
+        assistant_text = _structured_summary(parsed)
         state_run_result = AgenticStateRunResult(
             state_id=state_id,
-            assistant_text=_structured_summary(parsed),
+            assistant_text=assistant_text,
+            message_delta=[ChatMessage(role="assistant", content=assistant_text)],
             structured_output=structured_output,
             terminal=True,
             status="ok",

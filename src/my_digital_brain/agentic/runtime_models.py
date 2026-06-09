@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 
 from my_digital_brain.agentic.base import AgenticModel, utc_now
 from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.ai.schemas import ChatMessage
 
 
 class AgenticToolEvent(AgenticModel):
@@ -21,6 +22,7 @@ class AgenticToolEvent(AgenticModel):
 class AgenticStateRunResult(AgenticModel):
     state_id: AgenticStateId
     assistant_text: str | None = None
+    message_delta: list[ChatMessage] = Field(default_factory=list)
     structured_output: dict[str, Any] | None = None
     tool_events: list[AgenticToolEvent] = Field(default_factory=list)
     handoff_target: str | None = None

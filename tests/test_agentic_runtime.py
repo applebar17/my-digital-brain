@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from my_digital_brain.agentic import (
@@ -23,7 +24,12 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
-from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
+from my_digital_brain.ai.schemas import (
+    ChatMessage,
+    ChatRequest,
+    ChatResult,
+    ProviderCallMetadata,
+)
 from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatResponseStatus
@@ -62,11 +68,42 @@ class ScriptedToolCallingProvider:
             }
         )
         tool_name = step.get("tool")
+        message_delta: list[ChatMessage] = []
         if tool_name:
             assert tool_name in toolbox.tools_by_name
-            tools_mapping[tool_name](**step.get("arguments", {}))
+            tool_call_id = f"call-{len(self.calls)}"
+            arguments = step.get("arguments", {})
+            message_delta.append(
+                ChatMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": _json_arguments(arguments),
+                            },
+                        }
+                    ],
+                )
+            )
+            tool_result = tools_mapping[tool_name](**arguments)
+            message_delta.append(
+                ChatMessage(
+                    role="tool",
+                    tool_call_id=tool_call_id,
+                    content=_tool_result_content(tool_result),
+                )
+            )
+        if step.get("content"):
+            message_delta.append(
+                ChatMessage(role="assistant", content=str(step.get("content") or ""))
+            )
         return ChatResult(
             content=step.get("content", ""),
+            message_delta=message_delta,
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
@@ -87,6 +124,16 @@ class ScriptedToolCallingProvider:
             parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
+
+
+def _json_arguments(arguments: object) -> str:
+    return json.dumps(arguments if isinstance(arguments, dict) else {}, sort_keys=True)
+
+
+def _tool_result_content(result: object) -> str:
+    if hasattr(result, "model_dump_json"):
+        return result.model_dump_json(exclude_none=True)
+    return json.dumps(result, default=str)
 
 
 class FakeGraphService:
@@ -208,6 +255,17 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
         "query_memory_context",
         "start_memory_ingestion",
     ]
+    assert [message.role for message in result.state_results[0].message_delta] == [
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert result.state_results[0].message_delta[0].tool_calls[0]["function"]["name"] == (
+        "query_memory_context"
+    )
+    assert result.state_results[0].message_delta[1].tool_call_id == (
+        result.state_results[0].message_delta[0].tool_calls[0]["id"]
+    )
     assert provider.calls[2]["tool_names"] == []
     assert provider.calls[2]["max_tool_calls"] == 0
     assert provider.calls[2]["request"].messages[1].content == "I met Marco yesterday."

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from ..models import ToolResult
 from ..schemas import (
+    ChatMessage,
     ChatRequest,
     ChatResult,
     EmbeddingRequest,
@@ -44,6 +45,7 @@ class FakeLLMProvider:
         )
         return ChatResult(
             content=self.chat_response,
+            message_delta=[ChatMessage(role="assistant", content=self.chat_response)],
             usage=ProviderUsage(
                 input_tokens=input_tokens,
                 output_tokens=len(self.chat_response.split()),
