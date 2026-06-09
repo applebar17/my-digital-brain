@@ -31,7 +31,6 @@ BACKEND_ONLY_KEYS = {
     "checkpoint_id",
     "context_id",
     "package_id",
-    "mention_scan_id",
     "process_id",
     "candidate_id",
     "extraction_id",
@@ -120,23 +119,6 @@ class SourceContext(AgenticModel):
     source_time: datetime | None = None
     received_at: datetime | None = None
     evidence: list[EvidenceSpan] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class MentionContextItem(AgenticModel):
-    mention_id: str = Field(default_factory=new_uuid)
-    kind: str
-    text: str
-    evidence_text: str | None = None
-    span_start: int | None = Field(default=None, ge=0)
-    span_end: int | None = Field(default=None, ge=0)
-    hints: dict[str, Any] = Field(default_factory=dict)
-
-
-class MentionScanContext(AgenticModel):
-    mention_scan_id: str = Field(default_factory=new_uuid)
-    source_id: str
-    mentions: list[MentionContextItem] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -257,7 +239,6 @@ class ReasoningCheckpointResultContext(AgenticModel):
 class PlanningContext(AgenticModel):
     source: SourceContext
     conversation: ConversationContext
-    mention_scan: MentionScanContext | None = None
     graph_context: GraphContextPackage | None = None
     pending_clarification_answer: str | None = None
     current_time: datetime = Field(default_factory=utc_now)

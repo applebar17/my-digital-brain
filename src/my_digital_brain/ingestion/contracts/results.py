@@ -7,12 +7,22 @@ from pydantic import Field
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
-from my_digital_brain.ingestion.contracts.candidates import CandidateMemoryGraph
+from my_digital_brain.ingestion.contracts.candidates import (
+    CandidateEntity,
+    CandidateMemoryGraph,
+    CandidateOutput,
+)
+from my_digital_brain.ingestion.contracts.context import GraphContextPack, GraphContextPackView
 from my_digital_brain.ingestion.contracts.planning import (
     ClarificationRequest,
     ExtractionPlan,
-    MentionScan,
 )
+from my_digital_brain.ingestion.contracts.refined_drafts import (
+    EntityIngestionPlanDraft,
+    IngestionReasoningCheckpointDraft,
+    RelationshipIngestionPlanDraft,
+)
+from my_digital_brain.ingestion.contracts.resolution import ResolvedEntityMap
 from my_digital_brain.ingestion.contracts.validation import ValidationIssue
 from my_digital_brain.ingestion.contracts.write_plan import GraphWritePlan
 from my_digital_brain.ingestion.enums import IngestionStatus
@@ -35,8 +45,21 @@ class IngestionResult(IngestionModel):
     ingestion_id: str = Field(default_factory=new_uuid)
     source_id: str
     status: IngestionStatus
-    mention_scan: MentionScan | None = None
     extraction_plan: ExtractionPlan | None = None
+    graph_context_pack: GraphContextPack | None = None
+    graph_context_views: dict[str, GraphContextPackView] = Field(default_factory=dict)
+    reasoning: IngestionReasoningCheckpointDraft | None = None
+    entity_plan: EntityIngestionPlanDraft | None = None
+    entity_extraction_plan: ExtractionPlan | None = None
+    entity_candidates: list[CandidateEntity] = Field(default_factory=list)
+    entity_candidate_graph: CandidateMemoryGraph | None = None
+    supplemental_entity_plans: list[EntityIngestionPlanDraft] = Field(default_factory=list)
+    supplemental_entity_extraction_plans: list[ExtractionPlan] = Field(default_factory=list)
+    supplemental_entity_candidates: list[CandidateEntity] = Field(default_factory=list)
+    resolved_entity_map: ResolvedEntityMap | None = None
+    relationship_plan: RelationshipIngestionPlanDraft | None = None
+    relationship_extraction_plan: ExtractionPlan | None = None
+    relationship_candidates: list[CandidateOutput] = Field(default_factory=list)
     candidate_graph: CandidateMemoryGraph | None = None
     clarification: ClarificationRequest | None = None
     write_plan: GraphWritePlan | None = None

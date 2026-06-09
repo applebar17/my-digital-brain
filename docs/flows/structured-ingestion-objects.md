@@ -22,7 +22,7 @@ Use two layers:
   metadata, validation state, and persistence-ready provenance.
 
 The LLM must not output backend-owned fields such as `source_id`,
-`mention_scan_id`, `extraction_plan_id`, `task_id`, candidate IDs,
+`extraction_plan_id`, `task_id`, candidate IDs,
 `source_refs`, `EvidenceRef`, raw UUIDs, or backend metadata. Backend code
 injects those fields after validating the draft.
 
@@ -75,41 +75,6 @@ Core fields:
 - `status`
 
 Speech-to-text runs should also be represented as extraction or processing runs, with model/provider information and transcript confidence metadata.
-
-### MentionScan
-
-A cheap shallow pass over source text or transcript. It exists to drive compact graph-context retrieval before the ingestion planner runs.
-
-Backend record fields:
-
-- `mention_scan_id`
-- `source_id`
-- `mentions`
-- `created_at`
-- `metadata`
-
-LLM draft fields:
-
-- `mentions`
-
-The mention scan should not create final entities or relationships. It only identifies likely names, places, events, dates, topics, relationship hints, and affective hints.
-
-### Mention
-
-A shallow mention found in the source.
-
-Backend record fields:
-
-- `mention_id`
-- `kind`: person, place, event, organization, object, animal, social_circle, topic, date, relationship_context, perception, claim.
-- `text`
-- `evidence_text`
-- `span_start`
-- `span_end`
-- `possible_normalized_value`
-- `ambiguity_hint`
-
-LLM draft fields are the same semantic fields without `mention_id` or metadata.
 
 ### GraphContextPack
 
@@ -278,37 +243,6 @@ Mention "Merc" is likely the user's nickname for Matteo Mercoldi. Treat it as
 an alias candidate for Matteo Mercoldi, not as a separate Person.
 ```
 
-### SemanticIngestionPlanDraft
-
-The older high-freedom model-facing planner output. It remains useful as the
-generic planning concept, but the wave-1 ingestion refinement splits planning
-into entity and relationship phases so one planner call does not own the whole
-memory-writing problem.
-
-LLM draft fields:
-
-- `execution_mode`
-- `reason`
-- `actions`
-- `clarification`
-- `context_gaps`
-
-Each semantic action contains:
-
-- `action_ref`
-- `action_kind`
-- `goal`
-- `evidence_text`
-- `concept_kinds`
-- `concepts`
-- `depends_on`
-- `context_refs`
-- `notes`
-
-The semantic planner may organize the narrative and identify dependencies, but
-it must not choose graph labels, relationship types, write-plan operations,
-persistence fields, or backend-owned IDs.
-
 ### EntityIngestionPlanDraft
 
 The model-facing entity-only planning output for the refined baseline. It
@@ -423,30 +357,27 @@ relationship planning emits MissingEntityRequiredDraft
 
 ### ExtractionPlan
 
-The generic backend-compiled plan for focused extraction work. In the older
-planner-first flow, it was produced from `SemanticIngestionPlanDraft`. In the
-wave-1 refined flow, backend compilation may produce separate entity and
-relationship extraction plans from `EntityIngestionPlanDraft` and
-`RelationshipIngestionPlanDraft`.
+The backend-compiled plan for focused extraction work. The wave-1 runtime
+produces separate entity, supplemental missing-entity, and relationship
+extraction plans from `EntityIngestionPlanDraft`,
+`MissingEntityRequiredDraft`, and `RelationshipIngestionPlanDraft`.
 
 Backend record fields:
 
 - `extraction_plan_id`
 - `source_id`
 - `context_package_id`
-- `execution_mode`: entity_preparation, relationship_preparation,
-  supplemental_entity_preparation, simple_single_pass, focused_extraction,
-  needs_context_expansion, needs_clarification_first.
+- `execution_mode`: currently `focused_extraction`
 - `reason`
 - `tasks`
 - `clarification`
 - `context_gaps`
 - `created_at`
 
-The deterministic compiler creates tasks from structured plan actions, schedules
-entity/ref-producing tasks before ref-consuming tasks, and injects ontology,
-allowed aliases, candidate refs, previous compact action summaries, and source
-refs into backend task metadata.
+The deterministic compiler creates tasks from structured entity or relationship
+plan actions and injects ontology, allowed aliases, candidate refs, resolved
+entity-map refs, previous compact action summaries, and source refs into
+backend task metadata.
 
 ### ExtractionTask
 
@@ -831,8 +762,6 @@ The first implementation does not need every field above, but it should establis
 
 - `SourceRecord`
 - `ExtractionRun`
-- `MentionScan`
-- `Mention`
 - `GraphContextPack` or an equivalent low-noise `GraphContextPackage`
 - `GraphContextPackRenderer`
 - `PlanningTransformContext`

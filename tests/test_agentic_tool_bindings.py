@@ -257,24 +257,14 @@ def _pending_context(
     )
 
 
-def test_registry_validates_default_state_configs_and_memory_planning_state() -> None:
+def test_registry_validates_default_state_configs_and_reasoning_planning_states() -> None:
     configs = default_state_configs()
     registry = default_agentic_tool_registry()
 
     registry.validate_state_configs(configs)
 
-    planning = configs[AgenticStateId.MEMORY_INGESTION_PLANNING]
     reasoning = configs[AgenticStateId.REASONING_CHECKPOINT]
     generic_planning = configs[AgenticStateId.PLANNING_CHECKPOINT]
-    assert planning.prompt_id == "ingestion_planner"
-    assert planning.allowed_tools == [
-        "request_graph_context_expansion",
-        "request_contradiction_review",
-        "request_user_clarification",
-    ]
-    assert "Plan semantic ingestion actions" in PromptRegistry().load(
-        "ingestion_planner",
-    ).template
     assert reasoning.allowed_tools == [
         "get_context_package",
         "get_entity_detail",
@@ -373,7 +363,7 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
 
     result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
 
-    assert result.status == "ok"
+    assert result.status == "accepted"
     assert result.output == "Memory ingestion handoff requested."
     assert result.data["handoff_target"] == "memory_ingestion_precheck"
     assert result.data["handoff_arguments"]["source_text"] == "Yesterday I met Marco."
@@ -530,42 +520,6 @@ def test_missing_dependency_returns_verbose_tool_error() -> None:
     assert result.error.code == "missing_dependency"
     assert "graph_service" in result.error.message
     assert "Configure AgenticToolExecutionContext.graph_service" in result.error.hint
-
-
-def test_memory_planning_context_expansion_uses_graph_service() -> None:
-    graph = FakeGraphService()
-    config = default_state_configs()[AgenticStateId.MEMORY_INGESTION_PLANNING]
-    toolbox = build_agentic_toolbox(config)
-    mapping = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))
-
-    result = mapping["request_graph_context_expansion"](query="Marco", limit=5)
-
-    assert sorted(toolbox.tools_by_name) == [
-        "request_contradiction_review",
-        "request_graph_context_expansion",
-        "request_user_clarification",
-    ]
-    assert result.status == "ok"
-    assert result.data["matches"][0]["properties"]["id"] == "node-marco"
-    assert ("search_nodes", "Marco") in graph.calls
-
-
-def test_memory_planning_contradiction_handoff_without_submit_tool() -> None:
-    config = default_state_configs()[AgenticStateId.MEMORY_INGESTION_PLANNING]
-    execution_context = _execution_context()
-    mapping = build_agentic_tool_mapping(config, execution_context)
-
-    contradiction = mapping["request_contradiction_review"](
-        agent_doubt="The new place conflicts with existing event context.",
-        proposed_write_ref="WRITE_000001",
-        affected_entity_refs=["NODE_000001"],
-        source_refs=["source-1"],
-    )
-
-    assert "submit_extraction_plan" not in mapping
-    assert contradiction.status == "ok"
-    assert contradiction.data["handoff_target"] == "contradiction_review"
-    assert contradiction.data["handoff_arguments"]["agent_doubt"].startswith("The new place")
 
 
 def test_request_user_clarification_creates_pending_process_hint() -> None:

@@ -36,6 +36,7 @@ class WholeSourceGraphContextPackBuilder:
                 source_id=source.source_id,
                 retrieval_strategy="whole_source_hybrid",
                 notes=["Source text was empty; graph context retrieval was skipped."],
+                alias_map=_owner_alias_map(source),
             )
         if self.search_service is not None and hasattr(self.search_service, "search_hybrid"):
             return self._from_search_result(source, self.search_service.search_hybrid(
@@ -49,6 +50,7 @@ class WholeSourceGraphContextPackBuilder:
             source_id=source.source_id,
             retrieval_strategy="whole_source_hybrid",
             notes=["No graph search dependency configured for whole-source context retrieval."],
+            alias_map=_owner_alias_map(source),
         )
 
     def _from_graph_service_search(
@@ -63,6 +65,7 @@ class WholeSourceGraphContextPackBuilder:
             retrieval_strategy="whole_source_hybrid",
             compact_summary=_compact_summary(entities),
             entities=[entity for entity in entities if entity is not None],
+            alias_map={**_context_alias_map(self._aliases), **_owner_alias_map(source)},
         )
 
     def _from_search_result(self, source: SourceRecordRef, result: Any) -> GraphContextPack:
@@ -111,6 +114,7 @@ class WholeSourceGraphContextPackBuilder:
             relationships=relationships,
             duplicate_hints=duplicate_hints,
             relationship_context_snippets=snippets,
+            alias_map={**_context_alias_map(self._aliases), **_owner_alias_map(source)},
         )
 
     def _entity_from_hit(self, hit: dict[str, Any]) -> GraphContextEntityItem | None:
@@ -285,3 +289,18 @@ def _compact_summary(entities: list[GraphContextEntityItem | None]) -> str | Non
     if not labels:
         return None
     return "Retrieved graph context: " + ", ".join(labels[:6])
+
+
+def _context_alias_map(raw_to_alias: dict[str, str]) -> dict[str, str]:
+    return {alias: raw_id for raw_id, alias in raw_to_alias.items()}
+
+
+def _owner_alias_map(source: SourceRecordRef) -> dict[str, str]:
+    owner_id = (
+        source.metadata.get("owner_graph_node_id")
+        or source.metadata.get("owner_node_id")
+        or source.metadata.get("owner_id")
+    )
+    if not owner_id:
+        return {}
+    return {"OWNER": str(owner_id)}

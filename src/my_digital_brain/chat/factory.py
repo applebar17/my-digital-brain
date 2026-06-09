@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from my_digital_brain.agentic import AgenticPlanningService, AgenticReasoningService
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime, AgenticStateRunner
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
@@ -15,8 +16,6 @@ from my_digital_brain.chat.tool_facade import (
     MemoryBackendToolFacade,
 )
 from my_digital_brain.config import Settings
-from my_digital_brain.ingestion.agentic_planner import AgenticIngestionPlanner
-from my_digital_brain.ingestion.context_retriever import GraphIngestionContextRetriever
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
 from my_digital_brain.ingestion.extractors import (
     ClaimExtractor,
@@ -26,7 +25,7 @@ from my_digital_brain.ingestion.extractors import (
     RelationshipContextExtractor,
     RelationshipExtractor,
 )
-from my_digital_brain.ingestion.mention_scanner import LLMMentionScanner
+from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
 from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
@@ -98,6 +97,7 @@ def build_chat_runtime(
         graph_service=graph_service,
         state_runner=state_runner,
         router=router,
+        semantic_search_service=semantic_search_service,
         execute_write_plan=settings.ingestion_execute_write_plan,
     )
     facade = MemoryBackendToolFacade(
@@ -133,6 +133,7 @@ def build_ingestion_service(
     graph_service: Any | None,
     state_runner: AgenticStateRunner,
     router: StaticModelRouter,
+    semantic_search_service: SemanticMemorySearchService | None,
     execute_write_plan: bool,
 ) -> IngestionService | None:
     if graph_service is None:
@@ -150,21 +151,23 @@ def build_ingestion_service(
         )
 
     return IngestionService(
-        scanner=LLMMentionScanner(provider, router=router),
-        context_retriever=GraphIngestionContextRetriever(graph_service),
-        planner=AgenticIngestionPlanner(
-            state_runner,
-            structured_provider=provider,
-            execution_context_factory=planner_execution_context,
+        reasoning_service=AgenticReasoningService(state_runner),
+        planning_service=AgenticPlanningService(state_runner),
+        graph_context_builder=WholeSourceGraphContextPackBuilder(
+            search_service=semantic_search_service,
+            graph_service=graph_service,
         ),
-        extractors=[
+        entity_extractors=[
             EntityExtractor(provider, router=router),
+        ],
+        relationship_extractors=[
             ClaimExtractor(provider, router=router),
             PerceptionExtractor(provider, router=router),
             RelationshipExtractor(provider, router=router),
             RelationshipContextExtractor(provider, router=router),
             MetadataPatchExtractor(provider, router=router),
         ],
+        execution_context_factory=planner_execution_context,
         resolution_service=ConservativeResolutionService(graph_service),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph_service),

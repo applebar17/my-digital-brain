@@ -688,7 +688,7 @@ def _message_payload(text: str, session_id: str | None = None) -> dict[str, obje
 def _clarification_packet(process_id: str) -> ClarificationPacket:
     return ClarificationPacket(
         process_id=process_id,
-        origin_state_id="memory_ingestion_planning",
+        origin_state_id="memory_ingestion",
         reason="Multiple Marco candidates exist.",
         compact_summary="Need to know which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],

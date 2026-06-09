@@ -87,22 +87,25 @@ resolution, clarification, and persistence.
 
 ## Context-Aware Ingestion Planning
 
-Ingestion complexity must be determined after the model sees relevant graph context, not from raw source text alone.
+Ingestion uses the reasoning-first runtime. The backend builds a rendered graph
+context pack, runs a structured reasoning checkpoint, plans entities, resolves
+or stages entities, then plans relationships from the resolved entity map.
 
 Required planning flow:
 
-1. Run a cheap mention scan over source text or transcript.
-2. Retrieve compact graph context for the mentions.
-3. Ask the ingestion planner for a `SemanticIngestionPlanDraft`.
-4. Backend-compile the semantic draft into an `ExtractionPlan`.
-5. Execute the selected backend flow with focused extractors.
+1. Retrieve and render compact graph context for the source.
+2. Produce an `IngestionReasoningCheckpointDraft`.
+3. Produce an `EntityIngestionPlanDraft`.
+4. Compile focused entity extraction tasks and extract entity candidates.
+5. Resolve or stage entity candidates.
+6. Produce a `RelationshipIngestionPlanDraft` using the resolved entity map.
+7. Re-plan missing entities through `MissingEntityRequiredDraft` when needed.
+8. Compile focused relationship extraction tasks and extract relationship
+   candidates.
+9. Validate, build a write plan, execute graph writes, and refresh vectors when
+   configured.
 
-Planner execution modes:
-
-- `simple_single_pass`
-- `focused_extraction`
-- `needs_context_expansion`
-- `needs_clarification_first`
+Focused extraction is the only current execution mode.
 
 The planner proposes ordered semantic actions. It does not choose graph labels,
 relationship types, write-plan operations, or graph writes. Backend code

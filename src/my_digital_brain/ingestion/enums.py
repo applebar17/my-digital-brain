@@ -21,27 +21,8 @@ class SourceChannel(StrEnum):
     IMPORT = "import"
 
 
-class MentionKind(StrEnum):
-    PERSON = "person"
-    PLACE = "place"
-    EVENT = "event"
-    ORGANIZATION = "organization"
-    OBJECT = "object"
-    ANIMAL = "animal"
-    SOCIAL_CIRCLE = "social_circle"
-    TOPIC = "topic"
-    DATE = "date"
-    RELATIONSHIP_CONTEXT = "relationship_context"
-    PERCEPTION = "perception"
-    CLAIM = "claim"
-    METADATA = "metadata"
-
-
 class ExtractionExecutionMode(StrEnum):
-    SIMPLE_SINGLE_PASS = "simple_single_pass"
     FOCUSED_EXTRACTION = "focused_extraction"
-    NEEDS_CONTEXT_EXPANSION = "needs_context_expansion"
-    NEEDS_CLARIFICATION_FIRST = "needs_clarification_first"
 
 
 class ExtractionTaskType(StrEnum):

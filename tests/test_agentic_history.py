@@ -120,7 +120,7 @@ def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> N
     assert "channel_metadata" not in prompt_context
 
 
-def test_history_service_compacts_tool_events_for_planning_context() -> None:
+def test_history_service_compacts_tool_events_for_planning_checkpoint_context() -> None:
     service = AgenticHistoryService(HistoryProjectionPolicy(tool_data_chars=80))
     planning_context = PlanningContext(
         source=SourceContext(source_id="source-1", normalized_text="I met Marco."),
@@ -129,18 +129,18 @@ def test_history_service_compacts_tool_events_for_planning_context() -> None:
         ),
     )
     state_result = AgenticStateRunResult(
-        state_id=AgenticStateId.MEMORY_INGESTION_PLANNING,
+        state_id=AgenticStateId.PLANNING_CHECKPOINT,
         tool_events=[
             AgenticToolEvent(
-                tool_name="request_graph_context_expansion",
+                tool_name="get_context_package",
                 status="ok",
                 output="Graph context expanded.",
                 data={"matches": [{"text": "x" * 200}]},
             ),
             AgenticToolEvent(
-                tool_name="request_contradiction_review",
+                tool_name="request_user_clarification",
                 status="ok",
-                data={"handoff_target": "contradiction_review"},
+                data={"pending_process": {"question": "Which Marco?"}},
             ),
         ],
     )
@@ -151,11 +151,12 @@ def test_history_service_compacts_tool_events_for_planning_context() -> None:
         skip_handoff_targets={"contradiction_review"},
     )
 
-    assert len(planning_context.prior_tool_outputs) == 1
+    assert len(planning_context.prior_tool_outputs) == 2
     output = planning_context.prior_tool_outputs[0]
-    assert output.tool_name == "request_graph_context_expansion"
+    assert output.tool_name == "get_context_package"
     assert output.summary == "Graph context expanded."
     assert output.data["truncated"] is True
+    assert planning_context.prior_tool_outputs[1].tool_name == "request_user_clarification"
 
 
 def _message(

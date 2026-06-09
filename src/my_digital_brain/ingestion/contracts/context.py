@@ -197,6 +197,13 @@ class GraphContextPack(IngestionModel):
         default_factory=list,
         description="Backend notes that renderers may selectively expose.",
     )
+    alias_map: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Backend alias-to-graph-id map retained for validation and write "
+            "execution. Renderers normally omit it from LLM payloads."
+        ),
+    )
     source_id: str | None = Field(
         default=None,
         description=(

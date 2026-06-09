@@ -16,7 +16,7 @@ from uat_refined_trace_common import (
 
 
 DEFAULT_OUTPUT = Path("docs/uat/missing-entity-trace.txt")
-logger = logging.getLogger("uat_refined_trace")
+logger = logging.getLogger("uat_ingestion_trace")
 
 
 def main() -> int:
@@ -80,7 +80,7 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Render a graph/database-free UAT trace for the refined relationship "
+            "Render a graph/database-free UAT trace for the reasoning-first relationship "
             "planner from predefined entity candidates."
         ),
     )

@@ -62,7 +62,7 @@ The model may use local refs only when the process goal requires orchestration
 between objects. A ref-consuming extraction step may use only refs created by
 earlier steps or graph aliases explicitly provided by the backend.
 
-The backend must guarantee executable ordering. In the refined ingestion
+The backend must guarantee executable ordering. In the reasoning-first ingestion
 baseline, relationship planning starts only after entity validation has produced
 a resolved entity map. If a relationship step discovers that a required endpoint
 is missing, it must emit `missing_entity_required` and loop back through
@@ -313,6 +313,17 @@ Summaries should preserve decisions, unresolved questions, entity references, an
 Agentic history should preserve continuity without polluting later states with
 noisy internal tool details.
 
+Every state or tool invocation has a clear start and end. When it completes, it
+returns exactly one tool output to its invoker, and the invoker appends that tool
+output to the conversation/process history before the next invocation. That is
+the normal context handoff across states.
+
+Deterministic backend tools should return a structured activity summary: status,
+important operations performed, validation errors, created or updated refs, and
+the recommended next action. LLM-backed subprocesses should return the final
+assistant/process result after their own internal iteration, not every nested
+prompt, tool call, or trace event.
+
 When an agentic state calls a tool or subprocess, the callee receives the parent
 history plus the tool-call context it needs. As the execution moves deeper,
 internal steps may append tool calls, tool outputs, diagnostics, and intermediate
@@ -326,6 +337,10 @@ Rules:
 - Moving deeper: pass the relevant parent history and append local tool status as
   needed.
 - Moving upward: compact internal activity into a concise tool output result.
+- For internal handoffs, include technical context only when the receiving state
+  needs it for guidance or guardrails.
+- For user-facing handoffs, hide technical fields and keep the assistant message
+  simple, human-friendly, and non-diagnostic unless the user explicitly asks.
 - Persist full internal traces for audit, debugging, and replay when useful.
 - Local UAT trace reports may render prompts, inputs, outputs, candidates, and
   missing-entity handling for human review; they are diagnostic artifacts, not

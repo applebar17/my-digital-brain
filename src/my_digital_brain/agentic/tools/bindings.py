@@ -393,65 +393,6 @@ class AgenticToolBindings:
             },
         )
 
-    def _handle_request_graph_context_expansion(
-        self,
-        query: str | None = None,
-        seed_id: str | None = None,
-        limit: int = 10,
-    ) -> ToolResult:
-        graph = self.context.graph_service
-        if graph is None:
-            return _missing_dependency("request_graph_context_expansion", "graph_service")
-        try:
-            data: dict[str, Any] = {"operation": "request_graph_context_expansion"}
-            if seed_id:
-                data["context_package"] = _serialize(
-                    graph.get_context_package(
-                        seed_id,
-                        include_history=True,
-                        timeline_limit=min(limit, 20),
-                        relationship_limit=min(limit, 50),
-                    ),
-                )
-            if query:
-                data["matches"] = _serialize(graph.search_nodes(query=query, limit=limit))
-            return ToolResult(status="ok", output="Graph context expanded.", data=data)
-        except Exception as exc:
-            return _exception_result("request_graph_context_expansion", exc)
-
-    def _handle_request_contradiction_review(
-        self,
-        agent_doubt: str,
-        proposed_write_ref: str | None = None,
-        proposed_write: dict[str, Any] | None = None,
-        affected_entity_refs: list[str] | None = None,
-        affected_relationship_refs: list[str] | None = None,
-        source_refs: list[str] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> ToolResult:
-        if not (proposed_write_ref or proposed_write):
-            return _tool_error(
-                "request_contradiction_review",
-                "missing_contradiction_write_context",
-                "Contradiction review requires a proposed write reference or payload.",
-                "Pass proposed_write_ref or proposed_write so the judge can inspect the conflict.",
-                retryable=True,
-            )
-        return _handoff_result(
-            "request_contradiction_review",
-            "contradiction_review",
-            {
-                "agent_doubt": agent_doubt,
-                "proposed_write_ref": proposed_write_ref,
-                "proposed_write": proposed_write or {},
-                "affected_entity_refs": affected_entity_refs or [],
-                "affected_relationship_refs": affected_relationship_refs or [],
-                "source_refs": source_refs or [],
-                "metadata": metadata or {},
-            },
-            output="Contradiction review handoff requested.",
-        )
-
     def _handle_get_context_package(
         self,
         node_id: str,
@@ -929,7 +870,6 @@ def _clarification_process_kind(state_id: str, pending_context: Any | None) -> s
 def _clarification_resume_strategy(state_id: str) -> str:
     return {
         AgenticStateId.PLANNING_CHECKPOINT.value: "planning_checkpoint",
-        AgenticStateId.MEMORY_INGESTION_PLANNING.value: "memory_ingestion_planning",
         AgenticStateId.CONTRADICTION_REVIEW.value: "contradiction_review",
         AgenticStateId.MEMORY_QUERY.value: "memory_query",
         AgenticStateId.CORRECTION_INTAKE.value: "correction_intake",
@@ -940,22 +880,18 @@ def _clarification_resume_strategy(state_id: str) -> str:
 
 def _handoff_result(
     operation: str,
-    handoff_target: str,
-    handoff_arguments: dict[str, Any],
+    target_state: str,
+    arguments: dict[str, Any],
     *,
     output: str,
 ) -> ToolResult:
     return ToolResult(
-        status="ok",
+        status="accepted",
         output=output,
         data={
             "operation": operation,
-            "handoff_target": handoff_target,
-            "handoff_arguments": {
-                key: value
-                for key, value in handoff_arguments.items()
-                if value not in (None, "", [])
-            },
+            "handoff_target": target_state,
+            "handoff_arguments": arguments,
         },
     )
 

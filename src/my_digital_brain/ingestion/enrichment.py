@@ -13,8 +13,6 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationshipContext,
     EvidenceRef,
     ExtractionTask,
-    Mention,
-    MentionScan,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.contracts.drafts import (
@@ -33,22 +31,12 @@ from my_digital_brain.ingestion.contracts.drafts import (
     CandidateRelationshipDraft,
     CandidateRelationshipDraftBatch,
     EvidenceSpanDraft,
-    MentionDraft,
-    MentionScanDraft,
     PropertyDraft,
 )
 from my_digital_brain.ingestion.normalization import (
     canonical_node_label,
     canonical_relationship_type,
 )
-
-
-def enrich_mention_scan(draft: MentionScanDraft, source: SourceRecordRef) -> MentionScan:
-    return MentionScan(
-        source_id=source.source_id,
-        mentions=[_enrich_mention(mention) for mention in draft.mentions],
-        metadata={"schema_layer": "backend_enriched"},
-    )
 
 
 def enrich_candidate_batch(
@@ -91,18 +79,6 @@ def property_suggestions_to_dict(
         for suggestion in suggestions
         if suggestion.key
     }
-
-
-def _enrich_mention(draft: MentionDraft) -> Mention:
-    return Mention(
-        kind=draft.kind,
-        text=draft.text,
-        evidence_text=draft.evidence_text,
-        span_start=draft.span_start,
-        span_end=draft.span_end,
-        possible_normalized_value=draft.possible_normalized_value,
-        ambiguity_hint=draft.ambiguity_hint,
-    )
 
 
 def _enrich_entity(

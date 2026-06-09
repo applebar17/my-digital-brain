@@ -75,11 +75,11 @@ Responsibilities:
 
 These are backend services, not general-purpose LLM tools:
 
-- `IngestionContextRetriever`
+- graph context pack builder and renderer
 - `StructuredReasoningService`
 - reusable `PlanningService`
-- `EntityIngestionPlanner`
-- `RelationshipIngestionPlanner`
+- entity planning guidelines and plan compiler
+- relationship planning guidelines and plan compiler
 - entity candidate preparers
 - relationship candidate preparers
 - `CandidateMemoryGraphAssembler`
@@ -122,30 +122,17 @@ baseline. The source-as-a-whole hybrid search is the first context strategy.
 The backend may override or reject any model-produced plan if it is invalid,
 too large, unsafe, unsupported, or inconsistent with deterministic validation.
 
-## Legacy Example Flows
+## Example Flows
 
-The following examples describe the earlier planner-first implementation shape.
-They remain useful for understanding existing tests and current code paths, but
-the target quality baseline is the refined reasoning flow above.
+The following examples describe the current reasoning-first implementation
+shape.
 
-### Simple Single Pass
+### Entity And Relationship Flow
 
 User source:
 
 ```text
 Yesterday I had dinner with Alessandro at Pizzeria Napoli.
-```
-
-Mention scan:
-
-```json
-{
-  "mentions": [
-    {"kind": "person", "text": "Alessandro"},
-    {"kind": "place", "text": "Pizzeria Napoli"},
-    {"kind": "event", "text": "dinner yesterday"}
-  ]
-}
 ```
 
 Compact graph context:
@@ -161,36 +148,56 @@ Compact graph context:
 }
 ```
 
-Planner result:
+Reasoning checkpoint:
 
 ```json
 {
-  "execution_mode": "simple_single_pass",
-  "actions": [
-    {
-      "action_ref": "ACTION_001",
-      "action_kind": "extract_anchors",
-      "goal": "Identify Alessandro and Pizzeria Napoli from the dinner memory.",
-      "evidence_text": "Yesterday I had dinner with Alessandro at Pizzeria Napoli"
-    },
-    {
-      "action_ref": "ACTION_002",
-      "action_kind": "extract_event",
-      "goal": "Capture the dinner event and its time/place context.",
-      "evidence_text": "Yesterday I had dinner..."
-    },
-    {
-      "action_ref": "ACTION_003",
-      "action_kind": "connect_entities",
-      "goal": "Connect the dinner, participant, and place using the source narrative.",
-      "depends_on": ["ACTION_001", "ACTION_002"]
-    }
-  ],
-  "clarification": null
+  "summary": "The source describes a dinner involving Alessandro and Pizzeria Napoli.",
+  "entity_notes": ["Alessandro is a person candidate.", "Pizzeria Napoli is a place candidate."],
+  "relationship_notes": ["The dinner happened at Pizzeria Napoli and involved Alessandro."]
 }
 ```
 
-### Clarification First
+Entity plan:
+
+```json
+{
+  "actions": [
+    {
+      "action_ref": "ENTITY_ACTION_001",
+      "goal": "Extract Alessandro as a person candidate.",
+      "mention_text": "Alessandro",
+      "suggested_entity_type": "Person",
+      "evidence_text": "Yesterday I had dinner with Alessandro at Pizzeria Napoli"
+    },
+    {
+      "action_ref": "ENTITY_ACTION_002",
+      "goal": "Extract Pizzeria Napoli as a place candidate.",
+      "mention_text": "Pizzeria Napoli",
+      "suggested_entity_type": "Place",
+      "evidence_text": "at Pizzeria Napoli"
+    }
+  ]
+}
+```
+
+Relationship plan after entity resolution:
+
+```json
+{
+  "actions": [
+    {
+      "action_ref": "RELATIONSHIP_ACTION_001",
+      "goal": "Connect the dinner, participant, and place using the source narrative.",
+      "from_ref": "CANDIDATE_EVENT_001",
+      "to_ref": "CANDIDATE_PLACE_001",
+      "relationship_type": "HAPPENED_AT"
+    }
+  ]
+}
+```
+
+### Clarification During Planning Or Resolution
 
 User source:
 
@@ -213,18 +220,14 @@ Compact graph context:
 }
 ```
 
-Planner result:
+Clarification result:
 
 ```json
 {
-  "execution_mode": "needs_clarification_first",
-  "reason": "The person mention 'Marco' maps to three plausible existing people.",
-  "tasks": [
-    {"task_type": "event", "evidence_text": "Yesterday I met Marco in Milan"}
-  ],
   "clarification": {
-    "question": "Which Marco do you mean?",
-    "options": ["Marco from university", "Marco the former coworker", "Marco from the gym"],
+    "doubt": "The name Marco may refer to multiple known people.",
+    "reason": "There are several plausible Marco nodes in the graph context.",
+    "options": "Could be Marco from university, Marco the former coworker, or Marco from the gym.",
     "blocking": true
   }
 }
@@ -284,7 +287,6 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
 - Add `ingestion/enums.py`:
   - `SourceType`
   - `SourceChannel`
-  - `MentionKind`
   - `ExtractionExecutionMode`
   - `ExtractionTaskType`
   - `CandidateRefKind`
@@ -295,8 +297,6 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
 - Add `ingestion/contracts.py`:
   - `SourceRecordRef`
   - `ExtractionRunRef`
-  - `Mention`
-  - `MentionScan`
   - `ExtractionPlan`
   - `ExtractionTask`
   - `EvidenceRef`
@@ -316,14 +316,14 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
   - `GraphWritePlan`
   - `IngestionResult`
 - Add `ingestion/protocols.py` for internal service contracts:
-  - `MentionScanner`
-  - `IngestionContextRetriever`
-  - `IngestionPlanner`
   - `FocusedExtractor`
   - `CandidateMemoryGraphAssembler`
   - `IngestionValidator`
   - `ResolutionService`
+  - `GraphWritePlanBuilder`
   - `GraphWritePlanExecutor`
+  - `GraphVectorizationService`
+  - `IngestionProcessStore`
 - Add `ingestion/assembly.py`:
   - assemble extractor outputs into a `CandidateMemoryGraph`
   - validate local candidate references
@@ -387,38 +387,26 @@ The `GraphWritePlan` must be backend-generated. It is not a direct LLM output sc
 
 ## Wave 2: Context-Aware AI Planning And Focused Extraction
 
-Status: implemented with fake-provider coverage in `tests/test_ingestion_ai_planning.py`. Graph writes remain out of scope until Wave 3.
+Status: superseded by the reasoning-first runtime and covered by
+`tests/test_ingestion_extractors.py`, `tests/test_ingestion_runtime.py`, and
+`tests/test_ingestion_write_execution.py`.
 
 ### Summary
 
-Add the AI-backed services that produce mention scans, compact context-driven extraction plans, and focused candidate objects. This wave introduces model calls through the provider protocols, but graph writes still remain disabled or mocked.
+Add AI-backed reasoning, planning, and focused candidate extraction services.
+The current runtime proceeds through durable graph write when write execution is
+enabled.
 
 ### Key Changes
 
-- Add `ingestion/mention_scanner.py`.
-- Uses `StructuredLLMProvider`.
-- Produces `MentionScanDraft`, then backend-enriches it into `MentionScan`.
-  - Performs shallow extraction only.
-  - Must not create final candidate entities or relationships.
-- Add `ingestion/context_retriever.py`.
-  - Uses graph query services.
-  - Returns compact context packages for planner use.
-  - Uses LLM-facing aliases through `IdAliasMapper`.
-  - Excludes noisy metadata by default.
-- Add `ingestion/planner.py`.
-- Uses `StructuredLLMProvider`.
-- Receives source text plus compact graph context.
-- Produces `SemanticIngestionPlanDraft`, then backend-compiles it into `ExtractionPlan`.
-  - Selects one of:
-    - `simple_single_pass`
-    - `focused_extraction`
-    - `needs_context_expansion`
-    - `needs_clarification_first`
-  - Proposes semantic actions, not graph writes or DB-shaped task internals.
-- Add deterministic semantic task compiler.
-  - Schedules anchor/ref actions before ref-consuming actions.
-  - Builds the candidate/ref catalog and compact previous-step summaries.
-  - Injects ontology constraints into low-freedom extractor calls.
+- Add whole-source graph context pack building and renderer-facing views.
+- Add structured reasoning and reusable planning checkpoint services.
+- Produce `IngestionReasoningCheckpointDraft`, `EntityIngestionPlanDraft`,
+  `RelationshipIngestionPlanDraft`, and `MissingEntityRequiredDraft`.
+- Add deterministic focused plan builders for entity, supplemental entity, and
+  relationship extraction.
+- Build candidate/ref catalogs, resolved entity-map refs, compact previous-step
+  summaries, and ontology constraints into low-freedom extractor calls.
 - Add `ingestion/extractors/`.
   - `entity.py`
   - `relationship.py`
@@ -430,16 +418,15 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
   - Keeps prompt text close to structured contracts.
   - Builds low-noise context for each extractor.
   - Keeps focused tasks small.
-- Add model routing integration.
-  - Use `ModelRouter` for mention scan, planning, and extraction model selection.
-  - Use cheap models for mention scan where possible.
-  - Use stronger models for focused extraction when affective or relationship-history content is present.
+- Add model routing integration for reasoning, planning, and extraction model
+  selection.
 
 ### Prompt And Schema Rules
 
-- Mention scanner prompt must ask for shallow mentions only.
-- Planner prompt must classify complexity only after reading compact context.
-- Planner must not invent aliases that were not present in context.
+- Reasoning and planning prompts must receive graph/process context through the
+  backend-rendered system prompt, while source/user text remains conversation
+  message content.
+- Planning prompts must use only aliases and refs supplied in context.
 - Focused extractors must only extract the requested task.
 - Extractors must preserve evidence text and original user wording.
 - Extractors should use `unknown`, `missing_fields`, or `ambiguity_flags` instead of guessing.
@@ -458,13 +445,12 @@ Add the AI-backed services that produce mention scans, compact context-driven ex
 
 ### Tests
 
-- Mention scanner with fake structured provider returns a valid `MentionScan`.
-- Planner returns each execution mode from controlled fake outputs.
+- Reasoning and planning services return lightweight structured drafts.
 - Planner rejects unknown aliases and unsupported task types.
-- Context retriever returns low-noise packages with aliases.
+- Graph context pack renderer returns low-noise views with aliases.
 - Focused extractors produce only their target candidate types.
 - Focused extractors preserve evidence and original user words.
-- Service orchestration chooses simple versus focused extraction based on `ExtractionPlan`.
+- Service orchestration runs the reasoning-first focused extraction flow.
 - No test uses a real OpenAI/Azure call.
 
 ### Completion Criteria

@@ -163,7 +163,8 @@ Implemented foundation artifacts:
     maintenance context contracts
   - agentic tool registry, state-specific toolbox factory, and backend binding
     layer under `src/my_digital_brain/agentic/tools/`
-  - `memory_ingestion_planning` state configuration
+  - reusable reasoning/planning checkpoint state configuration used by the
+    reasoning-first ingestion runtime
   - provider-neutral runtime contracts:
     - `AgenticToolEvent`
     - `AgenticStateRunResult`
@@ -180,7 +181,7 @@ Implemented foundation artifacts:
   - templates for `correction_intake`, `correction_proposal`,
     `contradiction_review`, `profile_memory_extraction`, and
     `maintenance_review`
-  - template for `ingestion_planner`
+  - templates for reusable reasoning and planning checkpoints
 - `tests/test_agentic_foundation.py`
   - neutral message validation
   - context payload safety
@@ -237,12 +238,10 @@ Implemented focused MVP integration artifacts:
 - Pending process persistence when agentic execution returns a clarification or
   pending-process hint, including active, paused, cancelled, completed, and
   expired lifecycle states.
-- `AgenticIngestionPlanner`, which runs the tool-enabled
-  `memory_ingestion_planning` support state and then requires a structured
-  `ExtractionPlan` final output.
-- Current planning-time support tools:
-  - `request_graph_context_expansion`
-  - `request_contradiction_review`
+- Reasoning-first `IngestionService` integration, which replaces the older
+  planner-first ingestion support state with structured reasoning, entity
+  planning, entity resolution, relationship planning, candidate extraction,
+  validation, write-plan execution, and optional vector refresh.
 - Agent-invoked contradiction review handoff from planning contexts without
   deterministic contradiction detection rules.
 - Contradiction review returns structured result intents instead of relying on
@@ -596,13 +595,10 @@ Implemented baseline object families:
   details matter, such as modality or response rendering constraints.
 - `SourceContext`: normalized source text/transcript, media refs, source timing,
   and source/evidence refs.
-- `MentionScanContext`: shallow mentions, evidence spans, and rough hints for
-  context retrieval.
 - `GraphContextPackage`: compact graph context with aliases, candidate matches,
   relationship contexts, evidence summaries, and known ambiguities.
-- `PlanningContext`: source context, conversation context, mention scan, graph
-  context, current time/timezone, and pending clarification answer when
-  resuming.
+- `PlanningContext`: source context, conversation context, graph context,
+  current time/timezone, and pending clarification answer when resuming.
 - `ExtractionTaskContext`: focused evidence span, selected schema, graph aliases,
   and local candidate refs needed by a single extractor.
 - `CandidateGraphContext`: assembled candidates, local refs, source refs, and
@@ -628,9 +624,9 @@ explicitly requested.
 Example:
 
 ```text
-AS: memory_ingestion_planning
-  receives PlanningContext
-  calls LP: focused_extraction
+AS: planning_checkpoint
+  receives PlanningTransformContext
+  returns EntityIngestionPlanDraft or RelationshipIngestionPlanDraft
 
 LP: focused_extraction
   receives ExtractionTaskContext
@@ -912,18 +908,11 @@ Implemented outputs:
 - Active pending process context or paused pending backlog starts the runtime
   from `pending_process_review` instead of forcing the next message through a
   deterministic clarification route.
-- `AgenticIngestionPlanner` runs the `memory_ingestion_planning` state through
-  the existing provider tool-call loop for support tools, then requires a
-  structured `ExtractionPlan` final output.
-- The planner toolbox includes:
-  - `request_graph_context_expansion`
-  - `request_contradiction_review`
-- After the structured `ExtractionPlan` is returned and validated, backend code
-  deterministically routes the next ingestion step from the plan fields.
-- Full ingestion remains owned by `IngestionService`: mention scan, graph
-  context retrieval, planning, focused extraction, assembly, validation,
-  resolution, write-plan creation, optional graph execution, clarification, and
-  summary.
+- Ingestion is owned by `IngestionService`: graph context rendering,
+  structured reasoning, entity planning, focused entity extraction, staged
+  resolution, relationship planning, focused relationship extraction, assembly,
+  validation, resolution, write-plan creation, graph execution, optional vector
+  refresh, clarification, and summary.
 - Contradiction review is agent-invoked through tool handoff. No deterministic
   contradiction-detection rules were added.
 - Contradiction review returns a structured result with intents:

@@ -190,6 +190,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             metadata={
                 "conversation_id": request.conversation_id,
                 "session_id": request.session_id,
+                "owner_id": request.owner_id,
                 "chat_channel": request.channel,
             },
         )
@@ -284,16 +285,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             or "",
         ).strip()
         current_answer = request.text.strip()
-        resumed_text = "\n\n".join(
-            item
-            for item in [
-                original_text,
-                f"Clarification answer: {current_answer}" if current_answer else None,
-            ]
-            if item
-        )
-        if not resumed_text:
-            resumed_text = current_answer or "Resume pending memory ingestion."
+        resumed_text = original_text or current_answer or "Resume pending memory ingestion."
 
         original_source_id = (
             pending_context.process_ref.metadata.get("source_id")
@@ -309,7 +301,10 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             metadata={
                 "conversation_id": request.conversation_id,
                 "session_id": request.session_id,
+                "owner_id": request.owner_id,
                 "chat_channel": request.channel,
+                "current_user_message": current_answer,
+                "clarification_answer_summary": current_answer,
                 "resumed_from_pending_process_id": pending_context.process_ref.process_id,
                 "original_source_id": original_source_id,
                 "checkpoint_schema_version": pending_context.context.get(
@@ -318,8 +313,8 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 ),
                 "resume_policy": "refresh_context_before_write",
                 "conversation_history_refs": list(request.conversation_history_refs),
-            },
-        )
+                },
+            )
         result = self.ingestion_service.process_source(source)
         chat_result = self._chat_result_from_ingestion(
             result,
@@ -368,7 +363,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 )
             packet = build_clarification_packet(
                 process_id=result.ingestion_id,
-                origin_state_id="memory_ingestion_planning",
+                origin_state_id="memory_ingestion",
                 reason=result.clarification.reason,
                 questions=[
                     {
@@ -399,7 +394,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                             mode="json",
                             exclude_none=True,
                         ),
-                        "resume_strategy": "memory_ingestion_planning",
+                        "resume_strategy": "memory_ingestion",
                     },
                 ),
                 metadata={"operation": operation, "source_id": source.source_id},

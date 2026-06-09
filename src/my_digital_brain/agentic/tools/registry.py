@@ -180,7 +180,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             ),
             states=[
                 AgenticStateId.PENDING_PROCESS_REVIEW,
-                AgenticStateId.MEMORY_INGESTION_PLANNING,
                 AgenticStateId.MEMORY_QUERY,
                 AgenticStateId.CORRECTION_INTAKE,
                 AgenticStateId.CONTRADICTION_REVIEW,
@@ -196,41 +195,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "questions": _clarification_questions_property(),
             },
             required=["reason", "questions"],
-        ),
-        _definition(
-            "request_graph_context_expansion",
-            "Request compact graph context expansion for ingestion planning.",
-            states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
-            properties={
-                "query": optional_string_property("Search text for additional context."),
-                "seed_id": optional_string_property("Seed node id for context package retrieval."),
-                "limit": integer_property("Maximum records to retrieve.", default=10, maximum=50),
-            },
-        ),
-        _definition(
-            "request_contradiction_review",
-            "Ask the contradiction review state to inspect an agent-inferred ambiguity or conflict.",
-            states=[AgenticStateId.MEMORY_INGESTION_PLANNING],
-            properties={
-                "agent_doubt": string_property(
-                    "Grounded explanation of the ambiguity or contradiction the agent sees.",
-                ),
-                "proposed_write_ref": optional_string_property(
-                    "Optional proposed write or candidate reference involved in the doubt.",
-                ),
-                "proposed_write": object_property(
-                    "Optional proposed write or candidate payload involved in the doubt.",
-                ),
-                "affected_entity_refs": array_property(
-                    "Entity aliases or ids involved in the doubt.",
-                ),
-                "affected_relationship_refs": array_property(
-                    "Relationship aliases or ids involved in the doubt.",
-                ),
-                "source_refs": array_property("Source refs supporting the doubt."),
-                "metadata": object_property("Additional low-noise contradiction metadata."),
-            },
-            required=["agent_doubt"],
         ),
         *_graph_read_definitions(
             memory_query_states,

@@ -11,8 +11,9 @@ from my_digital_brain.ai.tools import (
     build_chat_toolbox,
     build_tool_mapping,
 )
-from my_digital_brain.ingestion.contracts import MentionScanDraft
 from my_digital_brain.ingestion.contracts import drafts as draft_contracts
+from my_digital_brain.ingestion.contracts import refined_drafts as refined_contracts
+from my_digital_brain.ingestion.contracts import CandidateEntityDraftBatch
 
 
 def test_ai_client_settings_import_without_constructing_client() -> None:
@@ -98,20 +99,19 @@ def test_genai_message_normalizer_repairs_roleless_payload_inside_messages() -> 
     assert json.loads(messages[1]["content"]) == {"source": {"raw_text": "hello"}}
 
 
-def test_strict_response_format_closes_draft_objects_for_mention_scan() -> None:
-    response_format = strict_response_format(MentionScanDraft)
+def test_strict_response_format_closes_candidate_draft_objects() -> None:
+    response_format = strict_response_format(CandidateEntityDraftBatch)
     schema = response_format["json_schema"]["schema"]
-    mention_schema = schema["$defs"]["MentionDraft"]
+    entity_schema = schema["$defs"]["CandidateEntityDraft"]
 
     assert response_format["type"] == "json_schema"
     assert response_format["json_schema"]["strict"] is True
     assert schema["additionalProperties"] is False
-    assert mention_schema["additionalProperties"] is False
+    assert entity_schema["additionalProperties"] is False
     assert "source_id" not in schema["properties"]
-    assert "mention_scan_id" not in schema["properties"]
     assert "metadata" not in schema["properties"]
-    assert "mention_id" not in mention_schema["properties"]
-    assert "metadata" not in mention_schema["properties"]
+    assert "candidate_id" not in entity_schema["properties"]
+    assert "metadata" not in entity_schema["properties"]
     _assert_all_objects_are_closed(schema)
     _assert_refs_have_no_siblings(schema)
     _assert_schema_has_no_defaults(schema)
@@ -125,17 +125,17 @@ def test_structured_call_sends_strict_json_schema_response_format() -> None:
     )
 
     parsed = client._call_structured_once(
-        MentionScanDraft,
+        CandidateEntityDraftBatch,
         messages=[{"role": "user", "content": "scan"}],
         model="test-model",
         temperature=None,
         max_tokens=None,
     )
 
-    assert parsed.mentions == []
+    assert parsed.candidates == []
     response_format = completion.params["response_format"]
     assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["name"] == "MentionScanDraft"
+    assert response_format["json_schema"]["name"] == "CandidateEntityDraftBatch"
     assert "source_id" not in response_format["json_schema"]["schema"]["properties"]
 
 
@@ -148,7 +148,7 @@ def test_structured_call_rejects_empty_provider_content() -> None:
 
     with pytest.raises(ValueError, match="empty content"):
         client._call_structured_once(
-            MentionScanDraft,
+            CandidateEntityDraftBatch,
             messages=[{"role": "user", "content": "scan"}],
             model="test-model",
             temperature=None,
@@ -164,22 +164,24 @@ def test_structured_call_uses_max_tokens_when_sdk_signature_rejects_max_completi
     )
 
     parsed = client._call_structured_once(
-        MentionScanDraft,
+            CandidateEntityDraftBatch,
         messages=[{"role": "user", "content": "scan"}],
         model="capco-ch-uat-openai-gpt5.2",
         temperature=None,
         max_tokens=200,
     )
 
-    assert parsed.mentions == []
+    assert parsed.candidates == []
     assert completion.params["max_tokens"] == 200
     assert "max_completion_tokens" not in completion.params
 
 
 def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None:
     output_schemas = [
-        draft_contracts.MentionScanDraft,
-        draft_contracts.SemanticIngestionPlanDraft,
+        refined_contracts.IngestionReasoningCheckpointDraft,
+        refined_contracts.EntityIngestionPlanDraft,
+        refined_contracts.RelationshipIngestionPlanDraft,
+        refined_contracts.MissingEntityRequiredDraft,
         draft_contracts.CandidateEntityDraftBatch,
         draft_contracts.CandidateRelationshipDraftBatch,
         draft_contracts.CandidateClaimDraftBatch,
@@ -193,7 +195,6 @@ def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None
         "evidence_refs",
         "metadata",
         "mention_id",
-        "mention_scan_id",
         "extraction_plan_id",
         "task_id",
         "candidate_id",
@@ -224,7 +225,7 @@ class CapturingChatCompletion:
         if content is None:
             content = json.dumps(
                 {
-                    "mentions": [],
+                    "candidates": [],
                 }
             )
         return SimpleNamespace(
@@ -267,7 +268,7 @@ class LegacyChatCompletion:
             choices=[
                 SimpleNamespace(
                     finish_reason="stop",
-                    message=SimpleNamespace(content=json.dumps({"mentions": []})),
+                    message=SimpleNamespace(content=json.dumps({"candidates": []})),
                 )
             ]
         )

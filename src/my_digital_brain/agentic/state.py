@@ -101,8 +101,9 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "focused_extraction",
             ],
             handoff_targets=[
-                "memory_ingestion_planning",
-                "semantic_task_compiler",
+                "entity_ingestion_planning",
+                "relationship_ingestion_planning",
+                "focused_extraction_planning",
                 "validation_resolution",
                 "clarification_waiting",
             ],
@@ -140,31 +141,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             max_tool_calls=2,
             model_task="planning_checkpoint",
-        ),
-        AgenticStateId.MEMORY_INGESTION_PLANNING: AgenticStateConfig(
-            state_id=AgenticStateId.MEMORY_INGESTION_PLANNING,
-            purpose="Plan memory extraction tasks from source context and compact graph context.",
-            prompt_id="ingestion_planner",
-            required_context_type="PlanningContext",
-            produced_context_type="ExtractionPlan",
-            allowed_tools=[
-                "request_graph_context_expansion",
-                "request_contradiction_review",
-                "request_user_clarification",
-            ],
-            forbidden_tools=[
-                "execute_graph_write_plan",
-                "raw_graph_query",
-                "apply_merge",
-                "execute_memory_correction",
-            ],
-            handoff_targets=[
-                "simple_extraction",
-                "focused_extraction",
-                "graph_context_retrieval",
-                "clarification_waiting",
-            ],
-            model_task="memory_ingestion_planning",
         ),
         AgenticStateId.MEMORY_QUERY: AgenticStateConfig(
             state_id=AgenticStateId.MEMORY_QUERY,

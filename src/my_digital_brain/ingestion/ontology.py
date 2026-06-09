@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from my_digital_brain.ingestion.enums import ExtractionTaskType, MentionKind
+from my_digital_brain.ingestion.enums import ExtractionTaskType
 
 
 class LLMEntityType(StrEnum):
@@ -39,54 +39,6 @@ class RelationshipKind(StrEnum):
     COLLEAGUE = "colleague"
     CLASSMATE = "classmate"
     ACQUAINTANCE = "acquaintance"
-
-
-class SemanticActionKind(StrEnum):
-    EXTRACT_ANCHORS = "extract_anchors"
-    EXTRACT_EVENT = "extract_event"
-    CONNECT_ENTITIES = "connect_entities"
-    CAPTURE_RELATIONSHIP_CONTEXT = "capture_relationship_context"
-    CAPTURE_PERCEPTION = "capture_perception"
-    CAPTURE_CLAIM = "capture_claim"
-    UPDATE_METADATA = "update_metadata"
-
-
-ANCHOR_MENTION_TO_TASK = {
-    MentionKind.PERSON: ExtractionTaskType.PERSON,
-    MentionKind.PLACE: ExtractionTaskType.PLACE,
-    MentionKind.EVENT: ExtractionTaskType.EVENT,
-    MentionKind.ORGANIZATION: ExtractionTaskType.ORGANIZATION,
-    MentionKind.OBJECT: ExtractionTaskType.OBJECT,
-    MentionKind.ANIMAL: ExtractionTaskType.ANIMAL,
-    MentionKind.SOCIAL_CIRCLE: ExtractionTaskType.SOCIAL_CIRCLE,
-    MentionKind.TOPIC: ExtractionTaskType.TOPIC,
-}
-
-ACTION_KIND_TO_TASKS = {
-    SemanticActionKind.EXTRACT_ANCHORS: tuple(ANCHOR_MENTION_TO_TASK.values()),
-    SemanticActionKind.EXTRACT_EVENT: (ExtractionTaskType.EVENT,),
-    SemanticActionKind.CONNECT_ENTITIES: (ExtractionTaskType.RELATIONSHIP,),
-    SemanticActionKind.CAPTURE_RELATIONSHIP_CONTEXT: (
-        ExtractionTaskType.RELATIONSHIP_CONTEXT,
-    ),
-    SemanticActionKind.CAPTURE_PERCEPTION: (ExtractionTaskType.PERCEPTION,),
-    SemanticActionKind.CAPTURE_CLAIM: (ExtractionTaskType.CLAIM,),
-    SemanticActionKind.UPDATE_METADATA: (ExtractionTaskType.METADATA_PATCH,),
-}
-
-REF_PRODUCING_TASK_TYPES = frozenset(ANCHOR_MENTION_TO_TASK.values())
-
-REF_CONSUMING_TASK_TYPES = frozenset(
-    {
-        ExtractionTaskType.RELATIONSHIP,
-        ExtractionTaskType.RELATIONSHIP_CONTEXT,
-        ExtractionTaskType.RELATIONSHIP_STATE,
-        ExtractionTaskType.PERCEPTION,
-        ExtractionTaskType.CLAIM,
-        ExtractionTaskType.METADATA_PATCH,
-        ExtractionTaskType.LINK,
-    },
-)
 
 
 def ontology_prompt_payload() -> dict[str, Any]:

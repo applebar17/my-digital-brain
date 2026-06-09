@@ -11,36 +11,7 @@ from my_digital_brain.ingestion.enums import (
     ClarificationStatus,
     ExtractionExecutionMode,
     ExtractionTaskType,
-    MentionKind,
 )
-
-
-class Mention(IngestionModel):
-    mention_id: str = Field(default_factory=new_uuid)
-    kind: MentionKind = Field(description="Semantic kind of mention found in source text.")
-    text: str = Field(description="Mention text exactly as found or minimally normalized.")
-    evidence_text: str | None = Field(
-        default=None,
-        description="Short source snippet that justifies this mention.",
-    )
-    span_start: int | None = Field(default=None, ge=0)
-    span_end: int | None = Field(default=None, ge=0)
-    possible_normalized_value: str | None = Field(
-        default=None,
-        description="Possible normalized value, without forcing resolution.",
-    )
-    ambiguity_hint: str | None = Field(
-        default=None,
-        description="Short note explaining ambiguity that later steps should consider.",
-    )
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class MentionScan(IngestionModel):
-    mention_scan_id: str = Field(default_factory=new_uuid)
-    source_id: str = Field(description="Source record that was scanned.")
-    mentions: list[Mention] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ClarificationRequest(IngestionModel):

@@ -15,7 +15,7 @@ from uat_refined_trace_common import (
 
 
 DEFAULT_OUTPUT = Path("docs/uat/refined-ingestion-trace.txt")
-logger = logging.getLogger("uat_refined_trace")
+logger = logging.getLogger("uat_ingestion_trace")
 
 
 def main() -> int:
@@ -45,33 +45,33 @@ def main() -> int:
     try:
         result = service.process_source(source)
     except Exception as exc:
-        logger.exception("Refined ingestion UAT trace failed.")
+        logger.exception("Ingestion UAT trace failed.")
         write_failure_report(
             Path(args.output),
-            title="My Digital Brain - Refined Ingestion UAT Trace",
+            title="My Digital Brain - Ingestion UAT Trace",
             source=source,
             route=route,
             error=exc,
             structured_calls=provider.structured_calls,
         )
-        print(f"Wrote failed refined ingestion UAT trace to {args.output}")
+        print(f"Wrote failed ingestion UAT trace to {args.output}")
         return 1
     write_report(
         Path(args.output),
-        title="My Digital Brain - Refined Ingestion UAT Trace",
+        title="My Digital Brain - Ingestion UAT Trace",
         source=source,
         route=route,
         result=result,
         structured_calls=provider.structured_calls,
     )
-    print(f"Wrote refined ingestion UAT trace to {args.output}")
+    print(f"Wrote ingestion UAT trace to {args.output}")
     return 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Render a graph/database-free UAT trace for the refined ingestion flow "
+            "Render a graph/database-free UAT trace for the reasoning-first ingestion flow "
             "from a local text file."
         ),
     )

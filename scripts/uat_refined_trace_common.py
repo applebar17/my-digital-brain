@@ -16,7 +16,7 @@ DEFAULT_ENV_FILE = SRC_ROOT / "my_digital_brain" / ".env"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-logger = logging.getLogger("uat_refined_trace")
+logger = logging.getLogger("uat_ingestion_trace")
 
 from my_digital_brain.agentic import (  # noqa: E402
     AgenticPlanningService,
@@ -27,11 +27,11 @@ from my_digital_brain.ai.client.settings import genai_settings_from_app_settings
 from my_digital_brain.ai.router import StaticModelRouter  # noqa: E402
 from my_digital_brain.chat.factory import build_ai_provider  # noqa: E402
 from my_digital_brain.config import Settings  # noqa: E402
-from my_digital_brain.ingestion import RefinedIngestionService  # noqa: E402
+from my_digital_brain.ingestion import IngestionService  # noqa: E402
 from my_digital_brain.ingestion.contracts import (  # noqa: E402
     CandidateEntity,
     GraphContextPack,
-    RefinedIngestionResult,
+    IngestionResult,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.enums import SourceChannel, SourceType  # noqa: E402
@@ -120,7 +120,7 @@ def build_trace_service(
     graph_context_pack: GraphContextPack,
     env_file: Path | None = DEFAULT_ENV_FILE,
     override_env: bool = False,
-) -> tuple[RefinedIngestionService, TraceStructuredProvider]:
+) -> tuple[IngestionService, TraceStructuredProvider]:
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env_file(env_file, override=override_env)
@@ -131,7 +131,7 @@ def build_trace_service(
         provider=settings.normalized_llm_provider,
     )
     runner = AgenticStateRunner(provider=provider, model_router=router)
-    service = RefinedIngestionService(
+    service = IngestionService(
         reasoning_service=AgenticReasoningService(runner),
         planning_service=AgenticPlanningService(runner),
         graph_context_builder=StaticGraphContextBuilder(graph_context_pack),
@@ -224,7 +224,7 @@ def write_report(
     title: str,
     source: SourceRecordRef,
     route: dict[str, Any],
-    result: RefinedIngestionResult,
+    result: IngestionResult,
     structured_calls: list[CapturedStructuredCall],
     initial_entities: list[CandidateEntity] | None = None,
 ) -> None:
@@ -287,10 +287,10 @@ def _base_report_lines(title: str) -> list[str]:
     ]
 
 
-def _append_result_summary(lines: list[str], result: RefinedIngestionResult) -> None:
+def _append_result_summary(lines: list[str], result: IngestionResult) -> None:
     summary = {
         "status": str(result.status),
-        "refined_stage": result.metadata.get("refined_stage"),
+        "ingestion_stage": result.metadata.get("ingestion_stage"),
         "entity_candidates": len(result.entity_candidates),
         "supplemental_entity_candidates": len(result.supplemental_entity_candidates),
         "relationship_candidates": len(result.relationship_candidates),
@@ -317,7 +317,7 @@ def _append_result_summary(lines: list[str], result: RefinedIngestionResult) -> 
             else None
         ),
     }
-    _append_json_block(lines, "Final Refined Ingestion Result", summary)
+    _append_json_block(lines, "Final Ingestion Result", summary)
 
 
 def _append_structured_calls(

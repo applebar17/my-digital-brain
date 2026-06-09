@@ -358,9 +358,10 @@ def test_resume_pending_memory_ingestion_uses_current_text_and_refreshes_pipelin
     assert result.status == ChatResponseStatus.ACCEPTED
     assert result.metadata["clear_pending_process"] is True
     assert result.metadata["resume_policy"] == "refresh_context_before_write"
-    assert ingestion.sources[0].raw_text == (
-        "Yesterday I met Marco in Milan.\n\n"
-        "Clarification answer: Marco from university"
+    assert ingestion.sources[0].raw_text == "Yesterday I met Marco in Milan."
+    assert ingestion.sources[0].metadata["current_user_message"] == "Marco from university"
+    assert ingestion.sources[0].metadata["clarification_answer_summary"] == (
+        "Marco from university"
     )
     assert ingestion.sources[0].metadata["original_source_id"] == "source-original"
 

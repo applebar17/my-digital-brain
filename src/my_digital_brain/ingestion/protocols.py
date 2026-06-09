@@ -12,38 +12,10 @@ from my_digital_brain.ingestion.contracts import (
     IngestionContextPackage,
     IngestionResult,
     IngestionSessionSnapshot,
-    MentionScan,
     ResolutionResult,
     SourceRecordRef,
     ValidationResult,
 )
-
-
-@runtime_checkable
-class MentionScanner(Protocol):
-    def scan(self, source: SourceRecordRef) -> MentionScan:
-        """Return cheap mentions from source text before expensive extraction."""
-
-
-@runtime_checkable
-class IngestionContextRetriever(Protocol):
-    def retrieve(
-        self,
-        source: SourceRecordRef,
-        mention_scan: MentionScan,
-    ) -> IngestionContextPackage:
-        """Return compact graph context relevant to the source and mentions."""
-
-
-@runtime_checkable
-class IngestionPlanner(Protocol):
-    def plan(
-        self,
-        source: SourceRecordRef,
-        mention_scan: MentionScan,
-        context: IngestionContextPackage,
-    ) -> ExtractionPlan:
-        """Create a backend-executable extraction plan."""
 
 
 @runtime_checkable

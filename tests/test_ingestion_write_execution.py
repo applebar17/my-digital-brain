@@ -4,6 +4,16 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from my_digital_brain.agentic import (
+    AgenticPlanningService,
+    AgenticReasoningService,
+    AgenticStateRunner,
+)
+from my_digital_brain.ai.schemas import (
+    ProviderCallMetadata,
+    StructuredGenerationRequest,
+    StructuredGenerationResult,
+)
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult, SocialCircleNode
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
@@ -13,19 +23,18 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationship,
     ExtractionPlan,
     ExtractionTask,
+    GraphContextPack,
     GraphWritePlan,
     IngestionContextPackage,
-    Mention,
-    MentionScan,
     ResolutionDecision,
     ResolutionResult,
     SourceRecordRef,
 )
+from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
 from my_digital_brain.ingestion.enums import (
     ExtractionExecutionMode,
     ExtractionTaskType,
     IngestionStatus,
-    MentionKind,
     ResolutionDecisionType,
     SourceChannel,
     SourceType,
@@ -310,22 +319,9 @@ def test_executor_rejects_empty_write_plan() -> None:
 
 def test_ingestion_service_can_execute_fake_write_path() -> None:
     graph = FakeGraphService()
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[
-            StaticExtractor(
-                [
-                    CandidateEntity(
-                        local_ref="CANDIDATE_PERSON_001",
-                        entity_type="Person",
-                        display_name="Marco",
-                        source_refs=["source-1"],
-                    ),
-                ],
-            ),
-        ],
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads("Marco"),
         resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
@@ -342,23 +338,12 @@ def test_ingestion_service_can_execute_fake_write_path() -> None:
 def test_ingestion_service_vectorizes_after_successful_graph_write() -> None:
     graph = FakeGraphService()
     vectorizer = RecordingVectorizer()
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[
-            StaticExtractor(
-                [
-                    CandidateEntity(
-                        local_ref="CANDIDATE_PERSON_001",
-                        entity_type="Person",
-                        display_name="Marco",
-                        description="University friend.",
-                        source_refs=["source-1"],
-                    ),
-                ],
-            ),
-        ],
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads(
+            "Marco",
+            description="University friend.",
+        ),
         resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
@@ -375,23 +360,12 @@ def test_ingestion_service_vectorizes_after_successful_graph_write() -> None:
 
 def test_ingestion_service_keeps_written_status_when_vectorization_fails() -> None:
     graph = FakeGraphService()
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[
-            StaticExtractor(
-                [
-                    CandidateEntity(
-                        local_ref="CANDIDATE_PERSON_001",
-                        entity_type="Person",
-                        display_name="Marco",
-                        description="University friend.",
-                        source_refs=["source-1"],
-                    ),
-                ],
-            ),
-        ],
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads(
+            "Marco",
+            description="University friend.",
+        ),
         resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
@@ -406,38 +380,46 @@ def test_ingestion_service_keeps_written_status_when_vectorization_fails() -> No
     assert result.metadata["vectorization"]["error_type"] == "RuntimeError"
 
 
-def test_ingestion_service_rejects_empty_extraction_plan() -> None:
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(
-            ExtractionPlan(
-                source_id="source-1",
-                execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
-                tasks=[],
-            )
-        ),
-        extractors=[],
+def test_ingestion_service_returns_write_plan_ready_when_execution_is_disabled() -> None:
+    graph = FakeGraphService()
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads("Marco"),
+        resolution_service=ConservativeResolutionService(graph),
+        write_plan_builder=GraphWritePlanBuilder(),
+        write_plan_executor=GraphWritePlanExecutor(graph),
+        execute_write_plan=False,
     )
 
     result = service.process_source(_source())
 
-    assert result.status == IngestionStatus.VALIDATION_FAILED
-    assert result.validation_errors[0].code == "empty_extraction_plan"
+    assert result.status == IngestionStatus.WRITE_PLAN_READY
+    assert result.write_plan is not None
+    assert graph.upserted_nodes == []
 
 
 def test_ingestion_service_rejects_empty_candidate_graph() -> None:
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[StaticExtractor([])],
+    graph = FakeGraphService()
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=[
+            {
+                "summary": "No durable memory candidate.",
+                "context_gaps": ["No durable entity or relationship was identified."],
+            },
+            {"reason": "No entity action needed.", "context_gaps": ["No entity to store."]},
+            {"reason": "No relationship action needed.", "context_gaps": ["No relationship."]},
+        ],
+        resolution_service=ConservativeResolutionService(graph),
+        write_plan_builder=GraphWritePlanBuilder(),
+        write_plan_executor=GraphWritePlanExecutor(graph),
+        execute_write_plan=True,
     )
 
     result = service.process_source(_source())
 
     assert result.status == IngestionStatus.VALIDATION_FAILED
-    assert result.validation_errors[0].code == "empty_candidate_graph"
+    assert result.validation_errors[0].code == "empty_write_plan"
 
 
 def test_ingestion_service_pauses_on_resolution_clarification() -> None:
@@ -447,22 +429,9 @@ def test_ingestion_service_pauses_on_resolution_clarification() -> None:
             _node("Person", new_uuid(), display_name="Marco Rossi"),
         ],
     )
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[
-            StaticExtractor(
-                [
-                    CandidateEntity(
-                        local_ref="CANDIDATE_PERSON_001",
-                        entity_type="Person",
-                        display_name="Marco Rossi",
-                        source_refs=["source-1"],
-                    ),
-                ],
-            ),
-        ],
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads("Marco Rossi"),
         resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
     )
@@ -482,22 +451,9 @@ def test_process_store_records_source_snapshots_and_expires_pending_sessions() -
             _node("Person", new_uuid(), display_name="Marco Rossi"),
         ],
     )
-    service = IngestionService(
-        scanner=StaticScanner(),
-        context_retriever=StaticContextRetriever(),
-        planner=StaticPlanner(_plan()),
-        extractors=[
-            StaticExtractor(
-                [
-                    CandidateEntity(
-                        local_ref="CANDIDATE_PERSON_001",
-                        entity_type="Person",
-                        display_name="Marco Rossi",
-                        source_refs=["source-1"],
-                    ),
-                ],
-            ),
-        ],
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads("Marco Rossi"),
         resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         process_store=store,
@@ -519,6 +475,96 @@ def test_process_store_records_source_snapshots_and_expires_pending_sessions() -
 
     assert expired_ids == [snapshot.session_id]
     assert store.sessions[snapshot.session_id].metadata["expired"] is True
+
+
+def _reasoning_first_service(
+    *,
+    graph: "FakeGraphService",
+    provider_payloads: Sequence[dict[str, Any]],
+    resolution_service: ConservativeResolutionService | None = None,
+    write_plan_builder: GraphWritePlanBuilder | None = None,
+    write_plan_executor: GraphWritePlanExecutor | None = None,
+    vectorization_service: Any | None = None,
+    execute_write_plan: bool = False,
+    process_store: InMemoryIngestionProcessStore | None = None,
+) -> IngestionService:
+    provider = QueuedStructuredProvider(provider_payloads)
+    runner = AgenticStateRunner(provider=provider)
+    return IngestionService(
+        reasoning_service=AgenticReasoningService(runner),
+        planning_service=AgenticPlanningService(runner),
+        graph_context_builder=StaticGraphContextBuilder(GraphContextPack(source_id="source-1")),
+        entity_extractors=[EntityExtractor(provider)],
+        relationship_extractors=[RelationshipExtractor(provider)],
+        resolution_service=resolution_service,
+        write_plan_builder=write_plan_builder,
+        write_plan_executor=write_plan_executor,
+        vectorization_service=vectorization_service,
+        execute_write_plan=execute_write_plan,
+        process_store=process_store,
+    )
+
+
+def _single_person_payloads(
+    display_name: str,
+    *,
+    description: str | None = None,
+) -> list[dict[str, Any]]:
+    candidate: dict[str, Any] = {
+        "local_ref": "CANDIDATE_PERSON_001",
+        "entity_type": "Person",
+        "display_name": display_name,
+    }
+    if description:
+        candidate["description"] = description
+    return [
+        {
+            "summary": f"The source introduces {display_name}.",
+            "entity_notes": [f"{display_name} should be handled as a person candidate."],
+        },
+        {
+            "reason": f"{display_name} is a person endpoint.",
+            "actions": [
+                {
+                    "action_ref": "ENTITY_ACTION_001",
+                    "goal": f"Extract {display_name} as a person.",
+                    "mention_text": display_name,
+                    "suggested_entity_type": "Person",
+                    "evidence_text": display_name,
+                }
+            ],
+        },
+        {"candidates": [candidate]},
+        {"reason": "No relationship action needed.", "context_gaps": ["No relationship."]},
+    ]
+
+
+class QueuedStructuredProvider:
+    provider_name = "fake"
+
+    def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
+        self.payloads = list(payloads)
+        self.requests: list[StructuredGenerationRequest] = []
+
+    def generate_structured(
+        self,
+        request: StructuredGenerationRequest,
+    ) -> StructuredGenerationResult:
+        self.requests.append(request)
+        payload = self.payloads.pop(0)
+        parsed = request.output_schema.model_validate(payload)
+        return StructuredGenerationResult(
+            parsed=parsed,
+            metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
+        )
+
+
+class StaticGraphContextBuilder:
+    def __init__(self, pack: GraphContextPack) -> None:
+        self.pack = pack
+
+    def build(self, source: SourceRecordRef) -> GraphContextPack:
+        return self.pack.model_copy(update={"source_id": source.source_id}, deep=True)
 
 
 class FakeGraphService:
@@ -576,36 +622,6 @@ class FakeGraphService:
         )
         self.relationships.append(relationship)
         return relationship
-
-
-class StaticScanner:
-    def scan(self, source: SourceRecordRef) -> MentionScan:
-        return MentionScan(
-            source_id=source.source_id,
-            mentions=[Mention(kind=MentionKind.PERSON, text="Marco")],
-        )
-
-
-class StaticContextRetriever:
-    def retrieve(
-        self,
-        source: SourceRecordRef,
-        mention_scan: MentionScan,
-    ) -> IngestionContextPackage:
-        return IngestionContextPackage(source_id=source.source_id)
-
-
-class StaticPlanner:
-    def __init__(self, plan: ExtractionPlan) -> None:
-        self.plan_value = plan
-
-    def plan(
-        self,
-        source: SourceRecordRef,
-        mention_scan: MentionScan,
-        context: IngestionContextPackage,
-    ) -> ExtractionPlan:
-        return self.plan_value
 
 
 class StaticExtractor:

@@ -21,6 +21,10 @@ Locked baseline:
   validation have run.
 - Relationship planning receives the resolved entity map and must not invent
   unresolved endpoints.
+- Production ingestion completes only after validated write-plan execution and
+  durable graph writes.
+- Tool/state completion returns one compact tool output to the invoking
+  conversation state, which then continues the normal message/tool-output loop.
 - V1 keeps validation simple and deterministic. Qualitative duplicate judging,
   richer merge decisions, and user confirmation workflows are reserved for a
   later wave.
@@ -120,6 +124,19 @@ Execution order:
 3. Add context-rendering services for LLM payloads.
 4. Later wire flows, agents, prompts, extraction, validation, and write
    orchestration onto the new contracts.
+
+Final runtime decision:
+
+- `IngestionService` is the reasoning-first runtime service.
+- The old planner-first production path is removed instead of bridged.
+- `CANDIDATE_READY` is an internal diagnostic/UAT checkpoint only.
+- Production chat success requires `WRITTEN`.
+- `WRITE_PLAN_READY` is not a user-facing success when the user asked to store a
+  memory; it is a diagnostic failure unless the caller is explicitly running a
+  dry-run/UAT path.
+- Clarification answers are normal new user messages; backend pending state
+  stores compact resumable context and does not concatenate answers into source
+  text.
 
 Draft/enriched object rule:
 
@@ -535,7 +552,7 @@ The write step owns:
 
 ## Wave 4 Scope: Relationship Candidates And UAT Traces
 
-Wave 4 should make the refined ingestion path inspectable and relationship-ready
+Wave 4 should make the reasoning-first ingestion path inspectable and relationship-ready
 without relying on graph/database integrations for UAT. The slice should focus
 on relationship candidate preparation, missing-entity detection, and local text
 reports that expose the process under the hood.
@@ -560,7 +577,9 @@ Relationship-candidate scope:
 - resume blocked relationship planning/extraction after the entity map is
   complete;
 - produce final entity and relationship candidate summaries;
-- keep write-plan generation and durable writes deferred to a later wave.
+- keep local UAT trace scripts graph/database-free even though production
+  ingestion now continues through write execution when graph services are
+  configured.
 
 ### UAT Script 1: Local Conversation Entry Trace
 
@@ -748,13 +767,14 @@ orchestration, or write behavior.
 5. Add context-rendering service interfaces for process-specific LLM payload
    views.
 6. Add exports and schema tests only.
-7. Keep the old planner-first runtime behavior untouched.
-8. Wire the refined runtime up to relationship planning and entity resolution,
-   without durable write changes.
-9. Implement wave-4 relationship candidate preparation, missing-entity loop
-   handling, and the two graph/database-free UAT trace scripts.
-10. Later wire write-plan generation, validation hardening, durable writes, and
-   production orchestration onto the new contracts.
+7. Promote the reasoning-first runtime under the `IngestionService` name.
+8. Remove old planner-first production wiring and deprecated runtime assertions.
+9. Wire relationship planning, missing-entity handling, candidate graph
+   validation, deterministic resolution, write-plan generation, write-plan
+   validation, durable graph writes, and post-write vector refresh.
+10. Keep UAT trace scripts diagnostic: they may expose internal checkpoints, but
+    production model-facing history receives compact tool outputs only.
+11. Audit remaining state/tool paths for proper contextual handoff semantics.
 
 ## UAT Signals
 

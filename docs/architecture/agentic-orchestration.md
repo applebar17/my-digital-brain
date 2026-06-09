@@ -103,11 +103,10 @@ structured and auditable.
 
 Some `AS` states may use tools during execution and still end with a required
 structured output. In that case, tools are side-effect-bounded support actions,
-while the final state result is a validated schema. The older
-`memory_ingestion_planning` path used this pattern with a
-`SemanticIngestionPlanDraft`. The wave-1 ingestion refinement keeps the same
-boundary but splits the work into structured reasoning, entity planning, staged
-entity resolution, and relationship planning from the resolved entity map.
+while the final state result is a validated schema. Current ingestion uses the
+wave-1 reasoning-first boundary: structured reasoning, entity planning, staged
+entity resolution, relationship planning from the resolved entity map, and
+deterministic write execution.
 
 `reasoning_checkpoint` is a reusable structured `AS` that can be plugged before
 storage, validation, correction, or query steps when a process needs richer
@@ -1244,15 +1243,6 @@ src/my_digital_brain/prompts/
     memory_query/v1.system.md
     query_retrieval_planning/v1.system.md
     answer_generation/v1.system.md
-    entity_ingestion_planner/v1.system.md
-    relationship_ingestion_planner/v1.system.md
-    entity_candidate_preparation/person/v1.system.md
-    entity_candidate_preparation/place/v1.system.md
-    entity_candidate_preparation/event/v1.system.md
-    entity_candidate_preparation/social_circle/v1.system.md
-    relationship_candidate_preparation/relationship/v1.system.md
-    relationship_candidate_preparation/perception/v1.system.md
-    relationship_candidate_preparation/relationship_context/v1.system.md
     correction_intake/v1.system.md
     correction_proposal/v1.system.md
     contradiction_review/v1.system.md
@@ -1279,7 +1269,7 @@ Usage pattern:
 
 ```python
 prompt = prompt_registry.render(
-    prompt_id="entity_ingestion_planner",
+    prompt_id="planning_checkpoint",
     version="v1",
     variables={
         "source_text": source_text,

@@ -13,7 +13,7 @@ from my_digital_brain.ai.schemas import StructuredGenerationResult
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.ingestion import (
     DeterministicResolvedEntityMapBuilder,
-    RefinedIngestionService,
+    IngestionService,
     WholeSourceGraphContextPackBuilder,
 )
 from my_digital_brain.ingestion.contracts import (
@@ -91,7 +91,7 @@ def test_whole_source_graph_context_pack_builder_compacts_hybrid_search_result()
     )
 
 
-def test_refined_runtime_matches_merc_alias_to_existing_entity_before_relationship_planning() -> None:
+def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_relationship_planning() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -150,7 +150,7 @@ def test_refined_runtime_matches_merc_alias_to_existing_entity_before_relationsh
     assert provider.requests[3].output_schema.__name__ == "RelationshipIngestionPlanDraft"
 
 
-def test_refined_runtime_plans_brother_relationship_against_staged_entity_ref() -> None:
+def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entity_ref() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -229,7 +229,7 @@ def test_refined_runtime_plans_brother_relationship_against_staged_entity_ref() 
     assert len(result.candidate_graph.candidate_relationships) == 1
 
 
-def test_refined_runtime_resolves_missing_entity_before_relationship_candidates() -> None:
+def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_candidates() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -324,7 +324,7 @@ def test_refined_runtime_resolves_missing_entity_before_relationship_candidates(
     assert len(provider.requests) == 7
 
 
-def test_refined_runtime_keeps_low_salience_details_out_of_entity_candidates() -> None:
+def test_reasoning_first_runtime_keeps_low_salience_details_out_of_entity_candidates() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -354,7 +354,7 @@ def test_refined_runtime_keeps_low_salience_details_out_of_entity_candidates() -
     assert result.relationship_plan.actions == []
 
 
-def test_refined_runtime_rejects_relationship_actions_with_unknown_endpoints() -> None:
+def test_reasoning_first_runtime_rejects_relationship_actions_with_unknown_endpoints() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -392,7 +392,7 @@ def test_refined_runtime_rejects_relationship_actions_with_unknown_endpoints() -
     assert len(provider.requests) == 3
 
 
-def test_refined_entity_resolver_rejected_entries_are_not_relationship_usable() -> None:
+def test_reasoning_first_entity_resolver_rejected_entries_are_not_relationship_usable() -> None:
     resolver = DeterministicResolvedEntityMapBuilder()
     resolved = resolver.resolve(
         [
@@ -456,9 +456,9 @@ class FakeSearchService:
         return self.result
 
 
-def _service(provider: QueuedStructuredProvider, pack: GraphContextPack) -> RefinedIngestionService:
+def _service(provider: QueuedStructuredProvider, pack: GraphContextPack) -> IngestionService:
     runner = AgenticStateRunner(provider=provider)
-    return RefinedIngestionService(
+    return IngestionService(
         reasoning_service=AgenticReasoningService(runner),
         planning_service=AgenticPlanningService(runner),
         graph_context_builder=StaticGraphContextBuilder(pack),

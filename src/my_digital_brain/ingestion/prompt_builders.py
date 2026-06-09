@@ -6,13 +6,10 @@ from typing import Any
 from my_digital_brain.ingestion.contracts import (
     ExtractionTask,
     IngestionContextPackage,
-    MentionScan,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.ontology import ontology_prompt_payload
 
-INGESTION_MENTION_SCAN_TASK = "ingestion_mention_scan"
-INGESTION_PLANNING_TASK = "ingestion_planning"
 INGESTION_ENTITY_EXTRACTION_TASK = "ingestion_entity_extraction"
 INGESTION_RELATIONSHIP_EXTRACTION_TASK = "ingestion_relationship_extraction"
 INGESTION_CLAIM_EXTRACTION_TASK = "ingestion_claim_extraction"
@@ -38,27 +35,6 @@ def system_prompt_with_runtime_context(
 class IngestionPromptBuilder:
     """Build compact, low-noise inputs for structured ingestion model calls."""
 
-    mention_scan_system_prompt = (
-        "Scan the source for shallow memory mentions only. Return mentions for people, "
-        "places, events, organizations, objects, animals, social circles, topics, dates, "
-        "relationship contexts, perceptions, claims, and metadata. Do not create graph "
-        "nodes, do not resolve duplicates, and preserve short evidence text. When the "
-        "source contains emotional or relationship wording, then include perception or "
-        "relationship-context mentions. When a mention is ambiguous, then preserve the "
-        "ambiguity hint instead of resolving it."
-    )
-    planner_system_prompt = (
-        "Create a semantic ingestion plan after reading source text, shallow mentions, "
-        "conversation context, and compact graph context. Organize the user's narrative "
-        "into ordered semantic actions with goals, evidence, dependencies, ambiguity "
-        "notes, and context gaps. Do not choose graph labels, edge types, write-plan "
-        "operations, persistence fields, or backend identifiers. Ask clarification first "
-        "when ambiguity blocks useful extraction. When context is insufficient, request "
-        "context expansion. When one clear factual memory is present, choose "
-        "simple_single_pass with one or more semantic actions. When the source has "
-        "affective, temporal, relational, or multi-entity content, choose "
-        "focused_extraction with ordered actions."
-    )
     extractor_system_prompt = (
         "Execute only the focused extraction task. Return structured candidates of the "
         "requested type only. This is a low-freedom backend-facing step: use only enum "
@@ -69,33 +45,6 @@ class IngestionPromptBuilder:
         "relationships, use RELATIONSHIP_WITH plus relationship_kind and preserve wording "
         "such as brother or girlfriend in relationship_detail."
     )
-
-    def mention_scan_input(self, source: SourceRecordRef) -> dict[str, Any]:
-        return {"source": self.source_payload(source)}
-
-    def planner_input(
-        self,
-        source: SourceRecordRef,
-        mention_scan: MentionScan,
-        context: IngestionContextPackage,
-    ) -> dict[str, Any]:
-        return {
-            "source": self.source_payload(source),
-            "mention_scan": self.mention_scan_payload(mention_scan),
-            "compact_graph_context": self.context_payload(context),
-            "semantic_planning_policy": {
-                "output": "ordered semantic actions, not graph schema decisions",
-                "allowed_action_kinds": [
-                    "extract_anchors",
-                    "extract_event",
-                    "connect_entities",
-                    "capture_relationship_context",
-                    "capture_perception",
-                    "capture_claim",
-                    "update_metadata",
-                ],
-            },
-        }
 
     def extraction_input(
         self,
@@ -118,26 +67,6 @@ class IngestionPromptBuilder:
         payload.pop("derived_from_source_id", None)
         payload.pop("metadata", None)
         return payload
-
-    def mention_scan_payload(self, mention_scan: MentionScan) -> dict[str, Any]:
-        return {
-            "mentions": [
-                {
-                    key: value
-                    for key, value in {
-                        "kind": str(mention.kind),
-                        "text": mention.text,
-                        "evidence_text": mention.evidence_text,
-                        "span_start": mention.span_start,
-                        "span_end": mention.span_end,
-                        "possible_normalized_value": mention.possible_normalized_value,
-                        "ambiguity_hint": mention.ambiguity_hint,
-                    }.items()
-                    if value is not None
-                }
-                for mention in mention_scan.mentions
-            ],
-        }
 
     def task_payload(self, task: ExtractionTask) -> dict[str, Any]:
         return {

@@ -83,9 +83,9 @@ high-priority implementation follow-ups.
 - Use the wave-4 local UAT trace scripts during hands-on review to tune
   reasoning, planning, entity extraction, missing-entity handling, relationship
   extraction, and final candidate summaries.
-- Plan the next refined-ingestion wave for write-plan generation, validation
-  hardening, durable graph writes, duplicate-judge integration, and production
-  orchestration.
+- Continue hardening reasoning-first ingestion write behavior after UAT:
+  validation quality, duplicate-judge integration, merge policy, and production
+  orchestration polish.
 - Reserve the duplicate-judge process slot before durable entity writes.
   Wave 1 keeps this deterministic and conservative; qualitative duplicate
   judging, user confirmation, merge application, metadata transfer, and
@@ -145,8 +145,8 @@ Remaining follow-up after real usage:
 Status: implemented as a reusable foundation.
 
 - `AgenticHistoryService` is the dedicated history/context-building service;
-  `ChatRuntime`, `AgenticStateRunner`, and `AgenticIngestionPlanner` use it
-  instead of assembling model-facing history locally.
+  `ChatRuntime` and `AgenticStateRunner` use it instead of assembling
+  model-facing history locally.
 - User-visible chat persistence remains separate from internal agentic
   `ConversationContext` and neutral message history.
 - Neutral internal messages are supported for user messages, assistant messages,
@@ -177,11 +177,28 @@ Status: implemented as a reusable foundation.
     remain excluded unless a state explicitly asks for a compact diagnostic
     view.
 
+### Contextual Tool Handoff Audit
+
+Status: required follow-up after the ingestion runtime promotion.
+
+- Audit all agentic states and backend tools for the locked handoff rule:
+  every state/tool starts, completes, returns one compact tool output to its
+  invoker, and the invoker appends that output before the next state invocation.
+- Deterministic processes should return structured activity logs with status,
+  important operations, errors, refs, and next action.
+- LLM-backed subprocesses should return their final assistant/process result
+  after internal iteration, not raw nested traces.
+- Internal handoffs may include technical context needed for guidance and
+  guardrails; user-facing handoffs must stay human-friendly and non-technical.
+- Refactor any remaining code paths that still pass backend state directly as
+  fake conversation content or expose noisy internal traces to top-level model
+  history.
+
 ### Prompt Scaffolding Cleanup
 
 Status: prompt registry and initial scaffolding exist, but several prompt
 templates are contract placeholders rather than active runtime entry points.
-Keep them for now, then revise once the refined ingestion and query/answer
+Keep them for now, then revise once the reasoning-first ingestion and query/answer
 pipeline wiring is stabilized.
 
 - Document and clean up the current prompt inventory:
@@ -189,9 +206,6 @@ pipeline wiring is stabilized.
     `conversation_entry`, `pending_process_review`, `memory_query`,
     `correction_intake`, `contradiction_review`, `reasoning_checkpoint`, and
     `planning_checkpoint`;
-  - legacy-but-still-wired prompt:
-    `ingestion_planner`, to be removed when the refined reasoning-first
-    ingestion pipeline replaces the old planner;
   - scaffold/planned LP prompts:
     `query_retrieval_planning`, `correction_proposal`,
     `profile_memory_extraction`, `maintenance_review`, and
@@ -210,32 +224,18 @@ pipeline wiring is stabilized.
   configs, LP contracts, and real runtime invocation paths describe the same
   system.
 
-### Planner Structured Output Refactor
+### Ingestion Runtime Cleanup Audit
 
-Status: implemented in the planner foundation. This remains useful as the
-current structured-output foundation, but the target ingestion flow is now the
-reasoning-first/entity-first refinement in
-[Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
+Status: planner-first runtime was removed in favor of the reasoning-first
+`IngestionService`. Keep this audit item open until the next full review.
 
-- `submit_extraction_plan` has been removed from the
-  `memory_ingestion_planning` toolbox.
-- `memory_ingestion_planning` can use support tools during execution and then
-  returns a required structured final output.
-- `memory_ingestion_planning` ends by returning a validated
-  `SemanticIngestionPlanDraft` structured output, not by calling a final
-  submission tool.
-- Backend compilation deterministically converts the semantic draft into the
-  canonical `ExtractionPlan` by choosing focused task schemas, adding source
-  provenance, task IDs, context package ID, candidate/ref catalog policy, and
-  backend metadata.
-- Keep planning tools for side work only:
-  - `request_graph_context_expansion`
-  - `request_contradiction_review`
-- After the compiled `ExtractionPlan` is built, backend code
-  deterministically routes the next process step from `execution_mode`,
-  `tasks`, `clarification`, and `context_gaps`.
-- Free-form assistant text alone must not be treated as a valid planning
-  result.
+- Verify no prompt, test, script, or docs path still describes the old
+  mention-scan-first ingestion planner as active runtime behavior.
+- Verify focused extraction, entity planning, relationship planning, missing
+  entity planning, resolution, write-plan validation, graph write, and vector
+  refresh are the only production ingestion chain.
+- Free-form assistant text alone must never be treated as a valid planning or
+  storage result.
 
 ### Structured Contradiction Review Output
 

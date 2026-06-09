@@ -6,15 +6,10 @@ from pydantic import AliasChoices, Field, model_validator
 
 from my_digital_brain.ingestion.contracts.base import IngestionModel
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
-from my_digital_brain.ingestion.enums import (
-    ExtractionExecutionMode,
-    MentionKind,
-)
 from my_digital_brain.ingestion.ontology import (
     LLMEntityType,
     LLMRelationshipType,
     RelationshipKind,
-    SemanticActionKind,
 )
 
 
@@ -41,29 +36,6 @@ class PropertyDraft(IngestionModel):
         default=None,
         description="Why this property is useful enough to keep.",
     )
-
-
-class MentionDraft(IngestionModel):
-    kind: MentionKind = Field(description="Semantic kind of mention found in source text.")
-    text: str = Field(description="Mention text exactly as found or minimally normalized.")
-    evidence_text: str | None = Field(
-        default=None,
-        description="Short source snippet that justifies this mention.",
-    )
-    span_start: int | None = Field(default=None, ge=0)
-    span_end: int | None = Field(default=None, ge=0)
-    possible_normalized_value: str | None = Field(
-        default=None,
-        description="Possible normalized value, without forcing resolution.",
-    )
-    ambiguity_hint: str | None = Field(
-        default=None,
-        description="Short note explaining ambiguity that later steps should consider.",
-    )
-
-
-class MentionScanDraft(IngestionModel):
-    mentions: list[MentionDraft] = Field(default_factory=list)
 
 
 class ClarificationRequestDraft(IngestionModel):
@@ -107,88 +79,6 @@ class ClarificationRequestDraft(IngestionModel):
         if isinstance(options, list):
             normalized["options"] = "; ".join(str(option) for option in options if option)
         return normalized
-
-
-class SemanticIngestionActionDraft(IngestionModel):
-    action_ref: str = Field(
-        description="Planner-scoped action handle such as ACTION_001.",
-    )
-    action_kind: SemanticActionKind = Field(
-        description="Semantic action category. This is not a graph label or edge type.",
-    )
-    goal: str = Field(
-        description="Short user-language goal for this action.",
-    )
-    evidence_text: str | None = Field(
-        default=None,
-        description="Source wording that motivates this action.",
-    )
-    concept_kinds: list[MentionKind] = Field(
-        default_factory=list,
-        description="Semantic mention kinds relevant to this action, not DB labels.",
-    )
-    concepts: list[str] = Field(
-        default_factory=list,
-        description="Relevant user-language concepts, names, or phrases.",
-    )
-    depends_on: list[str] = Field(
-        default_factory=list,
-        description="Earlier action_refs whose outputs are needed.",
-    )
-    context_refs: list[str] = Field(
-        default_factory=list,
-        description="Graph aliases from compact context that this action should consider.",
-    )
-    notes: str | None = Field(
-        default=None,
-        description="Short operational notes for the backend compiler.",
-    )
-
-
-class SemanticIngestionPlanDraft(IngestionModel):
-    execution_mode: ExtractionExecutionMode = Field(
-        default=ExtractionExecutionMode.FOCUSED_EXTRACTION,
-        description="Semantic execution mode selected after source and context review.",
-    )
-    reason: str | None = Field(
-        default=None,
-        description="Concise reason for the selected semantic plan.",
-    )
-    actions: list[SemanticIngestionActionDraft] = Field(default_factory=list)
-    clarification: ClarificationRequestDraft | None = Field(
-        default=None,
-        description="Blocking clarification required before extraction can continue.",
-    )
-    context_gaps: list[str] = Field(
-        default_factory=list,
-        description="Missing context that future agents may retrieve before extraction.",
-    )
-
-    @model_validator(mode="after")
-    def validate_execution_mode_payload(self) -> "SemanticIngestionPlanDraft":
-        if self.execution_mode in {
-            ExtractionExecutionMode.SIMPLE_SINGLE_PASS,
-            ExtractionExecutionMode.FOCUSED_EXTRACTION,
-        } and not self.actions:
-            raise ValueError(
-                "Extraction modes simple_single_pass and focused_extraction require "
-                "at least one semantic action."
-            )
-        if (
-            self.execution_mode == ExtractionExecutionMode.NEEDS_CLARIFICATION_FIRST
-            and self.clarification is None
-        ):
-            raise ValueError(
-                "needs_clarification_first requires a clarification doubt."
-            )
-        if (
-            self.execution_mode == ExtractionExecutionMode.NEEDS_CONTEXT_EXPANSION
-            and not self.context_gaps
-        ):
-            raise ValueError(
-                "needs_context_expansion requires at least one context gap."
-            )
-        return self
 
 
 class CandidateBaseDraft(IngestionModel):
