@@ -594,6 +594,10 @@ Rules:
 - Prefer typed builders per graph label over generic property dumps.
 - Store exactly one primary graph target per vector record and optional related
   targets for multi-node memories.
+- For the first multi-scope `MemoryLog` retrieval implementation, keep
+  `memory_node_summaries`, `memory_contexts`, and `memory_micro_logs` on one
+  shared `512`-dimension embedding configuration so one query embedding can
+  search all enabled scopes.
 - Use `builder_version` plus `document_checksum` to decide whether an embedding
   is stale.
 - If vectorization fails after a successful graph write, preserve the graph
@@ -633,6 +637,10 @@ Rules:
 - Do not hide the full log history as a JSON array inside the domain node.
 - A `MemoryLog` may link to multiple involved nodes, relationship contexts, and
   media assets.
+- A `MemoryLog` may have multiple host links, with one primary host used for
+  ranking, deduplication, and default UI anchoring.
+- Media attachments should be represented as `MediaAsset` records linked by
+  graph relationships, not as inline node/log attributes.
 - Default graph UI should render domain nodes and fold log hits into their host
   node. Logs are shown in a nested timeline/detail view unless debugging.
 - Prompt examples should show the model how to choose between domain node,

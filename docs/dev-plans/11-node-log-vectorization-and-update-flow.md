@@ -68,10 +68,44 @@ Important limitation:
   are nested timeline/detail data unless the user enters a dedicated log view or
   debug/UAT mode.
 
+## Locked Decisions
+
+- `MemoryLog` is semantic graph memory stored as a lightweight Neo4j node.
+- `MemoryLog` records are not stored as JSON arrays inside host domain nodes.
+- A `MemoryLog` may be attached to multiple domain/context nodes.
+- One `HAS_MEMORY_LOG` link may be marked `primary: true` for ranking,
+  deduplication, and default UI anchoring.
+- Media is stored as a `MediaAsset` node linked by edges, not as an inline
+  domain-node or log attribute.
+- V1 uses separate vector collections/scopes with one shared embedding
+  dimension: `512`.
+- V1 uses one query embedding to search all enabled collections.
+- Prefix truncation from a larger embedding is not a v1 assumption. It may be
+  evaluated later only for providers/models that explicitly support compatible
+  shortened embeddings.
+- Summary refresh is low priority and deferred until after log storage,
+  micro-log vector retrieval, and UI navigation are stable.
+
 ## Vector DB Structure
 
 The target vector structure should move from one generic collection toward
 configured retrieval scopes.
+
+V1 scope configuration:
+
+```text
+model: configured embedding model
+dimensions: 512
+
+collections:
+  memory_node_summaries: 512 dimensions
+  memory_contexts: 512 dimensions
+  memory_micro_logs: 512 dimensions
+```
+
+Keeping the same dimension across collections allows one query embedding to be
+reused safely for all enabled scopes. Collection separation still gives
+different text builders, ranking weights, filters, and UI behavior.
 
 ### `memory_node_summaries`
 
@@ -97,8 +131,9 @@ Related targets:
 
 Dimension strategy:
 
-- medium or larger dimensions are acceptable because this collection is lower
-  cardinality and more semantically broad.
+- v1 uses the shared `512` dimension.
+- Future versions may test larger dimensions for this scope only if retrieval
+  quality justifies generating per-scope query embeddings.
 
 ### `memory_micro_logs`
 
@@ -131,8 +166,10 @@ Related targets:
 
 Dimension strategy:
 
-- smaller dimensions are preferred because texts are short and cardinality will
-  be high.
+- v1 uses the shared `512` dimension so the same query embedding can search all
+  scopes.
+- Future versions may test smaller micro-log dimensions only after the
+  multi-scope retrieval and score-normalization path is stable.
 
 ### `memory_contexts`
 
@@ -161,23 +198,23 @@ Related targets:
 
 Dimension strategy:
 
-- medium dimensions by default. These texts are usually richer than micro logs
-  but narrower than whole-node summaries.
+- v1 uses the shared `512` dimension.
+- Future versions may test independent context dimensions if context retrieval
+  needs different tuning from node summaries and micro logs.
 
 ### Query Across Multiple Scopes
 
-If scopes use different dimensions or models, the retrieval layer must produce
-one query embedding per distinct `(provider, model, dimensions)` tuple.
+V1 assumes all enabled scopes use the same embedding model and `512`
+dimensions, so the retrieval layer generates one query embedding and searches
+each collection with that same vector.
 
 Example:
 
 ```text
 query
-  -> embed for node-summary scope
+  -> create one 512-dimensional query embedding
   -> search memory_node_summaries
-  -> embed for micro-log scope
   -> search memory_micro_logs
-  -> embed for context scope
   -> search memory_contexts
   -> normalize and merge hits
   -> hydrate graph targets
@@ -187,6 +224,17 @@ query
 
 The retrieval response must expose enough diagnostics to explain which scope
 produced each hit.
+
+Future query strategies may include:
+
+- `per_scope_embedding`: generate one embedding per distinct
+  `(provider, model, dimensions)` tuple.
+- `max_dimension_prefix_truncation`: generate the largest supported embedding
+  once and use the first `N` dimensions for smaller scopes.
+
+`max_dimension_prefix_truncation` is only valid when the embedding provider and
+model explicitly support compatible shortened embeddings, and when indexed
+documents and query embeddings use the same truncation policy.
 
 ## MemoryLog Model
 
@@ -215,8 +263,9 @@ Baseline fields:
 - `happened_at`
 - `confidence`
 - `importance`
-- `host_target_id`
-- `host_target_label`
+- `primary_host_target_id`
+- `primary_host_target_label`
+- `host_target_ids`
 - `involved_target_ids`
 - `media_refs`
 - `created_at`
@@ -227,7 +276,7 @@ Baseline fields:
 Suggested relationships:
 
 ```text
-(host)-[:HAS_MEMORY_LOG]->(log:MemoryLog)
+(host)-[:HAS_MEMORY_LOG {primary: true|false, role: "..."}]->(log:MemoryLog)
 (log)-[:INVOLVES {role: "..."}]->(target)
 (log)-[:UPDATES_RELATIONSHIP]->(context:RelationshipContext)
 (log)-[:HAS_MEDIA]->(asset:MediaAsset)
@@ -236,13 +285,51 @@ Suggested relationships:
 The log text must be short, human-readable, and semantically meaningful. It
 should not be a raw source chunk, JSON payload, prompt trace, or provider log.
 
-The `host_target_id` is the primary UI anchor for the log. A log may still
-involve multiple nodes. For example, "I met Marco and Luca at the seaside" may
-be hosted under Marco because the current user was looking at Marco, while also
-linking Luca and the seaside place through `INVOLVES` relationships.
+`primary_host_target_id` is the default UI anchor for the log. A log may still
+be hosted by multiple domain/context nodes. For example, "I met Marco and Luca
+at the seaside" may appear in both Marco's and Luca's timelines, while one host
+link is marked `primary: true` for deduplication, ranking, and default
+navigation.
 
 `metadata` may store flexible backend/UI details for the log. The full timeline
 must not be stored as a JSON array inside the host domain node.
+
+## MediaAsset Model
+
+Media is stored as a graph record linked to logs and domain/context nodes. It is
+not a plain attribute on `MemoryLog` or the host node.
+
+Working label:
+
+- `MediaAsset`
+
+Baseline fields:
+
+- `id`
+- `media_type`
+- `mime_type`
+- `storage_uri` or `storage_key`
+- `checksum`
+- `caption`
+- `captured_at`
+- `source_ids`
+- `created_at`
+- `updated_at`
+- `lifecycle_state`
+- `metadata`
+
+Suggested relationships:
+
+```text
+(log:MemoryLog)-[:HAS_MEDIA {role: "evidence|attachment|memory_photo"}]->(media:MediaAsset)
+(media)-[:DEPICTS {confidence: "..."}]->(domain_node)
+(media)-[:CAPTURED_AT]->(place:Place)
+(media)-[:CAPTURES_EVENT]->(event:Event)
+```
+
+`MemoryLogDraft.media_refs` may exist as an input placeholder. Persistence
+should resolve media refs into `MediaAsset` records and graph edges once media
+support is available.
 
 ## Domain Node And MemoryLog Separation
 
@@ -375,7 +462,13 @@ they have a meaningful textual record attached.
 
 ## Node Summary Refresh
 
+Status: deferred, low priority.
+
 Node summaries are compact derived views over durable memory records.
+This remains part of the target architecture, but it is not part of the first
+`MemoryLog` implementation slice. The immediate priority is to store logs
+cleanly, vectorize them, retrieve them, hydrate their domain targets, and render
+them in the UI.
 
 Summary refresh should consider:
 
@@ -544,8 +637,8 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
 
 - Finalize this dev-plan.
 - Update structured ingestion docs with `MemoryLog` terminology.
-- Lock contracts for `MemoryLog`, update plans, vector scopes, and summary
-  refresh requests.
+- Lock contracts for `MemoryLog`, `MediaAsset` refs, update plans, and vector
+  scopes.
 - Add contract tests only.
 
 ### Wave 1: Graph MemoryLog Storage
@@ -554,17 +647,22 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
 - Add write-plan support for `MemoryLog` creation.
 - Add deterministic validation and idempotency rules.
 - Add graph service/repository methods to create and fetch memory logs.
-- Add support for host target, involved targets, relationship-context links, and
-  media refs.
+- Add support for multiple host targets, one primary host, involved targets,
+  relationship-context links, and media refs.
+- Add `MediaAsset` graph model/registry support only as far as required for log
+  links and future media storage.
 - Add tests proving logs are linked to targets and are not hidden metadata.
 
 ### Wave 2: Vector Scope Configuration
 
 - Add first-class vector scope configuration.
 - Split current vectorization into scope-aware builders.
+- Configure `memory_node_summaries`, `memory_contexts`, and
+  `memory_micro_logs` with shared `512` dimensions for v1.
 - Add `memory_micro_logs` builder using compact log text.
-- Add per-scope embedding model/dimension routing.
-- Add tests for different dimensions and collection routing.
+- Add collection routing and scope-specific ranking metadata.
+- Add tests proving one 512-dimensional query embedding can search all v1
+  scopes.
 
 ### Wave 3: Multi-Scope Retrieval And Hydration
 
@@ -576,7 +674,26 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
   hits.
 - Add trace diagnostics showing scope, score, target, and hydration path.
 
-### Wave 4: Node Summary Refresh
+### Wave 4: UI MemoryLog Navigation
+
+- Render default search output as domain nodes and domain relationships.
+- Preserve graph state while entering/exiting a domain node's iceberg view.
+- Show `MemoryLog` history as a nested timeline in node detail.
+- Add log filters by time, kind, source, involved nodes, and media.
+- Support debug/UAT rendering where logs can be shown as graph records.
+
+### Wave 5: Agentic Update Tooling
+
+- Add graph update tool/state for node updates.
+- Use graph retrieval to resolve target candidates.
+- Produce `NodeUpdatePlanDraft`.
+- Ask clarification when target or update intent is ambiguous.
+- Execute validated `MemoryLog` creation, safe patches, and vector refresh.
+- Update reasoning/planning/extraction prompts with domain-node versus
+  `MemoryLog` definitions, rules, and few-shot examples.
+- Return compact tool output to the invoking conversation state.
+
+### Deferred Wave: Node Summary Refresh
 
 - Add summary refresh service.
 - Implement trigger policy for recent logs and important context changes.
@@ -585,40 +702,25 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
 - Add UAT script to inspect logs, summaries, vectors, and hydration results for
   a target node.
 
-### Wave 5: UI MemoryLog Navigation
-
-- Render default search output as domain nodes and domain relationships.
-- Preserve graph state while entering/exiting a domain node's iceberg view.
-- Show `MemoryLog` history as a nested timeline in node detail.
-- Add log filters by time, kind, source, involved nodes, and media.
-- Support debug/UAT rendering where logs can be shown as graph records.
-
-### Wave 6: Agentic Update Tooling
-
-- Add graph update tool/state for node updates.
-- Use graph retrieval to resolve target candidates.
-- Produce `NodeUpdatePlanDraft`.
-- Ask clarification when target or update intent is ambiguous.
-- Execute validated `MemoryLog` creation, patches, summary refresh, and vector
-  refresh.
-- Update reasoning/planning/extraction prompts with domain-node versus
-  `MemoryLog` definitions, rules, and few-shot examples.
-- Return compact tool output to the invoking conversation state.
-
 ## Test And Acceptance Criteria
 
 - Short updates are stored as first-class `MemoryLog` records.
-- `MemoryLog` records point back to host targets, involved targets, source
-  provenance, and optional media.
+- `MemoryLog` records point back to multiple possible host targets, exactly one
+  primary host target when more than one host exists, involved targets, source
+  provenance, and optional media links.
+- Media attachments are represented through `MediaAsset` records and
+  relationships, not inline node/log attributes.
 - Micro-log vector records hydrate to the host/canonical domain node and
   optional related context.
+- V1 vector scopes use one shared `512` dimension and one query embedding across
+  `memory_node_summaries`, `memory_contexts`, and `memory_micro_logs`.
 - Default graph search output renders domain nodes, not raw logs.
 - Clicking a domain node can transition into a navigable `MemoryLog` history and
   return to the prior domain graph output.
-- Node summaries update only through explicit refresh logic.
-- Node-summary embeddings refresh when summary checksums change.
-- Multiple vector scopes can use different dimensions without mixing
-  incompatible embeddings in one search call.
+- Node summary refresh is deferred and must not be treated as required for the
+  first `MemoryLog` implementation slice.
+- Future multi-dimension retrieval must not mix incompatible embeddings in one
+  collection or search call.
 - Query-time retrieval can search multiple scopes and merge results
   deterministically.
 - Raw edge-only embedding is not introduced as a default retrieval strategy.
@@ -629,13 +731,10 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
 
 ## Open Decisions
 
-- Final relationship names for host, involvement, relationship-update, and
-  media links.
-- Whether `MemoryLog` records should always be Neo4j nodes, or whether some
-  operational logs may live only in the relational store. The baseline
-  preference is Neo4j for semantic memory logs.
-- Default dimensions for node summaries, contexts, and micro logs.
 - Whether `ProfileMemory` belongs in `memory_contexts`,
   `memory_node_summaries`, or its own profile-memory scope.
-- Which summary refresh triggers should run synchronously during ingestion and
-  which should be background maintenance.
+- Exact summary refresh trigger policy, once the deferred summary-refresh wave is
+  reopened.
+- Whether future retrieval should move from shared `512` dimensions to
+  per-scope dimensions, provider-supported prefix truncation, or another
+  strategy after UAT/evaluation.

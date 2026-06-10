@@ -413,9 +413,13 @@ Follow-up implementation work:
 
 - Add first-class semantic `MemoryLog` records instead of hiding short updates in
   node metadata.
-- Add micro-log vector scope with smaller embeddings that hydrate back to the
-  host/canonical domain node.
-- Add node summary refresh based on recent logs and important context changes.
-- Refresh node-summary embeddings when derived summaries change.
+- Add support for multiple host links with one primary host and involved-target
+  links.
+- Add `MediaAsset` node/edge support for media attachments.
+- Add micro-log vector scope using the shared v1 `512`-dimension embedding
+  configuration, hydrating back to host/canonical domain nodes.
 - Add agentic node-update tooling that writes `MemoryLog` records, safe patches,
-  summaries, and vectors through deterministic backend guardrails.
+  and vectors through deterministic backend guardrails.
+- Low priority: design node summary refresh based on recent logs and important
+  context changes, then refresh node-summary embeddings when derived summaries
+  change.
