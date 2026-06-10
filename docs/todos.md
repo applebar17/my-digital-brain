@@ -404,18 +404,18 @@ Remaining follow-up after real trace review:
   contradiction review, and memory queries.
 - Review privacy/trust behavior once real Telegram and web chat flows are used.
 
-## Node Log Vectorization And Update Flow
+## MemoryLog Vectorization And Node Update Flow
 
 Status: design captured in
-[Node log vectorization and update flow](dev-plans/11-node-log-vectorization-and-update-flow.md).
+[MemoryLog vectorization and node update flow](dev-plans/11-node-log-vectorization-and-update-flow.md).
 
 Follow-up implementation work:
 
-- Add first-class semantic node activity logs instead of hiding short updates in
+- Add first-class semantic `MemoryLog` records instead of hiding short updates in
   node metadata.
 - Add micro-log vector scope with smaller embeddings that hydrate back to the
-  target node.
+  host/canonical domain node.
 - Add node summary refresh based on recent logs and important context changes.
 - Refresh node-summary embeddings when derived summaries change.
-- Add agentic node-update tooling that writes logs, safe patches, summaries,
-  and vectors through deterministic backend guardrails.
+- Add agentic node-update tooling that writes `MemoryLog` records, safe patches,
+  summaries, and vectors through deterministic backend guardrails.

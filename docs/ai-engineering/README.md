@@ -588,8 +588,9 @@ lookup vectors that point back to Neo4j targets.
 Rules:
 
 - Embed low-noise informative text, not raw graph payloads.
-- Do not embed raw UUIDs, metadata blobs, provider traces, prompts, logs, or
-  tool-call payloads.
+- Do not embed raw UUIDs, metadata blobs, provider traces, prompts,
+  provider/runtime logs, or tool-call payloads. Curated `MemoryLog` records are
+  semantic graph memory and may be embedded through typed builders.
 - Prefer typed builders per graph label over generic property dumps.
 - Store exactly one primary graph target per vector record and optional related
   targets for multi-node memories.
@@ -612,6 +613,32 @@ Rules:
 - Exact/property search remains useful as a fallback and as an explicit graph
   workspace mode, but it should not be confused with semantic memory retrieval.
 
+### 20. Split Domain Nodes From MemoryLog Atoms
+
+Prompts, schemas, and validators must distinguish stable domain nodes from
+lightweight `MemoryLog` records.
+
+Domain nodes are durable graph objects such as people, places, events,
+organizations, objects, animals, social circles, topics, and relationship
+containers. `MemoryLog` records are small dated memory atoms that compose one or
+more domain/context nodes.
+
+Rules:
+
+- Create or resolve a domain node when the text introduces a durable entity or
+  object that can accumulate memory over time.
+- Create a `MemoryLog` when the text is a short update, observation,
+  correction, or contextual fact about existing or newly resolved graph targets.
+- Do not create a new domain node for every small user update.
+- Do not hide the full log history as a JSON array inside the domain node.
+- A `MemoryLog` may link to multiple involved nodes, relationship contexts, and
+  media assets.
+- Default graph UI should render domain nodes and fold log hits into their host
+  node. Logs are shown in a nested timeline/detail view unless debugging.
+- Prompt examples should show the model how to choose between domain node,
+  `MemoryLog`, `Event`, `Perception`, `RelationshipContext`, and
+  `RelationshipState`.
+
 ## Practical Development Rules
 
 - Treat schemas, tools, and prompts as one design surface.
@@ -623,6 +650,8 @@ Rules:
   graph records or model/tool traces.
 - Hydrate and rank vector hits through backend services before using them in
   prompts or UI responses.
+- Keep stable graph-domain nodes separate from lightweight `MemoryLog` memory
+  atoms in prompts, schemas, storage, retrieval, and UI rendering.
 - Prefer a small strong toolbox over many vague tools.
 - Add deterministic code where it is clearly cheaper, faster, and more reliable.
 - Add model calls where language, ambiguity, or contextual judgment matters.
