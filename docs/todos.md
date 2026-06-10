@@ -404,6 +404,18 @@ Remaining follow-up after real trace review:
   contradiction review, and memory queries.
 - Review privacy/trust behavior once real Telegram and web chat flows are used.
 
-## Embedding logics
-right now we're embedding the whole node, but we need into account nodes updates or log activity. the good thing to improve at the same time with embedding retrieval could be to integrate a micro-embedding space: to have heavy vectors for ssmall text entries might be an overkill. we might prefer smaller embeddings for smaller phases,contexts to be logged. 
-all the se micro embedding would indeed be redirected to the main node in the retrieval process, but the embedding portion is indeed smaller: more embedding entries but smaller even in size
+## Node Log Vectorization And Update Flow
+
+Status: design captured in
+[Node log vectorization and update flow](dev-plans/11-node-log-vectorization-and-update-flow.md).
+
+Follow-up implementation work:
+
+- Add first-class semantic node activity logs instead of hiding short updates in
+  node metadata.
+- Add micro-log vector scope with smaller embeddings that hydrate back to the
+  target node.
+- Add node summary refresh based on recent logs and important context changes.
+- Refresh node-summary embeddings when derived summaries change.
+- Add agentic node-update tooling that writes logs, safe patches, summaries,
+  and vectors through deterministic backend guardrails.
