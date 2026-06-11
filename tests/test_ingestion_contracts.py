@@ -32,13 +32,31 @@ from my_digital_brain.ingestion.contracts import (
     GraphWritePlan,
     IngestionContextPackage,
     IngestionReasoningCheckpointDraft,
+    MediaAsset,
+    MediaAssetRefDraft,
+    MemoryLog,
+    MemoryLogDraft,
+    MemoryLogImportance,
+    MemoryLogKind,
+    MemoryLogLink,
+    MemoryLogLinkDraft,
+    MemoryLogSourceKind,
     MissingEntityRequiredDraft,
+    MultiScopeRetrievalResult,
+    MultiScopeVectorConfig,
+    NodeUpdatePlanDraft,
     RelationshipIngestionActionDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
     ResolvedEntityMapEntry,
     ResolvedEntityStatus,
     SourceRecordRef,
+    V1_VECTOR_DIMENSIONS,
+    VectorQueryStrategy,
+    VectorScopeConfig,
+    VectorScopeHitRef,
+    VectorScopeName,
+    VectorScopeSearchRequest,
 )
 from my_digital_brain.ingestion.enums import (
     ExtractionExecutionMode,
@@ -433,6 +451,184 @@ def test_candidate_entity_alias_schema_locks_hint_semantics() -> None:
     assert "hints" in description
     assert "do not define node identity" in description
     assert "not automatically writable node properties" in description
+
+
+def test_memory_log_draft_requires_host_and_primary_for_multiple_hosts() -> None:
+    draft = MemoryLogDraft(
+        local_ref="MEMORY_LOG_001",
+        log_text="Marco said yesterday that he changed job.",
+        log_kind=MemoryLogKind.UPDATE,
+        host_refs=[
+            MemoryLogLinkDraft(target_ref="graph:person:marco", primary=True),
+            MemoryLogLinkDraft(target_ref="graph:person:luca", role="mentioned"),
+        ],
+        involved_refs=[MemoryLogLinkDraft(target_ref="graph:place:athens", role="place")],
+        media_refs=[
+            MediaAssetRefDraft(
+                media_ref="local:photo-1",
+                role="memory_photo",
+                caption_hint="Marco and Luca in Athens.",
+            ),
+        ],
+        source_kind=MemoryLogSourceKind.USER_STATED,
+        importance=MemoryLogImportance.LOW,
+    )
+
+    assert draft.host_refs[0].primary is True
+    assert draft.media_refs[0].media_ref == "local:photo-1"
+
+    with pytest.raises(ValidationError, match="at least one host_ref"):
+        MemoryLogDraft(local_ref="MEMORY_LOG_002", log_text="No host.")
+    with pytest.raises(ValidationError, match="exactly one primary host"):
+        MemoryLogDraft(
+            local_ref="MEMORY_LOG_003",
+            log_text="Two hosts but no primary.",
+            host_refs=[
+                MemoryLogLinkDraft(target_ref="graph:person:marco"),
+                MemoryLogLinkDraft(target_ref="graph:person:luca"),
+            ],
+        )
+
+
+def test_memory_log_backend_record_supports_multiple_hosts_and_media_asset() -> None:
+    log = MemoryLog(
+        local_ref="MEMORY_LOG_001",
+        log_text="Marco and Luca got a beer in Athens.",
+        log_kind=MemoryLogKind.EVENT_DETAIL,
+        primary_host_target_id="node-marco",
+        host_target_ids=["node-marco", "node-luca"],
+        involved_target_ids=["node-athens"],
+        links=[
+            MemoryLogLink(
+                target_id="node-marco",
+                target_label="Person",
+                relationship_type="HAS_MEMORY_LOG",
+                primary=True,
+            ),
+            MemoryLogLink(
+                target_id="node-luca",
+                target_label="Person",
+                relationship_type="HAS_MEMORY_LOG",
+            ),
+            MemoryLogLink(
+                target_id="node-athens",
+                target_label="Place",
+                relationship_type="INVOLVES",
+                role="place",
+            ),
+        ],
+        media_refs=["media-1"],
+    )
+    media = MediaAsset(
+        media_asset_id="media-1",
+        media_type="image",
+        storage_key="photos/athens.jpg",
+        checksum="sha256:abc",
+        caption="Athens aperitivo.",
+    )
+
+    assert log.primary_host_target_id == "node-marco"
+    assert log.links[0].primary is True
+    assert media.media_type == "image"
+
+    with pytest.raises(ValidationError, match="requires at least one host target"):
+        MemoryLog(log_text="Orphan log.")
+    with pytest.raises(ValidationError, match="at most one primary"):
+        MemoryLog(
+            log_text="Two primary links.",
+            links=[
+                MemoryLogLink(
+                    target_id="node-1",
+                    relationship_type="HAS_MEMORY_LOG",
+                    primary=True,
+                ),
+                MemoryLogLink(
+                    target_id="node-2",
+                    relationship_type="HAS_MEMORY_LOG",
+                    primary=True,
+                ),
+            ],
+        )
+
+
+def test_node_update_plan_prefers_memory_logs_but_allows_safe_patches() -> None:
+    plan = NodeUpdatePlanDraft(
+        reason="The source gives a short update about Marco.",
+        memory_logs=[
+            MemoryLogDraft(
+                local_ref="MEMORY_LOG_001",
+                log_text="Marco now lives in Turin.",
+                log_kind=MemoryLogKind.UPDATE,
+                host_refs=[MemoryLogLinkDraft(target_ref="graph:person:marco", primary=True)],
+            ),
+        ],
+    )
+
+    assert plan.memory_logs[0].log_text == "Marco now lives in Turin."
+
+    with pytest.raises(ValidationError, match="requires memory_logs"):
+        NodeUpdatePlanDraft(reason="No update action.")
+
+
+def test_vector_scope_config_locks_v1_shared_512_dimensions() -> None:
+    scopes = [
+        VectorScopeConfig(
+            scope=VectorScopeName.MEMORY_NODE_SUMMARIES,
+            collection="memory_node_summaries",
+            dimensions=V1_VECTOR_DIMENSIONS,
+        ),
+        VectorScopeConfig(
+            scope=VectorScopeName.MEMORY_CONTEXTS,
+            collection="memory_contexts",
+            dimensions=V1_VECTOR_DIMENSIONS,
+        ),
+        VectorScopeConfig(
+            scope=VectorScopeName.MEMORY_MICRO_LOGS,
+            collection="memory_micro_logs",
+            dimensions=V1_VECTOR_DIMENSIONS,
+        ),
+    ]
+    config = MultiScopeVectorConfig(
+        query_strategy=VectorQueryStrategy.SINGLE_SHARED_DIMENSION,
+        dimensions=V1_VECTOR_DIMENSIONS,
+        scopes=scopes,
+    )
+    request = VectorScopeSearchRequest(
+        query_text="Marco changed job",
+        enabled_scopes=[VectorScopeName.MEMORY_MICRO_LOGS],
+    )
+    result = MultiScopeRetrievalResult(
+        query_text="Marco changed job",
+        hits=[
+            VectorScopeHitRef(
+                scope=VectorScopeName.MEMORY_MICRO_LOGS,
+                collection="memory_micro_logs",
+                vector_id="memory_micro_logs:memory_log_summary:log-1",
+                score=0.92,
+                primary_target_id="log-1",
+                primary_target_label="MemoryLog",
+                canonical_target_id="node-marco",
+                related_target_ids=["node-marco"],
+                hit_role="memory_log",
+            ),
+        ],
+    )
+
+    assert config.dimensions == 512
+    assert request.dimensions == 512
+    assert result.hits[0].canonical_target_id == "node-marco"
+
+    with pytest.raises(ValidationError, match="must be 512"):
+        VectorScopeConfig(
+            scope=VectorScopeName.MEMORY_MICRO_LOGS,
+            collection="memory_micro_logs",
+            dimensions=256,
+        )
+    with pytest.raises(ValidationError, match="single_shared_dimension"):
+        MultiScopeVectorConfig(
+            query_strategy=VectorQueryStrategy.PER_SCOPE_EMBEDDING,
+            scopes=scopes,
+        )
 
 
 class StaticExtractor:

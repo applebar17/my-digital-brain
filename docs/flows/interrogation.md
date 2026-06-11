@@ -48,6 +48,8 @@ hydration, multi-target vector records, and answer grounding are locked in
 Retrieval should combine:
 
 - Embedding search over sources and entity summaries.
+- Embedding search over `MemoryLog` micro-log records, folded back into their
+  host/canonical domain nodes for default graph rendering.
 - Semantic text-to-node retrieval that turns a natural language query into likely
   graph seed nodes before graph expansion.
 - Exact graph lookup for names, aliases, dates, and places.
@@ -67,6 +69,11 @@ Semantic retrieval should treat Chroma hits as candidate pointers into Neo4j.
 Vector hits must be hydrated through graph targets, canonical merge resolution,
 source/evidence lookup, affective context, and graph-neighborhood expansion before
 answer generation.
+
+When a vector hit points to a `MemoryLog`, retrieval should hydrate the log, its
+primary host, additional host targets, involved targets, and relevant context.
+The graph workspace should render the hydrated domain nodes by default; the log
+itself belongs in the clicked node's timeline/detail view unless debugging.
 
 ## Answer Grounding
 

@@ -47,6 +47,20 @@ from my_digital_brain.ingestion.contracts.drafts import (
     EvidenceSpanDraft,
     PropertyDraft,
 )
+from my_digital_brain.ingestion.contracts.memory_logs import (
+    MediaAsset,
+    MediaAssetRefDraft,
+    MemoryLog,
+    MemoryLogDraft,
+    MemoryLogDraftBatch,
+    MemoryLogImportance,
+    MemoryLogKind,
+    MemoryLogLink,
+    MemoryLogLinkDraft,
+    MemoryLogSourceKind,
+    NodeFieldPatchDraft,
+    NodeUpdatePlanDraft,
+)
 from my_digital_brain.ingestion.contracts.planning import (
     ClarificationRequest,
     ExtractionPlan,
@@ -80,6 +94,16 @@ from my_digital_brain.ingestion.contracts.source import (
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.contracts.validation import ValidationIssue, ValidationResult
+from my_digital_brain.ingestion.contracts.vector_scopes import (
+    MultiScopeRetrievalResult,
+    MultiScopeVectorConfig,
+    V1_VECTOR_DIMENSIONS,
+    VectorQueryStrategy,
+    VectorScopeConfig,
+    VectorScopeHitRef,
+    VectorScopeName,
+    VectorScopeSearchRequest,
+)
 from my_digital_brain.ingestion.contracts.write_plan import (
     GraphNodeWrite,
     GraphRelationshipWrite,
@@ -144,7 +168,21 @@ __all__ = [
     "IngestionReasoningCheckpointDraft",
     "IngestionResult",
     "IngestionSessionSnapshot",
+    "MediaAsset",
+    "MediaAssetRefDraft",
+    "MemoryLog",
+    "MemoryLogDraft",
+    "MemoryLogDraftBatch",
+    "MemoryLogImportance",
+    "MemoryLogKind",
+    "MemoryLogLink",
+    "MemoryLogLinkDraft",
+    "MemoryLogSourceKind",
     "MissingEntityRequiredDraft",
+    "MultiScopeRetrievalResult",
+    "MultiScopeVectorConfig",
+    "NodeFieldPatchDraft",
+    "NodeUpdatePlanDraft",
     "PropertyDraft",
     "RelationshipIngestionActionDraft",
     "RelationshipIngestionPlanDraft",
@@ -156,6 +194,12 @@ __all__ = [
     "ResolutionResult",
     "SourceRecordRef",
     "TemporalScope",
+    "V1_VECTOR_DIMENSIONS",
+    "VectorQueryStrategy",
+    "VectorScopeConfig",
+    "VectorScopeHitRef",
+    "VectorScopeName",
+    "VectorScopeSearchRequest",
     "ValidationIssue",
     "ValidationResult",
 ]

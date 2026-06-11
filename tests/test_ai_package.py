@@ -12,6 +12,7 @@ from my_digital_brain.ai.tools import (
     build_tool_mapping,
 )
 from my_digital_brain.ingestion.contracts import drafts as draft_contracts
+from my_digital_brain.ingestion.contracts import memory_logs as memory_log_contracts
 from my_digital_brain.ingestion.contracts import refined_drafts as refined_contracts
 from my_digital_brain.ingestion.contracts import CandidateEntityDraftBatch
 
@@ -182,6 +183,8 @@ def test_ingestion_draft_response_schemas_do_not_expose_backend_fields() -> None
         refined_contracts.EntityIngestionPlanDraft,
         refined_contracts.RelationshipIngestionPlanDraft,
         refined_contracts.MissingEntityRequiredDraft,
+        memory_log_contracts.MemoryLogDraftBatch,
+        memory_log_contracts.NodeUpdatePlanDraft,
         draft_contracts.CandidateEntityDraftBatch,
         draft_contracts.CandidateRelationshipDraftBatch,
         draft_contracts.CandidateClaimDraftBatch,

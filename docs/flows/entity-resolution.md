@@ -79,7 +79,7 @@ canonical node instead of creating a parallel entity:
 - aliases;
 - relationships;
 - additional metadata;
-- log or activity references;
+- `MemoryLog` host/involvement links;
 - refreshed embeddings.
 
 ## Homonymous People

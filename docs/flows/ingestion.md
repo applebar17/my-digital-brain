@@ -39,8 +39,8 @@ implemented and tested.
    reasoning, compact graph relationships, relationship-planning guidelines,
    and the resolved entity map.
 13. Relationship candidate preparation creates relationships, relationship
-   contexts, perceptions, event links, place links, or metadata suggestions only
-   against resolved refs.
+    contexts, perceptions, memory logs, event links, place links, or metadata
+    suggestions only against resolved refs.
 14. If a required relationship endpoint is missing, the relationship step emits
    `missing_entity_required`, which loops back into supplemental entity
    candidate handling.
@@ -137,6 +137,8 @@ Potential graph output:
 - Topic: new project.
 - Relationships: people participated in event, event happened at place, event was about topic.
 - Affective memory: emotional tone, user-stated perceptions, original wording, or relationship context for any memory-bearing target if present in the source.
+- Memory logs: short dated updates or observations that compose one or more
+  domain/context nodes without becoming default visible graph nodes.
 - Source: original chat message plus relevant clarification replies.
 
 ## Candidate Graph
@@ -147,6 +149,7 @@ Before writing to the canonical graph, extraction should produce a candidate gra
 - Candidate relationships.
 - Candidate perceptions.
 - Candidate relationship contexts.
+- Candidate memory logs.
 - Emotional summaries and original user wording when present.
 - Confidence scores.
 - Evidence references.

@@ -150,6 +150,38 @@ Usually include when relevant:
 - duplicate hints
 - relationship context snippets
 
+### VectorScopeConfig
+
+Vector scopes define how graph records are indexed and searched semantically.
+They are backend retrieval configuration, not model-authored memory.
+
+V1 locked scopes:
+
+```text
+memory_node_summaries
+memory_contexts
+memory_micro_logs
+```
+
+V1 dimension policy:
+
+```text
+dimensions: 512
+query_strategy: single_shared_dimension
+```
+
+Rules:
+
+- All v1 scopes use the same embedding model/dimension configuration.
+- One 512-dimensional query embedding is reused across all enabled v1 scopes.
+- `memory_node_summaries` retrieves canonical domain nodes by compact summary.
+- `memory_contexts` retrieves memory-bearing context records such as
+  `Perception`, `RelationshipContext`, `RelationshipState`, and `Claim`.
+- `memory_micro_logs` retrieves `MemoryLog` records and hydrates their
+  host/canonical domain nodes for default graph rendering.
+- Future per-scope dimensions or prefix truncation require explicit provider
+  support and evaluation. They are not part of the Wave 0 contract baseline.
+
 ### Reusable LLM Transform Package
 
 Reasoning and planning objects should be produced through reusable LLM-backed
@@ -396,7 +428,8 @@ Backend record fields:
 
 Tasks are not LLM planner output. They are backend-compiled focused extraction
 instructions. Task types may include person, place, event, claim, perception,
-relationship_context, relationship_state, metadata_patch, and link extraction.
+relationship_context, relationship_state, memory_log, metadata_patch, and link
+extraction.
 
 ### CandidateEntity
 
@@ -432,9 +465,9 @@ LLM draft fields:
 `entity_type` is enum-constrained to LLM-creatable memory labels only:
 `Person`, `Event`, `Place`, `Organization`, `Object`, `Animal`,
 `SocialCircle`, and `Topic`. Backend-owned labels such as `Claim`,
-`Perception`, `RelationshipContext`, `Source`, `ExtractionRun`,
-`ChangeRecord`, `ContradictionRecord`, and `MergeRecord` are not generic entity
-choices for the model.
+`Perception`, `RelationshipContext`, `MemoryLog`, `MediaAsset`, `Source`,
+`ExtractionRun`, `ChangeRecord`, `ContradictionRecord`, and `MergeRecord` are
+not generic entity choices for the model.
 
 Alias semantics:
 
@@ -552,6 +585,134 @@ Core fields:
 - `confidence`
 - `requires_confirmation`
 
+### MemoryLogDraft
+
+A lightweight LLM-facing memory atom. Use this when the source contains a short
+dated update, observation, correction, or contextual detail that should compose
+one or more domain/context nodes without becoming a visible domain node.
+
+LLM draft fields:
+
+- `local_ref`
+- `log_text`
+- `log_kind`
+- `host_refs`
+- `involved_refs`
+- `relationship_context_refs`
+- `media_refs`
+- `happened_at`
+- `temporal_scope`
+- `source_kind`
+- `original_user_words`
+- `importance`
+- `confidence`
+- `evidence`
+- `ambiguity_flags`
+- `requires_confirmation`
+
+Rules:
+
+- `host_refs` use candidate refs or graph aliases, not raw database IDs.
+- A draft must include at least one host ref.
+- If a draft has multiple host refs, exactly one must be marked `primary`.
+- `involved_refs` capture additional nodes that participate in the memory but
+  are not necessarily the primary UI anchor.
+- `media_refs` are placeholders for later backend resolution into `MediaAsset`
+  records.
+- Ordinary updates should become `MemoryLogDraft` records instead of destructive
+  field patches.
+
+Prompt examples should distinguish event-scale memories from log-scale
+memories:
+
+```text
+Event: vacation in Greece with friends.
+MemoryLog: we got a beer with Jacopo in Athens for aperitivo.
+```
+
+### MemoryLog
+
+The backend-enriched memory atom. It adds generated IDs, source refs, evidence
+refs, extraction run refs, lifecycle state, governed metadata, and resolved
+links.
+
+Backend record fields:
+
+- `memory_log_id`
+- `local_ref`
+- `log_text`
+- `log_kind`
+- `primary_host_target_id`
+- `primary_host_target_label`
+- `host_target_ids`
+- `involved_target_ids`
+- `links`
+- `media_refs`
+- `source_kind`
+- `source_refs`
+- `evidence_refs`
+- `extraction_run_ids`
+- `original_user_words`
+- `temporal_scope`
+- `happened_at`
+- `confidence`
+- `importance`
+- `lifecycle_state`
+- `metadata`
+
+`MemoryLog` is a graph record but not a default graph-workspace domain node.
+Default UI rendering folds log hits into host domain nodes. The node detail view
+may show logs as a timeline or iceberg layer under the domain node.
+
+### MemoryLogLink
+
+A backend link from a `MemoryLog` to a graph target.
+
+Core fields:
+
+- `target_id`
+- `target_label`
+- `relationship_type`: `HAS_MEMORY_LOG`, `INVOLVES`,
+  `UPDATES_RELATIONSHIP`, or `HAS_MEDIA`
+- `role`
+- `primary`
+
+Rules:
+
+- `HAS_MEMORY_LOG` links attach the log to timelines of host domain/context
+  nodes.
+- Multiple `HAS_MEMORY_LOG` links are allowed.
+- When more than one host exists, one host must be primary for ranking,
+  deduplication, and default UI anchoring.
+- `INVOLVES` links capture additional participants, places, topics, or context.
+- `UPDATES_RELATIONSHIP` links attach logs to relationship context records.
+
+### MediaAsset
+
+A backend media record linked to memory logs and domain/context nodes.
+
+Core fields:
+
+- `media_asset_id`
+- `media_type`
+- `mime_type`
+- `storage_uri`
+- `storage_key`
+- `checksum`
+- `caption`
+- `captured_at`
+- `source_refs`
+- `lifecycle_state`
+- `metadata`
+
+Rules:
+
+- Media is a node-and-edge concept, not an inline node/log attribute.
+- `MemoryLogDraft.media_refs` may carry unresolved input placeholders.
+- Persistence resolves media refs into `MediaAsset` records and relationships
+  such as `HAS_MEDIA`, `DEPICTS`, `CAPTURED_AT`, or `CAPTURES_EVENT` once media
+  storage is available.
+
 ### CandidateMetadataPatch
 
 A proposed addition or update to structured fields or metadata.
@@ -585,6 +746,7 @@ Core fields:
 - `candidate_claims`
 - `candidate_perceptions`
 - `candidate_relationship_contexts`
+- `memory_logs`
 - `candidate_metadata_patches`
 - `local_ref_map`
 - `evidence_refs`
@@ -592,6 +754,10 @@ Core fields:
 - `missing_fields`
 
 The candidate graph is not a write plan. It is the structured proposal that validation and resolution turn into a `GraphWritePlan` or `ClarificationRequest`.
+
+Wave 0 only locks the `MemoryLog` contracts. Runtime assembly of memory logs
+into `CandidateMemoryGraph`, write-plan support, and graph persistence are later
+implementation waves.
 
 ### ClarificationRequest
 
@@ -775,6 +941,11 @@ The first implementation does not need every field above, but it should establis
 - `CandidateRelationship`
 - `CandidatePerception`
 - `CandidateRelationshipContext`
+- `MemoryLogDraft`
+- `MemoryLog`
+- `MemoryLogLink`
+- `MediaAsset`
+- `VectorScopeConfig`
 - `CandidateMemoryGraph`
 - `ContradictionJudgeRequest`
 - `ContradictionJudgeDecision`
