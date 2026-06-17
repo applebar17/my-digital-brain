@@ -643,6 +643,10 @@ IDs, provenance, lifecycle, validation status, and persistence metadata.
 
 ### Wave 1: Graph MemoryLog Storage
 
+Status: implemented in the graph storage/write-plan layer. This wave does not
+implement vector scopes, prompt extraction, agentic update tooling, UI
+navigation, or summary refresh.
+
 - Add `MemoryLog` graph model and registry support.
 - Add write-plan support for `MemoryLog` creation.
 - Add deterministic validation and idempotency rules.

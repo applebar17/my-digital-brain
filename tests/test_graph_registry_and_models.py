@@ -13,6 +13,8 @@ from my_digital_brain.graph.models import (
     GraphContextPackage,
     GraphRelationshipModel,
     GraphViewNode,
+    MediaAssetNode,
+    MemoryLogNode,
     MergeRecordNode,
     PerceptionNode,
     PersonNode,
@@ -92,10 +94,14 @@ def test_relationship_model_accepts_affective_and_provenance_fields() -> None:
         emotional_summary="Stressful but meaningful collaboration.",
         emotional_valence="mixed",
         emotion_tags=["stress", "meaning"],
+        role="primary_host",
+        primary=True,
     )
 
     assert relationship.emotional_summary == "Stressful but meaningful collaboration."
     assert relationship.source_ids == ["source-1"]
+    assert relationship.role == "primary_host"
+    assert relationship.primary is True
 
 
 def test_wave2_models_accept_temporal_history_and_audit_fields() -> None:
@@ -204,3 +210,30 @@ def test_sample_affective_memory_fixture_uses_core_graph_contract() -> None:
         if node["label"] == "Perception"
     ]
     assert "Person" in perception_targets
+
+
+def test_memory_log_graph_models_accept_storage_fields() -> None:
+    memory_log = MemoryLogNode(
+        log_text="Marco changed job yesterday.",
+        log_kind="update",
+        source_kind="user_stated",
+        importance="low",
+        happened_at="2026-06-16",
+        primary_host_target_id="node-marco",
+        primary_host_target_label="Person",
+        host_target_ids=["node-marco"],
+        involved_target_ids=["node-office"],
+        relationship_context_target_ids=["context-1"],
+        media_refs=["media-1"],
+    )
+    media_asset = MediaAssetNode(
+        media_type="image",
+        mime_type="image/jpeg",
+        storage_key="photos/marco.jpg",
+        checksum="sha256:abc",
+        caption="Marco at the office.",
+    )
+
+    assert memory_log.log_text == "Marco changed job yesterday."
+    assert memory_log.host_target_ids == ["node-marco"]
+    assert media_asset.media_type == "image"

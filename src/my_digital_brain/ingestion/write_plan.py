@@ -19,6 +19,8 @@ from my_digital_brain.ingestion.contracts import (
     GraphRelationshipWrite,
     GraphWritePlan,
     IngestionContextPackage,
+    MemoryLog,
+    MemoryLogLink,
     ResolutionDecision,
     ResolutionResult,
     TemporalScope,
@@ -49,6 +51,8 @@ class GraphWritePlanBuilder:
         claims_to_create: list[GraphNodeWrite] = []
         perceptions_to_create: list[GraphNodeWrite] = []
         relationship_contexts_to_create: list[GraphNodeWrite] = []
+        memory_logs_to_create: list[GraphNodeWrite] = []
+        planned_ref_ids = self._local_ref_resolution(resolution)
 
         for entity in candidate_graph.candidate_entities:
             decision = decision_by_ref.get(entity.local_ref)
@@ -60,11 +64,13 @@ class GraphWritePlanBuilder:
                 )
             write = self._entity_write(candidate_graph.source_id, entity)
             nodes_to_create.append(write)
+            planned_ref_ids[entity.local_ref] = str(write.properties["id"])
             idempotency_keys.append(write.idempotency_key or "")
 
         for claim in candidate_graph.candidate_claims:
             claim_write = self._claim_write(candidate_graph.source_id, claim)
             claims_to_create.append(claim_write)
+            planned_ref_ids[claim.local_ref] = str(claim_write.properties["id"])
             idempotency_keys.append(claim_write.idempotency_key or "")
             for index, about_ref in enumerate(claim.about_refs):
                 relationship = self._relationship_write(
@@ -81,6 +87,7 @@ class GraphWritePlanBuilder:
         for perception in candidate_graph.candidate_perceptions:
             perception_write = self._perception_write(candidate_graph.source_id, perception)
             perceptions_to_create.append(perception_write)
+            planned_ref_ids[perception.local_ref] = str(perception_write.properties["id"])
             idempotency_keys.append(perception_write.idempotency_key or "")
             relationship = self._relationship_write(
                 source_id=candidate_graph.source_id,
@@ -99,6 +106,7 @@ class GraphWritePlanBuilder:
                 context_candidate,
             )
             relationship_contexts_to_create.append(context_write)
+            planned_ref_ids[context_candidate.local_ref] = str(context_write.properties["id"])
             idempotency_keys.append(context_write.idempotency_key or "")
             for index, endpoint_ref in enumerate(
                 (context_candidate.from_ref, context_candidate.to_ref),
@@ -110,6 +118,25 @@ class GraphWritePlanBuilder:
                     from_ref=context_candidate.local_ref,
                     to_ref=endpoint_ref,
                     candidate=context_candidate,
+                )
+                relationships_to_create.append(relationship)
+                idempotency_keys.append(relationship.idempotency_key or "")
+
+        for memory_log in candidate_graph.memory_logs:
+            memory_log_write = self._memory_log_write(
+                candidate_graph.source_id,
+                memory_log,
+                planned_ref_ids,
+            )
+            memory_logs_to_create.append(memory_log_write)
+            planned_ref_ids[memory_log_write.local_ref] = str(memory_log_write.properties["id"])
+            idempotency_keys.append(memory_log_write.idempotency_key or "")
+            for index, link in enumerate(_memory_log_links(memory_log)):
+                relationship = self._memory_log_relationship_write(
+                    source_id=candidate_graph.source_id,
+                    memory_log=memory_log,
+                    link=link,
+                    index=index,
                 )
                 relationships_to_create.append(relationship)
                 idempotency_keys.append(relationship.idempotency_key or "")
@@ -130,6 +157,7 @@ class GraphWritePlanBuilder:
             claims_to_create=claims_to_create,
             perceptions_to_create=perceptions_to_create,
             relationship_contexts_to_create=relationship_contexts_to_create,
+            memory_logs_to_create=memory_logs_to_create,
             metadata_patches=list(candidate_graph.candidate_metadata_patches),
             evidence_links=list(candidate_graph.evidence_refs),
             idempotency_keys=sorted(key for key in set(idempotency_keys) if key),
@@ -258,6 +286,112 @@ class GraphWritePlanBuilder:
             idempotency_key=key,
         )
 
+    def _memory_log_write(
+        self,
+        source_id: str,
+        memory_log: MemoryLog,
+        planned_ref_ids: dict[str, str],
+    ) -> GraphNodeWrite:
+        local_ref = memory_log.local_ref or memory_log.memory_log_id
+        primary_host = memory_log.primary_host_target_id or _primary_memory_log_host(memory_log)
+        key = idempotency_key(
+            source_id,
+            "memory_log",
+            local_ref,
+            memory_log.log_text,
+            primary_host or "",
+        )
+        host_ids = _resolve_many(_memory_log_host_refs(memory_log), planned_ref_ids)
+        involved_ids = _resolve_many(_memory_log_involved_refs(memory_log), planned_ref_ids)
+        relationship_context_ids = _resolve_many(
+            _memory_log_relationship_context_refs(memory_log),
+            planned_ref_ids,
+        )
+        primary_host_id = _resolve_ref_or_none(primary_host, planned_ref_ids)
+        properties: dict[str, Any] = {
+            "id": deterministic_uuid(key),
+            "description": memory_log.log_text,
+            "log_text": memory_log.log_text,
+            "log_kind": memory_log.log_kind,
+            "source_kind": memory_log.source_kind,
+            "importance": memory_log.importance,
+            "happened_at": memory_log.happened_at,
+            "primary_host_target_id": primary_host_id,
+            "primary_host_target_label": memory_log.primary_host_target_label,
+            "host_target_ids": host_ids,
+            "involved_target_ids": involved_ids,
+            "relationship_context_target_ids": relationship_context_ids,
+            "media_refs": list(memory_log.media_refs),
+            "source_ids": _memory_log_source_ids(memory_log) or [source_id],
+            "extraction_run_ids": _memory_log_extraction_run_ids(memory_log),
+            "original_user_words": memory_log.original_user_words,
+            "confidence": memory_log.confidence,
+            "lifecycle_state": memory_log.lifecycle_state,
+            "metadata": {
+                **memory_log.metadata,
+                "memory_log_id": memory_log.memory_log_id,
+                "candidate_local_ref": memory_log.local_ref,
+                "idempotency_key": key,
+            },
+        }
+        properties.update(_temporal_properties(memory_log.temporal_scope))
+        return GraphNodeWrite(
+            local_ref=local_ref,
+            label="MemoryLog",
+            properties=_drop_empty(properties),
+            source_refs=_memory_log_source_ids(memory_log),
+            evidence_refs=memory_log.evidence_refs,
+            idempotency_key=key,
+        )
+
+    def _memory_log_relationship_write(
+        self,
+        *,
+        source_id: str,
+        memory_log: MemoryLog,
+        link: MemoryLogLink,
+        index: int,
+    ) -> GraphRelationshipWrite:
+        local_ref = memory_log.local_ref or memory_log.memory_log_id
+        key = idempotency_key(
+            source_id,
+            "memory_log_relationship",
+            local_ref,
+            link.relationship_type,
+            link.target_id,
+            str(index),
+        )
+        properties = {
+            "id": deterministic_uuid(key),
+            "role": link.role,
+            "primary": link.primary,
+            "source_ids": _memory_log_source_ids(memory_log) or [source_id],
+            "extraction_run_ids": _memory_log_extraction_run_ids(memory_log),
+            "confidence": memory_log.confidence,
+            "metadata": {
+                "memory_log_local_ref": memory_log.local_ref,
+                "memory_log_id": memory_log.memory_log_id,
+                "target_label": link.target_label,
+                "idempotency_key": key,
+            },
+        }
+        if link.relationship_type == "HAS_MEMORY_LOG":
+            from_ref = link.target_id
+            to_ref = local_ref
+        else:
+            from_ref = local_ref
+            to_ref = link.target_id
+        return GraphRelationshipWrite(
+            local_ref=f"{local_ref}_{link.relationship_type}_{index + 1:03d}",
+            relationship_type=link.relationship_type,
+            from_ref=from_ref,
+            to_ref=to_ref,
+            properties=_drop_empty(properties),
+            source_refs=_memory_log_source_ids(memory_log),
+            evidence_refs=memory_log.evidence_refs,
+            idempotency_key=key,
+        )
+
     def _candidate_relationship_write(
         self,
         source_id: str,
@@ -316,6 +450,127 @@ def _decision_type(decision: ResolutionDecision | None) -> ResolutionDecisionTyp
     if decision is None:
         return ResolutionDecisionType.CREATE
     return ResolutionDecisionType(decision.decision_type)
+
+
+def _memory_log_links(memory_log: MemoryLog) -> list[MemoryLogLink]:
+    links: list[MemoryLogLink] = []
+    seen: set[tuple[str, str, str | None, bool]] = set()
+    primary_host = memory_log.primary_host_target_id or _primary_memory_log_host(memory_log)
+
+    def add(link: MemoryLogLink) -> None:
+        key = (link.relationship_type, link.target_id, link.role, link.primary)
+        if key not in seen:
+            links.append(link)
+            seen.add(key)
+
+    for link in memory_log.links:
+        if (
+            link.relationship_type == "HAS_MEMORY_LOG"
+            and primary_host
+            and link.target_id == primary_host
+            and not link.primary
+        ):
+            link = link.model_copy(update={"primary": True})
+        add(link)
+
+    explicit_host_targets = {
+        link.target_id for link in links if link.relationship_type == "HAS_MEMORY_LOG"
+    }
+    for target_id in memory_log.host_target_ids:
+        if target_id in explicit_host_targets:
+            continue
+        add(
+            MemoryLogLink(
+                target_id=target_id,
+                relationship_type="HAS_MEMORY_LOG",
+                primary=target_id == primary_host,
+            )
+        )
+    if (
+        memory_log.primary_host_target_id
+        and memory_log.primary_host_target_id not in explicit_host_targets
+        and memory_log.primary_host_target_id not in memory_log.host_target_ids
+    ):
+        add(
+            MemoryLogLink(
+                target_id=memory_log.primary_host_target_id,
+                target_label=memory_log.primary_host_target_label,
+                relationship_type="HAS_MEMORY_LOG",
+                primary=True,
+            )
+        )
+
+    explicit_involved_targets = {
+        link.target_id for link in links if link.relationship_type == "INVOLVES"
+    }
+    for target_id in memory_log.involved_target_ids:
+        if target_id not in explicit_involved_targets:
+            add(MemoryLogLink(target_id=target_id, relationship_type="INVOLVES"))
+
+    return links
+
+
+def _memory_log_host_refs(memory_log: MemoryLog) -> list[str]:
+    refs = list(memory_log.host_target_ids)
+    refs.extend(
+        link.target_id
+        for link in memory_log.links
+        if link.relationship_type == "HAS_MEMORY_LOG"
+    )
+    if memory_log.primary_host_target_id:
+        refs.append(memory_log.primary_host_target_id)
+    return _unique(refs)
+
+
+def _memory_log_involved_refs(memory_log: MemoryLog) -> list[str]:
+    refs = list(memory_log.involved_target_ids)
+    refs.extend(
+        link.target_id for link in memory_log.links if link.relationship_type == "INVOLVES"
+    )
+    return _unique(refs)
+
+
+def _memory_log_relationship_context_refs(memory_log: MemoryLog) -> list[str]:
+    return _unique(
+        link.target_id
+        for link in memory_log.links
+        if link.relationship_type == "UPDATES_RELATIONSHIP"
+    )
+
+
+def _primary_memory_log_host(memory_log: MemoryLog) -> str | None:
+    for link in memory_log.links:
+        if link.relationship_type == "HAS_MEMORY_LOG" and link.primary:
+            return link.target_id
+    if len(memory_log.host_target_ids) == 1:
+        return memory_log.host_target_ids[0]
+    return None
+
+
+def _resolve_many(refs: list[str], planned_ref_ids: dict[str, str]) -> list[str]:
+    return _unique(_resolve_ref_or_none(ref, planned_ref_ids) for ref in refs)
+
+
+def _resolve_ref_or_none(ref: str | None, planned_ref_ids: dict[str, str]) -> str | None:
+    if not ref:
+        return None
+    return planned_ref_ids.get(ref, ref)
+
+
+def _memory_log_source_ids(memory_log: MemoryLog) -> list[str]:
+    source_ids = list(memory_log.source_refs)
+    source_ids.extend(evidence.source_id for evidence in memory_log.evidence_refs)
+    return _unique(source_ids)
+
+
+def _memory_log_extraction_run_ids(memory_log: MemoryLog) -> list[str]:
+    refs = list(memory_log.extraction_run_ids)
+    refs.extend(
+        evidence.extraction_run_id
+        for evidence in memory_log.evidence_refs
+        if evidence.extraction_run_id
+    )
+    return _unique(refs)
 
 
 def _base_properties(source_id: str, candidate: CandidateBase, key: str) -> dict[str, Any]:
@@ -481,6 +736,8 @@ _RELATIONSHIP_PROPERTY_FIELDS = {
     "emotional_intensity",
     "emotion_tags",
     "original_user_words",
+    "role",
+    "primary",
     "confidence",
     "trust_level",
     "privacy_level",

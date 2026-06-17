@@ -163,6 +163,17 @@ class GraphRepository:
             limit=limit,
         )
 
+    def find_memory_logs_for_target(
+        self,
+        target_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return self.memory.find_memory_logs_for_target(target_id, limit=limit)
+
+    def get_memory_log_detail(self, log_id: str, *, limit: int = 50) -> dict[str, Any] | None:
+        return self.memory.get_memory_log_detail(log_id, limit=limit)
+
     def find_sources_for_target(
         self,
         target_id: str,

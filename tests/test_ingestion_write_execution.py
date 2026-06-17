@@ -26,6 +26,8 @@ from my_digital_brain.ingestion.contracts import (
     GraphContextPack,
     GraphWritePlan,
     IngestionContextPackage,
+    MemoryLog,
+    MemoryLogLink,
     ResolutionDecision,
     ResolutionResult,
     SourceRecordRef,
@@ -263,6 +265,60 @@ def test_write_plan_builder_uses_existing_resolution_for_relationship_endpoints(
     assert plan.metadata["local_ref_resolution"] == {"CANDIDATE_PERSON_001": existing_id}
     assert result.status == IngestionStatus.WRITTEN
     assert result.metadata["relationships"] == 1
+
+
+def test_write_plan_builder_and_executor_create_memory_logs_for_existing_host() -> None:
+    host_id = new_uuid()
+    candidate_graph = _candidate_graph(
+        [],
+        memory_logs=[
+            MemoryLog(
+                local_ref="MEMORY_LOG_001",
+                log_text="Marco changed job yesterday.",
+                log_kind="update",
+                primary_host_target_id=host_id,
+                primary_host_target_label="Person",
+                host_target_ids=[host_id],
+                links=[
+                    MemoryLogLink(
+                        target_id=host_id,
+                        target_label="Person",
+                        relationship_type="HAS_MEMORY_LOG",
+                        primary=True,
+                        role="primary_host",
+                    ),
+                ],
+                source_refs=["source-1"],
+                media_refs=["media-ref-1"],
+            ),
+        ],
+    )
+
+    plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
+    same_plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
+    graph = FakeGraphService(nodes=[_node("Person", host_id, display_name="Marco")])
+    result = GraphWritePlanExecutor(graph).execute(plan)
+
+    assert len(plan.memory_logs_to_create) == 1
+    assert plan.memory_logs_to_create[0].label == "MemoryLog"
+    assert plan.memory_logs_to_create[0].properties["log_text"] == (
+        "Marco changed job yesterday."
+    )
+    assert plan.memory_logs_to_create[0].properties["media_refs"] == ["media-ref-1"]
+    assert plan.memory_logs_to_create[0].properties["id"] == (
+        same_plan.memory_logs_to_create[0].properties["id"]
+    )
+    assert plan.relationships_to_create[0].relationship_type == "HAS_MEMORY_LOG"
+    assert plan.relationships_to_create[0].from_ref == host_id
+    assert plan.relationships_to_create[0].to_ref == "MEMORY_LOG_001"
+    assert plan.relationships_to_create[0].properties["primary"] is True
+    assert plan.relationships_to_create[0].properties["role"] == "primary_host"
+    assert result.status == IngestionStatus.WRITTEN
+    assert result.metadata["created_memory_logs"] == 1
+    assert result.metadata["relationships"] == 1
+    assert graph.upserted_nodes[0].label == "MemoryLog"
+    assert graph.relationships[0].from_id == host_id
+    assert graph.relationships[0].to_id == graph.upserted_nodes[0].properties["id"]
 
 
 def test_executor_calls_graph_service_and_preserves_provenance() -> None:
@@ -654,8 +710,15 @@ class FailingVectorizer:
         raise RuntimeError("chroma unavailable")
 
 
-def _candidate_graph(candidates: Sequence[CandidateOutput]):
-    return CandidateMemoryGraphAssembler().assemble(_source(), _plan(), candidates)
+def _candidate_graph(
+    candidates: Sequence[CandidateOutput],
+    *,
+    memory_logs: Sequence[MemoryLog] = (),
+):
+    graph = CandidateMemoryGraphAssembler().assemble(_source(), _plan(), candidates)
+    if memory_logs:
+        return graph.model_copy(update={"memory_logs": list(memory_logs)}, deep=True)
+    return graph
 
 
 def _create_resolution(candidate_graph) -> ResolutionResult:

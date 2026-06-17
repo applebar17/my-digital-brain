@@ -206,6 +206,34 @@ class ChangeRecordNode(GraphNodeModel):
     reason: str | None = None
 
 
+class MemoryLogNode(GraphNodeModel):
+    label: ClassVar[str] = "MemoryLog"
+
+    log_text: str
+    log_kind: str | None = None
+    source_kind: str | None = None
+    importance: str | None = None
+    happened_at: str | None = None
+    primary_host_target_id: str | None = None
+    primary_host_target_label: str | None = None
+    host_target_ids: list[str] = Field(default_factory=list)
+    involved_target_ids: list[str] = Field(default_factory=list)
+    relationship_context_target_ids: list[str] = Field(default_factory=list)
+    media_refs: list[str] = Field(default_factory=list)
+
+
+class MediaAssetNode(GraphNodeModel):
+    label: ClassVar[str] = "MediaAsset"
+
+    media_type: str | None = None
+    mime_type: str | None = None
+    storage_uri: str | None = None
+    storage_key: str | None = None
+    checksum: str | None = None
+    caption: str | None = None
+    captured_at: str | None = None
+
+
 class ContradictionRecordNode(GraphNodeModel):
     label: ClassVar[str] = "ContradictionRecord"
 
@@ -249,6 +277,8 @@ NODE_MODEL_BY_LABEL: dict[str, type[GraphNodeModel]] = {
     ExtractionRunNode.label: ExtractionRunNode,
     RelationshipStateNode.label: RelationshipStateNode,
     ChangeRecordNode.label: ChangeRecordNode,
+    MemoryLogNode.label: MemoryLogNode,
+    MediaAssetNode.label: MediaAssetNode,
     ContradictionRecordNode.label: ContradictionRecordNode,
     MergeRecordNode.label: MergeRecordNode,
 }
@@ -300,6 +330,15 @@ class RelationshipStateCreateRequest(BaseModel):
 class RelationshipContextDetailResult(BaseModel):
     context: NodeSearchResult
     state_history: list[NodeSearchResult] = Field(default_factory=list)
+
+
+class MemoryLogDetailResult(BaseModel):
+    memory_log: NodeSearchResult
+    hosts: list[NodeSearchResult] = Field(default_factory=list)
+    involved: list[NodeSearchResult] = Field(default_factory=list)
+    relationship_contexts: list[NodeSearchResult] = Field(default_factory=list)
+    media_assets: list[NodeSearchResult] = Field(default_factory=list)
+    relationships: list[RelationshipResult] = Field(default_factory=list)
 
 
 class ChangeRecordCreateRequest(BaseModel):

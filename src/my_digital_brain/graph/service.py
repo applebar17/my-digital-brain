@@ -14,6 +14,7 @@ from my_digital_brain.graph.models import (
     GraphViewResult,
     LifecycleTransitionRequest,
     MapViewResult,
+    MemoryLogDetailResult,
     NeighborhoodResult,
     NodeSearchResult,
     RelationshipContextDetailResult,
@@ -176,6 +177,22 @@ class GraphService:
             target_kind=target_kind,
             limit=limit,
         )
+
+    def get_memory_logs_for_target(
+        self,
+        target_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        return self.memory.get_memory_logs_for_target(target_id, limit=limit)
+
+    def get_memory_log_detail(
+        self,
+        log_id: str,
+        *,
+        limit: int = 50,
+    ) -> MemoryLogDetailResult:
+        return self.memory.get_memory_log_detail(log_id, limit=limit)
 
     def transition_node_lifecycle(
         self,

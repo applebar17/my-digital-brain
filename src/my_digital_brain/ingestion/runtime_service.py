@@ -1412,6 +1412,7 @@ def _write_plan_has_mutations(write_plan) -> bool:
             write_plan.claims_to_create,
             write_plan.perceptions_to_create,
             write_plan.relationship_contexts_to_create,
+            write_plan.memory_logs_to_create,
             write_plan.metadata_patches,
         )
     )
@@ -1426,6 +1427,7 @@ def _write_plan_counts(write_plan) -> dict[str, int]:
         "claims_to_create": len(write_plan.claims_to_create),
         "perceptions_to_create": len(write_plan.perceptions_to_create),
         "relationship_contexts_to_create": len(write_plan.relationship_contexts_to_create),
+        "memory_logs_to_create": len(write_plan.memory_logs_to_create),
         "metadata_patches": len(write_plan.metadata_patches),
     }
 

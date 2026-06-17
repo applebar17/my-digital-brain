@@ -72,6 +72,8 @@ class GraphRelationshipBase(BaseModel):
     emotional_intensity: float | None = Field(default=None, ge=0.0, le=1.0)
     emotion_tags: list[str] = Field(default_factory=list)
     original_user_words: str | None = None
+    role: str | None = None
+    primary: bool | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     trust_level: TrustLevel | None = None
     privacy_level: PrivacyLevel = PrivacyLevel.NORMAL

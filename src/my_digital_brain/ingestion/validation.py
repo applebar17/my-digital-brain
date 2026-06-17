@@ -78,6 +78,10 @@ class IngestionValidator:
             self._validate_candidate_ref(context.to_ref, f"{prefix}.to_ref", known_refs, issues)
             self._validate_evidence(context, prefix, issues)
 
+        for index, memory_log in enumerate(candidate_graph.memory_logs):
+            prefix = f"memory_logs[{index}]"
+            self._validate_memory_log(memory_log, prefix, known_refs, issues)
+
         for index, patch in enumerate(candidate_graph.candidate_metadata_patches):
             prefix = f"candidate_metadata_patches[{index}]"
             self._validate_candidate_ref(
@@ -98,6 +102,7 @@ class IngestionValidator:
             *write_plan.claims_to_create,
             *write_plan.perceptions_to_create,
             *write_plan.relationship_contexts_to_create,
+            *write_plan.memory_logs_to_create,
         ]
         local_refs = {write.local_ref for write in node_writes}
         local_refs.update((write_plan.metadata or {}).get("local_ref_resolution", {}))
@@ -215,12 +220,129 @@ class IngestionValidator:
             ),
         )
 
+    def _validate_memory_log(
+        self,
+        memory_log: Any,
+        field_path: str,
+        known_refs: set[str],
+        issues: list[ValidationIssue],
+    ) -> None:
+        if not (memory_log.local_ref or "").strip():
+            issues.append(
+                _issue(
+                    f"{field_path}.local_ref",
+                    "MemoryLog writes require a stable local_ref.",
+                    "missing_memory_log_local_ref",
+                    {"memory_log_id": memory_log.memory_log_id},
+                ),
+            )
+        if not memory_log.log_text.strip():
+            issues.append(
+                _issue(
+                    f"{field_path}.log_text",
+                    "MemoryLog requires non-empty log_text.",
+                    "missing_memory_log_text",
+                    {"local_ref": memory_log.local_ref},
+                ),
+            )
+        if not (memory_log.source_refs or memory_log.evidence_refs):
+            issues.append(
+                _issue(
+                    field_path,
+                    (
+                        "MemoryLog has no source_refs or evidence_refs. Memory writes "
+                        "must remain provenance-backed so later retrieval can explain them."
+                    ),
+                    "missing_memory_log_evidence",
+                    {"local_ref": memory_log.local_ref},
+                ),
+            )
+
+        host_links = [
+            link
+            for link in memory_log.links
+            if link.relationship_type == "HAS_MEMORY_LOG"
+        ]
+        host_ids = set(memory_log.host_target_ids)
+        host_ids.update(link.target_id for link in host_links)
+        if memory_log.primary_host_target_id:
+            host_ids.add(memory_log.primary_host_target_id)
+        if not host_ids:
+            issues.append(
+                _issue(
+                    f"{field_path}.links",
+                    "MemoryLog requires at least one HAS_MEMORY_LOG host target.",
+                    "missing_memory_log_host",
+                    {"local_ref": memory_log.local_ref},
+                ),
+            )
+        primary_count = sum(1 for link in host_links if link.primary)
+        if primary_count > 1:
+            issues.append(
+                _issue(
+                    f"{field_path}.links",
+                    "MemoryLog can have at most one primary HAS_MEMORY_LOG link.",
+                    "duplicate_memory_log_primary_host",
+                    {"local_ref": memory_log.local_ref},
+                ),
+            )
+        if len(host_ids) > 1 and primary_count != 1 and not memory_log.primary_host_target_id:
+            issues.append(
+                _issue(
+                    f"{field_path}.links",
+                    "MemoryLog with multiple host targets requires one primary host.",
+                    "missing_memory_log_primary_host",
+                    {"local_ref": memory_log.local_ref},
+                ),
+            )
+
+        for host_index, ref in enumerate(memory_log.host_target_ids):
+            self._validate_candidate_ref(
+                ref,
+                f"{field_path}.host_target_ids[{host_index}]",
+                known_refs,
+                issues,
+            )
+        if memory_log.primary_host_target_id:
+            self._validate_candidate_ref(
+                memory_log.primary_host_target_id,
+                f"{field_path}.primary_host_target_id",
+                known_refs,
+                issues,
+            )
+        for involved_index, ref in enumerate(memory_log.involved_target_ids):
+            self._validate_candidate_ref(
+                ref,
+                f"{field_path}.involved_target_ids[{involved_index}]",
+                known_refs,
+                issues,
+            )
+
+        for link_index, link in enumerate(memory_log.links):
+            prefix = f"{field_path}.links[{link_index}]"
+            self._validate_relationship_type(link.relationship_type, prefix, issues)
+            self._validate_candidate_ref(link.target_id, f"{prefix}.target_id", known_refs, issues)
+            if link.relationship_type == "HAS_MEMORY_LOG" and not link.target_id:
+                issues.append(
+                    _issue(
+                        f"{prefix}.target_id",
+                        "HAS_MEMORY_LOG requires a target id or candidate ref.",
+                        "missing_memory_log_link_target",
+                        {"local_ref": memory_log.local_ref},
+                    ),
+                )
+
     def _validate_local_ref_uniqueness(
         self,
         candidate_graph: CandidateMemoryGraph,
         issues: list[ValidationIssue],
     ) -> None:
         refs = [candidate.local_ref for candidate in _all_candidates(candidate_graph)]
+        refs.extend(
+            memory_log.local_ref
+            for memory_log in candidate_graph.memory_logs
+            if memory_log.local_ref
+        )
         for ref, count in Counter(refs).items():
             if count > 1:
                 issues.append(
@@ -253,6 +375,11 @@ class IngestionValidator:
 def _candidate_refs(candidate_graph: CandidateMemoryGraph) -> set[str]:
     refs = set(candidate_graph.local_ref_map)
     refs.update(candidate.local_ref for candidate in _all_candidates(candidate_graph))
+    refs.update(
+        memory_log.local_ref
+        for memory_log in candidate_graph.memory_logs
+        if memory_log.local_ref
+    )
     return refs
 
 

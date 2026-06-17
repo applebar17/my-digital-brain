@@ -6,6 +6,7 @@ from pydantic import Field
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
+from my_digital_brain.ingestion.contracts.memory_logs import MemoryLog
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
 from my_digital_brain.ingestion.contracts.source import EvidenceRef
 
@@ -164,6 +165,13 @@ class CandidateMemoryGraph(IngestionModel):
     candidate_perceptions: list[CandidatePerception] = Field(default_factory=list)
     candidate_relationship_contexts: list[CandidateRelationshipContext] = Field(
         default_factory=list,
+    )
+    memory_logs: list[MemoryLog] = Field(
+        default_factory=list,
+        description=(
+            "Backend-enriched MemoryLog records to create as lightweight memory atoms. "
+            "These are not generic entity candidates."
+        ),
     )
     candidate_metadata_patches: list[CandidateMetadataPatch] = Field(default_factory=list)
     local_ref_map: dict[str, str] = Field(

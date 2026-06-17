@@ -217,6 +217,77 @@ def test_candidate_graph_validation_requires_candidate_evidence_or_source_refs()
     assert result.issues[0].code == "missing_candidate_evidence"
 
 
+def test_candidate_graph_validation_accepts_memory_log_bucket() -> None:
+    source = _source()
+    graph = CandidateMemoryGraphAssembler().assemble(
+        source,
+        _plan(),
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Marco",
+                source_refs=[source.source_id],
+            ),
+        ],
+    )
+    graph = graph.model_copy(
+        update={
+            "memory_logs": [
+                MemoryLog(
+                    local_ref="MEMORY_LOG_001",
+                    log_text="Marco changed job yesterday.",
+                    links=[
+                        MemoryLogLink(
+                            target_id="CANDIDATE_PERSON_001",
+                            target_label="Person",
+                            relationship_type="HAS_MEMORY_LOG",
+                            primary=True,
+                        ),
+                    ],
+                    source_refs=[source.source_id],
+                ),
+            ],
+        },
+        deep=True,
+    )
+
+    result = IngestionValidator().validate_candidate_graph(graph)
+
+    assert result.is_valid is True
+
+
+def test_candidate_graph_validation_rejects_invalid_memory_log_bucket() -> None:
+    source = _source()
+    graph = CandidateMemoryGraphAssembler().assemble(source, _plan(), [])
+    graph = graph.model_copy(
+        update={
+            "memory_logs": [
+                MemoryLog(
+                    local_ref="MEMORY_LOG_001",
+                    log_text="Marco changed job yesterday.",
+                    links=[
+                        MemoryLogLink(
+                            target_id="CANDIDATE_PERSON_404",
+                            target_label="Person",
+                            relationship_type="HAS_MEMORY_LOG",
+                            primary=True,
+                        ),
+                    ],
+                ),
+            ],
+        },
+        deep=True,
+    )
+
+    result = IngestionValidator().validate_candidate_graph(graph)
+    codes = {issue.code for issue in result.issues}
+
+    assert result.is_valid is False
+    assert "missing_memory_log_evidence" in codes
+    assert "unknown_candidate_ref" in codes
+
+
 def test_write_plan_validation_rejects_unknown_labels_types_and_endpoints() -> None:
     write_plan = GraphWritePlan(
         source_id="source-1",

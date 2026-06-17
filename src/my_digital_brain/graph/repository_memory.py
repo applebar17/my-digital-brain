@@ -173,6 +173,81 @@ class GraphMemoryRepository:
         )
         return [node_from_record(record) for record in records]
 
+    def find_memory_logs_for_target(
+        self,
+        target_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        records = self.client.execute_read(
+            """
+            MATCH (target)-[:HAS_MEMORY_LOG]->(log:MemoryLog)
+            WHERE target.id = $target_id
+              AND any(label IN labels(target) WHERE label IN $core_labels)
+            RETURN labels(log) AS labels, properties(log) AS properties
+            ORDER BY coalesce(
+                log.happened_at,
+                log.resolved_start,
+                log.source_time,
+                log.observed_at,
+                log.created_at,
+                ""
+            ) DESC
+            LIMIT $limit
+            """,
+            {"target_id": target_id, "core_labels": list(CORE_NODE_LABELS), "limit": limit},
+        )
+        return [node_from_record(record) for record in records]
+
+    def get_memory_log_detail(self, log_id: str, *, limit: int = 50) -> dict[str, Any] | None:
+        log_records = self.client.execute_read(
+            """
+            MATCH (log:MemoryLog {id: $log_id})
+            RETURN labels(log) AS labels, properties(log) AS properties
+            LIMIT 1
+            """,
+            {"log_id": log_id},
+        )
+        if not log_records:
+            return None
+
+        relationship_records = self.client.execute_read(
+            """
+            MATCH (log:MemoryLog {id: $log_id})-[r]-(target)
+            WHERE type(r) IN [
+                "HAS_MEMORY_LOG",
+                "INVOLVES",
+                "UPDATES_RELATIONSHIP",
+                "HAS_MEDIA"
+            ]
+            RETURN type(r) AS type,
+                   startNode(r).id AS from_id,
+                   endNode(r).id AS to_id,
+                   properties(r) AS properties,
+                   labels(target) AS target_labels,
+                   properties(target) AS target_properties
+            LIMIT $limit
+            """,
+            {"log_id": log_id, "limit": limit},
+        )
+
+        relationships = [relationship_from_record(record) for record in relationship_records]
+        targets_by_id: dict[str, dict[str, Any]] = {}
+        for record in relationship_records:
+            target = node_from_record(
+                {
+                    "labels": record["target_labels"],
+                    "properties": record["target_properties"],
+                }
+            )
+            targets_by_id[target["properties"]["id"]] = target
+
+        return {
+            "memory_log": node_from_record(log_records[0]),
+            "relationships": relationships,
+            "targets": list(targets_by_id.values()),
+        }
+
     def find_sources_for_target(
         self,
         target_id: str,

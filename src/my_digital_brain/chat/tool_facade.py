@@ -828,6 +828,7 @@ _WRITE_COUNT_KEYS = (
     "created_claims",
     "created_perceptions",
     "created_relationship_contexts",
+    "created_memory_logs",
     "metadata_patches",
     "relationships",
 )

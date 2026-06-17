@@ -144,6 +144,48 @@ class FakeGraphRepository:
             records.append(node)
         return records
 
+    def find_memory_logs_for_target(
+        self,
+        target_id: str,
+        **_kwargs: object,
+    ) -> list[dict[str, object]]:
+        log_ids = {
+            relationship["to_id"]
+            for relationship in self.relationships
+            if relationship["type"] == "HAS_MEMORY_LOG"
+            and relationship["from_id"] == target_id
+        }
+        return [
+            node
+            for node in self.nodes.values()
+            if node["label"] == "MemoryLog" and node["properties"]["id"] in log_ids
+        ]
+
+    def get_memory_log_detail(
+        self,
+        log_id: str,
+        **_kwargs: object,
+    ) -> dict[str, object] | None:
+        log = self.nodes.get(log_id)
+        if log is None or log["label"] != "MemoryLog":
+            return None
+        relationships = [
+            relationship
+            for relationship in self.relationships
+            if relationship["from_id"] == log_id or relationship["to_id"] == log_id
+        ]
+        target_ids = {
+            relationship["to_id"]
+            if relationship["from_id"] == log_id
+            else relationship["from_id"]
+            for relationship in relationships
+        }
+        return {
+            "memory_log": log,
+            "relationships": relationships,
+            "targets": [self.nodes[str(target_id)] for target_id in target_ids],
+        }
+
     def find_contradictions(
         self,
         target_id: str | None = None,
@@ -745,6 +787,51 @@ def test_wave3_context_package_uses_aliases_and_excludes_noisy_metadata() -> Non
     assert package.alias_map["NODE_000001"] == person.properties["id"]
     assert "metadata" not in package.target
     assert any(fact["field"] == "emotional_summary" for fact in package.current_facts)
+
+
+def test_memory_log_service_reads_target_logs_and_detail_buckets() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    person = service.upsert_node("Person", {"display_name": "Marco"})
+    place = service.upsert_node("Place", {"name": "Turin"})
+    context = service.upsert_node(
+        "RelationshipContext",
+        {"relationship_detail": "colleague"},
+    )
+    media = service.upsert_node("MediaAsset", {"media_type": "image", "storage_key": "photo.jpg"})
+    log = service.upsert_node(
+        "MemoryLog",
+        {
+            "log_text": "Marco changed job yesterday.",
+            "log_kind": "update",
+            "host_target_ids": [person.properties["id"]],
+            "primary_host_target_id": person.properties["id"],
+        },
+    )
+    service.upsert_relationship(
+        "HAS_MEMORY_LOG",
+        person.properties["id"],
+        log.properties["id"],
+        {"primary": True, "role": "primary_host"},
+    )
+    service.upsert_relationship("INVOLVES", log.properties["id"], place.properties["id"], {})
+    service.upsert_relationship(
+        "UPDATES_RELATIONSHIP",
+        log.properties["id"],
+        context.properties["id"],
+        {},
+    )
+    service.upsert_relationship("HAS_MEDIA", log.properties["id"], media.properties["id"], {})
+
+    logs = service.get_memory_logs_for_target(person.properties["id"])
+    detail = service.get_memory_log_detail(log.properties["id"])
+
+    assert logs[0].properties["log_text"] == "Marco changed job yesterday."
+    assert detail.memory_log.properties["id"] == log.properties["id"]
+    assert detail.hosts[0].properties["id"] == person.properties["id"]
+    assert detail.involved[0].properties["id"] == place.properties["id"]
+    assert detail.relationship_contexts[0].properties["id"] == context.properties["id"]
+    assert detail.media_assets[0].properties["id"] == media.properties["id"]
 
 
 def test_wave3_map_view_and_analytics_summary() -> None:

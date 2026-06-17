@@ -50,6 +50,7 @@ class GraphWritePlan(IngestionModel):
     claims_to_create: list[GraphNodeWrite] = Field(default_factory=list)
     perceptions_to_create: list[GraphNodeWrite] = Field(default_factory=list)
     relationship_contexts_to_create: list[GraphNodeWrite] = Field(default_factory=list)
+    memory_logs_to_create: list[GraphNodeWrite] = Field(default_factory=list)
     metadata_patches: list[CandidateMetadataPatch] = Field(default_factory=list)
     evidence_links: list[EvidenceRef] = Field(default_factory=list)
     idempotency_keys: list[str] = Field(default_factory=list)

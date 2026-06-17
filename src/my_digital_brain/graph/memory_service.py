@@ -17,6 +17,7 @@ from my_digital_brain.graph.models import (
     AffectiveContextResult,
     GraphRelationshipModel,
     LifecycleTransitionRequest,
+    MemoryLogDetailResult,
     NodeSearchResult,
     RelationshipContextDetailResult,
     RelationshipResult,
@@ -214,6 +215,73 @@ class GraphMemoryService(GraphServiceBase):
         )
         return [NodeSearchResult.model_validate(record) for record in records]
 
+    def get_memory_logs_for_target(
+        self,
+        target_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[NodeSearchResult]:
+        records = self.repository.find_memory_logs_for_target(
+            target_id,
+            limit=self._bounded_limit(limit),
+        )
+        return [NodeSearchResult.model_validate(record) for record in records]
+
+    def get_memory_log_detail(
+        self,
+        log_id: str,
+        *,
+        limit: int = 50,
+    ) -> MemoryLogDetailResult:
+        record = self.repository.get_memory_log_detail(
+            log_id,
+            limit=self._bounded_limit(limit),
+        )
+        if record is None:
+            raise GraphNotFoundError(f"MemoryLog not found: {log_id}")
+
+        memory_log = NodeSearchResult.model_validate(record["memory_log"])
+        relationships = [
+            RelationshipResult.model_validate(relationship)
+            for relationship in record["relationships"]
+        ]
+        targets = [
+            NodeSearchResult.model_validate(target)
+            for target in record["targets"]
+        ]
+        target_by_id = {
+            str(target.properties.get("id")): target
+            for target in targets
+            if target.properties.get("id")
+        }
+        hosts: list[NodeSearchResult] = []
+        involved: list[NodeSearchResult] = []
+        relationship_contexts: list[NodeSearchResult] = []
+        media_assets: list[NodeSearchResult] = []
+
+        for relationship in relationships:
+            other_id = relationship.to_id if relationship.from_id == log_id else relationship.from_id
+            target = target_by_id.get(other_id)
+            if target is None:
+                continue
+            if relationship.type == "HAS_MEMORY_LOG":
+                hosts.append(target)
+            elif relationship.type == "INVOLVES":
+                involved.append(target)
+            elif relationship.type == "UPDATES_RELATIONSHIP":
+                relationship_contexts.append(target)
+            elif relationship.type == "HAS_MEDIA":
+                media_assets.append(target)
+
+        return MemoryLogDetailResult(
+            memory_log=memory_log,
+            hosts=_dedupe_nodes(hosts),
+            involved=_dedupe_nodes(involved),
+            relationship_contexts=_dedupe_nodes(relationship_contexts),
+            media_assets=_dedupe_nodes(media_assets),
+            relationships=relationships,
+        )
+
     def transition_node_lifecycle(
         self,
         node_id: str,
@@ -289,3 +357,15 @@ class GraphMemoryService(GraphServiceBase):
             }
         )
         return RelationshipResult.model_validate(patched)
+
+
+def _dedupe_nodes(nodes: list[NodeSearchResult]) -> list[NodeSearchResult]:
+    deduped: list[NodeSearchResult] = []
+    seen: set[str] = set()
+    for node in nodes:
+        node_id = str(node.properties.get("id") or "")
+        if not node_id or node_id in seen:
+            continue
+        seen.add(node_id)
+        deduped.append(node)
+    return deduped
