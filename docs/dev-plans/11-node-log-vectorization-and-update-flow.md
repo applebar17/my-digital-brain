@@ -80,6 +80,17 @@ Important limitation:
 - V1 uses separate vector collections/scopes with one shared embedding
   dimension: `512`.
 - V1 uses one query embedding to search all enabled collections.
+- V1 explicitly passes `dimensions=512` for both document embeddings and query
+  embeddings. Runtime environment defaults must not silently decide the vector
+  shape for these scopes.
+- V1 routes graph labels to vector scopes as follows:
+  - `memory_node_summaries`: `Person`, `Place`, `Event`, `SocialCircle`;
+  - `memory_contexts`: `Claim`, `Perception`, `RelationshipContext`,
+    `RelationshipState`, `ProfileMemory`;
+  - `memory_micro_logs`: `MemoryLog`.
+- New v1 vector writes use the scoped collections only. The legacy
+  `memory_documents` collection is not dual-written or dual-read by the new
+  scope-aware path; existing records are treated as legacy until reindex.
 - Prefix truncation from a larger embedding is not a v1 assumption. It may be
   evaluated later only for providers/models that explicitly support compatible
   shortened embeddings.
@@ -107,6 +118,31 @@ Keeping the same dimension across collections allows one query embedding to be
 reused safely for all enabled scopes. Collection separation still gives
 different text builders, ranking weights, filters, and UI behavior.
 
+### Embedding Policy
+
+Embeddings are generated only from informational content that helps semantic
+retrieval. Builder output must be deterministic, compact, and human-readable.
+
+Include:
+
+- concise memory facts, observations, corrections, preferences, and relationship
+  context;
+- stable domain summaries when the node has meaningful descriptive context;
+- relevant time, kind, source kind, confidence, or original wording when those
+  fields improve recall.
+
+Exclude:
+
+- raw UUIDs, graph payloads, metadata dumps, provider traces, prompts, tool-call
+  payloads, backend audit details, and source documents in full;
+- empty or label-only nodes;
+- raw relationship edges without a memory-bearing record.
+
+The vector scope config is the source of truth for embedding dimensions. Wave 2
+must pass `dimensions=512` into `EmbeddingRequest` for document vectorization and
+query embedding, even if provider or environment defaults also define an
+embedding dimension.
+
 ### `memory_node_summaries`
 
 Purpose:
@@ -117,8 +153,15 @@ Embeds:
 
 - stable entity summaries;
 - important aliases where supported;
-- compact relationship/profile context;
+- compact relationship or social context when present on or near the node;
 - durable user-relevant facts.
+
+Labels routed here in v1:
+
+- `Person`;
+- `Place`;
+- `Event`;
+- `SocialCircle`.
 
 Primary target:
 
@@ -150,6 +193,10 @@ Embeds:
 - observations;
 - status updates;
 - preferences or profile updates when represented as node-targeted logs.
+
+Labels routed here in v1:
+
+- `MemoryLog`.
 
 Primary target:
 
@@ -184,8 +231,15 @@ Embeds:
 - `RelationshipContext`;
 - `RelationshipState`;
 - `Claim`;
-- optionally `Event` or `ProfileMemory` if we choose to split them from node
-  summaries.
+- `ProfileMemory`.
+
+Labels routed here in v1:
+
+- `Claim`;
+- `Perception`;
+- `RelationshipContext`;
+- `RelationshipState`;
+- `ProfileMemory`.
 
 Primary target:
 
@@ -224,6 +278,11 @@ query
 
 The retrieval response must expose enough diagnostics to explain which scope
 produced each hit.
+
+Wave 2 implements only the minimal raw multi-scope search path needed to prove
+that one 512-dimensional query embedding can search every enabled v1 scope.
+Score normalization, cross-scope merge, graph hydration, neighborhood expansion,
+and folding `MemoryLog` hits into domain nodes remain Wave 3 work.
 
 Future query strategies may include:
 
@@ -663,10 +722,22 @@ navigation, or summary refresh.
 - Split current vectorization into scope-aware builders.
 - Configure `memory_node_summaries`, `memory_contexts`, and
   `memory_micro_logs` with shared `512` dimensions for v1.
+- Route v1 labels by scope:
+  - `Person`, `Place`, `Event`, and `SocialCircle` to
+    `memory_node_summaries`;
+  - `Claim`, `Perception`, `RelationshipContext`, `RelationshipState`, and
+    `ProfileMemory` to `memory_contexts`;
+  - `MemoryLog` to `memory_micro_logs`.
+- Remove the new path's dependency on the legacy `memory_documents` collection.
+  Existing legacy records are ignored by scoped retrieval until reindex.
+- Pass `dimensions=512` explicitly for document and query embeddings.
 - Add `memory_micro_logs` builder using compact log text.
 - Add collection routing and scope-specific ranking metadata.
 - Add tests proving one 512-dimensional query embedding can search all v1
   scopes.
+- Keep Wave 2 query-side behavior to raw per-scope search diagnostics. Do not
+  implement score normalization, merged ranking, graph hydration, or default UI
+  folding until Wave 3.
 
 ### Wave 3: Multi-Scope Retrieval And Hydration
 
@@ -718,6 +789,12 @@ navigation, or summary refresh.
   optional related context.
 - V1 vector scopes use one shared `512` dimension and one query embedding across
   `memory_node_summaries`, `memory_contexts`, and `memory_micro_logs`.
+- `EmbeddingRequest` receives `dimensions=512` explicitly for v1 document and
+  query embedding calls.
+- Scoped v1 vectorization does not dual-write to `memory_documents`, and scoped
+  v1 search does not dual-read from `memory_documents`.
+- Embedding text is informational only and excludes raw IDs, graph payloads,
+  metadata dumps, provider traces, prompts, and backend audit details.
 - Default graph search output renders domain nodes, not raw logs.
 - Clicking a domain node can transition into a navigable `MemoryLog` history and
   return to the prior domain graph output.
@@ -735,8 +812,6 @@ navigation, or summary refresh.
 
 ## Open Decisions
 
-- Whether `ProfileMemory` belongs in `memory_contexts`,
-  `memory_node_summaries`, or its own profile-memory scope.
 - Exact summary refresh trigger policy, once the deferred summary-refresh wave is
   reopened.
 - Whether future retrieval should move from shared `512` dimensions to
