@@ -16,7 +16,6 @@ from my_digital_brain.graph.models import (
 )
 from my_digital_brain.ingestion.contracts import MultiScopeRetrievalResult
 from my_digital_brain.rag.models import (
-    MEMORY_DOCUMENTS_COLLECTION,
     SemanticMemorySearchResult,
     VectorRecordData,
 )
@@ -31,7 +30,7 @@ def test_semantic_search_hydrates_vector_hits_and_expands_graph(tmp_path) -> Non
     vector_store = FakeSearchVectorStore(
         [
             {
-                "id": "memory_documents:relationship_context_summary:relctx-1",
+                "id": "memory_contexts:relationship_context_summary:relctx-1",
                 "distance": 0.2,
                 "document": "Relationship with Alessandro: close teenage friendship, now low contact.",
             }
@@ -40,13 +39,15 @@ def test_semantic_search_hydrates_vector_hits_and_expands_graph(tmp_path) -> Non
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:relationship_context_summary:relctx-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:relationship_context_summary:relctx-1",
             embedding_scope="relationship_context_summary",
             primary_target_id="relctx-1",
             primary_target_label="RelationshipContext",
             related_target_ids=["person-1", "perception-1"],
             source_ids=["source-1"],
             relationship_ids=["relationship-1"],
+            hit_role="context",
             embedding_model="text-embedding-3-small",
             builder_version="relationship_context_summary.v1",
             document_checksum="sha256:relctx",
@@ -59,20 +60,23 @@ def test_semantic_search_hydrates_vector_hits_and_expands_graph(tmp_path) -> Non
     )
 
     assert result.mode == "semantic"
-    assert result.hits[0].primary_target_id == "relctx-1"
-    assert result.hits[0].primary_target_label == "RelationshipContext"
-    assert result.hits[0].related_target_ids == ["person-1", "perception-1"]
+    assert result.collection == "scoped"
+    assert result.hits[0].scope == "memory_contexts"
+    assert result.hits[0].hit_role == "context"
+    assert result.hits[0].matched_target_id == "relctx-1"
+    assert result.hits[0].display_target_id == "person-1"
+    assert result.hits[0].primary_target_id == "person-1"
+    assert result.hits[0].primary_target_label == "Person"
+    assert result.hits[0].related_target_ids == ["perception-1", "relctx-1"]
     assert result.hits[0].target is not None
-    assert result.hits[0].target.title == "Close teenage friendship, now low contact."
+    assert result.hits[0].target.title == "Alessandro"
     assert "Relationship with Alessandro" in result.hits[0].document_preview
-    assert {node.id for node in result.graph_view.nodes} >= {"relctx-1", "person-1"}
-    assert result.context_packages[0].target["id"] == "relctx-1"
-    assert [event.stage for event in result.trace] == [
-        "query_embedding",
-        "vector_search",
-        "graph_assembly",
-        "ranking",
-    ]
+    assert result.hits[0].matched_records[0]["label"] == "RelationshipContext"
+    assert {node.id for node in result.graph_view.nodes} == {"person-1"}
+    assert result.context_packages[0].target["id"] == "person-1"
+    assert result.context_packages[0].matched_records[0]["label"] == "RelationshipContext"
+    assert "query_embedding" in [event.stage for event in result.trace]
+    assert "vector_search" in [event.stage for event in result.trace]
 
 
 def test_semantic_search_does_not_trust_chroma_without_vector_record(tmp_path) -> None:
@@ -106,15 +110,17 @@ def test_semantic_search_resolves_canonical_identity(tmp_path) -> None:
         merged_into_id="person-1",
     )
     vector_store = FakeSearchVectorStore(
-        [{"id": "memory_documents:person_summary:merged-person-1", "distance": 0.3}]
+        [{"id": "memory_node_summaries:person_summary:merged-person-1", "distance": 0.3}]
     )
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:person_summary:merged-person-1",
+            collection="memory_node_summaries",
+            vector_id="memory_node_summaries:person_summary:merged-person-1",
             embedding_scope="person_summary",
             primary_target_id="merged-person-1",
             primary_target_label="Person",
+            hit_role="domain_node",
             builder_version="person_summary.v1",
             document_checksum="sha256:person",
         )
@@ -131,16 +137,18 @@ def test_semantic_search_resolves_canonical_identity(tmp_path) -> None:
 def test_hybrid_search_combines_semantic_and_property_matches(tmp_path) -> None:
     graph = FakeSearchGraphService()
     vector_store = FakeSearchVectorStore(
-        [{"id": "memory_documents:perception_summary:perception-1", "distance": 0.15}]
+        [{"id": "memory_contexts:perception_summary:perception-1", "distance": 0.15}]
     )
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:perception_summary:perception-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:perception_summary:perception-1",
             embedding_scope="perception_summary",
             primary_target_id="perception-1",
             primary_target_label="Perception",
             related_target_ids=["person-1"],
+            hit_role="context",
             builder_version="perception_summary.v1",
             document_checksum="sha256:perception",
         )
@@ -149,29 +157,124 @@ def test_hybrid_search_combines_semantic_and_property_matches(tmp_path) -> None:
     result = _service(graph, vector_store, record_store).search_hybrid("Alessandro", limit=5)
 
     assert result.mode == "hybrid"
-    assert {hit.source for hit in result.hits} == {"semantic", "property"}
-    assert any(hit.primary_target_id == "person-1" for hit in result.hits)
+    assert result.hits[0].source == "semantic"
+    assert result.hits[0].matched_target_id == "perception-1"
+    assert result.hits[0].display_target_id == "person-1"
     assert any(event.stage == "property_search" for event in result.trace)
+
+
+def test_memory_log_hit_folds_to_host_but_preserves_matched_record(tmp_path) -> None:
+    graph = FakeSearchGraphService()
+    vector_store = FakeSearchVectorStore(
+        [
+            {
+                "id": "memory_micro_logs:memory_log_summary:memory-log-1",
+                "distance": 0.05,
+                "document": "I felt pressured by Alessandro during the dinner.",
+            }
+        ]
+    )
+    record_store = _record_store(tmp_path)
+    record_store.upsert(
+        VectorRecordData(
+            collection="memory_micro_logs",
+            vector_id="memory_micro_logs:memory_log_summary:memory-log-1",
+            embedding_scope="memory_log_summary",
+            primary_target_id="memory-log-1",
+            primary_target_label="MemoryLog",
+            canonical_target_id="person-1",
+            related_target_ids=["person-1", "relctx-1"],
+            source_ids=["source-1"],
+            hit_role="memory_log",
+            builder_version="memory_log_summary.v1",
+            document_checksum="sha256:memory-log",
+        )
+    )
+
+    result = _service(graph, vector_store, record_store).search_semantic(
+        "pressured by Alessandro",
+        limit=5,
+    )
+
+    assert result.hits[0].scope == "memory_micro_logs"
+    assert result.hits[0].hit_role == "memory_log"
+    assert result.hits[0].matched_target_id == "memory-log-1"
+    assert result.hits[0].display_target_id == "person-1"
+    assert result.hits[0].matched_records[0]["label"] == "MemoryLog"
+    assert result.context_packages[0].matched_records[0]["label"] == "MemoryLog"
+    assert "memory-log-1" not in {node.id for node in result.graph_view.nodes}
+    assert {node.id for node in result.graph_view.nodes} == {"person-1"}
+
+
+def test_target_constraints_filter_hits_by_expanded_graph_context(tmp_path) -> None:
+    graph = FakeSearchGraphService()
+    vector_store = FakeSearchVectorStore(
+        [
+            {"id": "memory_contexts:perception_summary:perception-1", "distance": 0.02},
+            {"id": "memory_contexts:claim_summary:claim-1", "distance": 0.01},
+        ]
+    )
+    record_store = _record_store(tmp_path)
+    record_store.upsert(
+        VectorRecordData(
+            collection="memory_contexts",
+            vector_id="memory_contexts:perception_summary:perception-1",
+            embedding_scope="perception_summary",
+            primary_target_id="perception-1",
+            primary_target_label="Perception",
+            related_target_ids=["person-1"],
+            hit_role="context",
+            builder_version="perception_summary.v1",
+            document_checksum="sha256:perception",
+        )
+    )
+    record_store.upsert(
+        VectorRecordData(
+            collection="memory_contexts",
+            vector_id="memory_contexts:claim_summary:claim-1",
+            embedding_scope="claim_summary",
+            primary_target_id="claim-1",
+            primary_target_label="Claim",
+            hit_role="context",
+            builder_version="claim_summary.v1",
+            document_checksum="sha256:claim",
+        )
+    )
+
+    result = _service(graph, vector_store, record_store).search_semantic(
+        "oppressive",
+        target_ids=["person-1"],
+        limit=5,
+    )
+
+    assert [hit.matched_target_id for hit in result.hits] == ["perception-1"]
+    assert result.hits[0].display_target_id == "person-1"
+    assert any(event.stage == "target_expansion" for event in result.trace)
+    target_filter = next(event for event in result.trace if event.stage == "target_filter")
+    assert target_filter.data["before_count"] == 2
+    assert target_filter.data["after_count"] == 1
 
 
 def test_search_can_focus_rendered_graph_without_narrowing_retrieval_hits(tmp_path) -> None:
     graph = FakeSearchGraphService()
     vector_store = FakeSearchVectorStore(
         [
-            {"id": "memory_documents:relationship_context_summary:relctx-1", "distance": 0.02},
-            {"id": "memory_documents:claim_summary:claim-1", "distance": 1.3},
+            {"id": "memory_contexts:relationship_context_summary:relctx-1", "distance": 0.02},
+            {"id": "memory_contexts:claim_summary:claim-1", "distance": 1.3},
         ]
     )
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:relationship_context_summary:relctx-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:relationship_context_summary:relctx-1",
             embedding_scope="relationship_context_summary",
             primary_target_id="relctx-1",
             primary_target_label="RelationshipContext",
             related_target_ids=["person-1"],
             source_ids=["source-1"],
             relationship_ids=["relationship-1"],
+            hit_role="context",
             embedding_model="text-embedding-3-small",
             builder_version="relationship_context_summary.v1",
             document_checksum="sha256:relctx",
@@ -179,10 +282,12 @@ def test_search_can_focus_rendered_graph_without_narrowing_retrieval_hits(tmp_pa
     )
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:claim_summary:claim-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:claim_summary:claim-1",
             embedding_scope="claim_summary",
             primary_target_id="claim-1",
             primary_target_label="Claim",
+            hit_role="context",
             builder_version="claim_summary.v1",
             document_checksum="sha256:claim",
         )
@@ -194,27 +299,29 @@ def test_search_can_focus_rendered_graph_without_narrowing_retrieval_hits(tmp_pa
         limit=5,
     )
 
-    assert [hit.primary_target_id for hit in result.hits] == ["relctx-1", "claim-1"]
-    assert {node.id for node in result.graph_view.nodes} == {"relctx-1", "person-1"}
+    assert [hit.primary_target_id for hit in result.hits] == ["person-1", "claim-1"]
+    assert {node.id for node in result.graph_view.nodes} == {"person-1"}
     trace = next(event for event in result.trace if event.stage == "graph_assembly")
     assert trace.data["focus_mode"] == "adaptive"
     assert trace.data["focus_algorithm"] == "otsu"
-    assert trace.data["selected_target_ids"] == ["relctx-1"]
+    assert trace.data["selected_target_ids"] == ["person-1"]
     assert trace.data["excluded_target_ids"] == ["claim-1"]
 
 
 def test_adaptive_search_graph_keeps_isolated_focus_hit_visible(tmp_path) -> None:
     graph = FakeSearchGraphService()
     vector_store = FakeSearchVectorStore(
-        [{"id": "memory_documents:claim_summary:claim-1", "distance": 0.02}]
+        [{"id": "memory_contexts:claim_summary:claim-1", "distance": 0.02}]
     )
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:claim_summary:claim-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:claim_summary:claim-1",
             embedding_scope="claim_summary",
             primary_target_id="claim-1",
             primary_target_label="Claim",
+            hit_role="context",
             builder_version="claim_summary.v1",
             document_checksum="sha256:claim",
         )
@@ -233,15 +340,17 @@ def test_adaptive_search_graph_keeps_isolated_focus_hit_visible(tmp_path) -> Non
 
 def test_hidden_vector_records_are_excluded_by_default(tmp_path) -> None:
     vector_store = FakeSearchVectorStore(
-        [{"id": "memory_documents:claim_summary:claim-1", "distance": 0.1}]
+        [{"id": "memory_contexts:claim_summary:claim-1", "distance": 0.1}]
     )
     record_store = _record_store(tmp_path)
     record_store.upsert(
         VectorRecordData(
-            vector_id="memory_documents:claim_summary:claim-1",
+            collection="memory_contexts",
+            vector_id="memory_contexts:claim_summary:claim-1",
             embedding_scope="claim_summary",
             primary_target_id="claim-1",
             primary_target_label="Claim",
+            hit_role="context",
             builder_version="claim_summary.v1",
             document_checksum="sha256:claim",
             lifecycle_state="archived",
@@ -257,21 +366,37 @@ def test_hidden_vector_records_are_excluded_by_default(tmp_path) -> None:
 def test_graph_semantic_search_api_uses_search_dependency(tmp_path) -> None:
     app = FastAPI()
     app.include_router(graph_routes.router)
+    service = StaticSemanticSearchService()
+    app.dependency_overrides[graph_routes.get_semantic_search_service] = lambda: service
     client = TestClient(app)
 
-    response = client.get("/graph/search/semantic", params={"query": "Alessandro"})
+    response = client.get(
+        "/graph/search/semantic",
+        params=[
+            ("query", "Alessandro"),
+            ("target_ids", "person-1"),
+            ("target_ids", "relctx-1"),
+        ],
+    )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["query"] == "Alessandro"
+    assert service.semantic_queries == ["Alessandro"]
+    assert service.semantic_kwargs[0]["target_ids"] == ["person-1", "relctx-1"]
 
 
 def test_graph_hybrid_search_api_uses_search_dependency() -> None:
     app = FastAPI()
     app.include_router(graph_routes.router)
+    service = StaticSemanticSearchService()
+    app.dependency_overrides[graph_routes.get_semantic_search_service] = lambda: service
     client = TestClient(app)
 
     response = client.get("/graph/search/hybrid", params={"query": "Alessandro", "label": "Person"})
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hybrid"
+    assert service.hybrid_queries == [("Alessandro", "Person")]
 
 
 def test_graph_vector_scope_search_api_uses_search_dependency() -> None:
@@ -340,6 +465,14 @@ class FakeSearchGraphService:
                 "perception-1",
                 description="The user felt Alessandro's personality was oppressive.",
                 emotional_summary="Discomfort and pressure.",
+            ),
+            "memory-log-1": _node(
+                "MemoryLog",
+                "memory-log-1",
+                log_text="I felt pressured by Alessandro during the dinner.",
+                log_kind="experience",
+                source_kind="chat",
+                primary_host_target_id="person-1",
             ),
             "claim-1": _node("Claim", "claim-1", text="Marco moved to Milan."),
         }

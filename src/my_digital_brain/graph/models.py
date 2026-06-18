@@ -472,6 +472,7 @@ class GraphContextPackage(BaseModel):
     relationships: list[dict[str, Any]] = Field(default_factory=list)
     relationship_contexts: list[dict[str, Any]] = Field(default_factory=list)
     perceptions: list[dict[str, Any]] = Field(default_factory=list)
+    matched_records: list[dict[str, Any]] = Field(default_factory=list)
     timeline: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)

@@ -37,6 +37,8 @@ from my_digital_brain.ingestion.contracts import (
     MultiScopeRetrievalResult,
     VectorScopeSearchRequest,
 )
+from my_digital_brain.rag.models import SemanticMemorySearchResult
+from my_digital_brain.rag.search import SemanticMemorySearchService
 from my_digital_brain.rag.scoped_search import VectorScopeSearchService
 
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -75,6 +77,37 @@ def get_vector_scope_search_service() -> Generator[VectorScopeSearchService]:
             vector_record_store=VectorRecordStore(relational),
             model_router=router,
         )
+    finally:
+        relational.dispose()
+
+
+def get_semantic_search_service() -> Generator[SemanticMemorySearchService]:
+    from my_digital_brain.ai.client.settings import genai_settings_from_app_settings
+    from my_digital_brain.ai.router import StaticModelRouter
+    from my_digital_brain.chat.factory import build_ai_provider
+    from my_digital_brain.config import get_settings
+    from my_digital_brain.graph.repository import GraphRepository
+    from my_digital_brain.storage.graph import GraphClient
+    from my_digital_brain.storage.relational import RelationalSessionProvider
+    from my_digital_brain.storage.vector import ChromaVectorStore
+    from my_digital_brain.rag.vector_records import VectorRecordStore
+
+    settings = get_settings()
+    provider = build_ai_provider(settings)
+    model_router = StaticModelRouter(
+        settings=genai_settings_from_app_settings(settings),
+        provider=settings.normalized_llm_provider,
+    )
+    relational = RelationalSessionProvider.from_settings(settings)
+    try:
+        with GraphClient.from_settings(settings) as client:
+            yield SemanticMemorySearchService(
+                graph_service=GraphService(GraphRepository(client)),
+                embedding_provider=provider,
+                vector_store=ChromaVectorStore.from_settings(settings),
+                vector_record_store=VectorRecordStore(relational),
+                model_router=model_router,
+            )
     finally:
         relational.dispose()
 
@@ -132,6 +165,54 @@ def vector_scope_search(
 ) -> MultiScopeRetrievalResult:
     try:
         return service.search(request)
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/search/semantic", response_model=SemanticMemorySearchResult)
+def semantic_search(
+    query: str,
+    limit: int = Query(default=10, ge=1, le=100),
+    include_archived: bool = False,
+    include_history: bool = False,
+    graph_focus: str = Query(default="broad", pattern="^(narrow|adaptive|broad)$"),
+    target_ids: list[str] | None = Query(default=None),
+    service: SemanticMemorySearchService = Depends(get_semantic_search_service),
+) -> SemanticMemorySearchResult:
+    try:
+        return service.search_semantic(
+            query,
+            limit=limit,
+            include_archived=include_archived,
+            include_history=include_history,
+            graph_focus=graph_focus,  # type: ignore[arg-type]
+            target_ids=target_ids or [],
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/search/hybrid", response_model=SemanticMemorySearchResult)
+def hybrid_search(
+    query: str,
+    label: str | None = None,
+    limit: int = Query(default=10, ge=1, le=100),
+    include_archived: bool = False,
+    include_history: bool = False,
+    graph_focus: str = Query(default="broad", pattern="^(narrow|adaptive|broad)$"),
+    target_ids: list[str] | None = Query(default=None),
+    service: SemanticMemorySearchService = Depends(get_semantic_search_service),
+) -> SemanticMemorySearchResult:
+    try:
+        return service.search_hybrid(
+            query,
+            label=label,
+            limit=limit,
+            include_archived=include_archived,
+            include_history=include_history,
+            graph_focus=graph_focus,  # type: ignore[arg-type]
+            target_ids=target_ids or [],
+        )
     except Exception as exc:
         raise graph_http_error(exc) from exc
 

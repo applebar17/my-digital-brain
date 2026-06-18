@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from my_digital_brain.graph.models import GraphContextPackage, GraphViewNode, GraphViewResult
+from my_digital_brain.ingestion.contracts.vector_scopes import VectorScopeName
 
 MEMORY_DOCUMENTS_COLLECTION = "memory_documents"
 VECTOR_SCOPES_COLLECTION = "vector_scopes"
@@ -135,13 +136,25 @@ class SemanticMemoryHit(BaseModel):
     vector_id: str | None = None
     distance: float | None = None
     collection: str = MEMORY_DOCUMENTS_COLLECTION
+    scope: VectorScopeName | None = None
+    hit_role: HitRole | None = None
     embedding_scope: str | None = None
+    matched_target_id: str | None = None
+    matched_target_label: str | None = None
+    matched_target: GraphViewNode | None = None
+    display_target_id: str | None = None
+    display_target_label: str | None = None
     primary_target_id: str
     primary_target_label: str
     canonical_target_id: str | None = None
     related_target_ids: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
+    raw_score: float | None = None
+    normalized_score: float | None = None
+    scope_weight: float | None = None
+    hydration_path: list[str] = Field(default_factory=list)
+    matched_records: list[dict[str, Any]] = Field(default_factory=list)
     title: str | None = None
     description: str | None = None
     document_preview: str | None = None

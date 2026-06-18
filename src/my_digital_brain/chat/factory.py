@@ -32,6 +32,7 @@ from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessSto
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from my_digital_brain.rag import (
     GraphVectorizationService,
+    SemanticMemorySearchService,
     VectorRecordStore,
 )
 from my_digital_brain.storage.relational import RelationalSessionProvider
@@ -84,7 +85,16 @@ def build_chat_runtime(
         history_service=history_service,
     )
     agentic_runtime = AgenticRuntime(state_runner)
-    semantic_search_service = None
+    semantic_search_service = (
+        build_semantic_search_service(
+            settings=settings,
+            provider=provider,
+            graph_service=graph_service,
+            router=router,
+        )
+        if graph_service is not None
+        else None
+    )
     ingestion_service = build_ingestion_service(
         settings=settings,
         provider=provider,
@@ -118,6 +128,24 @@ def build_ai_provider(settings: Settings):
     if settings.normalized_llm_provider == "azure_openai":
         return AzureOpenAIProvider(settings=genai_settings)
     return OpenAIProvider(settings=genai_settings)
+
+
+def build_semantic_search_service(
+    *,
+    settings: Settings,
+    provider: Any,
+    graph_service: Any,
+    router: StaticModelRouter,
+) -> SemanticMemorySearchService:
+    return SemanticMemorySearchService(
+        graph_service=graph_service,
+        embedding_provider=provider,
+        vector_store=ChromaVectorStore.from_settings(settings),
+        vector_record_store=VectorRecordStore(
+            RelationalSessionProvider.from_settings(settings),
+        ),
+        model_router=router,
+    )
 
 
 def build_ingestion_service(
@@ -177,4 +205,3 @@ def build_ingestion_service(
         execute_write_plan=execute_write_plan,
         process_store=InMemoryIngestionProcessStore(),
     )
-

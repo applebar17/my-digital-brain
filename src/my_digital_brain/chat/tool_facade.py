@@ -522,6 +522,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             include_archived=self._bool_metadata(request, "include_archived", default=False),
             include_history=True,
             limit=self._int_metadata(request, "limit", default=10),
+            target_ids=self._target_ids_metadata(request),
         )
         if not search_result.hits:
             return ChatToolResult(
@@ -548,7 +549,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             )
 
         hit = search_result.hits[0]
-        target_id = hit.canonical_target_id or hit.primary_target_id
+        target_id = hit.display_target_id or hit.canonical_target_id or hit.primary_target_id
         context_package = self._context_package_from_retrieval(
             search_result,
             target_id=target_id,
@@ -606,6 +607,8 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         context_package: GraphContextPackage,
         target_id: str,
     ) -> bool:
+        if context_package.target.get("id") == target_id:
+            return True
         alias = context_package.target.get("alias")
         if isinstance(alias, str) and context_package.alias_map.get(alias) == target_id:
             return True
@@ -800,6 +803,29 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         if isinstance(value, str) and value.strip():
             return value
         return None
+
+    def _target_ids_metadata(self, request: ChatToolRequest) -> list[str]:
+        values: list[str] = []
+        raw_target_ids = request.metadata.get("target_ids")
+        if isinstance(raw_target_ids, list):
+            values.extend(str(value) for value in raw_target_ids if str(value).strip())
+        elif isinstance(raw_target_ids, str) and raw_target_ids.strip():
+            values.extend(
+                item.strip()
+                for item in raw_target_ids.split(",")
+                if item.strip()
+            )
+        for key in ("seed_id", "node_id", "target_id"):
+            value = request.metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                values.append(value.strip())
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            if value not in seen:
+                seen.add(value)
+                deduped.append(value)
+        return deduped
 
     def _source_type_for_request(self, request: ChatToolRequest) -> SourceType:
         if request.metadata.get("media_only"):

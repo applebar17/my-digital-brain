@@ -744,10 +744,71 @@ navigation, or summary refresh.
 - Query each enabled vector scope.
 - Normalize and merge hits.
 - Hydrate canonical graph targets from `MemoryLog` and context records.
-- Fold `MemoryLog` hits into domain node graph results by default.
+- Fold `MemoryLog` and context hits only for default graph display target
+  selection. Folding must not remove the matched record from the LLM-facing
+  context.
+- Preserve the exact matched record as retrieval evidence in the hydrated
+  context. For example, a `Perception` hit about Alessandro must remain visible
+  to the answer context even if the default graph renders Alessandro as the
+  main domain node.
+- Hydrate outward from both the matched record and the folded/display anchor.
+  The retrieval goal is to build a contextual answer package, not merely to
+  identify one exact node.
 - Render graph workspace results from hydrated domain targets, not raw vector
   hits.
 - Add trace diagnostics showing scope, score, target, and hydration path.
+- Add optional target-constrained retrieval. A caller may provide graph target
+  ids to focus a semantic query around known anchors, such as searching for
+  "oppressive" only in Alessandro's surrounding memory context.
+- Implement target constraints by graph expansion and post-vector filtering in
+  v1: resolve the target ids, expand an allowed graph set from nearby memories
+  and context records, run scoped vector search, then keep hits whose primary,
+  canonical, related, or hydrated targets intersect the allowed set. Do not rely
+  on vector-store metadata filtering as the only constraint mechanism.
+- Keep v1 score normalization intentionally simple:
+  `normalized_score = 1 / (1 + distance) * scope_weight`, with all v1 scope
+  weights initially set to `1.0`.
+- Add a TODO/evaluation note to revisit scope weights and score normalization
+  after UAT data exists.
+- Do not leave a second deprecated hydrated retrieval service in production
+  code. Wave 3 may reuse or reshape the old single-collection search logic, but
+  the final production path should be one scoped hydrated retrieval service,
+  plus the raw scope-search endpoint only if it remains useful as debug/UAT
+  tooling.
+
+Hydration/folding policy:
+
+```text
+MemoryLog hit
+  -> matched MemoryLog remains in LLM context
+  -> default graph display target is canonical/primary host
+  -> hydrate host, involved nodes, relationship contexts, nearby logs, and media/source refs
+
+Perception hit
+  -> matched Perception remains in LLM context
+  -> default graph display target is the perceived domain target
+  -> hydrate target, relationship context, related perceptions, claims, and memory logs
+
+RelationshipContext hit
+  -> matched context remains in LLM context
+  -> default graph display targets are relationship endpoints/domain anchors
+  -> hydrate states, perceptions, logs, claims, and relevant events/places
+
+RelationshipState hit
+  -> matched state remains in LLM context
+  -> default graph display targets are the parent relationship context endpoints
+  -> hydrate parent context and nearby relationship history
+
+Claim hit
+  -> matched Claim remains in LLM context
+  -> default graph display targets are related/about domain nodes when available
+  -> hydrate supporting, contradicting, and neighboring context when present
+
+ProfileMemory hit
+  -> matched profile record remains in LLM context
+  -> default graph display target is the owner/user Person when linked
+  -> otherwise keep the profile record as context fallback
+```
 
 ### Wave 4: UI MemoryLog Navigation
 
@@ -796,6 +857,16 @@ navigation, or summary refresh.
 - Embedding text is informational only and excludes raw IDs, graph payloads,
   metadata dumps, provider traces, prompts, and backend audit details.
 - Default graph search output renders domain nodes, not raw logs.
+- Folding a `MemoryLog`, `Perception`, `RelationshipContext`,
+  `RelationshipState`, `Claim`, or `ProfileMemory` hit into a display target
+  must not remove the matched record from the LLM-facing hydrated context.
+- Hydrated retrieval context includes both the matched vector record target and
+  the surrounding graph context needed to answer the user, such as domain nodes,
+  relationship contexts, states, perceptions, related logs, claims, events,
+  places, source refs, and media refs when available.
+- Target-constrained retrieval can focus semantic search around supplied graph
+  target ids by expanding graph context and filtering scoped vector hits against
+  the allowed target set.
 - Clicking a domain node can transition into a navigable `MemoryLog` history and
   return to the prior domain graph output.
 - Node summary refresh is deferred and must not be treated as required for the

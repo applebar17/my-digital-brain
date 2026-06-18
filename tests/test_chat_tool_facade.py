@@ -120,15 +120,17 @@ class FakeSemanticSearchService:
     def __init__(self, *, has_hits: bool = True) -> None:
         self.has_hits = has_hits
         self.hybrid_queries: list[tuple[str, str | None]] = []
+        self.hybrid_kwargs: list[dict[str, object]] = []
 
     def search_hybrid(
         self,
         query: str,
         *,
         label: str | None = None,
-        **_kwargs: object,
+        **kwargs: object,
     ) -> SemanticMemorySearchResult:
         self.hybrid_queries.append((query, label))
+        self.hybrid_kwargs.append(kwargs)
         if not self.has_hits:
             return SemanticMemorySearchResult(
                 query=query,
@@ -152,8 +154,17 @@ class FakeSemanticSearchService:
                     score=0.92,
                     source="semantic",
                     vector_id="vector-1",
+                    scope="memory_node_summaries",
+                    hit_role="domain_node",
+                    matched_target_id="person-semantic",
+                    matched_target_label="Person",
+                    display_target_id="person-semantic",
+                    display_target_label="Person",
                     primary_target_id="person-semantic",
                     primary_target_label="Person",
+                    raw_score=0.92,
+                    normalized_score=0.92,
+                    scope_weight=1.0,
                     title="Marco",
                     description="Hydrated semantic match.",
                     target=target,
@@ -227,11 +238,35 @@ def test_graph_query_prefers_hybrid_retrieval_when_available() -> None:
 
     assert result.status == ChatResponseStatus.OK
     assert semantic.hybrid_queries == [("What do I remember about Marco?", None)]
+    assert semantic.hybrid_kwargs[0]["target_ids"] == []
     assert graph.search_query is None
     assert result.metadata["retrieval_mode"] == "hybrid"
     assert result.metadata["seed_id"] == "person-semantic"
     assert result.metadata["semantic_search"]["hits"][0]["source"] == "semantic"
     assert result.actions[0].parameters["node_id"] == "person-semantic"
+
+
+def test_graph_query_passes_target_constraints_to_hybrid_retrieval() -> None:
+    semantic = FakeSemanticSearchService()
+    facade = MemoryBackendToolFacade(
+        graph_service=FakeGraphService(),
+        semantic_search_service=semantic,
+    )
+
+    result = facade.query_memory_context(
+        _request("oppressive").model_copy(
+            update={
+                "metadata": {
+                    "target_ids": ["person-1", "person-1"],
+                    "node_id": "relctx-1",
+                }
+            },
+            deep=True,
+        )
+    )
+
+    assert result.status == ChatResponseStatus.OK
+    assert semantic.hybrid_kwargs[0]["target_ids"] == ["person-1", "relctx-1"]
 
 
 def test_graph_query_hybrid_no_hits_returns_low_noise_no_match() -> None:
