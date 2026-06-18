@@ -80,6 +80,33 @@ class MultiScopeVectorConfig(IngestionModel):
         return self
 
 
+def default_v1_vector_scope_config() -> MultiScopeVectorConfig:
+    return MultiScopeVectorConfig(
+        query_strategy=VectorQueryStrategy.SINGLE_SHARED_DIMENSION,
+        dimensions=V1_VECTOR_DIMENSIONS,
+        scopes=[
+            VectorScopeConfig(
+                scope=VectorScopeName.MEMORY_NODE_SUMMARIES,
+                collection=VectorScopeName.MEMORY_NODE_SUMMARIES.value,
+                dimensions=V1_VECTOR_DIMENSIONS,
+                description="Stable domain node summaries.",
+            ),
+            VectorScopeConfig(
+                scope=VectorScopeName.MEMORY_CONTEXTS,
+                collection=VectorScopeName.MEMORY_CONTEXTS.value,
+                dimensions=V1_VECTOR_DIMENSIONS,
+                description="Memory-bearing context records.",
+            ),
+            VectorScopeConfig(
+                scope=VectorScopeName.MEMORY_MICRO_LOGS,
+                collection=VectorScopeName.MEMORY_MICRO_LOGS.value,
+                dimensions=V1_VECTOR_DIMENSIONS,
+                description="Lightweight MemoryLog records.",
+            ),
+        ],
+    )
+
+
 class VectorScopeSearchRequest(IngestionModel):
     query_text: str = Field(description="Natural language query to embed once for v1 search.")
     enabled_scopes: list[VectorScopeName] = Field(

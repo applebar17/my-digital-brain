@@ -10,11 +10,17 @@ from my_digital_brain.ai.router import EMBEDDING_TASK, StaticModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, EmbeddingRequest
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.graph.models import NodeSearchResult
-from my_digital_brain.ingestion.contracts import GraphNodeWrite, IngestionResult
+from my_digital_brain.ingestion.contracts import (
+    GraphNodeWrite,
+    IngestionResult,
+    MultiScopeVectorConfig,
+    V1_VECTOR_DIMENSIONS,
+    default_v1_vector_scope_config,
+)
 from my_digital_brain.rag.models import (
     GraphVectorizationResult,
-    MEMORY_DOCUMENTS_COLLECTION,
     VECTOR_STORE_CHROMA,
+    VECTOR_SCOPES_COLLECTION,
     EmbeddingDocument,
     VectorRecordData,
 )
@@ -37,7 +43,8 @@ class GraphVectorizationService:
         vector_record_store: VectorRecordStore,
         model_router: ModelRouter | None = None,
         text_builder: EmbeddingTextBuilder | None = None,
-        collection: str = MEMORY_DOCUMENTS_COLLECTION,
+        collection: str = VECTOR_SCOPES_COLLECTION,
+        vector_config: MultiScopeVectorConfig | None = None,
         vector_store_name: str = VECTOR_STORE_CHROMA,
     ) -> None:
         self.graph_service = graph_service
@@ -47,6 +54,10 @@ class GraphVectorizationService:
         self.model_router = model_router or StaticModelRouter()
         self.text_builder = text_builder or EmbeddingTextBuilder()
         self.collection = collection
+        self.vector_config = vector_config or default_v1_vector_scope_config()
+        self.scoped_collections = {
+            scope.collection for scope in self.vector_config.scopes if scope.enabled
+        }
         self.vector_store_name = vector_store_name
 
     @traceable(name="Graph RAG Vectorize Ingestion Result", run_type="chain")
@@ -117,6 +128,7 @@ class GraphVectorizationService:
             EmbeddingRequest(
                 texts=[document.document for document in documents],
                 model=route.model,
+                dimensions=V1_VECTOR_DIMENSIONS,
                 context=AIRequestContext(
                     purpose="graph_vectorization",
                     source_id=result.source_id,
@@ -242,11 +254,13 @@ class GraphVectorizationService:
     def _archive_existing_records(self, target_id: str) -> int:
         records = self.vector_record_store.list_by_primary_target(
             target_id,
-            collection=self.collection,
+            collection=None,
             include_archived=False,
         )
         archived = 0
         for record in records:
+            if record.collection not in self.scoped_collections:
+                continue
             try:
                 self.vector_store.delete(record.collection, record.vector_id)
             except Exception:
@@ -269,6 +283,7 @@ def _node_writes(write_plan: Any) -> list[GraphNodeWrite]:
         *write_plan.claims_to_create,
         *write_plan.perceptions_to_create,
         *write_plan.relationship_contexts_to_create,
+        *write_plan.memory_logs_to_create,
     ]
 
 
@@ -299,9 +314,11 @@ def _chroma_metadata(document: EmbeddingDocument) -> dict[str, str | int | float
     return {
         "primary_target_id": document.primary_target_id,
         "primary_target_label": document.primary_target_label,
+        "canonical_target_id": document.canonical_target_id or "",
         "related_target_ids": ",".join(document.related_target_ids),
         "source_ids": ",".join(document.source_ids),
         "relationship_ids": ",".join(document.relationship_ids),
+        "hit_role": document.hit_role,
         "embedding_scope": document.embedding_scope,
         "builder_version": document.builder_version,
         "document_checksum": document.document_checksum,

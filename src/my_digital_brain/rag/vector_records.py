@@ -31,12 +31,12 @@ class VectorRecordStore:
                     id=new_uuid(),
                     created_at=now,
                     updated_at=now,
-                    metadata_json={},
                     vector_store=data.vector_store,
                     collection=data.collection,
                     vector_id=data.vector_id,
                     graph_id=data.primary_target_id,
                     source_id=data.source_ids[0] if data.source_ids else None,
+                    metadata_json=_metadata_json(data),
                     embedding_scope=data.embedding_scope,
                     primary_target_id=data.primary_target_id,
                     primary_target_label=data.primary_target_label,
@@ -122,6 +122,7 @@ def _apply_data(record: VectorRecord, data: VectorRecordData, *, updated_at: dat
     record.embedding_scope = data.embedding_scope
     record.primary_target_id = data.primary_target_id
     record.primary_target_label = data.primary_target_label
+    record.metadata_json = _metadata_json(data)
     record.related_target_ids_json = list(data.related_target_ids)
     record.source_ids_json = list(data.source_ids)
     record.relationship_ids_json = list(data.relationship_ids)
@@ -132,6 +133,7 @@ def _apply_data(record: VectorRecord, data: VectorRecordData, *, updated_at: dat
 
 
 def _from_record(record: VectorRecord) -> StoredVectorRecord:
+    metadata = dict(record.metadata_json or {})
     return StoredVectorRecord(
         id=record.id,
         created_at=record.created_at,
@@ -142,9 +144,11 @@ def _from_record(record: VectorRecord) -> StoredVectorRecord:
         embedding_scope=record.embedding_scope or "",
         primary_target_id=record.primary_target_id or record.graph_id or "",
         primary_target_label=record.primary_target_label or "",
+        canonical_target_id=_optional_str(metadata.get("canonical_target_id")),
         related_target_ids=list(record.related_target_ids_json or []),
         source_ids=list(record.source_ids_json or ([record.source_id] if record.source_id else [])),
         relationship_ids=list(record.relationship_ids_json or []),
+        hit_role=_hit_role(metadata.get("hit_role"), record.primary_target_label),
         embedding_model=record.embedding_model,
         builder_version=record.builder_version or "",
         document_checksum=record.document_checksum or "",
@@ -154,3 +158,30 @@ def _from_record(record: VectorRecord) -> StoredVectorRecord:
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _metadata_json(data: VectorRecordData) -> dict[str, str]:
+    metadata: dict[str, str] = {"hit_role": data.hit_role}
+    if data.canonical_target_id:
+        metadata["canonical_target_id"] = data.canonical_target_id
+    return metadata
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _hit_role(value: object, primary_target_label: str | None) -> str:
+    if value in {"domain_node", "context", "memory_log"}:
+        return str(value)
+    if primary_target_label == "MemoryLog":
+        return "memory_log"
+    if primary_target_label in {
+        "Claim",
+        "Perception",
+        "RelationshipContext",
+        "RelationshipState",
+        "ProfileMemory",
+    }:
+        return "context"
+    return "domain_node"

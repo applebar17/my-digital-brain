@@ -14,6 +14,7 @@ from my_digital_brain.graph.models import (
     NodeSearchResult,
     RelationshipResult,
 )
+from my_digital_brain.ingestion.contracts import MultiScopeRetrievalResult
 from my_digital_brain.rag.models import (
     MEMORY_DOCUMENTS_COLLECTION,
     SemanticMemorySearchResult,
@@ -256,31 +257,38 @@ def test_hidden_vector_records_are_excluded_by_default(tmp_path) -> None:
 def test_graph_semantic_search_api_uses_search_dependency(tmp_path) -> None:
     app = FastAPI()
     app.include_router(graph_routes.router)
-    service = StaticSemanticSearchService()
-    app.dependency_overrides[graph_routes.get_semantic_search_service] = lambda: service
     client = TestClient(app)
 
     response = client.get("/graph/search/semantic", params={"query": "Alessandro"})
 
-    assert response.status_code == 200
-    assert response.json()["query"] == "Alessandro"
-    assert service.semantic_queries == ["Alessandro"]
-    assert service.semantic_kwargs[0]["graph_focus"] == "adaptive"
+    assert response.status_code == 404
 
 
 def test_graph_hybrid_search_api_uses_search_dependency() -> None:
     app = FastAPI()
     app.include_router(graph_routes.router)
-    service = StaticSemanticSearchService()
-    app.dependency_overrides[graph_routes.get_semantic_search_service] = lambda: service
     client = TestClient(app)
 
     response = client.get("/graph/search/hybrid", params={"query": "Alessandro", "label": "Person"})
 
+    assert response.status_code == 404
+
+
+def test_graph_vector_scope_search_api_uses_search_dependency() -> None:
+    app = FastAPI()
+    app.include_router(graph_routes.router)
+    service = StaticVectorScopeSearchService()
+    app.dependency_overrides[graph_routes.get_vector_scope_search_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        "/graph/search/vector-scopes",
+        json={"query_text": "Alessandro", "limit_per_scope": 5},
+    )
+
     assert response.status_code == 200
-    assert response.json()["mode"] == "hybrid"
-    assert service.hybrid_queries == [("Alessandro", "Person")]
-    assert service.hybrid_kwargs[0]["graph_focus"] == "adaptive"
+    assert response.json()["query_text"] == "Alessandro"
+    assert service.queries == ["Alessandro"]
 
 
 class FakeSearchVectorStore:
@@ -413,6 +421,15 @@ class StaticSemanticSearchService:
         self.hybrid_queries.append((query, label))
         self.hybrid_kwargs.append(_kwargs)
         return _empty_search_result(query, mode="hybrid")
+
+
+class StaticVectorScopeSearchService:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def search(self, request) -> MultiScopeRetrievalResult:
+        self.queries.append(request.query_text)
+        return MultiScopeRetrievalResult(query_text=request.query_text)
 
 
 def _service(

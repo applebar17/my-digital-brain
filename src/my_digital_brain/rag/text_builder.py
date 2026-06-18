@@ -6,21 +6,15 @@ import re
 from typing import Any
 
 from my_digital_brain.graph.models import NodeSearchResult
-from my_digital_brain.rag.models import EmbeddingDocument, MEMORY_DOCUMENTS_COLLECTION
+from my_digital_brain.ingestion.contracts.vector_scopes import VectorScopeName
+from my_digital_brain.rag.models import EmbeddingDocument, HitRole
 
-SUPPORTED_EMBEDDING_LABELS = frozenset(
-    {
-        "Claim",
-        "Event",
-        "Perception",
-        "RelationshipContext",
-        "RelationshipState",
-        "ProfileMemory",
-        "Person",
-        "Place",
-        "SocialCircle",
-    },
+NODE_SUMMARY_LABELS = frozenset({"Person", "Place", "Event", "SocialCircle"})
+CONTEXT_LABELS = frozenset(
+    {"Claim", "Perception", "RelationshipContext", "RelationshipState", "ProfileMemory"}
 )
+MICRO_LOG_LABELS = frozenset({"MemoryLog"})
+SUPPORTED_EMBEDDING_LABELS = NODE_SUMMARY_LABELS | CONTEXT_LABELS | MICRO_LOG_LABELS
 
 MEANINGFUL_CONTEXT_KEYS = (
     "description",
@@ -47,6 +41,9 @@ class EmbeddingTextBuilder:
     ) -> EmbeddingDocument | None:
         if node.label not in SUPPORTED_EMBEDDING_LABELS:
             return None
+        route = _scope_route(node.label)
+        if route is None:
+            return None
 
         properties = node.properties
         primary_id = _text_value(properties.get("id"))
@@ -69,13 +66,15 @@ class EmbeddingTextBuilder:
 
         return EmbeddingDocument(
             vector_id=_vector_id(embedding_scope, primary_id),
-            collection=MEMORY_DOCUMENTS_COLLECTION,
+            collection=route.collection,
             embedding_scope=embedding_scope,
             primary_target_id=primary_id,
             primary_target_label=node.label,
+            canonical_target_id=_canonical_target_id(node.label, properties),
             related_target_ids=related_ids,
             source_ids=_source_ids(properties, related_nodes or []),
             relationship_ids=list(relationship_ids or []),
+            hit_role=route.hit_role,
             embedding_model=embedding_model,
             builder_version=builder_version,
             document_checksum=_checksum(document),
@@ -186,6 +185,34 @@ class EmbeddingTextBuilder:
             _line("Visibility", properties.get("visibility")),
         )
 
+    def _build_memory_log(
+        self,
+        properties: Mapping[str, Any],
+        related: list[NodeSearchResult],
+    ) -> str | None:
+        text = _first_text(properties, "log_text", "description")
+        if not text:
+            return None
+        host_titles = _titles_for_ids_or_nodes(
+            properties,
+            related,
+            id_keys=("primary_host_target_id", "host_target_ids"),
+        )
+        involved_titles = _titles_for_ids_or_nodes(
+            properties,
+            related,
+            id_keys=("involved_target_ids", "relationship_context_target_ids"),
+        )
+        return _document(
+            _line("Memory log", text),
+            _line("Kind", properties.get("log_kind")),
+            _time_line(properties),
+            _line("Source kind", properties.get("source_kind")),
+            _line("Primary host", host_titles),
+            _line("Involved", involved_titles),
+            _line("Original user wording", properties.get("original_user_words")),
+        )
+
     def _build_person(self, properties: Mapping[str, Any], related: list[NodeSearchResult]) -> str | None:
         if not _has_meaningful_context(properties):
             return None
@@ -270,6 +297,7 @@ def _time_line(properties: Mapping[str, Any]) -> str | None:
             "valid_from",
             "source_time",
             "observed_at",
+            "happened_at",
             "created_at",
         ),
     )
@@ -339,6 +367,25 @@ def _titles_for_labels(nodes: Iterable[NodeSearchResult], labels: set[str]) -> s
     return _list_text(titles)
 
 
+def _titles_for_ids_or_nodes(
+    properties: Mapping[str, Any],
+    nodes: Iterable[NodeSearchResult],
+    *,
+    id_keys: tuple[str, ...],
+) -> str | None:
+    ids: set[str] = set()
+    for key in id_keys:
+        ids.update(_ids_from_value(properties.get(key)))
+    titles: list[str] = []
+    for node in nodes:
+        node_id = _node_id(node)
+        if not ids or node_id in ids:
+            title = _node_title(node)
+            if title:
+                titles.append(title)
+    return _list_text(titles)
+
+
 def _node_title(node: NodeSearchResult) -> str | None:
     return _first_text(
         node.properties,
@@ -381,6 +428,11 @@ def _related_ids_from_properties(properties: Mapping[str, Any]) -> list[str]:
         "relationship_context_ids",
         "perception_ids",
         "claim_ids",
+        "primary_host_target_id",
+        "host_target_ids",
+        "involved_target_ids",
+        "relationship_context_target_ids",
+        "media_refs",
     )
     values: list[str] = []
     for key in keys:
@@ -421,4 +473,42 @@ def _checksum(document: str) -> str:
 
 
 def _vector_id(embedding_scope: str, primary_target_id: str) -> str:
-    return f"{MEMORY_DOCUMENTS_COLLECTION}:{embedding_scope}:{primary_target_id}"
+    route = _scope_route_from_embedding_scope(embedding_scope)
+    collection = route.collection if route is not None else "unknown_scope"
+    return f"{collection}:{embedding_scope}:{primary_target_id}"
+
+
+class _ScopeRoute:
+    def __init__(self, *, collection: str, hit_role: HitRole) -> None:
+        self.collection = collection
+        self.hit_role = hit_role
+
+
+def _scope_route(label: str) -> _ScopeRoute | None:
+    if label in NODE_SUMMARY_LABELS:
+        return _ScopeRoute(
+            collection=VectorScopeName.MEMORY_NODE_SUMMARIES.value,
+            hit_role="domain_node",
+        )
+    if label in CONTEXT_LABELS:
+        return _ScopeRoute(
+            collection=VectorScopeName.MEMORY_CONTEXTS.value,
+            hit_role="context",
+        )
+    if label in MICRO_LOG_LABELS:
+        return _ScopeRoute(
+            collection=VectorScopeName.MEMORY_MICRO_LOGS.value,
+            hit_role="memory_log",
+        )
+    return None
+
+
+def _scope_route_from_embedding_scope(embedding_scope: str) -> _ScopeRoute | None:
+    label = "".join(part.title() for part in embedding_scope.removesuffix("_summary").split("_"))
+    return _scope_route(label)
+
+
+def _canonical_target_id(label: str, properties: Mapping[str, Any]) -> str | None:
+    if label == "MemoryLog":
+        return _text_value(properties.get("primary_host_target_id"))
+    return None

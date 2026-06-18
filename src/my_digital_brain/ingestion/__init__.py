@@ -86,6 +86,7 @@ from my_digital_brain.ingestion.contracts import (
     VectorScopeHitRef,
     VectorScopeName,
     VectorScopeSearchRequest,
+    default_v1_vector_scope_config,
 )
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
@@ -223,6 +224,7 @@ __all__ = [
     "VectorScopeName",
     "VectorScopeSearchRequest",
     "WholeSourceGraphContextPackBuilder",
+    "default_v1_vector_scope_config",
     "build_entity_planning_context",
     "build_missing_entity_planning_context",
     "build_relationship_planning_context",

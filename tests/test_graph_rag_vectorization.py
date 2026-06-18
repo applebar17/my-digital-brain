@@ -8,7 +8,6 @@ from my_digital_brain.ai.providers.fake import FakeAIProvider
 from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult
 from my_digital_brain.ingestion.contracts import GraphNodeWrite, GraphWritePlan, IngestionResult
 from my_digital_brain.ingestion.enums import IngestionStatus
-from my_digital_brain.rag.models import MEMORY_DOCUMENTS_COLLECTION
 from my_digital_brain.rag.vector_records import VectorRecordStore
 from my_digital_brain.rag.vectorization import GraphVectorizationService
 from my_digital_brain.storage.relational import RelationalSessionProvider
@@ -45,9 +44,11 @@ def test_vectorization_hydrates_graph_embeds_and_persists_vector_record(tmp_path
     assert result.status == "ok"
     assert result.documents_built == 1
     assert result.embeddings_upserted == 1
-    assert vector_store.upserts[0]["collection"] == MEMORY_DOCUMENTS_COLLECTION
-    assert vector_store.upserts[0]["vector_id"] == "memory_documents:claim_summary:claim-1"
+    assert vector_store.upserts[0]["collection"] == "memory_contexts"
+    assert vector_store.upserts[0]["vector_id"] == "memory_contexts:claim_summary:claim-1"
+    assert len(vector_store.upserts[0]["embedding"]) == 512
     assert vector_store.upserts[0]["metadata"]["primary_target_id"] == "claim-1"
+    assert vector_store.upserts[0]["metadata"]["hit_role"] == "context"
     assert "Claim: Alessandro and I were close as teenagers." in vector_store.upserts[0]["document"]
     records = record_store.list_by_primary_target("claim-1")
     assert records[0].primary_target_label == "Claim"
@@ -98,7 +99,7 @@ def test_vectorization_archives_existing_record_when_node_is_archived(tmp_path) 
     assert result.status == "skipped"
     assert result.archived_records == 1
     assert vector_store.deleted == [
-        (MEMORY_DOCUMENTS_COLLECTION, "memory_documents:claim_summary:claim-1")
+        ("memory_contexts", "memory_contexts:claim_summary:claim-1")
     ]
     assert record_store.list_by_primary_target("claim-1") == []
     assert record_store.list_by_primary_target("claim-1", include_archived=True)[0].lifecycle_state == "archived"
@@ -146,6 +147,54 @@ def test_relationship_state_vectorizes_only_when_substantive(tmp_path) -> None:
 
     assert result.status == "ok"
     assert result.documents_built == 1
+    assert service.vector_store.upserts[0]["collection"] == "memory_contexts"
+
+
+def test_memory_log_vectorizes_to_micro_log_scope(tmp_path) -> None:
+    graph = FakeGraphService(
+        nodes=[
+            _node(
+                "MemoryLog",
+                "log-1",
+                log_text="Marco said yesterday that he changed job.",
+                log_kind="update",
+                source_kind="user_stated",
+                primary_host_target_id="person-1",
+                host_target_ids=["person-1"],
+                involved_target_ids=["place-1"],
+                source_ids=["source-1"],
+            ),
+            _node("Person", "person-1", display_name="Marco"),
+            _node("Place", "place-1", name="Turin"),
+        ],
+        relationships=[
+            RelationshipResult(
+                type="HAS_MEMORY_LOG",
+                from_id="person-1",
+                to_id="log-1",
+                properties={"id": "rel-log-1", "primary": True},
+            ),
+            RelationshipResult(
+                type="INVOLVES",
+                from_id="log-1",
+                to_id="place-1",
+                properties={"id": "rel-log-2"},
+            ),
+        ],
+    )
+    vector_store = FakeVectorStore()
+    record_store = _record_store(tmp_path)
+    service = _service(graph, vector_store, record_store)
+
+    result = service.vectorize_ingestion_result(_written_result("log-1", label="MemoryLog"))
+
+    assert result.status == "ok"
+    assert vector_store.upserts[0]["collection"] == "memory_micro_logs"
+    assert vector_store.upserts[0]["vector_id"] == "memory_micro_logs:memory_log_summary:log-1"
+    assert vector_store.upserts[0]["metadata"]["canonical_target_id"] == "person-1"
+    records = record_store.list_by_primary_target("log-1")
+    assert records[0].canonical_target_id == "person-1"
+    assert records[0].hit_role == "memory_log"
 
 
 class FakeVectorStore:
@@ -228,6 +277,8 @@ def _written_result(target_id: str, *, label: str = "Claim") -> IngestionResult:
         plan_kwargs["perceptions_to_create"] = [write]
     elif label == "RelationshipContext":
         plan_kwargs["relationship_contexts_to_create"] = [write]
+    elif label == "MemoryLog":
+        plan_kwargs["memory_logs_to_create"] = [write]
     else:
         plan_kwargs["nodes_to_create"] = [write]
     return IngestionResult(

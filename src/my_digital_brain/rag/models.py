@@ -8,7 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from my_digital_brain.graph.models import GraphContextPackage, GraphViewNode, GraphViewResult
 
 MEMORY_DOCUMENTS_COLLECTION = "memory_documents"
+VECTOR_SCOPES_COLLECTION = "vector_scopes"
 VECTOR_STORE_CHROMA = "chroma"
+HitRole = Literal["domain_node", "context", "memory_log"]
 
 
 class EmbeddingDocument(BaseModel):
@@ -19,9 +21,11 @@ class EmbeddingDocument(BaseModel):
     embedding_scope: str
     primary_target_id: str
     primary_target_label: str
+    canonical_target_id: str | None = None
     related_target_ids: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
+    hit_role: HitRole = "domain_node"
     embedding_model: str | None = None
     builder_version: str
     document_checksum: str
@@ -56,9 +60,11 @@ class VectorRecordData(BaseModel):
     embedding_scope: str
     primary_target_id: str
     primary_target_label: str
+    canonical_target_id: str | None = None
     related_target_ids: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
+    hit_role: HitRole = "domain_node"
     embedding_model: str | None = None
     builder_version: str
     document_checksum: str
@@ -78,9 +84,11 @@ class VectorRecordData(BaseModel):
             embedding_scope=document.embedding_scope,
             primary_target_id=document.primary_target_id,
             primary_target_label=document.primary_target_label,
+            canonical_target_id=document.canonical_target_id,
             related_target_ids=document.related_target_ids,
             source_ids=document.source_ids,
             relationship_ids=document.relationship_ids,
+            hit_role=document.hit_role,
             embedding_model=document.embedding_model,
             builder_version=document.builder_version,
             document_checksum=document.document_checksum,

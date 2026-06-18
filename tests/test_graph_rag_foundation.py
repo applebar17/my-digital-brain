@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 
 from my_digital_brain.graph.models import NodeSearchResult
-from my_digital_brain.rag.models import MEMORY_DOCUMENTS_COLLECTION, VectorRecordData
+from my_digital_brain.rag.models import VectorRecordData
 from my_digital_brain.rag.text_builder import EmbeddingTextBuilder
 from my_digital_brain.rag.vector_records import VectorRecordStore
 from my_digital_brain.storage.relational import RelationalSessionProvider
@@ -27,8 +27,9 @@ def test_claim_embedding_document_is_low_noise_and_deterministic() -> None:
     document = builder.build_for_node(claim, embedding_model="text-embedding-3-small")
 
     assert document is not None
-    assert document.collection == MEMORY_DOCUMENTS_COLLECTION
+    assert document.collection == "memory_contexts"
     assert document.embedding_scope == "claim_summary"
+    assert document.hit_role == "context"
     assert document.primary_target_id == "claim-1"
     assert document.primary_target_label == "Claim"
     assert document.source_ids == ["source-1"]
@@ -141,20 +142,60 @@ def test_checksum_changes_when_informative_text_changes() -> None:
     assert first is not None
     assert second is not None
     assert first.vector_id == second.vector_id
+    assert first.collection == "memory_contexts"
     assert first.document_checksum != second.document_checksum
+
+
+def test_memory_log_embedding_document_is_informational_and_scoped() -> None:
+    builder = EmbeddingTextBuilder()
+    log = _node(
+        "MemoryLog",
+        {
+            "id": "log-1",
+            "log_text": "Marco said yesterday that he changed job.",
+            "log_kind": "update",
+            "source_kind": "user_stated",
+            "happened_at": "yesterday",
+            "primary_host_target_id": "person-1",
+            "host_target_ids": ["person-1"],
+            "involved_target_ids": ["place-1"],
+            "source_ids": ["source-1"],
+            "original_user_words": "mi ha detto che ha cambiato lavoro",
+            "metadata": {"raw_payload": "must not be embedded"},
+        },
+    )
+    person = _node("Person", {"id": "person-1", "display_name": "Marco"})
+    place = _node("Place", {"id": "place-1", "name": "Turin"})
+
+    document = builder.build_for_node(log, related_nodes=[person, place])
+
+    assert document is not None
+    assert document.collection == "memory_micro_logs"
+    assert document.vector_id == "memory_micro_logs:memory_log_summary:log-1"
+    assert document.primary_target_id == "log-1"
+    assert document.primary_target_label == "MemoryLog"
+    assert document.canonical_target_id == "person-1"
+    assert document.related_target_ids == ["person-1", "place-1"]
+    assert document.hit_role == "memory_log"
+    assert "Memory log: Marco said yesterday that he changed job." in document.document
+    assert "Kind: update." in document.document
+    assert "Source kind: user_stated." in document.document
+    assert "raw_payload" not in document.document
 
 
 def test_vector_record_store_upserts_and_lists_by_primary_target(tmp_path) -> None:
     store = _store(tmp_path)
     data = VectorRecordData(
-        collection=MEMORY_DOCUMENTS_COLLECTION,
-        vector_id="memory_documents:claim_summary:claim-1",
+        collection="memory_contexts",
+        vector_id="memory_contexts:claim_summary:claim-1",
         embedding_scope="claim_summary",
         primary_target_id="claim-1",
         primary_target_label="Claim",
+        canonical_target_id="person-1",
         related_target_ids=["person-1"],
         source_ids=["source-1"],
         relationship_ids=["relationship-1"],
+        hit_role="context",
         embedding_model="text-embedding-3-small",
         builder_version="claim_summary.v1",
         document_checksum="sha256:first",
@@ -167,6 +208,8 @@ def test_vector_record_store_upserts_and_lists_by_primary_target(tmp_path) -> No
     assert created.id == updated.id
     assert updated.document_checksum == "sha256:second"
     assert len(records) == 1
+    assert records[0].canonical_target_id == "person-1"
+    assert records[0].hit_role == "context"
     assert records[0].related_target_ids == ["person-1"]
     assert records[0].source_ids == ["source-1"]
     assert records[0].relationship_ids == ["relationship-1"]
@@ -175,7 +218,8 @@ def test_vector_record_store_upserts_and_lists_by_primary_target(tmp_path) -> No
 def test_vector_record_store_hides_archived_by_default(tmp_path) -> None:
     store = _store(tmp_path)
     data = VectorRecordData(
-        vector_id="memory_documents:event_summary:event-1",
+        collection="memory_node_summaries",
+        vector_id="memory_node_summaries:event_summary:event-1",
         embedding_scope="event_summary",
         primary_target_id="event-1",
         primary_target_label="Event",

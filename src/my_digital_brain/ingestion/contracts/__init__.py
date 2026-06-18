@@ -103,6 +103,7 @@ from my_digital_brain.ingestion.contracts.vector_scopes import (
     VectorScopeHitRef,
     VectorScopeName,
     VectorScopeSearchRequest,
+    default_v1_vector_scope_config,
 )
 from my_digital_brain.ingestion.contracts.write_plan import (
     GraphNodeWrite,
@@ -200,6 +201,7 @@ __all__ = [
     "VectorScopeHitRef",
     "VectorScopeName",
     "VectorScopeSearchRequest",
+    "default_v1_vector_scope_config",
     "ValidationIssue",
     "ValidationResult",
 ]
