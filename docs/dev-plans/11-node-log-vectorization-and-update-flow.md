@@ -638,24 +638,72 @@ deterministic guardrails.
 Baseline process:
 
 ```text
-conversation state
-  -> model detects memory update intent
-  -> model calls graph update tool
-  -> update tool runs an internal state/process
-  -> process searches graph context
-  -> process reasons about target and update kind
-  -> process asks clarification if target/update is ambiguous
-  -> process builds NodeUpdatePlan
-  -> deterministic backend validates plan
-  -> backend writes MemoryLogs and graph changes
-  -> backend refreshes vectors/summaries as configured
-  -> tool returns compact structured output
-  -> conversation state appends tool output and continues
+conversation state or planning pipeline
+  -> update intent is routed to the graph update agentic state
+  -> update state receives source text, guidelines, and optional target/context hints
+  -> update state retrieves candidate nodes and surrounding context
+  -> update state reasons about target and update intent
+  -> update state calls deterministic graph read/write tools with structured args
+  -> each tool validates and directly performs the intended action when valid
+  -> write tools deterministically refresh affected vector scopes after mutation
+  -> manageable tool failures return structured errors to the update state
+  -> update state adjusts and continues when recovery is possible
+  -> tool returns compact structured output to the invoking state
+  -> invoking state appends tool output and continues
 ```
 
-The model may manage the conversation flow and choose tools, but it must not
-directly write graph records. Mutation remains behind backend tools,
-validators, write plans, and idempotency.
+The update process is an agentic state, not a single deterministic function.
+It can be invoked in two ways:
+
+- non-deterministically, by exposing the graph update tool in another agent or
+  process toolbox and letting that agent call it when needed;
+- deterministically, when a planner emits an update action that should be
+  handled by the graph update state.
+
+The model may manage the update sequence and choose tool calls, but it must not
+directly write graph records. Mutation remains behind deterministic backend
+tools, validators, write plans, and idempotency. Wave 5 intentionally avoids a
+separate staging/commit layer: when the update state calls a write tool, that
+tool validates its arguments, directly performs the intended action, and
+deterministically refreshes affected vector scopes. Vector refresh is not a
+separate reasoning step chosen by the model; it is backend behavior attached to
+creation/update tools. If a manageable validation or execution failure occurs,
+the tool returns structured error details to the update state so the model can
+recover with another tool call.
+
+Tool calls should use a shared scalable output contract so invoking states can
+handle success, recoverable failures, blocking failures, and clarification needs
+consistently across graph update tooling and future toolboxes. The common shape
+should include status, user-facing summary, machine-readable error code when
+applicable, created/updated record refs, affected graph ids, refreshed vector
+scopes, diagnostics, and suggested next action for the invoking state.
+
+`NodeUpdatePlanDraft` remains useful as a planning, trace, or compact batch
+artifact, but it is not the only inner execution mechanism. The inner update
+loop can call deterministic tools directly for specific actions such as
+creating a `MemoryLog`, patching a node field, creating relationship context, or
+refreshing affected vectors.
+
+Wave 5 does not add a user confirmation gate. Valid update actions are
+auto-executed by the backend tools. If the update state cannot safely infer the
+target or intended change, it may return a clarification-needed result to the
+invoking agent/state, but it should not ask for approval after a valid action is
+already determined.
+
+Physical deletion is deferred. Future deletion or merge behavior should be
+handled through explicit lifecycle/supersession policy before physical deletes
+are exposed to agentic tooling.
+
+Planner integration should stay lightweight. The planner should identify the
+proper context and desired work at a conceptual level, then invoke the graph
+update state with source text, guidelines, and optional target/context hints. It
+should not need to know low-level graph write tool schemas.
+
+Validation in Wave 5 is strict structurally, not judgmental semantically.
+Backend tools block missing required fields, invalid IDs, wrong types, malformed
+values, unsupported labels, and invalid relationship/link shapes. They do not
+attempt to judge whether the user-provided content is "true" beyond enforcing
+schema, lifecycle, idempotency, and graph consistency rules.
 
 The tool output should include:
 
@@ -686,6 +734,8 @@ Planned lightweight contracts:
 - `VectorScopeSearchRequest`
 - `VectorScopeSearchResult`
 - `MultiScopeRetrievalResult`
+- `ToolOutput` / `ToolStatus` shared by graph update tools and future agentic
+  toolboxes
 
 Keep LLM-facing drafts small and field-described. Backend-enriched records add
 IDs, provenance, lifecycle, validation status, and persistence metadata.
@@ -831,11 +881,41 @@ ProfileMemory hit
 
 ### Wave 5: Agentic Update Tooling
 
-- Add graph update tool/state for node updates.
-- Use graph retrieval to resolve target candidates.
-- Produce `NodeUpdatePlanDraft`.
-- Ask clarification when target or update intent is ambiguous.
-- Execute validated `MemoryLog` creation, safe patches, and vector refresh.
+- Add a graph update agentic state for node and memory updates.
+- Use `update_memory_graph` as the canonical production tool name.
+- Remove the legacy correction-specific production route/tooling from active
+  agentic state configuration.
+- Expose the graph update state through a callable tool so other agents and
+  processes can invoke it non-deterministically when their LLM chooses the tool.
+- Allow deterministic planner actions to invoke the same update state when a
+  structured plan step requires graph updates.
+- Keep planner handoff lightweight: pass source text, invocation guidelines,
+  desired conceptual work, and optional target/context hints into the update
+  state without requiring the planner to know low-level graph write schemas.
+- Use graph retrieval to resolve target candidates and surrounding context.
+- Let the update state choose a sequence of deterministic graph tools to call.
+- Execute validated `MemoryLog` creation, graph node creation, safe patches,
+  non-destructive relationship/context updates, `RelationshipState` creation,
+  and vector refresh directly on each tool invocation. Do not add a separate
+  staging/commit layer in Wave 5.
+- Treat vector refresh as deterministic post-write behavior owned by creation
+  and update tools, not as a separate model-selected action.
+- Add a reusable `ToolOutput` / `ToolStatus` contract for update tools so
+  success, recoverable failure, blocking failure, affected records, refreshed
+  vector scopes, diagnostics, and suggested next action are returned
+  consistently.
+- Return structured validation/execution errors to the update state so it can
+  recover with another tool call when the failure is manageable.
+- Keep validation structurally strict: block missing required fields, invalid
+  formats or types, unsupported graph shapes, and consistency violations, but do
+  not attempt semantic truth judgment over user-provided content.
+- Use `NodeUpdatePlanDraft` as an optional planning, trace, or batch artifact,
+  not as the only execution path.
+- Auto-execute valid update actions in Wave 5; do not add a user confirmation
+  gate. Return clarification-needed only when the target or update intent cannot
+  be safely inferred.
+- Defer physical deletion, merge, archive-as-delete behavior, and destructive
+  lifecycle tooling to a future TODO/policy wave.
 - Update reasoning/planning/extraction prompts with domain-node versus
   `MemoryLog` definitions, rules, and few-shot examples.
 - Return compact tool output to the invoking conversation state.

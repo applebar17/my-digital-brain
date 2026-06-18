@@ -66,6 +66,21 @@ class GraphVectorizationService:
             return GraphVectorizationResult(status="skipped", collection=self.collection)
 
         target_ids = self._target_ids_from_ingestion_result(result)
+        return self.vectorize_targets(
+            target_ids,
+            source_id=result.source_id,
+            ingestion_id=result.ingestion_id,
+        )
+
+    @traceable(name="Graph RAG Vectorize Targets", run_type="chain")
+    def vectorize_targets(
+        self,
+        target_ids: Iterable[str],
+        *,
+        source_id: str | None = None,
+        ingestion_id: str | None = None,
+    ) -> GraphVectorizationResult:
+        target_ids = _dedupe([str(target_id) for target_id in target_ids if target_id])
         documents: list[EmbeddingDocument] = []
         skipped_targets: list[str] = []
         archived_records = 0
@@ -75,8 +90,8 @@ class GraphVectorizationService:
             EMBEDDING_TASK,
             AIRequestContext(
                 purpose="graph_vectorization",
-                source_id=result.source_id,
-                metadata={"ingestion_id": result.ingestion_id},
+                source_id=source_id,
+                metadata={"ingestion_id": ingestion_id},
             ),
         )
 
@@ -131,9 +146,9 @@ class GraphVectorizationService:
                 dimensions=V1_VECTOR_DIMENSIONS,
                 context=AIRequestContext(
                     purpose="graph_vectorization",
-                    source_id=result.source_id,
+                    source_id=source_id,
                     metadata={
-                        "ingestion_id": result.ingestion_id,
+                        "ingestion_id": ingestion_id,
                         "collection": self.collection,
                     },
                 ),
@@ -169,8 +184,8 @@ class GraphVectorizationService:
             logger,
             "rag.vectorization.done",
             component="rag",
-            source_id=result.source_id,
-            ingestion_id=result.ingestion_id,
+            source_id=source_id,
+            ingestion_id=ingestion_id,
             target_count=len(target_ids),
             documents_built=len(documents),
             embeddings_upserted=upserted,

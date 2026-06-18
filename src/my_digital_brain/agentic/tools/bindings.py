@@ -1,15 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from my_digital_brain.ai.models import ToolError, ToolResult
-from my_digital_brain.agentic.contexts import CorrectionProposalContext
-from my_digital_brain.agentic.enums import AgenticStateId, ConfirmationRiskLevel, CorrectionAction
+from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.core.ids import new_uuid
+
+
+GRAPH_UPDATE_CREATABLE_LABELS = {
+    "Person",
+    "Event",
+    "Place",
+    "Organization",
+    "Object",
+    "Animal",
+    "SocialCircle",
+    "Topic",
+    "Source",
+    "Claim",
+    "Perception",
+    "RelationshipContext",
+    "ProfileMemory",
+    "ContactPoint",
+    "ExternalReference",
+    "RelationshipState",
+    "ChangeRecord",
+    "MemoryLog",
+    "MediaAsset",
+    "ContradictionRecord",
+}
+
+GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = {
+    "MERGED_NODE",
+    "CANONICAL_NODE",
+    "MERGED_INTO",
+}
 
 
 @dataclass(slots=True)
@@ -18,6 +48,8 @@ class AgenticToolExecutionContext:
     backend_facade: Any | None = None
     graph_service: Any | None = None
     ingestion_service: Any | None = None
+    semantic_search_service: Any | None = None
+    vectorization_service: Any | None = None
     chat_store: Any | None = None
     session_id: str | None = None
     channel: str = "web"
@@ -105,30 +137,37 @@ class AgenticToolBindings:
             return request
         return self._facade_call("query_memory_context", request)
 
-    def _handle_propose_memory_correction(
+    def _handle_update_memory_graph(
         self,
-        correction_text: str,
-        target_id: str | None = None,
+        source_text: str,
+        guidelines: str | None = None,
+        desired_work: str | None = None,
+        target_ids: list[str] | None = None,
+        source_refs: list[str] | None = None,
+        pending_process_policy: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
+        arguments = {
+            "source_text": source_text,
+            "guidelines": guidelines
+            or "Update the memory graph using deterministic graph tools.",
+            "desired_work": desired_work,
+            "target_ids": target_ids or [],
+            "source_refs": source_refs or [],
+            "pending_process_policy": pending_process_policy,
+            "metadata": metadata or {},
+        }
         if self._is_handoff_state():
             return _handoff_result(
-                "propose_memory_correction",
-                "correction_intake",
-                {
-                    "correction_text": correction_text,
-                    "target_id": target_id,
-                    "metadata": metadata or {},
-                },
-                output="Memory correction handoff requested.",
+                "update_memory_graph",
+                "graph_update",
+                arguments,
+                output="Graph update handoff requested.",
             )
-        request = self._chat_request(
-            correction_text,
-            metadata={"target_id": target_id, **(metadata or {})},
-        )
+        request = self._chat_request(source_text, metadata=arguments)
         if isinstance(request, ToolResult):
             return request
-        return self._facade_call("propose_memory_correction", request)
+        return self._facade_call("update_memory_graph", request)
 
     def _handle_get_conversation_status(
         self,
@@ -553,97 +592,421 @@ class AgenticToolBindings:
             lambda graph: graph.get_relationship_states(context_id, limit=limit),
         )
 
-    def _handle_resolve_correction_target(
+    def _handle_resolve_graph_update_targets(
         self,
-        correction_text: str,
-        target_id: str | None = None,
+        query: str,
+        target_ids: list[str] | None = None,
         limit: int = 5,
     ) -> ToolResult:
         graph = self.context.graph_service
         if graph is None:
-            return _missing_dependency("resolve_correction_target", "graph_service")
+            return _update_tool_error(
+                "resolve_graph_update_targets",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
         try:
-            if target_id:
-                target = graph.get_node(target_id)
-                return ToolResult(
-                    status="ok",
-                    output="Correction target resolved.",
+            explicit_targets = []
+            for target_id in target_ids or []:
+                explicit_targets.append(graph.get_node(str(target_id)))
+            if explicit_targets:
+                return _update_tool_result(
+                    "resolve_graph_update_targets",
+                    summary="Explicit graph update targets resolved.",
+                    updated_refs=[],
+                    affected_graph_ids=[
+                        str(target.properties["id"]) for target in explicit_targets
+                    ],
                     data={
-                        "operation": "resolve_correction_target",
-                        "target": _serialize(target),
+                        "targets": _serialize(explicit_targets),
                         "requires_clarification": False,
                     },
                 )
-            matches = graph.search_nodes(query=correction_text, limit=limit)
-            serialized = _serialize(matches)
-            return ToolResult(
-                status="ok",
-                output="Correction target candidates retrieved.",
+
+            semantic = self.context.semantic_search_service or getattr(
+                self.context.backend_facade,
+                "semantic_search_service",
+                None,
+            )
+            candidates: list[Any] = []
+            if semantic is not None:
+                try:
+                    if hasattr(semantic, "search_semantic"):
+                        result = semantic.search_semantic(query, limit=limit)
+                    else:
+                        result = semantic.search(query=query, limit=limit)
+                    for hit in getattr(result, "hits", [])[:limit]:
+                        target_id = getattr(hit, "display_target_id", None) or getattr(
+                            hit,
+                            "target_id",
+                            None,
+                        )
+                        if target_id:
+                            candidates.append(graph.get_node(str(target_id)))
+                except Exception:
+                    candidates = []
+            if not candidates:
+                candidates = graph.search_nodes(query=query, limit=limit)
+            candidate_ids = [
+                str(candidate.properties["id"])
+                for candidate in candidates
+                if getattr(candidate, "properties", None)
+            ]
+            return _update_tool_result(
+                "resolve_graph_update_targets",
+                summary="Graph update target candidates retrieved.",
+                affected_graph_ids=candidate_ids,
                 data={
-                    "operation": "resolve_correction_target",
-                    "candidates": serialized,
-                    "requires_clarification": len(serialized) != 1,
+                    "candidates": _serialize(candidates),
+                    "requires_clarification": len(candidate_ids) != 1,
                 },
+                suggested_next_action=(
+                    "Use the resolved target id in write tools, or ask clarification if ambiguous."
+                ),
             )
         except Exception as exc:
-            return _exception_result("resolve_correction_target", exc)
+            return _update_exception_result("resolve_graph_update_targets", exc)
 
-    def _handle_build_correction_proposal(
+    def _handle_create_memory_log(
         self,
-        correction_text: str,
-        target_id: str,
-        reason: str,
-        target_label: str | None = None,
-        field_path: str | None = None,
-        current_value: dict[str, Any] | None = None,
-        proposed_value: dict[str, Any] | None = None,
-        risk_level: str | None = None,
+        log_text: str,
+        host_target_ids: list[str],
+        primary_host_target_id: str | None = None,
+        involved_target_ids: list[str] | None = None,
+        relationship_context_target_ids: list[str] | None = None,
+        media_refs: list[str] | None = None,
+        log_kind: str | None = None,
+        source_kind: str | None = None,
+        happened_at: str | None = None,
     ) -> ToolResult:
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                "create_memory_log",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        host_ids = [str(value) for value in host_target_ids if value]
+        if not host_ids:
+            return _update_tool_error(
+                "create_memory_log",
+                "missing_host_target",
+                "MemoryLog creation requires at least one host target.",
+                "Resolve a target node first, then call create_memory_log with host_target_ids.",
+                retryable=True,
+                details={"host_target_ids": host_target_ids},
+            )
+        if len(host_ids) > 1 and not primary_host_target_id:
+            return _update_tool_error(
+                "create_memory_log",
+                "missing_primary_host",
+                "MemoryLog with multiple hosts requires primary_host_target_id.",
+                "Select the main host target and retry.",
+                retryable=True,
+                details={"host_target_ids": host_ids},
+            )
+        primary_host = primary_host_target_id or host_ids[0]
+        if primary_host not in host_ids:
+            return _update_tool_error(
+                "create_memory_log",
+                "invalid_primary_host",
+                "primary_host_target_id must be one of host_target_ids.",
+                "Retry with a primary_host_target_id included in host_target_ids.",
+                retryable=True,
+                details={"primary_host_target_id": primary_host, "host_target_ids": host_ids},
+            )
         try:
-            proposal = CorrectionProposalContext(
-                correction_text=correction_text,
-                action=CorrectionAction.PATCH_NODE,
-                target_id=target_id,
-                target_label=target_label,
-                field_path=field_path,
-                current_value=current_value,
-                proposed_value=proposed_value,
-                reason=reason,
-                requires_confirmation=True,
-                risk_level=risk_level or ConfirmationRiskLevel.MEDIUM,
+            primary_node = graph.get_node(primary_host)
+            for target_id in [
+                *host_ids,
+                *(involved_target_ids or []),
+                *(relationship_context_target_ids or []),
+            ]:
+                graph.get_node(str(target_id))
+            properties = {
+                "log_text": log_text,
+                "log_kind": log_kind,
+                "source_kind": source_kind or "graph_update",
+                "happened_at": happened_at,
+                "primary_host_target_id": primary_host,
+                "primary_host_target_label": primary_node.label,
+                "host_target_ids": host_ids,
+                "involved_target_ids": list(involved_target_ids or []),
+                "relationship_context_target_ids": list(relationship_context_target_ids or []),
+                "media_refs": list(media_refs or []),
+            }
+            log = graph.upsert_node("MemoryLog", _drop_none(properties))
+            log_id = str(log.properties["id"])
+            for host_id in host_ids:
+                graph.upsert_relationship(
+                    "HAS_MEMORY_LOG",
+                    host_id,
+                    log_id,
+                    {"primary": host_id == primary_host, "role": "host"},
+                )
+            for involved_id in involved_target_ids or []:
+                graph.upsert_relationship("INVOLVES", log_id, str(involved_id), {})
+            for context_id in relationship_context_target_ids or []:
+                graph.upsert_relationship(
+                    "UPDATES_RELATIONSHIP",
+                    log_id,
+                    str(context_id),
+                    {},
+                )
+            refreshed = self._refresh_vectors(
+                "create_memory_log",
+                [log_id, *host_ids, *(involved_target_ids or []), *(relationship_context_target_ids or [])],
             )
-        except ValidationError as exc:
-            return _tool_error(
-                "build_correction_proposal",
-                "invalid_correction_proposal",
-                "Correction proposal arguments failed validation.",
-                "Provide target_id, correction_text, and a grounded reason.",
-                details={"errors": exc.errors()},
+            return _update_tool_result(
+                "create_memory_log",
+                summary="MemoryLog created and linked.",
+                created_refs=[log_id],
+                affected_graph_ids=[
+                    log_id,
+                    *host_ids,
+                    *(involved_target_ids or []),
+                    *(relationship_context_target_ids or []),
+                ],
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={"memory_log": _serialize(log)},
             )
-        return ToolResult(
-            status="ok",
-            output="Correction proposal built. It still requires user confirmation.",
-            data={"operation": "build_correction_proposal", "proposal": _serialize(proposal)},
-        )
+        except Exception as exc:
+            return _update_exception_result("create_memory_log", exc)
 
-    def _handle_request_user_confirmation(
+    def _handle_create_graph_node(self, label: str, properties_json: str) -> ToolResult:
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                "create_graph_node",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        if label not in GRAPH_UPDATE_CREATABLE_LABELS:
+            return _update_tool_error(
+                "create_graph_node",
+                "graph_update_label_not_allowed",
+                f"Graph update tools cannot create label '{label}' in Wave 5 v1.",
+                "Use a supported non-destructive label or defer merge/destructive work.",
+                retryable=False,
+                details={"label": label},
+            )
+        properties = _parse_json_object("create_graph_node", properties_json)
+        if isinstance(properties, ToolResult):
+            return properties
+        lifecycle_state = properties.get("lifecycle_state")
+        if lifecycle_state in {"archived", "deleted"}:
+            return _update_tool_error(
+                "create_graph_node",
+                "destructive_lifecycle_not_allowed",
+                "Wave 5 graph update tools do not allow archive/delete lifecycle states.",
+                "Create active/non-destructive graph records only.",
+                retryable=False,
+                details={"lifecycle_state": lifecycle_state},
+            )
+        try:
+            node = graph.upsert_node(label, properties)
+            node_id = str(node.properties["id"])
+            refreshed = self._refresh_vectors("create_graph_node", [node_id])
+            return _update_tool_result(
+                "create_graph_node",
+                summary=f"{label} node created.",
+                created_refs=[node_id],
+                affected_graph_ids=[node_id],
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={"node": _serialize(node)},
+            )
+        except Exception as exc:
+            return _update_exception_result("create_graph_node", exc)
+
+    def _handle_patch_graph_node(self, node_id: str, properties_json: str) -> ToolResult:
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                "patch_graph_node",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        properties = _parse_json_object("patch_graph_node", properties_json)
+        if isinstance(properties, ToolResult):
+            return properties
+        lifecycle_state = properties.get("lifecycle_state")
+        if lifecycle_state in {"archived", "deleted"}:
+            return _update_tool_error(
+                "patch_graph_node",
+                "destructive_lifecycle_not_allowed",
+                "Wave 5 graph update tools do not allow archive/delete lifecycle transitions.",
+                "Use a non-destructive patch or defer deletion/merge work.",
+                retryable=False,
+                details={"lifecycle_state": lifecycle_state},
+            )
+        try:
+            node = graph.patch_node(node_id, properties)
+            refreshed = self._refresh_vectors("patch_graph_node", [node_id])
+            return _update_tool_result(
+                "patch_graph_node",
+                summary="Graph node patched.",
+                updated_refs=[node_id],
+                affected_graph_ids=[node_id],
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={"node": _serialize(node)},
+            )
+        except Exception as exc:
+            return _update_exception_result("patch_graph_node", exc)
+
+    def _handle_upsert_graph_relationship(
         self,
-        question: str,
-        proposal: dict[str, Any],
-        target_refs: list[str] | None = None,
+        relationship_type: str,
+        from_id: str,
+        to_id: str,
+        properties_json: str,
     ) -> ToolResult:
-        confirmation = {
-            "confirmation_id": new_uuid(),
-            "question": question,
-            "proposal": proposal,
-            "target_refs": target_refs or [],
-            "required_user_action": "confirm_or_cancel",
-        }
-        return ToolResult(
-            status="ok",
-            output=question,
-            data={"operation": "request_user_confirmation", "confirmation": confirmation},
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                "upsert_graph_relationship",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        if relationship_type in GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES:
+            return _update_tool_error(
+                "upsert_graph_relationship",
+                "graph_update_relationship_type_not_allowed",
+                f"Graph update tools cannot upsert relationship type '{relationship_type}' in Wave 5 v1.",
+                "Use a supported non-destructive relationship type or defer merge/destructive work.",
+                retryable=False,
+                details={"relationship_type": relationship_type},
+            )
+        properties = _parse_json_object("upsert_graph_relationship", properties_json)
+        if isinstance(properties, ToolResult):
+            return properties
+        lifecycle_state = properties.get("lifecycle_state")
+        if lifecycle_state in {"archived", "deleted"}:
+            return _update_tool_error(
+                "upsert_graph_relationship",
+                "destructive_lifecycle_not_allowed",
+                "Wave 5 graph update tools do not allow archive/delete lifecycle transitions.",
+                "Use a non-destructive relationship update or defer deletion/merge work.",
+                retryable=False,
+                details={"lifecycle_state": lifecycle_state},
+            )
+        try:
+            relationship = graph.upsert_relationship(
+                relationship_type,
+                from_id,
+                to_id,
+                properties,
+            )
+            relationship_id = str(relationship.properties["id"])
+            refreshed = self._refresh_vectors(
+                "upsert_graph_relationship",
+                [from_id, to_id],
+            )
+            return _update_tool_result(
+                "upsert_graph_relationship",
+                summary="Graph relationship upserted.",
+                created_refs=[relationship_id],
+                affected_graph_ids=[from_id, to_id],
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={"relationship": _serialize(relationship)},
+            )
+        except Exception as exc:
+            return _update_exception_result("upsert_graph_relationship", exc)
+
+    def _handle_create_relationship_state(
+        self,
+        context_id: str,
+        properties_json: str,
+        make_current: bool = True,
+    ) -> ToolResult:
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                "create_relationship_state",
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        properties = _parse_json_object("create_relationship_state", properties_json)
+        if isinstance(properties, ToolResult):
+            return properties
+        try:
+            state = graph.create_relationship_state(
+                context_id,
+                properties,
+                make_current=make_current,
+            )
+            state_id = str(state.properties["id"])
+            refreshed = self._refresh_vectors(
+                "create_relationship_state",
+                [context_id, state_id],
+            )
+            return _update_tool_result(
+                "create_relationship_state",
+                summary="RelationshipState created.",
+                created_refs=[state_id],
+                updated_refs=[context_id] if make_current else [],
+                affected_graph_ids=[context_id, state_id],
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={"relationship_state": _serialize(state)},
+            )
+        except Exception as exc:
+            return _update_exception_result("create_relationship_state", exc)
+
+    def _refresh_vectors(self, tool_name: str, target_ids: list[str]) -> dict[str, Any]:
+        service = (
+            self.context.vectorization_service
+            or getattr(self.context.ingestion_service, "vectorization_service", None)
+            or getattr(self.context.backend_facade, "vectorization_service", None)
         )
+        if service is None:
+            return {
+                "refreshed_vector_scopes": [],
+                "diagnostics": [
+                    {
+                        "level": "warning",
+                        "code": "vectorization_service_missing",
+                        "message": "Vector refresh skipped because no vectorization service is configured.",
+                    }
+                ],
+            }
+        try:
+            result = service.vectorize_targets(target_ids, source_id=tool_name)
+            payload = _serialize(result)
+            scopes = payload.get("collections") or payload.get("refreshed_vector_scopes")
+            if not scopes and payload.get("collection"):
+                scopes = [payload["collection"]]
+            return {
+                "refreshed_vector_scopes": scopes or [],
+                "diagnostics": [{"level": "info", "code": "vector_refresh_done", "result": payload}],
+            }
+        except Exception as exc:
+            return {
+                "refreshed_vector_scopes": [],
+                "diagnostics": [
+                    {
+                        "level": "error",
+                        "code": "vector_refresh_failed",
+                        "message": str(exc),
+                        "exception_type": exc.__class__.__name__,
+                    }
+                ],
+            }
 
     def _facade_call(self, name: str, request: Any) -> ToolResult:
         facade = self.context.backend_facade
@@ -818,6 +1181,134 @@ def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
     )
 
 
+def _update_tool_result(
+    tool_name: str,
+    *,
+    summary: str,
+    created_refs: list[str] | None = None,
+    updated_refs: list[str] | None = None,
+    affected_graph_ids: list[str] | None = None,
+    refreshed_vector_scopes: list[str] | None = None,
+    diagnostics: list[dict[str, Any]] | None = None,
+    suggested_next_action: str | None = None,
+    data: dict[str, Any] | None = None,
+) -> ToolResult:
+    payload = {
+        "operation": tool_name,
+        "summary": summary,
+        "created_refs": _dedupe_strings(created_refs or []),
+        "updated_refs": _dedupe_strings(updated_refs or []),
+        "affected_graph_ids": _dedupe_strings(affected_graph_ids or []),
+        "refreshed_vector_scopes": _dedupe_strings(refreshed_vector_scopes or []),
+        "diagnostics": diagnostics or [],
+        "suggested_next_action": suggested_next_action,
+    }
+    if data:
+        payload.update(data)
+    return ToolResult(status="ok", output=summary, data=payload)
+
+
+def _update_tool_error(
+    tool_name: str,
+    code: str,
+    message: str,
+    hint: str,
+    *,
+    retryable: bool = False,
+    details: dict[str, Any] | None = None,
+) -> ToolResult:
+    payload = {
+        "operation": tool_name,
+        "summary": message,
+        "created_refs": [],
+        "updated_refs": [],
+        "affected_graph_ids": [],
+        "refreshed_vector_scopes": [],
+        "diagnostics": [
+            {
+                "level": "warning" if retryable else "error",
+                "code": code,
+                "message": message,
+                "hint": hint,
+                "retryable": retryable,
+                "details": details or {},
+            }
+        ],
+        "suggested_next_action": hint,
+        "error_code": code,
+        "retryable": retryable,
+        "validation_details": details or {},
+    }
+    return ToolResult(
+        status="recoverable_error" if retryable else "blocked",
+        output=message,
+        data=payload,
+        error=ToolError(
+            message=message,
+            code=code,
+            hint=hint,
+            retryable=retryable,
+            details={"tool": tool_name, **(details or {})},
+        ),
+    )
+
+
+def _update_exception_result(tool_name: str, exc: Exception) -> ToolResult:
+    exc_type = exc.__class__.__name__
+    retryable = exc_type in {"GraphValidationError", "ValidationError", "ValueError"}
+    return _update_tool_error(
+        tool_name,
+        "validation_failed" if retryable else "backend_execution_failed",
+        str(exc),
+        (
+            "Inspect the validation details and retry with corrected arguments."
+            if retryable
+            else "The backend failed while executing this tool; avoid retrying unchanged arguments."
+        ),
+        retryable=retryable,
+        details={"exception_type": exc_type},
+    )
+
+
+def _parse_json_object(tool_name: str, value: str) -> dict[str, Any] | ToolResult:
+    try:
+        parsed = json.loads(value or "{}")
+    except json.JSONDecodeError as exc:
+        return _update_tool_error(
+            tool_name,
+            "invalid_json",
+            f"properties_json must be a JSON object: {exc}",
+            "Retry with a valid JSON object string.",
+            retryable=True,
+            details={"json_error": str(exc)},
+        )
+    if not isinstance(parsed, dict):
+        return _update_tool_error(
+            tool_name,
+            "invalid_json_object",
+            "properties_json must decode to an object.",
+            "Retry with a JSON object, for example {\"status\":\"active\"}.",
+            retryable=True,
+            details={"decoded_type": type(parsed).__name__},
+        )
+    return parsed
+
+
+def _drop_none(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if item is not None}
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value)
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
 def _pending_context_id(pending_context: Any) -> str | None:
     process_ref = getattr(pending_context, "process_ref", None)
     if process_ref is not None:
@@ -862,8 +1353,8 @@ def _clarification_process_kind(state_id: str, pending_context: Any | None) -> s
             return str(getattr(kind, "value", kind))
     if state_id == AgenticStateId.MEMORY_QUERY.value:
         return PendingProcessKind.MEMORY_QUERY.value
-    if state_id == AgenticStateId.CORRECTION_INTAKE.value:
-        return PendingProcessKind.MEMORY_CORRECTION.value
+    if state_id == AgenticStateId.GRAPH_UPDATE.value:
+        return PendingProcessKind.MEMORY_UPDATE.value
     return PendingProcessKind.MEMORY_INGESTION.value
 
 
@@ -872,7 +1363,7 @@ def _clarification_resume_strategy(state_id: str) -> str:
         AgenticStateId.PLANNING_CHECKPOINT.value: "planning_checkpoint",
         AgenticStateId.CONTRADICTION_REVIEW.value: "contradiction_review",
         AgenticStateId.MEMORY_QUERY.value: "memory_query",
-        AgenticStateId.CORRECTION_INTAKE.value: "correction_intake",
+        AgenticStateId.GRAPH_UPDATE.value: "graph_update",
         AgenticStateId.PENDING_PROCESS_REVIEW.value: "pending_process_review",
         AgenticStateId.REASONING_CHECKPOINT.value: "reasoning_checkpoint",
     }.get(state_id, "pending_process_review")

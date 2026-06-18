@@ -35,9 +35,9 @@ class ConsumerFacade:
         self.last_request = request
         return ChatToolResult(primary_text="query accepted")
 
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
         self.last_request = request
-        return ChatToolResult(primary_text="correction accepted")
+        return ChatToolResult(primary_text="graph update accepted")
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
         self.last_request = request

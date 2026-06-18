@@ -13,7 +13,7 @@ from my_digital_brain.agentic import (
     AgenticToolExecutionContext,
     ChannelSessionMetadata,
     ConversationContext,
-    CorrectionIntakeContext,
+    GraphUpdateContext,
     NeutralConversationMessage,
     PendingProcessContext,
     PlanningActionContext,
@@ -139,6 +139,44 @@ def _tool_result_content(result: object) -> str:
 class FakeGraphService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
+        self.mutations: list[str] = []
+
+    def get_node(self, node_id: str):
+        self.calls.append(("get_node", node_id))
+        from my_digital_brain.graph.models import NodeSearchResult
+
+        return NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": node_id, "display_name": "Marco"},
+        )
+
+    def upsert_node(self, label: str, properties: dict[str, Any]):
+        self.mutations.append(f"upsert_node:{label}")
+        from my_digital_brain.graph.models import NodeSearchResult
+
+        return NodeSearchResult(
+            label=label,
+            labels=[label],
+            properties={"id": f"{label.lower()}-1", **properties},
+        )
+
+    def upsert_relationship(
+        self,
+        relationship_type: str,
+        from_id: str,
+        to_id: str,
+        properties: dict[str, Any],
+    ):
+        self.mutations.append(f"upsert_relationship:{relationship_type}")
+        from my_digital_brain.graph.models import RelationshipResult
+
+        return RelationshipResult(
+            type=relationship_type,
+            from_id=from_id,
+            to_id=to_id,
+            properties={"id": f"{from_id}:{relationship_type}:{to_id}", **properties},
+        )
 
     def get_context_package(
         self,
@@ -206,9 +244,9 @@ def test_conversation_entry_without_tool_call_returns_terminal_assistant_respons
     prompt_payload = provider.calls[0]["request"].messages[1].content
     assert "channel_metadata" not in str(prompt_payload)
     assert provider.calls[0]["tool_names"] == [
-        "propose_memory_correction",
         "query_memory_context",
         "start_memory_ingestion",
+        "update_memory_graph",
     ]
 
 
@@ -251,9 +289,9 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     assert graph.calls == [("get_context_package", "node-marco")]
     assert provider.calls[0]["max_tool_calls"] == 3
     assert provider.calls[0]["tool_names"] == [
-        "propose_memory_correction",
         "query_memory_context",
         "start_memory_ingestion",
+        "update_memory_graph",
     ]
     assert [message.role for message in result.state_results[0].message_delta] == [
         "assistant",
@@ -272,43 +310,55 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     assert "owner_finalization" in provider.calls[2]["request"].messages[0].content
 
 
-def test_correction_handoff_reaches_confirmation_aware_specialist_state() -> None:
+def test_update_handoff_reaches_graph_update_specialist_state() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
-                "content": "Routing to correction intake.",
-                "tool": "propose_memory_correction",
+                "content": "Routing to graph update.",
+                "tool": "update_memory_graph",
                 "arguments": {
-                    "correction_text": "Marco was from university, not work.",
-                    "target_id": "node-marco",
+                    "source_text": "Marco was from university, not work.",
+                    "guidelines": "Apply this as a correction.",
+                    "desired_work": "correct_or_update_memory_graph",
+                    "target_ids": ["node-marco"],
+                    "source_refs": [],
+                    "metadata": {},
                 },
             },
             {
-                "content": "Should I update Marco?",
-                "tool": "request_user_confirmation",
+                "content": "Memory log created.",
+                "tool": "create_memory_log",
                 "arguments": {
-                    "question": "Should I update Marco?",
-                    "proposal": {"target_id": "node-marco", "field_path": "description"},
-                    "target_refs": ["node-marco"],
+                    "log_text": "Marco was from university, not work.",
+                    "host_target_ids": ["node-marco"],
+                    "primary_host_target_id": None,
+                    "involved_target_ids": [],
+                    "relationship_context_target_ids": [],
+                    "media_refs": [],
+                    "log_kind": "correction",
+                    "source_kind": "chat",
+                    "happened_at": None,
                 },
             },
         ]
     )
+    graph = FakeGraphService()
     runtime = AgenticRuntime(_runner(provider))
 
     result = runtime.run(
         _conversation("Marco was from university, not work."),
-        AgenticToolExecutionContext(),
+        AgenticToolExecutionContext(graph_service=graph),
     )
 
     assert result.status == "ok"
     assert result.visited_states == [
         AgenticStateId.CONVERSATION_ENTRY.value,
-        AgenticStateId.CORRECTION_INTAKE.value,
+        AgenticStateId.GRAPH_UPDATE.value,
+        AgenticStateId.CONVERSATION_ENTRY.value,
     ]
-    confirmation = result.state_results[1].tool_events[0].data["confirmation"]
-    assert confirmation["required_user_action"] == "confirm_or_cancel"
-    assert confirmation["proposal"]["target_id"] == "node-marco"
+    assert result.state_results[0].handoff_target == "graph_update"
+    assert result.state_results[1].tool_events[0].tool_name == "create_memory_log"
+    assert "upsert_node:MemoryLog" in graph.mutations
 
 
 def test_pending_context_starts_from_pending_process_review() -> None:
@@ -330,11 +380,11 @@ def test_pending_context_starts_from_pending_process_review() -> None:
     assert provider.calls[0]["tool_names"] == [
         "cancel_pending_process",
         "pause_pending_process",
-        "propose_memory_correction",
         "query_memory_context",
         "request_user_clarification",
         "resume_pending_process",
         "start_memory_ingestion",
+        "update_memory_graph",
     ]
 
 
@@ -471,34 +521,44 @@ def test_state_runner_accepts_specialist_context_and_records_tool_events() -> No
     provider = ScriptedToolCallingProvider(
         [
             {
-                "content": "Correction proposal prepared.",
-                "tool": "build_correction_proposal",
+                "content": "Graph update applied.",
+                "tool": "create_memory_log",
                 "arguments": {
-                    "correction_text": "Marco was from university.",
-                    "target_id": "node-marco",
-                    "reason": "The user provided a direct correction.",
+                    "log_text": "Marco was from university.",
+                    "host_target_ids": ["node-marco"],
+                    "primary_host_target_id": None,
+                    "involved_target_ids": [],
+                    "relationship_context_target_ids": [],
+                    "media_refs": [],
+                    "log_kind": "correction",
+                    "source_kind": "chat",
+                    "happened_at": None,
                 },
             }
         ]
     )
     runner = _runner(provider)
-    correction_context = CorrectionIntakeContext(
-        correction_text="Marco was from university.",
+    graph_update_context = GraphUpdateContext(
+        source_text="Marco was from university.",
         conversation=_conversation("Marco was from university."),
-        target_hints=["node-marco"],
+        guidelines="Apply as correction.",
+        desired_work="correct_or_update_memory_graph",
+        target_ids=["node-marco"],
     )
+    graph = FakeGraphService()
 
     result = runner.run_state(
         AgenticStateInvocation(
-            state_id=AgenticStateId.CORRECTION_INTAKE,
-            context_payload=correction_context,
-            execution_context=AgenticToolExecutionContext(),
+            state_id=AgenticStateId.GRAPH_UPDATE,
+            context_payload=graph_update_context,
+            execution_context=AgenticToolExecutionContext(graph_service=graph),
         )
     )
 
     assert result.status == "ok"
-    assert result.tool_events[0].tool_name == "build_correction_proposal"
-    assert result.tool_events[0].data["proposal"]["requires_confirmation"] is True
+    assert result.tool_events[0].tool_name == "create_memory_log"
+    assert result.tool_events[0].data["created_refs"]
+    assert "upsert_node:MemoryLog" in graph.mutations
 
 
 def test_reasoning_checkpoint_service_runs_structured_state() -> None:

@@ -13,7 +13,6 @@ from my_digital_brain.agentic.enums import (
     ContradictionGraphAction,
     ContradictionResultIntent,
     ContradictionSeverity,
-    CorrectionAction,
     MaintenanceSuggestionType,
     ProfileMemoryCategory,
     ProfileMemoryStability,
@@ -333,48 +332,18 @@ class QueryRetrievalResultContext(AgenticModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class CorrectionIntakeContext(AgenticModel):
-    correction_text: str
+class GraphUpdateContext(AgenticModel):
+    source_text: str
     conversation: ConversationContext
-    target_hints: list[str] = Field(default_factory=list)
+    guidelines: str = Field(
+        default="Update the memory graph using deterministic tools.",
+    )
+    desired_work: str | None = None
+    target_ids: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
     graph_context: GraphContextPackage | None = None
-    evidence_refs: list[str] = Field(default_factory=list)
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class CorrectionProposalContext(AgenticModel):
-    proposal_id: str = Field(default_factory=new_uuid)
-    correction_text: str
-    action: CorrectionAction = CorrectionAction.NEEDS_TARGET
-    target_id: str | None = None
-    target_label: str | None = None
-    field_path: str | None = None
-    current_value: Any | None = None
-    proposed_value: Any | None = None
-    reason: str
-    evidence_refs: list[str] = Field(default_factory=list)
-    requires_confirmation: bool = True
-    risk_level: ConfirmationRiskLevel = ConfirmationRiskLevel.MEDIUM
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _validate_targeted_action(self) -> "CorrectionProposalContext":
-        if self.action != CorrectionAction.NEEDS_TARGET.value and not self.target_id:
-            raise ValueError("Correction proposals with an action require target_id.")
-        if self.action != CorrectionAction.NO_CHANGE.value and not self.reason.strip():
-            raise ValueError("Correction proposals require a reason.")
-        return self
-
-
-class ConfirmationHandoffContext(AgenticModel):
-    confirmation_id: str = Field(default_factory=new_uuid)
-    proposal: CorrectionProposalContext
-    question: str
-    target_refs: list[str] = Field(default_factory=list)
-    required_user_action: str = "confirm_or_cancel"
-    expires_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

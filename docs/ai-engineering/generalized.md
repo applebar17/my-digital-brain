@@ -253,7 +253,7 @@ The default conversation-entry tool surface should stay small:
 
 - `start_information_intake`
 - `query_stored_context`
-- `propose_state_correction`
+- `update_persistent_state`
 
 Default answering is a non-tool path. Resume, pause, cancel, expire,
 clarification handling, validation, and write execution are not broad
@@ -300,11 +300,13 @@ For inconsistency handling, the behavioral protocol is:
 - The judge returns a structured decision and recommended action.
 - The judge does not mutate persistent state directly.
 
-For correction, maintenance, inconsistency, and preference/profile flows, risky
-model outputs are proposals or review results, not authority to mutate
-persistent state. The backend must convert approved proposals into validated
-service calls, and confirmation-aware contexts must make the required user
-approval explicit.
+For persistent-state update flows, the model may choose a sequence of tools, but
+each mutation must be a deterministic backend tool call. A v1 update state may
+auto-execute structurally valid tool calls without a user confirmation gate;
+invalid calls should return structured recoverable or blocking errors that guide
+the model's next call. Physical deletion, merge behavior, archive-as-delete, and
+destructive lifecycle transitions should remain outside the first update
+toolbox unless an explicit policy is added.
 
 ### 8. Guardrails Protect Against Bad Loops
 

@@ -309,25 +309,14 @@ def test_graph_backed_query_returns_low_noise_no_match_response() -> None:
     assert result.diagnostics[0].code == "no_matching_graph_seed"
 
 
-def test_correction_proposal_requires_confirmation_when_target_found() -> None:
+def test_update_memory_graph_facade_requires_agentic_state() -> None:
     facade = MemoryBackendToolFacade(graph_service=FakeGraphService())
 
-    result = facade.propose_memory_correction(_request("Marco is from university."))
+    result = facade.update_memory_graph(_request("Marco is from university."))
 
-    assert result.status == ChatResponseStatus.NEEDS_USER_INPUT
-    assert result.actions[0].action_type == "confirm_memory_correction"
-    assert result.actions[0].requires_confirmation is True
-    assert result.metadata["target_id"] == "person-1"
-
-
-def test_correction_proposal_creates_pending_context_when_target_is_missing() -> None:
-    facade = MemoryBackendToolFacade(graph_service=FakeGraphService())
-
-    result = facade.propose_memory_correction(_request("unknown"))
-
-    assert result.status == ChatResponseStatus.NEEDS_USER_INPUT
-    assert result.pending_process is not None
-    assert result.pending_process.kind == PendingProcessKind.MEMORY_CORRECTION
+    assert result.status == ChatResponseStatus.FAILED
+    assert result.diagnostics[0].code == "graph_update_requires_agentic_state"
+    assert result.metadata["operation"] == "update_memory_graph"
 
 
 def test_llm_answer_generator_uses_provider_neutral_chat_request() -> None:

@@ -30,7 +30,7 @@ class ChatResponseStatus(StrEnum):
 class PendingProcessKind(StrEnum):
     MEMORY_INGESTION = "memory_ingestion"
     MEMORY_QUERY = "memory_query"
-    MEMORY_CORRECTION = "memory_correction"
+    MEMORY_UPDATE = "memory_update"
 
 
 class PendingProcessStatus(StrEnum):

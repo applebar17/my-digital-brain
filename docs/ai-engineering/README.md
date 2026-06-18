@@ -225,7 +225,7 @@ The default `conversation_entry` tool surface should stay small:
 
 - `start_memory_ingestion`
 - `query_memory_context`
-- `propose_memory_correction`
+- `update_memory_graph`
 
 Default answering is a non-tool path. Resume, pause, cancel, expire,
 clarification handling, validation, and write execution are not broad
@@ -268,11 +268,12 @@ For contradiction handling, the behavioral protocol is:
 - The judge returns a structured decision and recommended action.
 - The judge does not mutate the graph directly.
 
-For correction, maintenance, contradiction, and profile-memory flows, risky model
-outputs are proposals or review results, not authority to mutate persistent
-state. The backend must convert approved proposals into validated graph service
-calls, and confirmation-aware contexts must make the required user approval
-explicit.
+For graph update flows, the model may choose a sequence of tools, but each
+mutation must be a deterministic backend tool call. Wave 5 graph updates do not
+use a user confirmation gate: valid tool calls auto-execute, invalid calls return
+structured recoverable or blocking errors, and the model may repair recoverable
+calls. Physical deletion, merge behavior, archive-as-delete, and destructive
+lifecycle transitions remain outside the v1 graph-update toolbox.
 
 ### 8. Guardrails Protect Against Bad Loops
 

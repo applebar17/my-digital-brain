@@ -16,7 +16,7 @@ SPEECH_TO_TEXT_TASK = "speech_to_text"
 SMART_MODEL_TASKS = {
     "answer_generation",
     "conversation_entry",
-    "correction_intake",
+    "graph_update",
     "ingestion_perception_extraction",
     "ingestion_relationship_context_extraction",
     "memory_question_answer",

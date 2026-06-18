@@ -168,11 +168,17 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
         graph_service: Any | None = None,
         ingestion_service: IngestionService | None = None,
         semantic_search_service: Any | None = None,
+        vectorization_service: Any | None = None,
         answer_generator: GraphContextAnswerGenerator | None = None,
     ) -> None:
         self.graph_service = graph_service
         self.ingestion_service = ingestion_service
         self.semantic_search_service = semantic_search_service
+        self.vectorization_service = vectorization_service or getattr(
+            ingestion_service,
+            "vectorization_service",
+            None,
+        )
         self.answer_generator = answer_generator or DeterministicGraphContextAnswerGenerator()
 
     @traceable(name="Memory Tool Start Ingestion", run_type="tool")
@@ -239,8 +245,8 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 },
                 deep=True,
             )
-        if process_kind == PendingProcessKind.MEMORY_CORRECTION.value:
-            result = self.propose_memory_correction(
+        if process_kind == PendingProcessKind.MEMORY_UPDATE.value:
+            result = self.update_memory_graph(
                 request.model_copy(
                     update={"text": self._resumed_text(request, pending_context)},
                     deep=True,
@@ -251,7 +257,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                     "metadata": {
                         **result.metadata,
                         "operation": "resume_pending_process",
-                        "resumed_operation": "propose_memory_correction",
+                        "resumed_operation": "update_memory_graph",
                         "pending_process_id": pending_context.process_ref.process_id,
                         "clear_pending_process": result.pending_process is None,
                     }
@@ -267,7 +273,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                         level=ChatDiagnosticLevel.ERROR,
                         code="unsupported_pending_process_kind",
                         message=(
-                            "Only memory_ingestion, memory_query, and memory_correction "
+                            "Only memory_ingestion, memory_query, and memory_update "
                             "pending processes support resume in this implementation slice."
                         ),
                         details={"kind": process_kind},
@@ -676,56 +682,31 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
             },
         )
 
-    @traceable(name="Memory Tool Propose Correction", run_type="tool")
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
+    @traceable(name="Memory Tool Update Graph", run_type="tool")
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
         if self.graph_service is None:
-            return super().propose_memory_correction(request)
-
-        seed = self._resolve_seed_node(request)
-        if seed is None:
-            return ChatToolResult(
-                status=ChatResponseStatus.NEEDS_USER_INPUT,
-                primary_text=(
-                    "I captured the correction, but I need to know which memory or entity "
-                    "it should update."
-                ),
-                pending_process=PendingProcessRef(
-                    process_id=new_uuid(),
-                    kind=PendingProcessKind.MEMORY_CORRECTION,
-                    question="Which memory or entity should I update?",
-                    metadata={"correction_text": request.text},
-                ),
-                metadata={"operation": "propose_memory_correction"},
-            )
-
-        seed_id = str(seed.properties["id"])
-        title = self._node_title(seed)
+            return super().update_memory_graph(request)
         return ChatToolResult(
-            status=ChatResponseStatus.NEEDS_USER_INPUT,
+            status=ChatResponseStatus.FAILED,
             primary_text=(
-                f"I found {title} as the likely correction target. "
-                "I will not change the graph until you confirm."
+                "Memory graph updates require the agentic graph update state. "
+                "This deterministic facade cannot infer and execute multi-step graph updates."
             ),
-            actions=[
-                ChatAction(
-                    action_type="confirm_memory_correction",
-                    label="Confirm correction",
-                    parameters={"target_id": seed_id, "correction_text": request.text},
-                    requires_confirmation=True,
-                )
-            ],
-            evidence=[
-                ChatEvidenceRef(
-                    title=title,
-                    node_id=seed_id,
-                    summary=seed.properties.get("description"),
-                    metadata={"label": seed.label},
+            diagnostics=[
+                ChatDiagnostic(
+                    level=ChatDiagnosticLevel.ERROR,
+                    code="graph_update_requires_agentic_state",
+                    message=(
+                        "Use the update_memory_graph agentic tool so graph_update can "
+                        "retrieve context and call deterministic write tools."
+                    ),
                 )
             ],
             metadata={
-                "operation": "propose_memory_correction",
-                "target_id": seed_id,
-                "target_label": seed.label,
+                "operation": "update_memory_graph",
+                "source_text": request.text,
+                "guidelines": request.metadata.get("guidelines"),
+                "desired_work": request.metadata.get("desired_work"),
             },
         )
 

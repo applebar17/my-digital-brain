@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from my_digital_brain.agentic import (
     AgenticStateId,
-    ConfirmationHandoffContext,
     ConfirmationRiskLevel,
     ContradictionDecision,
     ContradictionGraphAction,
@@ -13,11 +12,9 @@ from my_digital_brain.agentic import (
     ContradictionResultIntent,
     ContradictionReviewContext,
     ContradictionSeverity,
-    CorrectionAction,
-    CorrectionIntakeContext,
-    CorrectionProposalContext,
     ConversationContext,
     GraphContextPackage,
+    GraphUpdateContext,
     MaintenanceReviewContext,
     MaintenanceReviewResultContext,
     MaintenanceSuggestionContext,
@@ -42,13 +39,13 @@ def _conversation(text: str = "Actually, Marco was from university.") -> Convers
 def test_wave3_agentic_state_configs_are_registered_with_safe_toolboxes() -> None:
     configs = default_state_configs()
 
-    correction = configs[AgenticStateId.CORRECTION_INTAKE]
+    graph_update = configs[AgenticStateId.GRAPH_UPDATE]
     contradiction = configs[AgenticStateId.CONTRADICTION_REVIEW]
 
-    assert correction.prompt_id == "correction_intake"
-    assert correction.required_context_type == "CorrectionIntakeContext"
-    assert "build_correction_proposal" in correction.allowed_tools
-    assert "execute_memory_correction" in correction.forbidden_tools
+    assert graph_update.prompt_id == "graph_update"
+    assert graph_update.required_context_type == "GraphUpdateContext"
+    assert "create_memory_log" in graph_update.allowed_tools
+    assert "delete_graph_node" in graph_update.forbidden_tools
 
     assert contradiction.prompt_id == "contradiction_review"
     assert contradiction.required_context_type == "ContradictionReviewContext"
@@ -59,50 +56,27 @@ def test_wave3_agentic_state_configs_are_registered_with_safe_toolboxes() -> Non
 def test_wave3_prompt_templates_are_registered() -> None:
     registry = PromptRegistry()
 
-    assert "correction intake state" in registry.load("correction_intake").template
-    assert "Build a correction proposal" in registry.load("correction_proposal").template
+    assert "graph_update state" in registry.load("graph_update").template
     assert "contradiction review state" in registry.load("contradiction_review").template
     assert "Extract durable profile memory" in registry.load("profile_memory_extraction").template
     assert "Review memory maintenance suggestions" in registry.load("maintenance_review").template
 
 
-def test_correction_contracts_require_confirmation_for_targeted_changes() -> None:
-    context = CorrectionIntakeContext(
-        correction_text="Marco was from university, not work.",
+def test_graph_update_context_carries_guidelines_and_target_hints() -> None:
+    context = GraphUpdateContext(
+        source_text="Marco was from university, not work.",
         conversation=_conversation(),
-        target_hints=["NODE_000001"],
+        guidelines="Apply this as a correction.",
+        desired_work="correct_or_update_memory_graph",
+        target_ids=["node-marco"],
         graph_context=GraphContextPackage(aliases={"NODE_000001": "node-marco"}),
     )
-    proposal = CorrectionProposalContext(
-        correction_text=context.correction_text,
-        action=CorrectionAction.PATCH_NODE,
-        target_id="node-marco",
-        target_label="Person",
-        field_path="description",
-        current_value="Former coworker",
-        proposed_value="University friend",
-        reason="The user corrected the relationship source.",
-        evidence_refs=["SOURCE_000001"],
-        requires_confirmation=True,
-        risk_level=ConfirmationRiskLevel.MEDIUM,
-    )
-    confirmation = ConfirmationHandoffContext(
-        proposal=proposal,
-        question="Should I update Marco to university friend?",
-        target_refs=["node-marco"],
-    )
 
+    assert context.source_text == "Marco was from university, not work."
+    assert context.guidelines == "Apply this as a correction."
+    assert context.desired_work == "correct_or_update_memory_graph"
+    assert context.target_ids == ["node-marco"]
     assert context.graph_context.aliases == {"NODE_000001": "node-marco"}
-    assert proposal.action == CorrectionAction.PATCH_NODE.value
-    assert proposal.requires_confirmation is True
-    assert confirmation.required_user_action == "confirm_or_cancel"
-
-    with pytest.raises(ValidationError, match="target_id"):
-        CorrectionProposalContext(
-            correction_text="Update it.",
-            action=CorrectionAction.PATCH_NODE,
-            reason="Missing target should be rejected.",
-        )
 
 
 def test_contradiction_review_requires_grounded_doubt_and_clarification_question() -> None:

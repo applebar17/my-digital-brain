@@ -10,7 +10,7 @@ from my_digital_brain.agentic.contexts import (
     ContradictionJudgeResultContext,
     ContradictionReviewContext,
     ConversationContext,
-    CorrectionIntakeContext,
+    GraphUpdateContext,
     QueryRetrievalPlanningContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId
@@ -426,9 +426,9 @@ class AgenticRuntime:
                 )
                 continue
 
-            if state_result.handoff_target == "correction_intake":
-                current_state = AgenticStateId.CORRECTION_INTAKE
-                current_payload = _correction_context_from_handoff(
+            if state_result.handoff_target == "graph_update":
+                current_state = AgenticStateId.GRAPH_UPDATE
+                current_payload = _graph_update_context_from_handoff(
                     conversation_context,
                     state_result.handoff_arguments,
                     self.state_runner.history_service,
@@ -781,19 +781,28 @@ def _query_context_from_handoff(
     )
 
 
-def _correction_context_from_handoff(
+def _graph_update_context_from_handoff(
     conversation_context: ConversationContext,
     arguments: dict[str, Any],
     history_service: AgenticHistoryService,
-) -> CorrectionIntakeContext:
+) -> GraphUpdateContext:
+    metadata = dict(arguments.get("metadata") or {})
+    target_ids = list(arguments.get("target_ids") or [])
     target_id = arguments.get("target_id")
-    return CorrectionIntakeContext(
-        correction_text=arguments.get("correction_text")
+    if target_id and target_id not in target_ids:
+        target_ids.append(str(target_id))
+    return GraphUpdateContext(
+        source_text=arguments.get("source_text")
+        or arguments.get("correction_text")
         or conversation_context.current_message.content
         or "",
         conversation=history_service.child_conversation_context(conversation_context),
-        target_hints=[target_id] if target_id else [],
-        metadata=dict(arguments.get("metadata") or {}),
+        guidelines=arguments.get("guidelines")
+        or "Update the memory graph using deterministic tools.",
+        desired_work=arguments.get("desired_work"),
+        target_ids=[str(target_id) for target_id in target_ids if target_id],
+        source_refs=list(arguments.get("source_refs") or []),
+        metadata=metadata,
     )
 
 

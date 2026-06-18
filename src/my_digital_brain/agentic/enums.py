@@ -17,7 +17,7 @@ class AgenticStateId(StrEnum):
     PLANNING_CHECKPOINT = "planning_checkpoint"
     CONTRADICTION_REVIEW = "contradiction_review"
     MEMORY_QUERY = "memory_query"
-    CORRECTION_INTAKE = "correction_intake"
+    GRAPH_UPDATE = "graph_update"
 
 
 class NeutralMessageKind(StrEnum):
@@ -43,6 +43,8 @@ class PendingMessageIntent(StrEnum):
 class ToolResultStatus(StrEnum):
     OK = "ok"
     ACCEPTED = "accepted"
+    RECOVERABLE_ERROR = "recoverable_error"
+    BLOCKED = "blocked"
     NEEDS_USER_INPUT = "needs_user_input"
     PAUSED = "paused"
     CANCELLED = "cancelled"
@@ -119,17 +121,6 @@ class ReasoningStorageRecommendationType(StrEnum):
     ASK_CLARIFICATION = "ask_clarification"
     REQUEST_MORE_CONTEXT = "request_more_context"
     SKIP = "skip"
-
-
-class CorrectionAction(StrEnum):
-    NO_CHANGE = "no_change"
-    PATCH_NODE = "patch_node"
-    PATCH_RELATIONSHIP = "patch_relationship"
-    UPDATE_RELATIONSHIP_CONTEXT = "update_relationship_context"
-    UPDATE_CONTACT_POINT = "update_contact_point"
-    MARK_DISPUTED = "mark_disputed"
-    ARCHIVE_MEMORY = "archive_memory"
-    NEEDS_TARGET = "needs_target"
 
 
 class ConfirmationRiskLevel(StrEnum):

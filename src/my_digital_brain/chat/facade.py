@@ -51,7 +51,7 @@ class BackendToolFacade(Protocol):
 
     def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult: ...
 
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult: ...
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult: ...
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult: ...
 
@@ -84,11 +84,11 @@ class NoopBackendToolFacade:
             "Configure GraphService and a graph answer path behind MemoryBackendToolFacade.",
         )
 
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
         return _missing_backend_service_result(
-            "propose_memory_correction",
-            "Memory correction is not configured, so I could not prepare a safe update.",
-            "Configure GraphService-backed correction tooling behind MemoryBackendToolFacade.",
+            "update_memory_graph",
+            "Memory graph update is not configured, so I could not update the graph.",
+            "Configure agentic graph update tooling before exposing update_memory_graph.",
         )
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:

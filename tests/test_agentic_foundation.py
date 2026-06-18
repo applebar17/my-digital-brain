@@ -140,7 +140,7 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert entry.allowed_tools == [
         "start_memory_ingestion",
         "query_memory_context",
-        "propose_memory_correction",
+        "update_memory_graph",
     ]
     assert "cancel_pending_process" not in entry.allowed_tools
     assert "get_conversation_status" not in entry.allowed_tools

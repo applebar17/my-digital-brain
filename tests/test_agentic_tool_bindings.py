@@ -29,6 +29,7 @@ from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
     NodeSearchResult,
+    RelationshipResult,
 )
 from my_digital_brain.prompts import PromptRegistry
 
@@ -53,12 +54,12 @@ class FakeFacade:
             metadata={"operation": "query_memory_context"},
         )
 
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("propose_memory_correction", request))
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
+        self.calls.append(("update_memory_graph", request))
         return ChatToolResult(
-            status=ChatResponseStatus.NEEDS_USER_INPUT,
-            primary_text="Correction requires confirmation.",
-            metadata={"operation": "propose_memory_correction"},
+            status=ChatResponseStatus.ACCEPTED,
+            primary_text="Graph update accepted.",
+            metadata={"operation": "update_memory_graph"},
         )
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
@@ -224,6 +225,52 @@ class FakeGraphService:
         self.calls.append(("get_relationship_states", context_id))
         return [{"id": "state-1"}]
 
+    def upsert_node(self, label: str, properties: dict[str, Any]) -> NodeSearchResult:
+        node_id = str(properties.get("id") or f"{label.lower()}-1")
+        self.mutations.append(f"upsert_node:{label}:{node_id}")
+        return NodeSearchResult(
+            label=label,
+            labels=[label],
+            properties={**properties, "id": node_id},
+        )
+
+    def patch_node(self, node_id: str, properties: dict[str, Any]) -> NodeSearchResult:
+        self.mutations.append(f"patch_node:{node_id}")
+        return NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": node_id, **properties},
+        )
+
+    def upsert_relationship(
+        self,
+        relationship_type: str,
+        from_id: str,
+        to_id: str,
+        properties: dict[str, Any],
+    ):
+        self.mutations.append(f"upsert_relationship:{relationship_type}:{from_id}:{to_id}")
+        return RelationshipResult(
+            type=relationship_type,
+            from_id=from_id,
+            to_id=to_id,
+            properties={"id": f"{from_id}:{relationship_type}:{to_id}", **properties},
+        )
+
+    def create_relationship_state(
+        self,
+        context_id: str,
+        properties: dict[str, Any],
+        *,
+        make_current: bool = True,
+    ) -> NodeSearchResult:
+        self.mutations.append(f"create_relationship_state:{context_id}")
+        return NodeSearchResult(
+            label="RelationshipState",
+            labels=["RelationshipState"],
+            properties={"id": "state-1", **properties, "is_current": make_current},
+        )
+
 
 def _execution_context(**kwargs: Any) -> AgenticToolExecutionContext:
     defaults = {
@@ -303,7 +350,7 @@ def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> N
     assert set(entry_toolbox.tools_by_name) == {
         "start_memory_ingestion",
         "query_memory_context",
-        "propose_memory_correction",
+        "update_memory_graph",
     }
 
 
@@ -358,7 +405,7 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
     assert set(mapping) == {
         "start_memory_ingestion",
         "query_memory_context",
-        "propose_memory_correction",
+        "update_memory_graph",
     }
 
     result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
@@ -369,6 +416,22 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
     assert result.data["handoff_arguments"]["source_text"] == "Yesterday I met Marco."
     assert execution_context.tool_events[0].data["handoff_target"] == (
         "memory_ingestion_precheck"
+    )
+    assert facade.calls == []
+
+    update = mapping["update_memory_graph"](
+        source_text="Marco was from university, not work.",
+        guidelines="Apply as a correction.",
+        desired_work="correct_or_update_memory_graph",
+        target_ids=["node-marco"],
+        source_refs=[],
+        metadata={},
+    )
+
+    assert update.status == "accepted"
+    assert update.data["handoff_target"] == "graph_update"
+    assert update.data["handoff_arguments"]["source_text"] == (
+        "Marco was from university, not work."
     )
     assert facade.calls == []
 
@@ -481,33 +544,45 @@ def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
     assert ("get_neighborhood_view", "node-marco") in graph.calls
 
 
-def test_correction_tools_produce_confirmation_aware_outputs_without_mutation() -> None:
+def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() -> None:
     graph = FakeGraphService()
-    config = default_state_configs()[AgenticStateId.CORRECTION_INTAKE]
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
     mapping = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))
 
-    resolved = mapping["resolve_correction_target"](
-        correction_text="Marco was from university.",
+    resolved = mapping["resolve_graph_update_targets"](
+        query="Marco was from university.",
+        target_ids=[],
     )
-    proposal = mapping["build_correction_proposal"](
-        correction_text="Marco was from university.",
-        target_id="node-marco",
-        target_label="Person",
-        field_path="description",
-        current_value={"description": "coworker"},
-        proposed_value={"description": "university friend"},
-        reason="The user corrected Marco's context.",
+    log = mapping["create_memory_log"](
+        log_text="Marco was from university, not work.",
+        host_target_ids=["node-marco"],
+        primary_host_target_id=None,
+        involved_target_ids=[],
+        relationship_context_target_ids=[],
+        media_refs=[],
+        log_kind="correction",
+        source_kind="chat",
+        happened_at=None,
     )
-    confirmation = mapping["request_user_confirmation"](
-        question="Should I update Marco's description?",
-        proposal=proposal.data["proposal"],
-        target_refs=["node-marco"],
+    patch = mapping["patch_graph_node"](
+        node_id="node-marco",
+        properties_json='{"description":"university friend"}',
+    )
+    blocked = mapping["patch_graph_node"](
+        node_id="node-marco",
+        properties_json='{"lifecycle_state":"archived"}',
     )
 
     assert resolved.data["requires_clarification"] is False
-    assert proposal.data["proposal"]["requires_confirmation"] is True
-    assert confirmation.data["confirmation"]["required_user_action"] == "confirm_or_cancel"
-    assert graph.mutations == []
+    assert log.status == "ok"
+    assert log.data["created_refs"]
+    assert log.data["affected_graph_ids"] == ["memorylog-1", "node-marco"]
+    assert patch.status == "ok"
+    assert patch.data["updated_refs"] == ["node-marco"]
+    assert blocked.status == "blocked"
+    assert blocked.data["error_code"] == "destructive_lifecycle_not_allowed"
+    assert any(item.startswith("upsert_node:MemoryLog") for item in graph.mutations)
+    assert "patch_node:node-marco" in graph.mutations
 
 
 def test_missing_dependency_returns_verbose_tool_error() -> None:

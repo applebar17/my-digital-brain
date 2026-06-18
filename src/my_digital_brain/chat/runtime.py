@@ -405,8 +405,18 @@ class ChatRuntime:
                 request.model_copy(update={"text": text[4:].strip() or text}, deep=True),
             )
         if self.debug_commands_enabled and lower_text.startswith("/correct"):
-            return self.tool_facade.propose_memory_correction(
-                request.model_copy(update={"text": text[8:].strip() or text}, deep=True),
+            return self.tool_facade.update_memory_graph(
+                request.model_copy(
+                    update={
+                        "text": text[8:].strip() or text,
+                        "metadata": {
+                            **request.metadata,
+                            "guidelines": "Apply this as a correction or update to the memory graph.",
+                            "desired_work": "correct_or_update_memory_graph",
+                        },
+                    },
+                    deep=True,
+                ),
             )
 
         return self._runtime_disabled_result()

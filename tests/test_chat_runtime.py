@@ -61,11 +61,11 @@ class RecordingFacade:
             primary_text="Query accepted.",
         )
 
-    def propose_memory_correction(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("propose_memory_correction", request))
+    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
+        self.calls.append(("update_memory_graph", request))
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
-            primary_text="Correction accepted.",
+            primary_text="Graph update accepted.",
         )
 
     def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
@@ -313,7 +313,7 @@ def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
 
     assert [call[0] for call in facade.calls] == [
         "query_memory_context",
-        "propose_memory_correction",
+        "update_memory_graph",
         "cancel_pending_process",
     ]
 
@@ -381,11 +381,11 @@ def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
     assert provider.calls[0]["tool_names"] == [
         "cancel_pending_process",
         "pause_pending_process",
-        "propose_memory_correction",
         "query_memory_context",
         "request_user_clarification",
         "resume_pending_process",
         "start_memory_ingestion",
+        "update_memory_graph",
     ]
 
 

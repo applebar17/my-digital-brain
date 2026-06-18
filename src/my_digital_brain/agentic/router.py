@@ -60,9 +60,13 @@ class DeterministicAgenticRouter:
         if lower_text.startswith("/correct"):
             return self._tool_route(
                 context,
-                tool_name="propose_memory_correction",
-                arguments={"correction_text": self._command_payload(text, "/correct") or text},
-                reason="Explicit correction command.",
+                tool_name="update_memory_graph",
+                arguments={
+                    "source_text": self._command_payload(text, "/correct") or text,
+                    "guidelines": "Apply this as a correction or update to the memory graph.",
+                    "desired_work": "correct_or_update_memory_graph",
+                },
+                reason="Explicit graph update/correction command.",
             )
 
         return self._assistant_route(
@@ -119,12 +123,14 @@ class DeterministicAgenticRouter:
         if lower_text.startswith("/correct"):
             return self._tool_route(
                 context,
-                tool_name="propose_memory_correction",
+                tool_name="update_memory_graph",
                 arguments={
-                    "correction_text": self._command_payload(text, "/correct") or text,
+                    "source_text": self._command_payload(text, "/correct") or text,
+                    "guidelines": "Apply this as a correction or update to the memory graph.",
+                    "desired_work": "correct_or_update_memory_graph",
                     "pending_process_policy": "pause",
                 },
-                reason="User proposed a correction while a process is pending.",
+                reason="User proposed a graph update/correction while a process is pending.",
                 pending_intent=PendingMessageIntent.CORRECTION,
             )
         if lower_text.startswith("/memory") or lower_text.startswith("/new"):
