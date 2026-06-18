@@ -3177,6 +3177,279 @@ p {
   text-transform: uppercase;
 }
 
+.memory-window-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.memory-window-actions button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graph-border-strong);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+  color: var(--graph-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.memory-log-section {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--graph-border-subtle);
+}
+
+.memory-log-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.memory-log-filters label {
+  display: grid;
+  gap: 4px;
+}
+
+.memory-log-filters label span {
+  color: var(--graph-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.memory-log-filters input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--graph-border-strong);
+  border-radius: var(--radius);
+  background: var(--graph-window-low);
+  color: var(--graph-text);
+}
+
+.memory-log-filter-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-window-low);
+}
+
+.memory-log-filter-toggle input {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.memory-log-filters button {
+  min-height: 34px;
+  border: 1px solid var(--graph-border-strong);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+  color: var(--graph-text);
+  font-weight: 700;
+}
+
+.memory-log-timeline {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.memory-log-row {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+  color: var(--graph-text);
+  text-align: left;
+}
+
+.memory-log-row.is-active,
+.memory-log-row:hover {
+  border-color: var(--graph-secondary);
+  background: var(--graph-card-hover);
+}
+
+.memory-log-row > span {
+  color: var(--graph-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+}
+
+.memory-log-row strong {
+  color: var(--graph-text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.memory-log-row small,
+.memory-log-detail .badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.memory-log-row em {
+  color: var(--graph-muted-strong);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.memory-log-detail {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-window-low);
+}
+
+.memory-log-detail header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.memory-log-detail h4,
+.memory-log-node-bucket h5,
+.memory-log-relationship-list h5 {
+  margin: 0;
+  color: var(--graph-text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.memory-log-node-bucket,
+.memory-log-relationship-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.memory-log-node-bucket div,
+.memory-log-relationship-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+}
+
+.memory-log-node-bucket strong,
+.memory-log-relationship-list strong {
+  color: var(--graph-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.memory-log-node-bucket span,
+.memory-log-relationship-list span {
+  color: var(--graph-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.retrieval-evidence-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.retrieval-evidence-panel article {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-window-low);
+}
+
+.retrieval-evidence-panel header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.retrieval-evidence-panel strong {
+  color: var(--graph-text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.retrieval-evidence-panel span,
+.retrieval-evidence-panel small {
+  color: var(--graph-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+}
+
+.retrieval-evidence-panel p {
+  margin: 0;
+  color: var(--graph-muted-strong);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.retrieval-diagnostics-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.retrieval-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.retrieval-diagnostic-grid div {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+}
+
+.retrieval-diagnostic-grid span {
+  color: var(--graph-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.retrieval-diagnostic-grid strong {
+  overflow-wrap: anywhere;
+  color: var(--graph-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.retrieval-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.retrieval-path span {
+  padding: 3px 7px;
+  border: 1px solid var(--graph-border-subtle);
+  border-radius: var(--radius);
+  background: var(--graph-card);
+  color: var(--graph-muted-strong);
+  font-size: 11px;
+  line-height: 14px;
+}
+
 .memory-dock {
   display: flex;
   flex-direction: column;

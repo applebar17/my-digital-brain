@@ -23,6 +23,7 @@ from my_digital_brain.graph.models import (
     RelationshipContextDetailResult,
     RelationshipResult,
     MapViewResult,
+    MemoryLogDetailResult,
     TimelineItem,
     TimelineResult,
 )
@@ -294,6 +295,66 @@ class FakeGraphService:
             relationships=[],
         )
 
+    def get_memory_logs_for_target(self, target_id: str, **kwargs: object) -> list[NodeSearchResult]:
+        self.memory_log_query = {"target_id": target_id, **kwargs}
+        return [
+            NodeSearchResult(
+                label="MemoryLog",
+                labels=["MemoryLog"],
+                properties={
+                    "id": "log-1",
+                    "log_text": "Marco moved to Turin.",
+                    "log_kind": "update",
+                    "source_kind": "telegram",
+                    "happened_at": "2025-01-01",
+                    "primary_host_target_id": target_id,
+                },
+            )
+        ]
+
+    def get_memory_log_detail(self, log_id: str, **_kwargs: object) -> MemoryLogDetailResult:
+        if log_id == "missing":
+            raise GraphNotFoundError("MemoryLog not found: missing")
+        host = NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": "node-1", "display_name": "Marco"},
+        )
+        place = NodeSearchResult(
+            label="Place",
+            labels=["Place"],
+            properties={"id": "place-1", "name": "Turin"},
+        )
+        context = NodeSearchResult(
+            label="RelationshipContext",
+            labels=["RelationshipContext"],
+            properties={"id": "context-1", "description": "Work relation."},
+        )
+        media = NodeSearchResult(
+            label="MediaAsset",
+            labels=["MediaAsset"],
+            properties={"id": "media-1", "media_type": "image"},
+        )
+        return MemoryLogDetailResult(
+            memory_log=NodeSearchResult(
+                label="MemoryLog",
+                labels=["MemoryLog"],
+                properties={"id": log_id, "log_text": "Marco moved to Turin."},
+            ),
+            hosts=[host],
+            involved=[place],
+            relationship_contexts=[context],
+            media_assets=[media],
+            relationships=[
+                RelationshipResult(
+                    type="HAS_MEMORY_LOG",
+                    from_id="node-1",
+                    to_id=log_id,
+                    properties={"id": "rel-log-host"},
+                )
+            ],
+        )
+
     def get_source_evidence(self, target_id: str, **_kwargs: object) -> list[NodeSearchResult]:
         return [
             NodeSearchResult(
@@ -563,6 +624,45 @@ def test_wave3_graph_query_endpoints() -> None:
     assert map_view.json()["places"][0]["title"] == "Athens"
     assert context_package.json()["target"]["alias"] == "NODE_000001"
     assert analytics.json()["node_counts"]["Person"] == 1
+
+
+def test_wave4_memory_log_endpoints() -> None:
+    service = FakeGraphService()
+    client = client_for(service)
+
+    logs = client.get(
+        "/graph/nodes/node-1/memory-logs",
+        params={
+            "from_time": "2024-01-01",
+            "to_time": "2025-12-31",
+            "log_kind": "update",
+            "source_kind": "telegram",
+            "involved_target_id": "place-1",
+            "media_only": True,
+            "include_archived": True,
+            "limit": 12,
+        },
+    )
+    detail = client.get("/graph/memory-logs/log-1")
+    missing = client.get("/graph/memory-logs/missing")
+
+    assert logs.status_code == 200
+    assert logs.json()[0]["label"] == "MemoryLog"
+    assert service.memory_log_query["from_time"] == "2024-01-01"
+    assert service.memory_log_query["to_time"] == "2025-12-31"
+    assert service.memory_log_query["log_kind"] == "update"
+    assert service.memory_log_query["source_kind"] == "telegram"
+    assert service.memory_log_query["involved_target_id"] == "place-1"
+    assert service.memory_log_query["media_only"] is True
+    assert service.memory_log_query["include_archived"] is True
+    assert service.memory_log_query["limit"] == 12
+    assert detail.status_code == 200
+    assert detail.json()["memory_log"]["properties"]["id"] == "log-1"
+    assert detail.json()["hosts"][0]["properties"]["id"] == "node-1"
+    assert detail.json()["involved"][0]["label"] == "Place"
+    assert detail.json()["relationship_contexts"][0]["label"] == "RelationshipContext"
+    assert detail.json()["media_assets"][0]["label"] == "MediaAsset"
+    assert missing.status_code == 404
 
 
 def test_graph_api_error_mapping() -> None:

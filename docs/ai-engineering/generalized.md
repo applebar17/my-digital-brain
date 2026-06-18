@@ -690,6 +690,14 @@ Rules:
 - Default UI should render durable objects and fold event/observation hits into
   their primary host. Detailed records can be shown in a nested timeline or
   detail view unless debugging.
+- Nested history navigation should use dedicated read endpoints and backend
+  filters for time, category, source, involved target, media-only, and archived
+  inclusion. Selecting a durable object should preserve the current graph or
+  workspace view; focusing the object's neighborhood should be an explicit UI
+  action.
+- Debug/UAT should expose retrieval evidence, scopes, scores, roles, and
+  hydration paths in diagnostics panels before introducing raw event or
+  observation graph rendering.
 - Prompt examples should show the model how to choose between durable objects,
   event records, observation records, metadata patches, contextual records, and
   status records.

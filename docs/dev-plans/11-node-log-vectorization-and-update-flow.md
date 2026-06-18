@@ -813,10 +813,21 @@ ProfileMemory hit
 ### Wave 4: UI MemoryLog Navigation
 
 - Render default search output as domain nodes and domain relationships.
-- Preserve graph state while entering/exiting a domain node's iceberg view.
-- Show `MemoryLog` history as a nested timeline in node detail.
-- Add log filters by time, kind, source, involved nodes, and media.
-- Support debug/UAT rendering where logs can be shown as graph records.
+- Add dedicated read APIs for `MemoryLog` navigation:
+  `GET /graph/nodes/{node_id}/memory-logs` and
+  `GET /graph/memory-logs/{log_id}`.
+- Execute log filters in the backend for time range, log kind, source kind,
+  involved target, media-only, archived inclusion, and limit.
+- Preserve graph state while entering/exiting a domain node's iceberg view;
+  focusing a selected node's neighborhood is an explicit action.
+- Show `MemoryLog` history as a nested timeline in node detail using reusable
+  frontend components for filters, rows, timeline, detail, retrieval evidence,
+  and diagnostics.
+- Expand a selected log into hosts, involved nodes, relationship contexts,
+  media refs, and relationships. Full media preview remains future work.
+- Start debug/UAT support with diagnostics panels for matched records, scopes,
+  scores, roles, and hydration paths. Do not render logs as graph nodes by
+  default.
 
 ### Wave 5: Agentic Update Tooling
 

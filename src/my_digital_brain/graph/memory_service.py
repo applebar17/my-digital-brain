@@ -219,10 +219,24 @@ class GraphMemoryService(GraphServiceBase):
         self,
         target_id: str,
         *,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        log_kind: str | None = None,
+        source_kind: str | None = None,
+        involved_target_id: str | None = None,
+        media_only: bool = False,
+        include_archived: bool = False,
         limit: int = 50,
     ) -> list[NodeSearchResult]:
         records = self.repository.find_memory_logs_for_target(
             target_id,
+            from_time=from_time,
+            to_time=to_time,
+            log_kind=log_kind,
+            source_kind=source_kind,
+            involved_target_id=involved_target_id,
+            media_only=media_only,
+            include_archived=include_archived,
             limit=self._bounded_limit(limit),
         )
         return [NodeSearchResult.model_validate(record) for record in records]

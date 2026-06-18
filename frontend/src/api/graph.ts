@@ -4,6 +4,7 @@ import type {
   GraphAnalyticsSummary,
   GraphViewResult,
   MapViewResult,
+  MemoryLogDetailResult,
   NodeSearchResult,
   RelationshipResult,
   SemanticMemorySearchResult,
@@ -90,6 +91,44 @@ export function getTimelineForNode(
       include_history: includeHistory,
       limit
     }
+  });
+}
+
+export interface MemoryLogFilters {
+  from_time?: string;
+  to_time?: string;
+  log_kind?: string;
+  source_kind?: string;
+  involved_target_id?: string;
+  media_only?: boolean;
+  include_archived?: boolean;
+  limit?: number;
+}
+
+export function getMemoryLogsForNode(
+  nodeId: string,
+  filters: MemoryLogFilters = {}
+): Promise<NodeSearchResult[]> {
+  return apiRequest<NodeSearchResult[]>(`/graph/nodes/${nodeId}/memory-logs`, {
+    query: {
+      from_time: filters.from_time,
+      to_time: filters.to_time,
+      log_kind: filters.log_kind,
+      source_kind: filters.source_kind,
+      involved_target_id: filters.involved_target_id,
+      media_only: filters.media_only,
+      include_archived: filters.include_archived,
+      limit: filters.limit
+    }
+  });
+}
+
+export function getMemoryLogDetail(
+  logId: string,
+  limit = 50
+): Promise<MemoryLogDetailResult> {
+  return apiRequest<MemoryLogDetailResult>(`/graph/memory-logs/${logId}`, {
+    query: { limit }
   });
 }
 

@@ -177,6 +177,13 @@ class GraphMemoryRepository:
         self,
         target_id: str,
         *,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        log_kind: str | None = None,
+        source_kind: str | None = None,
+        involved_target_id: str | None = None,
+        media_only: bool = False,
+        include_archived: bool = False,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         records = self.client.execute_read(
@@ -184,6 +191,46 @@ class GraphMemoryRepository:
             MATCH (target)-[:HAS_MEMORY_LOG]->(log:MemoryLog)
             WHERE target.id = $target_id
               AND any(label IN labels(target) WHERE label IN $core_labels)
+              AND ($include_archived = true OR coalesce(log.lifecycle_state, "active") <> "archived")
+              AND ($log_kind IS NULL OR log.log_kind = $log_kind)
+              AND ($source_kind IS NULL OR log.source_kind = $source_kind)
+              AND (
+                $from_time IS NULL
+                OR coalesce(
+                  log.happened_at,
+                  log.resolved_start,
+                  log.source_time,
+                  log.observed_at,
+                  log.created_at,
+                  ""
+                ) >= $from_time
+              )
+              AND (
+                $to_time IS NULL
+                OR coalesce(
+                  log.happened_at,
+                  log.resolved_start,
+                  log.source_time,
+                  log.observed_at,
+                  log.created_at,
+                  ""
+                ) <= $to_time
+              )
+              AND (
+                $involved_target_id IS NULL
+                OR $involved_target_id IN coalesce(log.involved_target_ids, [])
+                OR EXISTS {
+                  MATCH (log)-[:INVOLVES]-(involved)
+                  WHERE involved.id = $involved_target_id
+                }
+              )
+              AND (
+                $media_only = false
+                OR size(coalesce(log.media_refs, [])) > 0
+                OR EXISTS {
+                  MATCH (log)-[:HAS_MEDIA]-(:MediaAsset)
+                }
+              )
             RETURN labels(log) AS labels, properties(log) AS properties
             ORDER BY coalesce(
                 log.happened_at,
@@ -195,7 +242,18 @@ class GraphMemoryRepository:
             ) DESC
             LIMIT $limit
             """,
-            {"target_id": target_id, "core_labels": list(CORE_NODE_LABELS), "limit": limit},
+            {
+                "target_id": target_id,
+                "core_labels": list(CORE_NODE_LABELS),
+                "from_time": from_time,
+                "to_time": to_time,
+                "log_kind": log_kind,
+                "source_kind": source_kind,
+                "involved_target_id": involved_target_id,
+                "media_only": media_only,
+                "include_archived": include_archived,
+                "limit": limit,
+            },
         )
         return [node_from_record(record) for record in records]
 

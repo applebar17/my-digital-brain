@@ -1,15 +1,53 @@
 import { Badge } from "../../../components/Badge";
 import { EmptyState } from "../../../components/EmptyState";
+import type { MemoryLogFilters as MemoryLogFilterValues } from "../../../api/graph";
 import { formatUnknown, nodeTitle } from "../../../lib/graphLabels";
-import type { EntityDetailResult } from "../../../types/graph";
+import type {
+  EntityDetailResult,
+  MemoryLogDetailResult,
+  NodeSearchResult,
+  SemanticMemoryHit,
+  SemanticMemorySearchResult
+} from "../../../types/graph";
+import { MemoryLogDetailPanel } from "./MemoryLogDetailPanel";
+import { MemoryLogFilters } from "./MemoryLogFilters";
+import { MemoryTimeline } from "./MemoryTimeline";
+import { RetrievalDiagnosticsPanel } from "./RetrievalDiagnosticsPanel";
+import { RetrievalEvidencePanel } from "./RetrievalEvidencePanel";
 
 interface GraphInspectorPanelProps {
   detail?: EntityDetailResult;
   selectedNodeId?: string;
+  selectedHit?: SemanticMemoryHit;
+  retrievalResult?: SemanticMemorySearchResult;
+  memoryLogs: NodeSearchResult[];
+  memoryLogFilters: MemoryLogFilterValues;
+  selectedMemoryLogId?: string;
+  selectedMemoryLogDetail?: MemoryLogDetailResult;
+  isMemoryLogLoading: boolean;
   onClose: () => void;
+  onFocusNeighborhood: () => void;
+  onMemoryLogFiltersChange: (filters: MemoryLogFilterValues) => void;
+  onResetMemoryLogFilters: () => void;
+  onSelectMemoryLog: (logId: string) => void;
 }
 
-export function GraphInspectorPanel({ detail, selectedNodeId, onClose }: GraphInspectorPanelProps) {
+export function GraphInspectorPanel({
+  detail,
+  selectedNodeId,
+  selectedHit,
+  retrievalResult,
+  memoryLogs,
+  memoryLogFilters,
+  selectedMemoryLogId,
+  selectedMemoryLogDetail,
+  isMemoryLogLoading,
+  onClose,
+  onFocusNeighborhood,
+  onMemoryLogFiltersChange,
+  onResetMemoryLogFilters,
+  onSelectMemoryLog
+}: GraphInspectorPanelProps) {
   const isOpen = Boolean(selectedNodeId);
   const className = `memory-window memory-inspector-window ${isOpen ? "is-open" : "is-closed"}`;
 
@@ -57,15 +95,20 @@ export function GraphInspectorPanel({ detail, selectedNodeId, onClose }: GraphIn
           <p className="eyebrow">{target.label}</p>
           <h3>{nodeTitle(target)}</h3>
         </div>
-        <button
-          className="memory-window-close"
-          type="button"
-          aria-label="Close selected node details"
-          title="Close selected node details"
-          onClick={onClose}
-        >
-          X
-        </button>
+        <div className="memory-window-actions">
+          <button type="button" onClick={onFocusNeighborhood}>
+            Focus
+          </button>
+          <button
+            className="memory-window-close"
+            type="button"
+            aria-label="Close selected node details"
+            title="Close selected node details"
+            onClick={onClose}
+          >
+            X
+          </button>
+        </div>
       </header>
 
       <div className="memory-inspector-body">
@@ -144,6 +187,47 @@ export function GraphInspectorPanel({ detail, selectedNodeId, onClose }: GraphIn
             </div>
           )}
         </section>
+
+        <section className="memory-property-section memory-log-section">
+          <h4>MemoryLog Timeline</h4>
+          <MemoryLogFilters
+            filters={memoryLogFilters}
+            isLoading={isMemoryLogLoading}
+            onChange={onMemoryLogFiltersChange}
+            onReset={onResetMemoryLogFilters}
+          />
+          <MemoryTimeline
+            logs={memoryLogs}
+            selectedLogId={selectedMemoryLogId}
+            isLoading={isMemoryLogLoading}
+            onSelectLog={onSelectMemoryLog}
+          />
+        </section>
+
+        <section className="memory-property-section">
+          <h4>Selected Log</h4>
+          <MemoryLogDetailPanel
+            detail={selectedMemoryLogDetail}
+            selectedLogId={selectedMemoryLogId}
+            isLoading={isMemoryLogLoading}
+          />
+        </section>
+
+        <section className="memory-property-section">
+          <h4>Matched Records</h4>
+          <RetrievalEvidencePanel
+            hit={selectedHit}
+            contextPackages={retrievalResult?.context_packages ?? []}
+          />
+        </section>
+
+        <details className="memory-metadata-section">
+          <summary>
+            <span>Retrieval Diagnostics</span>
+            <small>{retrievalResult?.trace.length ?? 0} events</small>
+          </summary>
+          <RetrievalDiagnosticsPanel hit={selectedHit} retrievalResult={retrievalResult} />
+        </details>
       </div>
     </aside>
   );

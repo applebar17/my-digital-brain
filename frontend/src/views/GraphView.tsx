@@ -3,6 +3,8 @@ import type { FormEvent } from "react";
 import {
   getEntityDetail,
   getMapView,
+  getMemoryLogDetail,
+  getMemoryLogsForNode,
   getNeighborhoodView,
   getNodeRelationships,
   hybridSearch,
@@ -10,6 +12,7 @@ import {
   searchNodes,
   semanticSearch
 } from "../api/graph";
+import type { MemoryLogFilters } from "../api/graph";
 import { GraphContextBar } from "../features/graph/components/GraphContextBar";
 import { GraphInspectorPanel } from "../features/graph/components/GraphInspectorPanel";
 import { GraphSearchWindow } from "../features/graph/components/GraphSearchWindow";
@@ -22,8 +25,10 @@ import type {
   GraphViewRelationship,
   GraphViewResult,
   MapViewResult,
+  MemoryLogDetailResult,
   NodeSearchResult,
   RelationshipResult,
+  SemanticMemoryHit,
   SemanticMemorySearchResult,
   TimelineResult
 } from "../types/graph";
@@ -44,9 +49,17 @@ export function GraphView() {
   const [graph, setGraph] = useState<GraphViewResult>();
   const [timeline, setTimeline] = useState<TimelineResult>();
   const [mapView, setMapView] = useState<MapViewResult>();
+  const [memoryLogs, setMemoryLogs] = useState<NodeSearchResult[]>([]);
+  const [memoryLogFilters, setMemoryLogFilters] = useState<MemoryLogFilters>(DEFAULT_MEMORY_LOG_FILTERS);
+  const [selectedMemoryLogId, setSelectedMemoryLogId] = useState<string>();
+  const [selectedMemoryLogDetail, setSelectedMemoryLogDetail] = useState<MemoryLogDetailResult>();
   const [isLoading, setIsLoading] = useState(false);
+  const [isMemoryLogLoading, setIsMemoryLogLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
+  const selectedHit = selectedNodeId
+    ? findHitForDisplayTarget(retrievalResult?.hits ?? [], selectedNodeId)
+    : undefined;
 
   async function handleSearch(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -54,6 +67,9 @@ export function GraphView() {
     setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setMemoryLogs([]);
+    setSelectedMemoryLogId(undefined);
+    setSelectedMemoryLogDetail(undefined);
     setRetrievalResult(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
@@ -116,6 +132,9 @@ export function GraphView() {
     setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setMemoryLogs([]);
+    setSelectedMemoryLogId(undefined);
+    setSelectedMemoryLogDetail(undefined);
     setRetrievalResult(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
@@ -150,26 +169,32 @@ export function GraphView() {
     }
   }
 
-  async function loadNodeContext(id: string, nextDepth = depth, nextIncludeArchived = includeArchived) {
+  async function loadNodeContext(id: string, nextIncludeArchived = includeArchived) {
     if (!id) {
       return;
     }
     setSelectedNodeId(id);
     setDetail(undefined);
+    setMemoryLogs([]);
+    setSelectedMemoryLogId(undefined);
+    setSelectedMemoryLogDetail(undefined);
     setIsLoading(true);
     setErrorMessage(undefined);
     setStatusMessage("Loading graph context...");
     try {
-      const [nextDetail, nextGraph, nextTimeline, nextMapView] = await Promise.all([
+      const [nextDetail, nextTimeline, nextMapView, nextMemoryLogs] = await Promise.all([
         getEntityDetail(id, true, nextIncludeArchived, 50),
-        getNeighborhoodView(id, nextDepth, true, nextIncludeArchived, 100),
         getTimelineForNode(id, undefined, undefined, true, 100),
-        getMapView(id, undefined, undefined, undefined, undefined, 100)
+        getMapView(id, undefined, undefined, undefined, undefined, 100),
+        getMemoryLogsForNode(id, {
+          ...memoryLogFilters,
+          include_archived: nextIncludeArchived || memoryLogFilters.include_archived
+        })
       ]);
       setDetail(nextDetail);
-      setGraph(nextGraph);
       setTimeline(nextTimeline);
       setMapView(nextMapView);
+      setMemoryLogs(nextMemoryLogs);
       setStatusMessage("Graph context loaded");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to load graph context.");
@@ -182,9 +207,6 @@ export function GraphView() {
   function handleDepthChange(nextDepth: number) {
     const boundedDepth = Math.max(1, Math.min(nextDepth, 3));
     setDepth(boundedDepth);
-    if (selectedNodeId) {
-      void loadNodeContext(selectedNodeId, boundedDepth, includeArchived);
-    }
   }
 
   function handleLabelChange(nextLabel: string) {
@@ -197,7 +219,7 @@ export function GraphView() {
   function handleIncludeArchivedChange(nextIncludeArchived: boolean) {
     setIncludeArchived(nextIncludeArchived);
     if (selectedNodeId) {
-      void loadNodeContext(selectedNodeId, depth, nextIncludeArchived);
+      void loadNodeContext(selectedNodeId, nextIncludeArchived);
     } else if (showDatabaseSample) {
       void loadDatabaseSample(databaseSampleLimit, label, nextIncludeArchived);
     }
@@ -216,14 +238,21 @@ export function GraphView() {
     setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setMemoryLogs([]);
+    setSelectedMemoryLogId(undefined);
+    setSelectedMemoryLogDetail(undefined);
     setStatusMessage(undefined);
     setErrorMessage(undefined);
   }
 
   function handleCloseInspector() {
     setSelectedNodeId(undefined);
+    setDetail(undefined);
     setTimeline(undefined);
     setMapView(undefined);
+    setMemoryLogs([]);
+    setSelectedMemoryLogId(undefined);
+    setSelectedMemoryLogDetail(undefined);
   }
 
   function handleDatabaseSampleLimitChange(nextLimit: number) {
@@ -231,6 +260,68 @@ export function GraphView() {
     setDatabaseSampleLimit(boundedLimit);
     if (showDatabaseSample) {
       void loadDatabaseSample(boundedLimit);
+    }
+  }
+
+  async function focusSelectedNeighborhood() {
+    if (!selectedNodeId) {
+      return;
+    }
+    setIsLoading(true);
+    setErrorMessage(undefined);
+    setStatusMessage("Focusing selected node neighborhood...");
+    try {
+      const nextGraph = await getNeighborhoodView(selectedNodeId, depth, true, includeArchived, 100);
+      setGraph(nextGraph);
+      setStatusMessage("Focused graph neighborhood loaded");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to focus graph neighborhood.");
+      setStatusMessage(undefined);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function reloadMemoryLogs(nextFilters = memoryLogFilters) {
+    if (!selectedNodeId) {
+      return;
+    }
+    setIsMemoryLogLoading(true);
+    setErrorMessage(undefined);
+    try {
+      const logs = await getMemoryLogsForNode(selectedNodeId, nextFilters);
+      setMemoryLogs(logs);
+      setSelectedMemoryLogId(undefined);
+      setSelectedMemoryLogDetail(undefined);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load MemoryLog timeline.");
+    } finally {
+      setIsMemoryLogLoading(false);
+    }
+  }
+
+  function handleMemoryLogFiltersChange(nextFilters: MemoryLogFilters) {
+    const normalizedFilters = normalizeMemoryLogFilters(nextFilters);
+    setMemoryLogFilters(normalizedFilters);
+    void reloadMemoryLogs(normalizedFilters);
+  }
+
+  function handleResetMemoryLogFilters() {
+    setMemoryLogFilters(DEFAULT_MEMORY_LOG_FILTERS);
+    void reloadMemoryLogs(DEFAULT_MEMORY_LOG_FILTERS);
+  }
+
+  async function handleSelectMemoryLog(logId: string) {
+    setSelectedMemoryLogId(logId);
+    setSelectedMemoryLogDetail(undefined);
+    setIsMemoryLogLoading(true);
+    setErrorMessage(undefined);
+    try {
+      setSelectedMemoryLogDetail(await getMemoryLogDetail(logId));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load MemoryLog detail.");
+    } finally {
+      setIsMemoryLogLoading(false);
     }
   }
 
@@ -279,12 +370,52 @@ export function GraphView() {
           <GraphInspectorPanel
             detail={detail}
             selectedNodeId={selectedNodeId}
+            selectedHit={selectedHit}
+            retrievalResult={retrievalResult}
+            memoryLogs={memoryLogs}
+            memoryLogFilters={memoryLogFilters}
+            selectedMemoryLogId={selectedMemoryLogId}
+            selectedMemoryLogDetail={selectedMemoryLogDetail}
+            isMemoryLogLoading={isMemoryLogLoading}
             onClose={handleCloseInspector}
+            onFocusNeighborhood={() => void focusSelectedNeighborhood()}
+            onMemoryLogFiltersChange={handleMemoryLogFiltersChange}
+            onResetMemoryLogFilters={handleResetMemoryLogFilters}
+            onSelectMemoryLog={(logId) => void handleSelectMemoryLog(logId)}
           />
         </div>
       </div>
     </div>
   );
+}
+
+const DEFAULT_MEMORY_LOG_FILTERS: MemoryLogFilters = {
+  include_archived: false,
+  limit: 50
+};
+
+function normalizeMemoryLogFilters(filters: MemoryLogFilters): MemoryLogFilters {
+  return {
+    from_time: filters.from_time || undefined,
+    to_time: filters.to_time || undefined,
+    log_kind: filters.log_kind || undefined,
+    source_kind: filters.source_kind || undefined,
+    involved_target_id: filters.involved_target_id || undefined,
+    media_only: Boolean(filters.media_only),
+    include_archived: Boolean(filters.include_archived),
+    limit: Math.max(1, Math.min(filters.limit ?? 50, 200))
+  };
+}
+
+function findHitForDisplayTarget(
+  hits: SemanticMemoryHit[],
+  targetId: string
+): SemanticMemoryHit | undefined {
+  return hits.find((hit) => (
+    hit.display_target_id
+    || hit.canonical_target_id
+    || hit.primary_target_id
+  ) === targetId);
 }
 
 function toDatabaseSampleGraph(

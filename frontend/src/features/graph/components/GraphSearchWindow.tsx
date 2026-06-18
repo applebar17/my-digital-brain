@@ -87,7 +87,7 @@ function RetrievalResults({
         <EmptyState title="No retrieval hits" body="Run semantic or hybrid search to hydrate graph memories." />
       ) : (
         hits.map((hit) => {
-          const targetId = hit.canonical_target_id || hit.primary_target_id;
+          const targetId = hit.display_target_id || hit.canonical_target_id || hit.primary_target_id;
           const title = hit.title || hit.target?.title || hit.canonical_target?.title || "Untitled result";
           return (
             <button
@@ -98,7 +98,8 @@ function RetrievalResults({
             >
               <span>{title}</span>
               <small>
-                #{hit.rank} {hit.primary_target_label} - {hit.source} - {hit.score.toFixed(2)}
+                #{hit.rank} {hit.display_target_label || hit.primary_target_label} -{" "}
+                {hit.hit_role || hit.source} - {hit.score.toFixed(2)}
               </small>
               {(hit.description || hit.document_preview) && (
                 <em>{hit.description || hit.document_preview}</em>

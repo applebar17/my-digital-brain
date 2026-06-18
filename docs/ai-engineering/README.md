@@ -643,6 +643,13 @@ Rules:
   graph relationships, not as inline node/log attributes.
 - Default graph UI should render domain nodes and fold log hits into their host
   node. Logs are shown in a nested timeline/detail view unless debugging.
+- MemoryLog UI navigation should use dedicated read endpoints and backend
+  filters for time, kind, source, involved target, media-only, and archived
+  inclusion. Selecting a domain node should preserve the current graph view;
+  focusing the node's neighborhood should be an explicit UI action.
+- Debug/UAT should expose retrieval evidence, scopes, scores, roles, and
+  hydration paths in diagnostics panels before introducing raw log graph
+  rendering.
 - Prompt examples should show the model how to choose between domain node,
   `MemoryLog`, `Event`, `Perception`, `RelationshipContext`, and
   `RelationshipState`.

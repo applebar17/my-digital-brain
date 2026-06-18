@@ -147,6 +147,14 @@ class FakeGraphRepository:
     def find_memory_logs_for_target(
         self,
         target_id: str,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        log_kind: str | None = None,
+        source_kind: str | None = None,
+        involved_target_id: str | None = None,
+        media_only: bool = False,
+        include_archived: bool = False,
+        limit: int = 50,
         **_kwargs: object,
     ) -> list[dict[str, object]]:
         log_ids = {
@@ -155,11 +163,49 @@ class FakeGraphRepository:
             if relationship["type"] == "HAS_MEMORY_LOG"
             and relationship["from_id"] == target_id
         }
-        return [
+        logs = [
             node
             for node in self.nodes.values()
             if node["label"] == "MemoryLog" and node["properties"]["id"] in log_ids
         ]
+        if not include_archived:
+            logs = [
+                node
+                for node in logs
+                if node["properties"].get("lifecycle_state", "active") != "archived"
+            ]
+        if log_kind:
+            logs = [node for node in logs if node["properties"].get("log_kind") == log_kind]
+        if source_kind:
+            logs = [node for node in logs if node["properties"].get("source_kind") == source_kind]
+        if from_time:
+            logs = [node for node in logs if _memory_log_time(node) >= from_time]
+        if to_time:
+            logs = [node for node in logs if _memory_log_time(node) <= to_time]
+        if involved_target_id:
+            logs = [
+                node
+                for node in logs
+                if involved_target_id in node["properties"].get("involved_target_ids", [])
+                or any(
+                    relationship["type"] == "INVOLVES"
+                    and relationship["from_id"] == node["properties"]["id"]
+                    and relationship["to_id"] == involved_target_id
+                    for relationship in self.relationships
+                )
+            ]
+        if media_only:
+            logs = [
+                node
+                for node in logs
+                if node["properties"].get("media_refs")
+                or any(
+                    relationship["type"] == "HAS_MEDIA"
+                    and relationship["from_id"] == node["properties"]["id"]
+                    for relationship in self.relationships
+                )
+            ]
+        return sorted(logs, key=_memory_log_time, reverse=True)[:limit]
 
     def get_memory_log_detail(
         self,
@@ -834,6 +880,75 @@ def test_memory_log_service_reads_target_logs_and_detail_buckets() -> None:
     assert detail.media_assets[0].properties["id"] == media.properties["id"]
 
 
+def test_memory_log_service_filters_target_logs() -> None:
+    repository = FakeGraphRepository()
+    service = GraphService(repository)
+    person = service.upsert_node("Person", {"display_name": "Marco"})
+    place = service.upsert_node("Place", {"name": "Turin"})
+    old_log = service.upsert_node(
+        "MemoryLog",
+        {
+            "log_text": "Old note.",
+            "log_kind": "note",
+            "source_kind": "chat",
+            "happened_at": "2024-01-01",
+            "host_target_ids": [person.properties["id"]],
+            "primary_host_target_id": person.properties["id"],
+        },
+    )
+    matching_log = service.upsert_node(
+        "MemoryLog",
+        {
+            "log_text": "Marco moved to Turin.",
+            "log_kind": "update",
+            "source_kind": "telegram",
+            "happened_at": "2025-01-01",
+            "host_target_ids": [person.properties["id"]],
+            "primary_host_target_id": person.properties["id"],
+            "involved_target_ids": [place.properties["id"]],
+            "media_refs": ["photo-1"],
+        },
+    )
+    archived_log = service.upsert_node(
+        "MemoryLog",
+        {
+            "log_text": "Archived note.",
+            "log_kind": "update",
+            "source_kind": "telegram",
+            "happened_at": "2026-01-01",
+            "lifecycle_state": "archived",
+            "host_target_ids": [person.properties["id"]],
+            "primary_host_target_id": person.properties["id"],
+            "involved_target_ids": [place.properties["id"]],
+            "media_refs": ["photo-2"],
+        },
+    )
+    for log in (old_log, matching_log, archived_log):
+        service.upsert_relationship(
+            "HAS_MEMORY_LOG",
+            person.properties["id"],
+            log.properties["id"],
+            {"primary": log.properties["id"] == matching_log.properties["id"]},
+        )
+
+    logs = service.get_memory_logs_for_target(
+        person.properties["id"],
+        from_time="2024-06-01",
+        to_time="2025-12-31",
+        log_kind="update",
+        source_kind="telegram",
+        involved_target_id=place.properties["id"],
+        media_only=True,
+    )
+
+    assert [log.properties["id"] for log in logs] == [matching_log.properties["id"]]
+    assert (
+        service.get_memory_logs_for_target(person.properties["id"], include_archived=True)[0]
+        .properties["id"]
+        == archived_log.properties["id"]
+    )
+
+
 def test_wave3_map_view_and_analytics_summary() -> None:
     repository = FakeGraphRepository()
     service = GraphService(repository)
@@ -866,3 +981,13 @@ def test_wave3_map_view_and_analytics_summary() -> None:
     assert analytics.node_counts["Place"] == 1
     assert analytics.relationship_counts["HAPPENED_AT"] == 1
     assert analytics.top_emotion_tags[0].key == "freedom"
+
+
+def _memory_log_time(node: dict[str, object]) -> str:
+    properties = node["properties"]
+    assert isinstance(properties, dict)
+    for key in ("happened_at", "resolved_start", "source_time", "observed_at", "created_at"):
+        value = properties.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""

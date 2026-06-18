@@ -167,9 +167,26 @@ class GraphRepository:
         self,
         target_id: str,
         *,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        log_kind: str | None = None,
+        source_kind: str | None = None,
+        involved_target_id: str | None = None,
+        media_only: bool = False,
+        include_archived: bool = False,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        return self.memory.find_memory_logs_for_target(target_id, limit=limit)
+        return self.memory.find_memory_logs_for_target(
+            target_id,
+            from_time=from_time,
+            to_time=to_time,
+            log_kind=log_kind,
+            source_kind=source_kind,
+            involved_target_id=involved_target_id,
+            media_only=media_only,
+            include_archived=include_archived,
+            limit=limit,
+        )
 
     def get_memory_log_detail(self, log_id: str, *, limit: int = 50) -> dict[str, Any] | None:
         return self.memory.get_memory_log_detail(log_id, limit=limit)

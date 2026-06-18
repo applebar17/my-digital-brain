@@ -41,6 +41,15 @@ export interface EntityDetailResult {
   merges: NodeSearchResult[];
 }
 
+export interface MemoryLogDetailResult {
+  memory_log: NodeSearchResult;
+  hosts: NodeSearchResult[];
+  involved: NodeSearchResult[];
+  relationship_contexts: NodeSearchResult[];
+  media_assets: NodeSearchResult[];
+  relationships: RelationshipResult[];
+}
+
 export interface GraphViewNode {
   id: string;
   label: string;
@@ -104,6 +113,9 @@ export interface SemanticSearchTraceEvent {
   data: Record<string, unknown>;
 }
 
+export type VectorScopeName = "memory_node_summaries" | "memory_contexts" | "memory_micro_logs";
+export type HitRole = "domain_node" | "context" | "memory_log";
+
 export interface SemanticMemoryHit {
   rank: number;
   score: number;
@@ -111,13 +123,25 @@ export interface SemanticMemoryHit {
   vector_id?: string | null;
   distance?: number | null;
   collection: string;
+  scope?: VectorScopeName | null;
+  hit_role?: HitRole | null;
   embedding_scope?: string | null;
+  matched_target_id?: string | null;
+  matched_target_label?: string | null;
+  matched_target?: GraphViewNode | null;
+  display_target_id?: string | null;
+  display_target_label?: string | null;
   primary_target_id: string;
   primary_target_label: string;
   canonical_target_id?: string | null;
   related_target_ids: string[];
   source_ids: string[];
   relationship_ids: string[];
+  raw_score?: number | null;
+  normalized_score?: number | null;
+  scope_weight?: number | null;
+  hydration_path: string[];
+  matched_records: Record<string, unknown>[];
   title?: string | null;
   description?: string | null;
   document_preview?: string | null;
@@ -126,12 +150,25 @@ export interface SemanticMemoryHit {
   debug: Record<string, unknown>;
 }
 
+export interface GraphContextPackage {
+  target: Record<string, unknown>;
+  current_facts: Record<string, unknown>[];
+  relationships: Record<string, unknown>[];
+  relationship_contexts: Record<string, unknown>[];
+  perceptions: Record<string, unknown>[];
+  matched_records: Record<string, unknown>[];
+  timeline: Record<string, unknown>[];
+  evidence: Record<string, unknown>[];
+  notes: string[];
+  alias_map: Record<string, string>;
+}
+
 export interface SemanticMemorySearchResult {
   query: string;
   mode: "semantic" | "hybrid";
   collection: string;
   hits: SemanticMemoryHit[];
   graph_view: GraphViewResult;
-  context_packages: Record<string, unknown>[];
+  context_packages: GraphContextPackage[];
   trace: SemanticSearchTraceEvent[];
 }

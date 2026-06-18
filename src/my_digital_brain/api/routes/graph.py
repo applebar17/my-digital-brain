@@ -22,6 +22,7 @@ from my_digital_brain.graph.models import (
     MapViewResult,
     MergeCreateRequest,
     MergeUpdateRequest,
+    MemoryLogDetailResult,
     NeighborhoodResult,
     NodePatchRequest,
     NodeSearchResult,
@@ -550,6 +551,47 @@ def get_memories_for_node(
             include_archived=include_archived,
             limit=limit,
         )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/nodes/{node_id}/memory-logs", response_model=list[NodeSearchResult])
+def get_memory_logs_for_node(
+    node_id: str,
+    from_time: str | None = None,
+    to_time: str | None = None,
+    log_kind: str | None = None,
+    source_kind: str | None = None,
+    involved_target_id: str | None = None,
+    media_only: bool = False,
+    include_archived: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> list[NodeSearchResult]:
+    try:
+        return service.get_memory_logs_for_target(
+            node_id,
+            from_time=from_time,
+            to_time=to_time,
+            log_kind=log_kind,
+            source_kind=source_kind,
+            involved_target_id=involved_target_id,
+            media_only=media_only,
+            include_archived=include_archived,
+            limit=limit,
+        )
+    except Exception as exc:
+        raise graph_http_error(exc) from exc
+
+
+@router.get("/memory-logs/{log_id}", response_model=MemoryLogDetailResult)
+def get_memory_log_detail(
+    log_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    service: GraphService = Depends(get_graph_service),
+) -> MemoryLogDetailResult:
+    try:
+        return service.get_memory_log_detail(log_id, limit=limit)
     except Exception as exc:
         raise graph_http_error(exc) from exc
 
