@@ -285,13 +285,8 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 },
             )
 
-        original_text = str(
-            pending_context.context.get("source_text")
-            or pending_context.process_ref.metadata.get("source_text")
-            or "",
-        ).strip()
         current_answer = request.text.strip()
-        resumed_text = original_text or current_answer or "Resume pending memory ingestion."
+        resumed_text = self._resumed_text(request, pending_context)
 
         original_source_id = (
             pending_context.process_ref.metadata.get("source_id")
@@ -319,7 +314,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                 ),
                 "resume_policy": "refresh_context_before_write",
                 "conversation_history_refs": list(request.conversation_history_refs),
-                },
+            },
             )
         result = self.ingestion_service.process_source(source)
         chat_result = self._chat_result_from_ingestion(
@@ -394,6 +389,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                         "source_id": source.source_id,
                         "reason": result.clarification.reason,
                         "ingestion_id": result.ingestion_id,
+                        "source_text": source.raw_text,
                         "resume_step": "source_reprocess",
                         "checkpoint_schema_version": "v1",
                         "clarification_packet": packet.model_dump(

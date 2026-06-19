@@ -132,6 +132,34 @@ def test_configure_logging_is_idempotent_and_uses_rotation_settings(tmp_path) ->
     assert agentic_file_handlers[0].backupCount == 3
 
 
+def test_configure_logging_can_truncate_existing_log_files(tmp_path) -> None:
+    app_log = tmp_path / "application.jsonl"
+    agentic_log = tmp_path / "agentic.jsonl"
+    app_log.write_text("old app\n", encoding="utf-8")
+    agentic_log.write_text("old agentic\n", encoding="utf-8")
+
+    configure_logging("INFO", log_dir=tmp_path, truncate_on_start=True)
+    logging.getLogger("my_digital_brain.graph.service").info(
+        "graph.health.ok",
+        extra={"event": "graph.health.ok"},
+    )
+    _flush_handlers()
+
+    assert "old app" not in app_log.read_text(encoding="utf-8")
+    assert "old agentic" not in agentic_log.read_text(encoding="utf-8")
+
+
+def test_configure_logging_suppresses_chroma_telemetry_noise(tmp_path) -> None:
+    configure_logging("INFO", log_dir=tmp_path)
+    logging.getLogger("chromadb.telemetry.product.posthog").error(
+        "Failed to send telemetry event ClientStartEvent",
+        extra={"event": "Failed"},
+    )
+    _flush_handlers()
+
+    assert (tmp_path / "application.jsonl").read_text(encoding="utf-8") == ""
+
+
 def _flush_handlers() -> None:
     seen: set[int] = set()
     for logger in [

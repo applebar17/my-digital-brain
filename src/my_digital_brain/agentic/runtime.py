@@ -399,10 +399,11 @@ class AgenticRuntime:
         conversation_context: ConversationContext,
         execution_context: AgenticToolExecutionContext,
         start_state: AgenticStateId | None = None,
+        start_payload: Any | None = None,
     ) -> AgenticRunResult:
         current_state = start_state or self._entry_state(conversation_context)
         owner_state = current_state
-        current_payload: Any = conversation_context
+        current_payload: Any = start_payload if start_payload is not None else conversation_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -678,11 +679,6 @@ class AgenticRuntime:
         )
 
     def _entry_state(self, conversation_context: ConversationContext) -> AgenticStateId:
-        if (
-            conversation_context.pending_process is not None
-            or conversation_context.pending_processes
-        ):
-            return AgenticStateId.PENDING_PROCESS_REVIEW
         return AgenticStateId.CONVERSATION_ENTRY
 
     @traceable(name="Agentic Ingestion Backend Handoff", run_type="chain")

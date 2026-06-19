@@ -72,6 +72,7 @@ def test_logging_settings_parse_defaults_and_overrides(tmp_path) -> None:
         AGENTIC_LOG_LEVEL="DEBUG",
         LOG_MAX_BYTES="1234",
         LOG_BACKUP_COUNT="2",
+        LOG_TRUNCATE_ON_START="false",
     )
 
     assert settings.log_dir == log_dir
@@ -79,3 +80,4 @@ def test_logging_settings_parse_defaults_and_overrides(tmp_path) -> None:
     assert settings.agentic_log_level == "DEBUG"
     assert settings.log_max_bytes == 1234
     assert settings.log_backup_count == 2
+    assert settings.log_truncate_on_start is False

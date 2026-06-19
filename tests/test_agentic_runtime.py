@@ -361,7 +361,7 @@ def test_update_handoff_reaches_graph_update_specialist_state() -> None:
     assert "upsert_node:MemoryLog" in graph.mutations
 
 
-def test_pending_context_starts_from_pending_process_review() -> None:
+def test_pending_context_stays_in_conversation_entry() -> None:
     provider = ScriptedToolCallingProvider(
         [{"content": "Which Marco did you mean?"}]
     )
@@ -376,13 +376,9 @@ def test_pending_context_starts_from_pending_process_review() -> None:
 
     result = runtime.run(conversation, AgenticToolExecutionContext())
 
-    assert result.visited_states == [AgenticStateId.PENDING_PROCESS_REVIEW.value]
+    assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
     assert provider.calls[0]["tool_names"] == [
-        "cancel_pending_process",
-        "pause_pending_process",
         "query_memory_context",
-        "request_user_clarification",
-        "resume_pending_process",
         "start_memory_ingestion",
         "update_memory_graph",
     ]

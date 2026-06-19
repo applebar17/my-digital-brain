@@ -21,6 +21,9 @@ AGENTIC_LOGGER_PREFIXES = (
     "my_digital_brain.ai",
     "my_digital_brain.ingestion",
 )
+NOISY_LOGGER_PREFIXES = (
+    "chromadb.telemetry.product.posthog",
+)
 
 STANDARD_JSON_FIELDS = (
     "event",
@@ -136,6 +139,7 @@ def configure_logging(
     agentic_level: str | None = None,
     max_bytes: int = DEFAULT_LOG_MAX_BYTES,
     backup_count: int = DEFAULT_LOG_BACKUP_COUNT,
+    truncate_on_start: bool = False,
 ) -> None:
     """Configure deterministic application and agentic JSONL log streams."""
 
@@ -144,14 +148,22 @@ def configure_logging(
     agentic_resolved_level = _log_level(agentic_level or level)
     resolved_log_dir = Path(log_dir)
     resolved_log_dir.mkdir(parents=True, exist_ok=True)
+    app_log_path = resolved_log_dir / "application.jsonl"
+    agentic_log_path = resolved_log_dir / "agentic.jsonl"
+    if truncate_on_start:
+        app_log_path.write_text("", encoding="utf-8")
+        agentic_log_path.write_text("", encoding="utf-8")
 
     formatter = JsonLogFormatter()
     console = logging.StreamHandler(sys.stderr)
     console.setLevel(logging.ERROR)
     console.setFormatter(formatter)
+    console.addFilter(NamespaceExclusionFilter(NOISY_LOGGER_PREFIXES))
+    file_mode = "w" if truncate_on_start else "a"
 
     app_file = RotatingFileHandler(
-        resolved_log_dir / "application.jsonl",
+        app_log_path,
+        mode=file_mode,
         maxBytes=max(1, int(max_bytes)),
         backupCount=max(0, int(backup_count)),
         encoding="utf-8",
@@ -159,15 +171,18 @@ def configure_logging(
     app_file.setLevel(app_resolved_level)
     app_file.setFormatter(formatter)
     app_file.addFilter(NamespaceExclusionFilter(AGENTIC_LOGGER_PREFIXES))
+    app_file.addFilter(NamespaceExclusionFilter(NOISY_LOGGER_PREFIXES))
 
     agentic_file = RotatingFileHandler(
-        resolved_log_dir / "agentic.jsonl",
+        agentic_log_path,
+        mode=file_mode,
         maxBytes=max(1, int(max_bytes)),
         backupCount=max(0, int(backup_count)),
         encoding="utf-8",
     )
     agentic_file.setLevel(agentic_resolved_level)
     agentic_file.setFormatter(formatter)
+    agentic_file.addFilter(NamespaceExclusionFilter(NOISY_LOGGER_PREFIXES))
 
     root = logging.getLogger()
     _reset_handlers(root)

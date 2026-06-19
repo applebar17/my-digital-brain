@@ -291,7 +291,7 @@ def test_agentic_context_contains_compact_pending_overview_without_backend_snaps
     system_prompt = provider.calls[0]["request"].messages[0].content
     latest_user_message = provider.calls[0]["request"].messages[1].content
 
-    assert response.metadata["visited_states"] == ["pending_process_review"]
+    assert response.metadata["visited_states"] == ["conversation_entry"]
     assert latest_user_message == "Marco from university"
     assert "pending_processes" in system_prompt
     assert "Trying to store a memory about Marco in Milan." in system_prompt
@@ -349,7 +349,7 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     assert detail.messages[-1].text == "I can help with that."
 
 
-def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
+def test_agentic_runtime_mode_keeps_pending_context_in_conversation_entry() -> None:
     provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
     store = InMemoryChatSessionStore()
     facade = RecordingFacade()
@@ -377,13 +377,9 @@ def test_agentic_runtime_mode_starts_from_pending_process_review() -> None:
 
     response = runtime.handle_message(_message(text="I'm not sure", message_id="m2"))
 
-    assert response.metadata["visited_states"] == ["pending_process_review"]
+    assert response.metadata["visited_states"] == ["conversation_entry"]
     assert provider.calls[0]["tool_names"] == [
-        "cancel_pending_process",
-        "pause_pending_process",
         "query_memory_context",
-        "request_user_clarification",
-        "resume_pending_process",
         "start_memory_ingestion",
         "update_memory_graph",
     ]
@@ -418,15 +414,7 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> 
 
 
 def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -> None:
-    provider = ScriptedToolProvider(
-        [
-            {
-                "content": "Resuming pending process.",
-                "tool": "resume_pending_process",
-                "arguments": {"pending_process_id": "process-1"},
-            }
-        ]
-    )
+    provider = ScriptedToolProvider([])
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
         channel=ChatChannel.WEB,
@@ -481,10 +469,92 @@ def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -
     )
 
     assert response.status_code == 200
-    assert response.json()["primary_text"] == "Resuming pending process."
+    assert response.json()["primary_text"] == "Resumed."
+    assert provider.calls == []
     messages = runtime.get_session_detail(session.session_id).messages
     assert messages[-2].role == "user"
     assert "Clarification answers:" in messages[-2].text
+    assert store.get_pending_process_context("process-1").process_ref.status == (
+        PendingProcessStatus.COMPLETED
+    )
+
+
+def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> None:
+    provider = ScriptedToolProvider([{"content": "Graph update resumed."}])
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    packet = _clarification_packet(process_id="process-1")
+    store.save_pending_process_context(
+        session.session_id,
+        PendingProcessContext(
+            process_ref=PendingProcessRef(
+                process_id="process-1",
+                kind=PendingProcessKind.MEMORY_UPDATE,
+                question=packet.questions[0].question,
+                metadata={
+                    "clarification_packet": packet.model_dump(mode="json"),
+                    "guidelines": "Apply as correction.",
+                    "desired_work": "correct_or_update_memory_graph",
+                },
+            ),
+            context={
+                "source_text": "Marco was from work.",
+                "target_ids": ["node-marco"],
+                "clarification_packet": packet.model_dump(mode="json"),
+            },
+        ),
+    )
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+    client = _client(runtime)
+    option_id = packet.questions[0].options[0].option_id
+
+    response = client.post(
+        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        json={
+            "owner_id": "owner-1",
+            "sender_id": "sender-1",
+            "message_id": "clarification-message-1",
+            "answer_packet": {
+                "packet_id": packet.packet_id,
+                "process_id": packet.process_id,
+                "answers": [
+                    {
+                        "question_id": packet.questions[0].question_id,
+                        "selected_option_ids": [option_id],
+                        "free_text": "Marco from university.",
+                    }
+                ],
+            },
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["primary_text"] == "Graph update resumed."
+    assert response.json()["metadata"]["resumed_operation"] == "graph_update"
+    assert provider.calls[0]["tool_names"] == [
+        "create_graph_node",
+        "create_memory_log",
+        "create_relationship_state",
+        "get_context_package",
+        "get_entity_detail",
+        "get_neighborhood_view",
+        "get_target_evidence",
+        "get_timeline",
+        "patch_graph_node",
+        "request_user_clarification",
+        "resolve_graph_update_targets",
+        "upsert_graph_relationship",
+    ]
     assert store.get_pending_process_context("process-1").process_ref.status == (
         PendingProcessStatus.COMPLETED
     )

@@ -15,6 +15,9 @@ from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.debug import record_tool_execution
 
 
+NON_ERROR_TOOL_STATUSES = {"ok", "accepted", "needs_user_input"}
+
+
 class GenAIToolExecutionMixin:
     def _tool_budget_exceeded(
         self,
@@ -202,10 +205,11 @@ class GenAIToolExecutionMixin:
         if result.meta:
             meta.update(result.meta)
         result.meta = meta
+        is_expected_status = result.status in NON_ERROR_TOOL_STATUSES
         log_event(
             self.logger,
-            "tool.call.end" if result.status == "ok" else "tool.call.error",
-            "info" if result.status == "ok" else "warning",
+            "tool.call.end" if is_expected_status else "tool.call.error",
+            "info" if is_expected_status else "warning",
             component="tool",
             step="execute_tool_call",
             tool_name=fn_name,

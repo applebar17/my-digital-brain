@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
         agentic_level=settings.agentic_log_level,
         max_bytes=settings.log_max_bytes,
         backup_count=settings.log_backup_count,
+        truncate_on_start=settings.log_truncate_on_start,
     )
 
     app = FastAPI(title="My Digital Brain", version="0.1.0")

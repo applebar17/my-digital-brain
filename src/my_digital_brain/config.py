@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     agentic_log_level: str | None = Field(default=None, alias="AGENTIC_LOG_LEVEL")
     log_max_bytes: int = Field(default=10_485_760, alias="LOG_MAX_BYTES")
     log_backup_count: int = Field(default=5, alias="LOG_BACKUP_COUNT")
+    log_truncate_on_start: bool = Field(default=True, alias="LOG_TRUNCATE_ON_START")
 
     neo4j_uri: str = Field(default="bolt://localhost:7687", alias="NEO4J_URI")
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")

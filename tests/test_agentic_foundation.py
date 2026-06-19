@@ -223,7 +223,7 @@ def test_deterministic_router_does_not_expose_control_tools_to_conversation_entr
     assert "no active pending process" in cancel_route.assistant_message.content
 
 
-def test_deterministic_router_uses_pending_review_and_can_pause() -> None:
+def test_deterministic_router_keeps_pending_context_in_conversation_entry() -> None:
     router = DeterministicAgenticRouter()
     context = ConversationContext(
         current_message=NeutralConversationMessage.user("I don't remember"),
@@ -237,10 +237,11 @@ def test_deterministic_router_uses_pending_review_and_can_pause() -> None:
 
     route = router.route(context)
 
-    assert route.entry_state == AgenticStateId.PENDING_PROCESS_REVIEW.value
-    assert route.pending_intent == PendingMessageIntent.PAUSE.value
-    assert route.tool_call.name == "pause_pending_process"
-    assert route.tool_call.arguments["pending_process_id"] == "process-1"
+    assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
+    assert route.pending_intent is None
+    assert route.tool_call is None
+    assert route.assistant_message is not None
+    assert "Provider-backed conversation routing" in route.assistant_message.content
 
 
 def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None:
@@ -257,8 +258,8 @@ def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None
 
     route = router.route(context)
 
-    assert route.entry_state == AgenticStateId.PENDING_PROCESS_REVIEW.value
+    assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
     assert route.pending_intent is None
     assert route.tool_call is None
     assert route.assistant_message is not None
-    assert "Provider-backed pending process review" in route.assistant_message.content
+    assert "Provider-backed conversation routing" in route.assistant_message.content

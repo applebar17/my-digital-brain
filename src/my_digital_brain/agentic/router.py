@@ -25,13 +25,9 @@ class DeterministicAgenticRouter:
     """
 
     def route(self, context: ConversationContext) -> AgenticRoute:
-        if self._selected_pending_process(context) is not None:
-            return self._route_pending_process_review(context)
         return self._route_conversation_entry(context)
 
     def select_entry_state(self, context: ConversationContext) -> AgenticStateId:
-        if self._selected_pending_process(context) is not None:
-            return AgenticStateId.PENDING_PROCESS_REVIEW
         return AgenticStateId.CONVERSATION_ENTRY
 
     def _route_conversation_entry(self, context: ConversationContext) -> AgenticRoute:
