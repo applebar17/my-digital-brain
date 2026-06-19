@@ -1,5 +1,7 @@
 # AI Engineering Principles
 
+Related architecture note: [Agentic tool frame runtime](../architecture/agentic-tool-frame-runtime.md).
+
 ## Purpose
 
 These principles guide how AI features should be designed and implemented in My Digital Brain. The project should stay agentic and dynamic, but graph writes, source handling, privacy, and tool execution must remain structured and guarded.
