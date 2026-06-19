@@ -38,8 +38,8 @@ result returned to the parent tool call.
 It should expose a small toolbox:
 
 - `query_memory`: answer a question by querying/hydrating the memory graph.
-- `ingest_memory`: process a user memory, correction, update, transcript, or
-  source text into graph changes.
+- `ingest_memory`: process the current user message/history as a memory,
+  correction, update, transcript, or source-like input into graph changes.
 
 The entry state should not expose every low-level graph write or planner tool.
 Its job is to choose whether the user is asking to query memory or process new
@@ -50,7 +50,7 @@ Example:
 ```text
 user message
 -> conversation_entry
--> model calls ingest_memory(source_text=...)
+-> model calls ingest_memory()
 -> backend starts a child memory_ingestion frame
 -> child completes
 -> compact ingestion result returns to the conversation_entry tool call
@@ -121,26 +121,60 @@ The UI may use statuses such as `awaiting_clarification` to render the
 clarification widget. Those statuses are API visibility states only. The actual
 continuation rule is the open tool call in the stored frame.
 
+## Query Memory
+
+`query_memory` is a read-only child agentic process. It should not expose
+`request_user_clarification`.
+
+The query frame should retrieve what it can, hydrate graph context, and answer
+from available memory. If retrieval is empty or ambiguous, it should return a
+bounded answer that says there is not enough memory context instead of starting
+a clarification workflow.
+
+Typical query shape:
+
+```text
+conversation_entry
+-> model calls query_memory(question=...)
+-> backend starts memory_query child frame
+-> semantic scoped retrieval
+-> hydrate top hits into graph context packages
+-> answer from hydrated context
+-> compact query result returns to the conversation_entry tool call
+```
+
 ## Memory Ingestion
 
 Memory ingestion should be a child agentic process started by
 `conversation_entry` through `ingest_memory`.
 
+The first ingestion context step is semantic retrieval from the user message or
+source-like history context:
+
+```text
+embed/query relevant source/history text
+-> top-k scoped vector retrieval
+-> hydrate top hits into graph context packages
+-> pass hydrated context into reasoning and planning
+```
+
 The outer ingestion process may have a deterministic macro-shape:
 
 ```text
-retrieve context
+semantic retrieval + hydration
 -> reason
 -> plan
--> execute plan actions
+-> execute plan actions through child frames/tools
 -> summarize result
 ```
 
 Inside those steps, the model can use tools where the task requires judgement,
 context lookup, or clarification.
 
-The planner should produce explicit structured plan actions. Backend code then
-routes each action to the proper deterministic tool or child agentic state.
+The planner should produce explicit structured plan actions. Each action is then
+handled by model-visible tools or child frames. Backend code validates tool
+arguments and reports structured results, but the LLM decides the next action
+after validation errors or blocked tool outputs.
 
 ## Planner To Writer Contracts
 
@@ -150,7 +184,6 @@ artifact shaped like:
 ```text
 MemoryPlan
   plan_id
-  source_text
   context_refs
   actions: list[MemoryPlanAction]
 
@@ -175,15 +208,52 @@ Initial action types:
 Execution mapping:
 
 ```text
-create_memory_log          -> deterministic write tool
-create_node                -> deterministic write tool
+create_memory_log          -> memory_creation child frame
+create_node                -> memory_creation child frame
+create_relationship        -> memory_creation child frame
+create_relationship_state  -> memory_creation child frame
 update_node                -> graph_update child frame/tool
-create_relationship        -> deterministic write tool
-create_relationship_state  -> deterministic relationship-state service/tool
 ask_clarification          -> request_user_clarification
 ```
 
+The planner passes history/context plus one plan action to the child frame. It
+should not duplicate the original source text as a separate field when that
+source text is already present in the provider message history passed down to
+the child.
+
 This keeps planning semantic and graph writes deterministic.
+
+## Memory Creation
+
+`memory_creation` is a child agentic frame responsible for executing one
+creation-oriented plan action.
+
+Input shape:
+
+```text
+history/context messages
++ one MemoryPlanAction
++ hydrated graph context relevant to that action
+```
+
+It does not receive a duplicated `source_text` field when the source is already
+available in history.
+
+Available tools may include:
+
+- `create_memory_log`;
+- `create_graph_node`;
+- `create_graph_relationship`;
+- `create_relationship_state`;
+- helper read tools for local context checks;
+- `update_memory_graph` when the creation action discovers a related update is
+  needed;
+- `request_user_clarification` when the action cannot be completed safely from
+  available context.
+
+Tool implementations validate and write deterministically. If validation fails,
+the tool returns a clear structured error result to the frame. The LLM decides
+whether to retry, ask clarification, call another tool, or return failure.
 
 ## Graph Update
 
@@ -218,6 +288,7 @@ Allowed deterministic behavior:
 - graph writes;
 - vector refresh after mutation;
 - tool argument validation;
+- structured validation error reporting from tools;
 - child frame creation and provider message continuation.
 
 Deprecated deterministic behavior:
@@ -246,3 +317,112 @@ Production runtime should not depend on:
 
 If a legacy persistence table must remain for migration compatibility, it should
 not be part of active runtime routing.
+
+## Implementation Waves
+
+The migration should land as three build waves plus one stabilization wave. The
+first three waves perform the actual architecture change; the fourth wave proves
+that the old hidden behavior is gone.
+
+### Wave 1: Contracts And Tool Interfaces
+
+Goal: define the new runtime and process contracts before replacing behavior.
+
+Scope:
+
+- define or refine the `AgenticFrame` continuation contract;
+- define `MemoryPlan` and `MemoryPlanAction`;
+- define `memory_ingestion` context/result contracts;
+- define `memory_creation` context/result contracts;
+- define the shared structured tool-result payload for write success,
+  validation errors, blocked operations, diagnostics, and vector refresh data;
+- define model-visible top-level tools:
+  - `query_memory`;
+  - `ingest_memory`;
+- define model-visible child-process/helper tools where needed:
+  - `request_user_clarification`;
+  - `update_memory_graph` inside ingestion/creation flows;
+- define deterministic write tool interfaces for:
+  - creating memory logs;
+  - creating graph nodes;
+  - creating graph relationships;
+  - creating relationship states;
+  - patching graph nodes through `graph_update`;
+- add schema/tool-registration tests.
+
+This wave should avoid a broad runtime rewrite. It creates the target contracts
+and makes unsupported legacy dependencies visible.
+
+### Wave 2: Deprecated Flow Cleanup
+
+Goal: remove active legacy orchestration paths so wrong behavior fails visibly.
+
+Scope:
+
+- remove production use of deterministic chat runtime mode;
+- remove `pending_process` as an agentic continuation mechanism;
+- remove pending-process review from active runtime routing;
+- remove model-visible pending-process tools such as
+  `resume_pending_process`, `pause_pending_process`, and
+  `cancel_pending_process`;
+- remove `handoff_target` state switching from production agentic flow;
+- remove facade-level `start_memory_ingestion` clarification/resume behavior
+  from model-visible paths;
+- remove correction-intake legacy routing if still active;
+- keep only minimal persistence compatibility where existing migrations require
+  it, with no production runtime dependency;
+- rewrite or delete tests that expect pending-process/handoff behavior.
+
+Temporary feature gaps are acceptable in this wave. Silent fallback behavior is
+not acceptable.
+
+### Wave 3: Nested Agentic Runtime Implementation
+
+Goal: implement the target runtime using explicit nested frames and compact tool
+results.
+
+Scope:
+
+- make `conversation_entry` expose only `query_memory` and `ingest_memory`;
+- implement `query_memory` as a read-only child frame:
+  - scoped semantic retrieval;
+  - hydration of top hits;
+  - answer generation from hydrated context;
+  - no clarification tool;
+  - compact result returned to parent;
+- implement `memory_ingestion` as a child frame:
+  - semantic top-k retrieval from source/history context;
+  - hydration of retrieved graph context;
+  - reasoning;
+  - structured planning into `MemoryPlan` actions;
+  - action execution through model-visible tools or child frames;
+- implement `memory_creation` as a child frame:
+  - receives history/context plus one `MemoryPlanAction`;
+  - does not receive duplicated `source_text` when source is already in history;
+  - calls deterministic creation/write tools;
+  - receives structured validation errors as tool results;
+  - lets the LLM decide retry, clarification, alternative tool call, or failure;
+- use `graph_update` as the child frame for update actions;
+- ensure clarification resumes the exact interrupted frame by appending the
+  matching provider `tool` message;
+- ensure child completion returns one compact result to the parent tool call;
+- ensure deterministic writes refresh affected vector scopes behind the tool.
+
+### Wave 4: Stabilization, Overview, And UAT
+
+Goal: verify the new architecture and document the final behavior.
+
+Scope:
+
+- add end-to-end tests for:
+  - query flow;
+  - simple memory creation;
+  - memory creation with clarification;
+  - ingestion plan that calls `graph_update`;
+  - structured validation error retry;
+  - absence of pending-process/handoff runtime paths;
+- update architecture diagrams and AI-engineering notes;
+- reduce noisy frame/tool logs while keeping useful diagnostics;
+- run manual UAT against the OpenAI client;
+- confirm legacy hidden behavior is gone and unsupported flows fail visibly.
+
