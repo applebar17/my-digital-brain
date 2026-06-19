@@ -95,6 +95,11 @@ class ClarificationQuestion(ChatModel):
     selection_mode: str = Field(default="single", pattern="^(single|multiple)$")
 
 
+class ClarificationHistoryMessage(ChatModel):
+    role: ConversationMessageRole
+    content: str
+
+
 class ClarificationPacket(ChatModel):
     packet_id: str = Field(default_factory=new_uuid)
     process_id: str
@@ -103,6 +108,7 @@ class ClarificationPacket(ChatModel):
     questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
     compact_summary: str | None = None
     target_refs: list[str] = Field(default_factory=list)
+    history_delta: list[ClarificationHistoryMessage] = Field(default_factory=list)
 
 
 class ClarificationAnswer(ChatModel):

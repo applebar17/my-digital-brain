@@ -5,10 +5,12 @@ from typing import Any
 from my_digital_brain.chat.exceptions import ChatValidationError
 from my_digital_brain.chat.models import (
     ClarificationAnswerPacket,
+    ClarificationHistoryMessage,
     ClarificationOption,
     ClarificationPacket,
     ClarificationQuestion,
 )
+from my_digital_brain.chat.enums import ConversationMessageRole
 from my_digital_brain.core.ids import new_uuid
 
 
@@ -20,8 +22,9 @@ def build_clarification_packet(
     questions: list[dict[str, Any]],
     compact_summary: str | None = None,
     target_refs: list[str] | None = None,
+    history_delta: list[dict[str, Any]] | None = None,
 ) -> ClarificationPacket:
-    return ClarificationPacket(
+    packet = ClarificationPacket(
         process_id=process_id,
         origin_state_id=origin_state_id,
         reason=reason,
@@ -48,7 +51,24 @@ def build_clarification_packet(
         ],
         compact_summary=compact_summary,
         target_refs=target_refs or [],
+        history_delta=[
+            ClarificationHistoryMessage.model_validate(item)
+            for item in (history_delta or [])
+        ],
     )
+    if not packet.history_delta:
+        packet = packet.model_copy(
+            update={
+                "history_delta": [
+                    ClarificationHistoryMessage(
+                        role=ConversationMessageRole.ASSISTANT,
+                        content=render_clarification_questions(packet),
+                    )
+                ]
+            },
+            deep=True,
+        )
+    return packet
 
 
 def validate_clarification_answers(
@@ -111,6 +131,20 @@ def summarize_clarification_answers(
             parts.append(f'free text "{free_text}"')
         rendered = "; ".join(parts) if parts else "no answer"
         lines.append(f"- {question.question}: {rendered}")
+    return "\n".join(lines)
+
+
+def render_clarification_questions(packet: ClarificationPacket) -> str:
+    lines = ["Clarification needed:"]
+    if packet.compact_summary:
+        lines.append(packet.compact_summary)
+    for index, question in enumerate(packet.questions, start=1):
+        lines.append(f"{index}. {question.question}")
+        if question.options:
+            option_labels = ", ".join(option.label for option in question.options)
+            lines.append(f"   Options: {option_labels}")
+        if question.free_text_allowed:
+            lines.append("   Free text is allowed.")
     return "\n".join(lines)
 
 

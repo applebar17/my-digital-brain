@@ -13,6 +13,7 @@ from my_digital_brain.chat.enums import (
     PendingProcessKind,
     PendingProcessStatus,
 )
+from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
     ChatToolRequest,
@@ -20,9 +21,7 @@ from my_digital_brain.chat.facade import (
 )
 from my_digital_brain.chat.models import (
     ChatResponse,
-    ClarificationOption,
     ClarificationPacket,
-    ClarificationQuestion,
     ConversationMessage,
     IncomingChatMessage,
     PendingProcessContext,
@@ -40,6 +39,7 @@ class RecordingFacade:
     def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
         self.calls.append(("start_memory_ingestion", request))
         if request.text == "needs clarification":
+            packet = _clarification_packet(process_id="process-1")
             return ChatToolResult(
                 status=ChatResponseStatus.NEEDS_USER_INPUT,
                 primary_text="Which Marco do you mean?",
@@ -47,7 +47,14 @@ class RecordingFacade:
                     process_id="process-1",
                     kind=PendingProcessKind.MEMORY_INGESTION,
                     question="Which Marco do you mean?",
+                    metadata={
+                        "clarification_packet": packet.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        )
+                    },
                 ),
+                clarification_packet=packet,
             )
         return ChatToolResult(
             status=ChatResponseStatus.ACCEPTED,
@@ -409,7 +416,14 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> 
     assert response.status == ChatResponseStatus.NEEDS_USER_INPUT
     assert response.primary_text == "Which Marco do you mean?"
     assert response.pending_process is not None
+    assert response.clarification_packet is not None
+    assert response.clarification_packet.history_delta[0].role == "assistant"
+    assert "Which Marco do you mean?" in response.clarification_packet.history_delta[0].content
     assert detail.pending_process.process_ref.process_id == response.pending_process.process_id
+    assert detail.messages[-1].role == "assistant"
+    assert detail.messages[-1].pending_process_id == response.pending_process.process_id
+    assert "Clarification needed:" in (detail.messages[-1].text or "")
+    assert "history_delta" in detail.messages[-1].metadata
     assert "compact_trace" not in response.metadata
 
 
@@ -756,28 +770,28 @@ def _message_payload(text: str, session_id: str | None = None) -> dict[str, obje
 
 
 def _clarification_packet(process_id: str) -> ClarificationPacket:
-    return ClarificationPacket(
+    return build_clarification_packet(
         process_id=process_id,
         origin_state_id="memory_ingestion",
         reason="Multiple Marco candidates exist.",
         compact_summary="Need to know which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],
         questions=[
-            ClarificationQuestion(
-                question_id="question-1",
-                question="Which Marco do you mean?",
-                options=[
-                    ClarificationOption(
-                        option_id="option-marco-university",
-                        label="Marco from university",
-                        recommended=True,
-                    ),
-                    ClarificationOption(
-                        option_id="option-marco-work",
-                        label="Marco from work",
-                    ),
+            {
+                "question_id": "question-1",
+                "question": "Which Marco do you mean?",
+                "options": [
+                    {
+                        "option_id": "option-marco-university",
+                        "label": "Marco from university",
+                        "recommended": True,
+                    },
+                    {
+                        "option_id": "option-marco-work",
+                        "label": "Marco from work",
+                    },
                 ],
-            )
+            }
         ],
     )
 

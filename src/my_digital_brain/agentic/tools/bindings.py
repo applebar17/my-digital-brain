@@ -429,6 +429,10 @@ class AgenticToolBindings:
                 "operation": "request_user_clarification",
                 "pending_process": pending_process,
                 "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
+                "history_delta": [
+                    message.model_dump(mode="json", exclude_none=True)
+                    for message in packet.history_delta
+                ],
             },
         )
 

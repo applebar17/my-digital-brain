@@ -16,6 +16,7 @@ from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.clarification import (
+    render_clarification_questions,
     summarize_clarification_answers,
     validate_clarification_answers,
 )
@@ -212,16 +213,38 @@ class ChatRuntime:
             ConversationMessage(
                 session_id=session_id,
                 role=ConversationMessageRole.ASSISTANT,
-                text=response.primary_text,
+                text=self._assistant_history_text(response),
                 pending_process_id=(
                     response.pending_process.process_id if response.pending_process else None
                 ),
                 metadata={
                     "response_id": response.response_id,
                     "status": response.status,
+                    **(
+                        {
+                            "clarification_packet": response.clarification_packet.model_dump(
+                                mode="json",
+                                exclude_none=True,
+                            ),
+                            "history_delta": [
+                                message.model_dump(mode="json", exclude_none=True)
+                                for message in response.clarification_packet.history_delta
+                            ],
+                        }
+                        if response.clarification_packet is not None
+                        else {}
+                    ),
                 },
             ),
         )
+
+    def _assistant_history_text(self, response: ChatResponse) -> str:
+        if response.clarification_packet is not None:
+            for message in response.clarification_packet.history_delta:
+                if message.role == ConversationMessageRole.ASSISTANT:
+                    return message.content
+            return render_clarification_questions(response.clarification_packet)
+        return response.primary_text
 
     def get_session_detail(self, session_id: str, limit: int = 50) -> ConversationSessionDetail:
         return self.store.get_session_detail(session_id, limit=limit)

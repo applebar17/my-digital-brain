@@ -57,6 +57,11 @@ export interface ClarificationQuestion {
   selection_mode: "single" | "multiple";
 }
 
+export interface ClarificationHistoryMessage {
+  role: ConversationMessageRole;
+  content: string;
+}
+
 export interface ClarificationPacket {
   packet_id: string;
   process_id: string;
@@ -65,6 +70,7 @@ export interface ClarificationPacket {
   questions: ClarificationQuestion[];
   compact_summary?: string | null;
   target_refs: string[];
+  history_delta: ClarificationHistoryMessage[];
 }
 
 export interface ClarificationAnswer {

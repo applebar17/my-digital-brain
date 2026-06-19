@@ -627,6 +627,9 @@ def test_request_user_clarification_creates_pending_process_hint() -> None:
     assert packet["process_id"] == pending["process_id"]
     assert packet["origin_state_id"] == AgenticStateId.MEMORY_QUERY.value
     assert packet["questions"][0]["options"][0]["label"] == "Marco from university"
+    assert packet["history_delta"][0]["role"] == "assistant"
+    assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
+    assert result.data["history_delta"] == packet["history_delta"]
     assert pending["kind"] == PendingProcessKind.MEMORY_QUERY.value
     assert pending["metadata"]["clarification_packet"]["packet_id"] == packet["packet_id"]
     assert execution_context.tool_events[0].status == "needs_user_input"
