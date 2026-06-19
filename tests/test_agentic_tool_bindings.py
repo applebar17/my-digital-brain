@@ -308,6 +308,25 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
     ).template
 
 
+def test_wave1_future_tools_are_registered_but_not_active_on_entry() -> None:
+    registry = default_agentic_tool_registry()
+    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
+
+    assert {"query_memory", "ingest_memory", "run_memory_creation"}.issubset(
+        registry.definitions,
+    )
+    assert entry_config.allowed_tools == [
+        "start_memory_ingestion",
+        "query_memory_context",
+        "update_memory_graph",
+    ]
+
+    ingest_params = registry.get("ingest_memory").spec["function"]["parameters"]
+    assert ingest_params["properties"] == {}
+    assert ingest_params["required"] == []
+    assert "source_text" not in ingest_params["properties"]
+
+
 def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> None:
     registry = default_agentic_tool_registry()
 
@@ -475,7 +494,7 @@ def test_missing_dependency_returns_verbose_tool_error() -> None:
 
 
 def test_request_user_clarification_creates_frame_packet() -> None:
-    config = default_state_configs()[AgenticStateId.MEMORY_QUERY]
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
     execution_context = _execution_context(frame_id="frame-1")
     mapping = build_agentic_tool_mapping(config, execution_context)
 
@@ -502,7 +521,7 @@ def test_request_user_clarification_creates_frame_packet() -> None:
     packet = result.data["clarification_packet"]
     assert "pending_process" not in result.data
     assert packet["frame_id"] == "frame-1"
-    assert packet["origin_state_id"] == AgenticStateId.MEMORY_QUERY.value
+    assert packet["origin_state_id"] == AgenticStateId.GRAPH_UPDATE.value
     assert packet["questions"][0]["options"][0]["label"] == "Marco from university"
     assert packet["history_delta"][0]["role"] == "assistant"
     assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
@@ -515,3 +534,59 @@ def test_request_user_clarification_is_not_exposed_to_conversation_entry() -> No
     toolbox = build_agentic_toolbox(config)
 
     assert "request_user_clarification" not in toolbox.tools_by_name
+
+
+def test_request_user_clarification_is_not_exposed_to_memory_query() -> None:
+    config = default_state_configs()[AgenticStateId.MEMORY_QUERY]
+    toolbox = build_agentic_toolbox(config)
+
+    assert "request_user_clarification" not in toolbox.tools_by_name
+
+
+def test_future_tool_placeholders_return_structured_blocked_payloads() -> None:
+    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY].model_copy(
+        update={"allowed_tools": ["query_memory", "ingest_memory"]},
+        deep=True,
+    )
+    entry_mapping = build_agentic_tool_mapping(
+        entry_config,
+        _execution_context(current_text="Remember I met Marco yesterday."),
+    )
+
+    query = entry_mapping["query_memory"](
+        question="What do I know about Marco?",
+        seed_id=None,
+        desired_view=None,
+        metadata={},
+    )
+    ingest = entry_mapping["ingest_memory"]()
+
+    assert query.status == "blocked"
+    assert query.data["error_code"] == "memory_query_frame_not_implemented"
+    assert query.data["created_refs"] == []
+    assert ingest.status == "blocked"
+    assert ingest.data["error_code"] == "memory_ingestion_frame_not_implemented"
+    assert ingest.data["affected_graph_ids"] == []
+
+    ingestion_config = default_state_configs()[AgenticStateId.MEMORY_INGESTION]
+    ingestion_mapping = build_agentic_tool_mapping(
+        ingestion_config,
+        _execution_context(state_id=AgenticStateId.MEMORY_INGESTION.value),
+    )
+    creation = ingestion_mapping["run_memory_creation"](
+        action_id="ACTION_001",
+        metadata={},
+    )
+    update = ingestion_mapping["update_memory_graph"](
+        source_text="Marco was from university.",
+        guidelines=None,
+        desired_work="update_node",
+        target_ids=["node-marco"],
+        source_refs=[],
+        metadata={},
+    )
+
+    assert creation.status == "blocked"
+    assert creation.data["error_code"] == "memory_creation_frame_not_implemented"
+    assert update.status == "blocked"
+    assert update.data["error_code"] == "graph_update_frame_routing_not_implemented"

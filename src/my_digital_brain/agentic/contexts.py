@@ -14,6 +14,7 @@ from my_digital_brain.agentic.enums import (
     ContradictionResultIntent,
     ContradictionSeverity,
     MaintenanceSuggestionType,
+    MemoryPlanActionType,
     ProfileMemoryCategory,
     ProfileMemoryStability,
     ProfileMemoryVisibility,
@@ -329,6 +330,101 @@ class QueryRetrievalResultContext(AgenticModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     no_memory_reason: str | None = None
     uncertainty_notes: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgenticToolPayload(AgenticModel):
+    summary: str
+    created_refs: list[str] = Field(default_factory=list)
+    updated_refs: list[str] = Field(default_factory=list)
+    affected_graph_ids: list[str] = Field(default_factory=list)
+    refreshed_vector_scopes: list[str] = Field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    suggested_next_action: str | None = None
+    error_code: str | None = None
+    retryable: bool | None = None
+    validation_details: dict[str, Any] | None = None
+
+
+class MemoryPlanAction(AgenticModel):
+    action_id: str = Field(default_factory=new_uuid)
+    action_type: MemoryPlanActionType
+    target_refs: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    dependencies: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryPlan(AgenticModel):
+    plan_id: str = Field(default_factory=new_uuid)
+    context_refs: list[str] = Field(default_factory=list)
+    actions: list[MemoryPlanAction] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_actions(self) -> "MemoryPlan":
+        if not self.actions:
+            raise ValueError("MemoryPlan requires at least one action.")
+        return self
+
+
+class MemoryIngestionContext(AgenticModel):
+    conversation: ConversationContext
+    graph_context: GraphContextPackage | None = None
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_facing_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "conversation": self.conversation,
+                "graph_context": self.graph_context,
+                "current_time": self.current_time,
+                "timezone": self.timezone,
+                "prior_tool_outputs": self.prior_tool_outputs,
+            },
+        )
+
+
+class MemoryIngestionResultContext(AgenticModel):
+    plan: MemoryPlan | None = None
+    summary: str
+    created_refs: list[str] = Field(default_factory=list)
+    updated_refs: list[str] = Field(default_factory=list)
+    affected_graph_ids: list[str] = Field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryCreationContext(AgenticModel):
+    conversation: ConversationContext
+    action: MemoryPlanAction
+    graph_context: GraphContextPackage | None = None
+    current_time: datetime = Field(default_factory=utc_now)
+    timezone: str = "UTC"
+    prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_facing_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "conversation": self.conversation,
+                "action": self.action,
+                "graph_context": self.graph_context,
+                "current_time": self.current_time,
+                "timezone": self.timezone,
+                "prior_tool_outputs": self.prior_tool_outputs,
+            },
+        )
+
+
+class MemoryCreationResultContext(AgenticModel):
+    action_id: str
+    status: ToolResultStatus = ToolResultStatus.OK
+    tool_payload: AgenticToolPayload
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

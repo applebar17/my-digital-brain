@@ -87,12 +87,47 @@ def _definition(
 def _default_definitions() -> list[AgenticToolDefinition]:
     conversation_states = [AgenticStateId.CONVERSATION_ENTRY]
     memory_query_states = [AgenticStateId.MEMORY_QUERY]
+    memory_ingestion_states = [AgenticStateId.MEMORY_INGESTION]
+    memory_creation_states = [AgenticStateId.MEMORY_CREATION]
     graph_update_states = [AgenticStateId.GRAPH_UPDATE]
     contradiction_states = [AgenticStateId.CONTRADICTION_REVIEW]
     reasoning_states = [AgenticStateId.REASONING_CHECKPOINT]
     planning_states = [AgenticStateId.PLANNING_CHECKPOINT]
 
     return [
+        _definition(
+            "query_memory",
+            "Future conversation-entry routing tool for answering from memory graph context.",
+            states=conversation_states,
+            properties={
+                "question": string_property("User question to answer from memory."),
+                "seed_id": optional_string_property("Known seed node id if already resolved."),
+                "desired_view": optional_string_property("Requested view such as timeline or map."),
+                "metadata": object_property("Additional low-noise query metadata."),
+            },
+            required=["question"],
+        ),
+        _definition(
+            "ingest_memory",
+            (
+                "Future conversation-entry routing tool for processing the current "
+                "message/history as memory. Takes no arguments; source content "
+                "comes from the active frame history."
+            ),
+            states=conversation_states,
+            properties={},
+            required=[],
+        ),
+        _definition(
+            "run_memory_creation",
+            "Future child-frame starter for executing one memory creation plan action.",
+            states=memory_ingestion_states,
+            properties={
+                "action_id": string_property("Plan action id to execute in memory_creation."),
+                "metadata": object_property("Additional low-noise execution metadata."),
+            },
+            required=["action_id"],
+        ),
         _definition(
             "start_memory_ingestion",
             (
@@ -131,7 +166,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "Start a graph update subprocess when the user asks to update, "
                 "correct, revise, or maintain memory graph state."
             ),
-            states=conversation_states,
+            states=[*conversation_states, *memory_ingestion_states, *memory_creation_states],
             properties={
                 "source_text": string_property("User-provided update or correction text."),
                 "guidelines": optional_string_property(
@@ -160,8 +195,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "short, specific, and free of internal summaries or schema language."
             ),
             states=[
-                AgenticStateId.MEMORY_QUERY,
                 AgenticStateId.GRAPH_UPDATE,
+                AgenticStateId.MEMORY_INGESTION,
+                AgenticStateId.MEMORY_CREATION,
                 AgenticStateId.CONTRADICTION_REVIEW,
                 AgenticStateId.REASONING_CHECKPOINT,
                 AgenticStateId.PLANNING_CHECKPOINT,
@@ -178,6 +214,8 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         *_graph_read_definitions(
             memory_query_states,
+            memory_ingestion_states,
+            memory_creation_states,
             graph_update_states,
             contradiction_states,
             reasoning_states,
@@ -197,7 +235,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "create_memory_log",
             "Create a MemoryLog and link it to host, involved, relationship context, and media targets.",
-            states=graph_update_states,
+            states=[*graph_update_states, *memory_creation_states],
             properties={
                 "log_text": string_property("Informational memory text to store."),
                 "host_target_ids": array_property("Host graph node ids for this memory log."),
@@ -218,7 +256,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "create_graph_node",
             "Create a supported graph node using structurally validated JSON properties.",
-            states=graph_update_states,
+            states=[*graph_update_states, *memory_creation_states],
             properties={
                 "label": string_property("Supported graph node label."),
                 "properties_json": string_property("JSON object containing node properties."),
@@ -238,7 +276,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "upsert_graph_relationship",
             "Create or update a supported non-destructive graph relationship.",
-            states=graph_update_states,
+            states=[*graph_update_states, *memory_creation_states],
             properties={
                 "relationship_type": string_property("Supported relationship type."),
                 "from_id": string_property("Source graph node id."),
@@ -250,7 +288,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "create_relationship_state",
             "Create a RelationshipState for a RelationshipContext and optionally mark it current.",
-            states=graph_update_states,
+            states=[*graph_update_states, *memory_creation_states],
             properties={
                 "context_id": string_property("RelationshipContext node id."),
                 "properties_json": string_property("JSON object containing state properties."),
@@ -263,6 +301,8 @@ def _default_definitions() -> list[AgenticToolDefinition]:
 
 def _graph_read_definitions(
     memory_query_states: list[AgenticStateId],
+    memory_ingestion_states: list[AgenticStateId],
+    memory_creation_states: list[AgenticStateId],
     graph_update_states: list[AgenticStateId],
     contradiction_states: list[AgenticStateId],
     reasoning_states: list[AgenticStateId],
@@ -274,6 +314,8 @@ def _graph_read_definitions(
             "Retrieve a low-noise LLM context package for a seed node.",
             states=[
                 *memory_query_states,
+                *memory_ingestion_states,
+                *memory_creation_states,
                 *graph_update_states,
                 *reasoning_states,
                 *planning_states,
@@ -291,6 +333,8 @@ def _graph_read_definitions(
             "Retrieve frontend-safe entity detail and evidence context.",
             states=[
                 *memory_query_states,
+                *memory_ingestion_states,
+                *memory_creation_states,
                 *graph_update_states,
                 *reasoning_states,
                 *planning_states,
@@ -331,6 +375,8 @@ def _graph_read_definitions(
             "Retrieve a bounded graph neighborhood view.",
             states=[
                 *memory_query_states,
+                *memory_ingestion_states,
+                *memory_creation_states,
                 *contradiction_states,
                 *graph_update_states,
                 *reasoning_states,
@@ -363,6 +409,8 @@ def _graph_read_definitions(
             "Retrieve source evidence for a graph target.",
             states=[
                 *memory_query_states,
+                *memory_ingestion_states,
+                *memory_creation_states,
                 *graph_update_states,
                 *contradiction_states,
                 *reasoning_states,

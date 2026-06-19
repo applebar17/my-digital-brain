@@ -11,6 +11,10 @@ from my_digital_brain.agentic import (
     ChannelSessionMetadata,
     ConversationContext,
     DeterministicAgenticRouter,
+    MemoryCreationContext,
+    MemoryPlan,
+    MemoryPlanAction,
+    MemoryPlanActionType,
     NeutralConversationMessage,
     PendingProcessContext,
     PlanningActionContext,
@@ -77,6 +81,31 @@ def test_conversation_context_excludes_backend_channel_metadata_from_model_paylo
     assert payload["timezone"] == "Europe/Rome"
 
 
+def test_memory_plan_and_creation_contracts_lock_wave1_shape() -> None:
+    conversation = ConversationContext(
+        current_message=NeutralConversationMessage.user("Remember I met Marco yesterday."),
+    )
+    action = MemoryPlanAction(
+        action_id="ACTION_001",
+        action_type=MemoryPlanActionType.CREATE_MEMORY_LOG,
+        target_refs=["NODE_000001"],
+        payload={"log_kind": "memory"},
+    )
+    plan = MemoryPlan(context_refs=["PACKAGE_001"], actions=[action])
+    creation = MemoryCreationContext(conversation=conversation, action=action)
+
+    assert str(MemoryPlanActionType.CREATE_MEMORY_LOG) == "create_memory_log"
+    assert plan.actions[0].action_type == MemoryPlanActionType.CREATE_MEMORY_LOG
+    assert creation.action.action_id == "ACTION_001"
+    assert "source_text" not in MemoryCreationContext.model_fields
+    assert "source_text" not in creation.model_facing_payload()
+
+    with pytest.raises(ValidationError, match="at least one action"):
+        MemoryPlan(actions=[])
+    with pytest.raises(ValidationError):
+        MemoryPlanAction(action_type="delete_node")
+
+
 def test_generic_planning_contracts_accept_caller_context_and_schema() -> None:
     purpose = PlanningPurposeGuidelines(
         purpose_id="entity_planning",
@@ -141,6 +170,14 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
         "query_memory_context",
         "update_memory_graph",
     ]
+    assert configs[AgenticStateId.MEMORY_INGESTION].required_context_type == (
+        "MemoryIngestionContext"
+    )
+    assert configs[AgenticStateId.MEMORY_CREATION].required_context_type == (
+        "MemoryCreationContext"
+    )
+    assert "run_memory_creation" in configs[AgenticStateId.MEMORY_INGESTION].allowed_tools
+    assert "request_user_clarification" not in configs[AgenticStateId.MEMORY_QUERY].allowed_tools
     assert "cancel_pending_process" not in entry.allowed_tools
     assert "get_conversation_status" not in entry.allowed_tools
     assert "focused_extraction" in entry.forbidden_tools
@@ -171,6 +208,8 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
     assert "reusable planning checkpoint" in default_registry.load(
         "planning_checkpoint",
     ).template
+    assert "memory ingestion state" in default_registry.load("memory_ingestion").template
+    assert "memory creation state" in default_registry.load("memory_creation").template
 
     prompt_dir = tmp_path / "example"
     prompt_dir.mkdir()

@@ -467,15 +467,15 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
         ]
     )
     runner = _runner(provider)
-    query_context = QueryRetrievalPlanningContext(
-        question="Which Marco?",
+    update_context = GraphUpdateContext(
+        source_text="Marco was from university.",
         conversation=_conversation("Which Marco?"),
     )
 
     result = runner.run_state(
         AgenticStateInvocation(
-            state_id=AgenticStateId.MEMORY_QUERY,
-            context_payload=query_context,
+            state_id=AgenticStateId.GRAPH_UPDATE,
+            context_payload=update_context,
             execution_context=AgenticToolExecutionContext(),
         )
     )

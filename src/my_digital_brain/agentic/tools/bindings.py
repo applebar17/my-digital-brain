@@ -83,6 +83,56 @@ class AgenticToolBindings:
             raise ValueError(f"No agentic tool handler registered for key: {handler_key}")
         return handler
 
+    def _handle_query_memory(
+        self,
+        question: str,
+        seed_id: str | None = None,
+        desired_view: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        return _placeholder_child_frame_result(
+            "query_memory",
+            "memory_query_frame_not_implemented",
+            "query_memory is registered for the future tool-frame runtime but is not active yet.",
+            suggested_next_action="Keep using the legacy query_memory_context path until Wave 3 activates query_memory.",
+            diagnostics={
+                "question": question,
+                "seed_id": seed_id,
+                "desired_view": desired_view,
+                "metadata": metadata or {},
+            },
+        )
+
+    def _handle_ingest_memory(self) -> ToolResult:
+        return _placeholder_child_frame_result(
+            "ingest_memory",
+            "memory_ingestion_frame_not_implemented",
+            "ingest_memory is a no-argument routing tool registered for the future tool-frame runtime.",
+            suggested_next_action="Keep using the legacy start_memory_ingestion path until Wave 3 activates ingest_memory.",
+            diagnostics={
+                "state_id": self.context.state_id,
+                "current_text_available": bool((self.context.current_text or "").strip()),
+                "frame_id": self.context.frame_id,
+            },
+        )
+
+    def _handle_run_memory_creation(
+        self,
+        action_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        return _placeholder_child_frame_result(
+            "run_memory_creation",
+            "memory_creation_frame_not_implemented",
+            "run_memory_creation is registered as a future child-frame starter but is not active yet.",
+            suggested_next_action="Implement memory_creation frame routing before executing creation actions through this tool.",
+            diagnostics={
+                "action_id": action_id,
+                "metadata": metadata or {},
+                "state_id": self.context.state_id,
+            },
+        )
+
     def _handle_start_memory_ingestion(
         self,
         source_text: str,
@@ -157,6 +207,17 @@ class AgenticToolBindings:
             nested = self._run_nested_graph_update(arguments)
             if nested is not None:
                 return nested
+        if self.context.state_id in {
+            AgenticStateId.MEMORY_INGESTION.value,
+            AgenticStateId.MEMORY_CREATION.value,
+        }:
+            return _placeholder_child_frame_result(
+                "update_memory_graph",
+                "graph_update_frame_routing_not_implemented",
+                "update_memory_graph is registered for child-frame use but frame routing is not active yet.",
+                suggested_next_action="Implement graph_update child-frame routing before invoking this tool from ingestion or creation.",
+                diagnostics=arguments,
+            )
         request = self._chat_request(source_text, metadata=arguments)
         if isinstance(request, ToolResult):
             return request
@@ -1153,6 +1214,44 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
     return value
+
+
+def _placeholder_child_frame_result(
+    tool_name: str,
+    error_code: str,
+    summary: str,
+    *,
+    suggested_next_action: str,
+    diagnostics: dict[str, Any] | None = None,
+) -> ToolResult:
+    payload = {
+        "summary": summary,
+        "created_refs": [],
+        "updated_refs": [],
+        "affected_graph_ids": [],
+        "refreshed_vector_scopes": [],
+        "diagnostics": [diagnostics or {}],
+        "suggested_next_action": suggested_next_action,
+        "error_code": error_code,
+        "retryable": False,
+        "validation_details": None,
+    }
+    return ToolResult(
+        status="blocked",
+        output=summary,
+        data={
+            "operation": tool_name,
+            **payload,
+        },
+        error=ToolError(
+            message=summary,
+            code=error_code,
+            type="not_implemented",
+            hint=suggested_next_action,
+            retryable=False,
+            details=diagnostics or {},
+        ),
+    )
 
 
 def _missing_dependency(tool_name: str, dependency: str) -> ToolResult:

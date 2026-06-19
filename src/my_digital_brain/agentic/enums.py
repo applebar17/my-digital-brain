@@ -16,6 +16,8 @@ class AgenticStateId(StrEnum):
     PLANNING_CHECKPOINT = "planning_checkpoint"
     CONTRADICTION_REVIEW = "contradiction_review"
     MEMORY_QUERY = "memory_query"
+    MEMORY_INGESTION = "memory_ingestion"
+    MEMORY_CREATION = "memory_creation"
     GRAPH_UPDATE = "graph_update"
 
 
@@ -36,6 +38,15 @@ class ToolResultStatus(StrEnum):
     PAUSED = "paused"
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+class MemoryPlanActionType(StrEnum):
+    CREATE_MEMORY_LOG = "create_memory_log"
+    CREATE_NODE = "create_node"
+    UPDATE_NODE = "update_node"
+    CREATE_RELATIONSHIP = "create_relationship"
+    CREATE_RELATIONSHIP_STATE = "create_relationship_state"
+    ASK_CLARIFICATION = "ask_clarification"
 
 
 class ChannelModality(StrEnum):

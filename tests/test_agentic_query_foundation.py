@@ -90,6 +90,8 @@ def test_memory_query_state_config_is_registered_with_read_only_tools() -> None:
     assert config.prompt_id == "memory_query"
     assert "query_memory_context" in config.allowed_tools
     assert "get_context_package" in config.allowed_tools
+    assert "request_user_clarification" not in config.allowed_tools
+    assert "request_user_clarification" in config.forbidden_tools
     assert "execute_graph_write_plan" in config.forbidden_tools
     assert config.required_context_type == "QueryRetrievalPlanningContext"
 
