@@ -36,53 +36,20 @@ class DeterministicAgenticRouter:
         if self._is_status(lower_text):
             return self._assistant_route(
                 context,
-                "Status is handled by the chat runtime control layer, not by the conversation entry state.",
+                "Status commands are not part of the conversation-entry tool surface.",
                 reason="Status shortcut is not a conversation-entry model-visible tool.",
             )
         if self._is_cancel(lower_text):
             return self._assistant_route(
                 context,
-                "There is no active pending process to cancel.",
+                "Pending-process cancellation is not part of the agentic runtime.",
                 reason="Cancellation is not model-visible in conversation entry.",
             )
-        if lower_text.startswith("/ask"):
-            return self._tool_route(
-                context,
-                tool_name="query_memory_context",
-                arguments={"question": self._command_payload(text, "/ask") or text},
-                reason="Explicit memory query command.",
-            )
-        if lower_text.startswith("/correct"):
-            return self._tool_route(
-                context,
-                tool_name="update_memory_graph",
-                arguments={
-                    "source_text": self._command_payload(text, "/correct") or text,
-                    "guidelines": "Apply this as a correction or update to the memory graph.",
-                    "desired_work": "correct_or_update_memory_graph",
-                },
-                reason="Explicit graph update/correction command.",
-            )
-
         return self._assistant_route(
             context,
             "Provider-backed conversation routing is required to decide whether this "
             "message should be answered, stored, queried, or corrected.",
             reason="Deterministic fallback does not infer a default memory action.",
-        )
-
-    def _tool_route(
-        self,
-        context: ConversationContext,
-        *,
-        tool_name: str,
-        arguments: dict[str, str],
-        reason: str,
-    ) -> AgenticRoute:
-        return AgenticRoute(
-            entry_state=self.select_entry_state(context),
-            tool_call=ToolCall(name=tool_name, arguments=arguments),
-            reason=reason,
         )
 
     def _assistant_route(

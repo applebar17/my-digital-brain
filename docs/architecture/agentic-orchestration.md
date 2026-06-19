@@ -1,3 +1,5 @@
+> Legacy note: this document describes the pre-frame orchestration model and is not the production runtime contract. The active contract is `docs/architecture/agentic-tool-frame-runtime.md`, where production chat is agentic-only, continuation uses `AgenticFrame`, and pending-process/handoff routing is deprecated.
+
 # Agentic Orchestration Architecture
 
 ## Purpose

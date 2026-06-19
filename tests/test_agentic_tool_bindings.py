@@ -308,18 +308,16 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
     ).template
 
 
-def test_wave1_future_tools_are_registered_but_not_active_on_entry() -> None:
+def test_wave2_entry_tools_are_registered_and_active_on_entry() -> None:
     registry = default_agentic_tool_registry()
     entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
 
     assert {"query_memory", "ingest_memory", "run_memory_creation"}.issubset(
         registry.definitions,
     )
-    assert entry_config.allowed_tools == [
-        "start_memory_ingestion",
-        "query_memory_context",
-        "update_memory_graph",
-    ]
+    assert "start_memory_ingestion" not in registry.definitions
+    assert "query_memory_context" not in registry.definitions
+    assert entry_config.allowed_tools == ["query_memory", "ingest_memory"]
 
     ingest_params = registry.get("ingest_memory").spec["function"]["parameters"]
     assert ingest_params["properties"] == {}
@@ -339,11 +337,7 @@ def test_state_toolboxes_expose_only_allowed_tools_and_no_forbidden_tools() -> N
 
     entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     entry_toolbox = build_agentic_toolbox(entry_config, registry)
-    assert set(entry_toolbox.tools_by_name) == {
-        "start_memory_ingestion",
-        "query_memory_context",
-        "update_memory_graph",
-    }
+    assert set(entry_toolbox.tools_by_name) == {"query_memory", "ingest_memory"}
 
 
 def test_agentic_tool_schemas_are_strict_openai_compatible() -> None:
@@ -388,40 +382,27 @@ def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
         registry.definitions_for_state(entry_config)
 
 
-def test_top_level_tools_execute_or_handoff_without_pending_review() -> None:
+def test_top_level_tools_return_fail_visible_placeholders_without_legacy_facade() -> None:
     facade = FakeFacade()
     execution_context = _execution_context(backend_facade=facade)
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     mapping = build_agentic_tool_mapping(config, execution_context)
 
-    assert set(mapping) == {
-        "start_memory_ingestion",
-        "query_memory_context",
-        "update_memory_graph",
-    }
+    assert set(mapping) == {"query_memory", "ingest_memory"}
 
-    result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
-
-    assert result.status == "ok"
-    assert result.output == "Memory accepted."
-    assert result.data["operation"] == "start_memory_ingestion"
-    assert facade.calls[0][0] == "start_memory_ingestion"
-    assert facade.calls[0][1].text == "Yesterday I met Marco."
-
-    update = mapping["update_memory_graph"](
-        source_text="Marco was from university, not work.",
-        guidelines="Apply as a correction.",
-        desired_work="correct_or_update_memory_graph",
-        target_ids=["node-marco"],
-        source_refs=[],
+    query = mapping["query_memory"](
+        question="What do I remember about Marco?",
+        seed_id=None,
+        desired_view=None,
         metadata={},
     )
+    ingest = mapping["ingest_memory"]()
 
-    assert update.status == "ok"
-    assert update.data["operation"] == "update_memory_graph"
-    assert facade.calls[-1][0] == "update_memory_graph"
-    assert facade.calls[-1][1].text == "Marco was from university, not work."
-
+    assert query.status == "blocked"
+    assert query.data["error_code"] == "memory_query_frame_not_implemented"
+    assert ingest.status == "blocked"
+    assert ingest.data["error_code"] == "memory_ingestion_frame_not_implemented"
+    assert facade.calls == []
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
     graph = FakeGraphService()
@@ -515,7 +496,7 @@ def test_request_user_clarification_creates_frame_packet() -> None:
         ],
     )
 
-    assert result.status == "needs_user_input"
+    assert result.status == "interrupted"
     assert result.data["operation"] == "request_user_clarification"
     assert result.data["frame_id"] == "frame-1"
     packet = result.data["clarification_packet"]
@@ -526,7 +507,7 @@ def test_request_user_clarification_creates_frame_packet() -> None:
     assert packet["history_delta"][0]["role"] == "assistant"
     assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
     assert result.data["history_delta"] == packet["history_delta"]
-    assert execution_context.tool_events[0].status == "needs_user_input"
+    assert execution_context.tool_events[0].status == "interrupted"
 
 
 def test_request_user_clarification_is_not_exposed_to_conversation_entry() -> None:
@@ -544,10 +525,7 @@ def test_request_user_clarification_is_not_exposed_to_memory_query() -> None:
 
 
 def test_future_tool_placeholders_return_structured_blocked_payloads() -> None:
-    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY].model_copy(
-        update={"allowed_tools": ["query_memory", "ingest_memory"]},
-        deep=True,
-    )
+    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     entry_mapping = build_agentic_tool_mapping(
         entry_config,
         _execution_context(current_text="Remember I met Marco yesterday."),

@@ -18,7 +18,7 @@ def render_agentic_chat_response(
 ) -> ChatResponse:
     failed = result.status in {"error", "max_transitions_exceeded"}
     status = (
-        ChatResponseStatus.NEEDS_USER_INPUT
+        ChatResponseStatus.AWAITING_CLARIFICATION
         if result.interruption is not None
         else ChatResponseStatus.FAILED
         if failed
@@ -89,7 +89,7 @@ def _control_metadata(result: AgenticRunResult) -> dict[str, Any]:
 
 
 def _fallback_text(status: ChatResponseStatus) -> str:
-    if status == ChatResponseStatus.NEEDS_USER_INPUT:
+    if status == ChatResponseStatus.AWAITING_CLARIFICATION:
         return "I need one clarification before I can continue."
     if status == ChatResponseStatus.FAILED:
         return "I could not complete this request safely."

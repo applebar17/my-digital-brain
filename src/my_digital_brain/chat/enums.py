@@ -22,6 +22,7 @@ class ConversationMessageRole(StrEnum):
 class ChatResponseStatus(StrEnum):
     OK = "ok"
     ACCEPTED = "accepted"
+    AWAITING_CLARIFICATION = "awaiting_clarification"
     NEEDS_USER_INPUT = "needs_user_input"
     CANCELLED = "cancelled"
     FAILED = "failed"

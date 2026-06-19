@@ -153,7 +153,7 @@ class ScriptedToolProvider:
                 if context is not None:
                     context.current_tool_call_id = previous_tool_call_id
                     context.current_tool_name = previous_tool_name
-            if getattr(tool_result, "status", None) == "needs_user_input":
+            if getattr(tool_result, "status", None) == "interrupted":
                 raise ToolCallInterruption(
                     tool_call_id=tool_call_id,
                     tool_name=tool_name,
@@ -221,19 +221,20 @@ def test_in_memory_store_keeps_session_and_messages_separate() -> None:
     assert detail.messages[0].text == "Yesterday I met Marco."
 
 
-def test_deterministic_runtime_does_not_route_default_text_to_ingestion() -> None:
+def test_chat_runtime_requires_agentic_runtime() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
 
-    response = runtime.handle_message(_message(text="Yesterday I met Marco."))
+    try:
+        ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    except Exception as exc:
+        assert "requires an AgenticRuntime" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("ChatRuntime should fail without an AgenticRuntime")
 
-    assert response.status == ChatResponseStatus.FAILED
-    assert "AI conversation runtime is not enabled" in response.primary_text
-    assert response.diagnostics[0].code == "ai_runtime_not_enabled"
     assert facade.calls == []
 
-
-def test_deterministic_runtime_keeps_pending_context_but_does_not_force_route() -> None:
+def test_agentic_runtime_ignores_legacy_pending_context() -> None:
+    provider = ScriptedToolProvider([{"content": "Handled as a normal message."}])
     facade = RecordingFacade()
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
@@ -251,16 +252,21 @@ def test_deterministic_runtime_keeps_pending_context_but_does_not_force_route() 
             ),
         ),
     )
-    runtime = ChatRuntime(store=store, tool_facade=facade)
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=facade,
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
 
     response = runtime.handle_message(
         _message(text="This is a different memory.", message_id="m2"),
     )
+    system_prompt = provider.calls[0]["request"].messages[0].content
 
-    assert response.status == ChatResponseStatus.FAILED
+    assert response.status == ChatResponseStatus.OK
+    assert "pending_process" not in system_prompt
     assert store.get_active_pending_process_context(session.session_id) is not None
     assert facade.calls == []
-
 
 def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
     store = InMemoryChatSessionStore()
@@ -304,8 +310,8 @@ def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
     assert [item.process_ref.process_id for item in backlog] == ["process-1"]
 
 
-def test_agentic_context_contains_compact_pending_overview_without_backend_snapshot() -> None:
-    provider = ScriptedToolProvider([{"content": "I can continue that later."}])
+def test_agentic_context_does_not_include_pending_process_overview() -> None:
+    provider = ScriptedToolProvider([{"content": "I can continue normally."}])
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
         channel=ChatChannel.WEB,
@@ -322,66 +328,63 @@ def test_agentic_context_contains_compact_pending_overview_without_backend_snaps
             ),
             context={
                 "summary": "Trying to store a memory about Marco in Milan.",
-                "source_text": "Yesterday I met Marco in Milan.",
                 "candidate_graph_snapshot": {"raw": "hidden"},
-                "unresolved_targets": ["person: Marco"],
             },
         ),
-    )
-    store.update_pending_process_status(
-        session.session_id,
-        "process-1",
-        PendingProcessStatus.PAUSED,
-        context_updates={"resumable": True},
     )
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
     response = runtime.handle_message(_message(text="Marco from university"))
     system_prompt = provider.calls[0]["request"].messages[0].content
-    latest_user_message = provider.calls[0]["request"].messages[1].content
 
     assert response.metadata["visited_states"] == ["conversation_entry"]
-    assert latest_user_message == "Marco from university"
-    assert "pending_processes" in system_prompt
-    assert "Trying to store a memory about Marco in Milan." in system_prompt
+    assert "pending_processes" not in system_prompt
+    assert "Trying to store a memory" not in system_prompt
     assert "candidate_graph_snapshot" not in system_prompt
-    assert "Yesterday I met Marco in Milan." not in system_prompt
 
-
-def test_runtime_commands_route_to_query_correction_and_cancel() -> None:
+def test_debug_commands_are_normal_agentic_messages() -> None:
     facade = RecordingFacade()
+    provider = ScriptedToolProvider([
+        {"content": "Ask handled normally."},
+        {"content": "Correction handled normally."},
+        {"content": "Cancel handled normally."},
+    ])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
         tool_facade=facade,
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
         debug_commands_enabled=True,
     )
 
-    runtime.handle_message(_message(text="/ask what happened in Greece?", message_id="m1"))
-    runtime.handle_message(_message(text="/correct Marco was from university", message_id="m2"))
-    runtime.handle_message(_message(text="/cancel", message_id="m3"))
+    first = runtime.handle_message(_message(text="/ask what happened in Greece?", message_id="m1"))
+    second = runtime.handle_message(_message(text="/correct Marco was from university", message_id="m2"))
+    third = runtime.handle_message(_message(text="/cancel", message_id="m3"))
 
-    assert [call[0] for call in facade.calls] == [
-        "query_memory_context",
-        "update_memory_graph",
-        "cancel_pending_process",
+    assert [first.primary_text, second.primary_text, third.primary_text] == [
+        "Ask handled normally.",
+        "Correction handled normally.",
+        "Cancel handled normally.",
     ]
+    assert facade.calls == []
 
-
-def test_runtime_debug_commands_are_disabled_by_default() -> None:
+def test_debug_commands_do_not_enable_facade_fallback_by_default() -> None:
     facade = RecordingFacade()
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+    provider = ScriptedToolProvider([{"content": "Status handled normally."}])
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=facade,
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
 
     response = runtime.handle_message(_message(text="/status", message_id="m1"))
 
-    assert response.status == ChatResponseStatus.FAILED
-    assert response.diagnostics[0].code == "ai_runtime_not_enabled"
+    assert response.status == ChatResponseStatus.OK
+    assert response.primary_text == "Status handled normally."
     assert facade.calls == []
-
 
 def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it() -> None:
     provider = ScriptedToolProvider([{"content": "I can help with that."}])
@@ -389,7 +392,6 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -403,7 +405,7 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     assert detail.messages[-1].text == "I can help with that."
 
 
-def test_agentic_runtime_mode_keeps_pending_context_in_conversation_entry() -> None:
+def test_agentic_runtime_does_not_inject_pending_context_into_conversation_entry() -> None:
     provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
     store = InMemoryChatSessionStore()
     facade = RecordingFacade()
@@ -425,61 +427,37 @@ def test_agentic_runtime_mode_keeps_pending_context_in_conversation_entry() -> N
     runtime = ChatRuntime(
         store=store,
         tool_facade=facade,
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
     response = runtime.handle_message(_message(text="I'm not sure", message_id="m2"))
+    system_prompt = provider.calls[0]["request"].messages[0].content
 
     assert response.metadata["visited_states"] == ["conversation_entry"]
-    assert provider.calls[0]["tool_names"] == [
-        "query_memory_context",
-        "start_memory_ingestion",
-        "update_memory_graph",
-    ]
+    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
+    assert "pending_process" not in system_prompt
 
-
-def test_agentic_ingestion_clarification_is_rendered_and_stored_as_frame() -> None:
+def test_agentic_ingestion_placeholder_is_fail_visible_without_pending_process() -> None:
     provider = ScriptedToolProvider(
-        [
-            {
-                "content": "Routing to ingestion.",
-                "tool": "start_memory_ingestion",
-                "arguments": {"source_text": "needs clarification"},
-            }
-        ]
+        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
     )
     store = InMemoryChatSessionStore()
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
-    response = runtime.handle_message(_message(text="needs clarification"))
+    response = runtime.handle_message(_message(text="Remember this memory."))
     detail = store.get_session_detail(response.session_id)
 
-    assert response.status == ChatResponseStatus.NEEDS_USER_INPUT
-    assert response.primary_text == "Which Marco do you mean?"
+    assert response.status == ChatResponseStatus.FAILED
     assert response.pending_process is None
-    assert response.clarification_packet is not None
-    assert response.clarification_packet.frame_id
-    assert response.clarification_packet.tool_call_id == "call-1"
-    assert response.clarification_packet.history_delta[0].role == "assistant"
-    assert "Which Marco do you mean?" in response.clarification_packet.history_delta[0].content
-    assert detail.active_agentic_frame is not None
-    assert detail.active_agentic_frame.frame_id == response.clarification_packet.frame_id
-    assert detail.active_agentic_frame.active_tool_call_id == "call-1"
+    assert response.clarification_packet is None
+    assert detail.active_agentic_frame is None
     assert detail.pending_process is None
-    assert detail.messages[-1].role == "assistant"
     assert detail.messages[-1].pending_process_id is None
-    assert "Clarification needed:" in (detail.messages[-1].text or "")
-    assert detail.messages[-1].metadata["ui_hidden"] is True
-    assert detail.messages[-1].metadata["message_kind"] == "clarification_prompt"
-    assert "history_delta" in detail.messages[-1].metadata
-    assert "compact_trace" not in response.metadata
-
+    assert response.metadata["agentic_status"] == "error"
 
 def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
     provider = ScriptedToolProvider([{"content": "Resumed."}])
@@ -493,7 +471,6 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -567,7 +544,6 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -596,7 +572,7 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
 
     assert first_response.status_code == 200
     first_payload = first_response.json()
-    assert first_payload["status"] == ChatResponseStatus.NEEDS_USER_INPUT.value
+    assert first_payload["status"] == ChatResponseStatus.AWAITING_CLARIFICATION.value
     assert first_payload["clarification_packet"]["packet_id"] == packet.packet_id
     progress = first_payload["metadata"]["clarification_progress"]
     assert progress["answered_question_ids"] == ["question-1"]
@@ -665,7 +641,6 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -724,7 +699,6 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(ScriptedToolProvider([]))),
     )
     client = _client(runtime)
@@ -760,7 +734,6 @@ def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
         tool_facade=facade,
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -777,28 +750,18 @@ def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
     assert authorized.json()["primary_text"] == "I can help with that."
 
 
-def test_chat_api_get_session_and_cancel() -> None:
-    facade = RecordingFacade()
-    provider = ScriptedToolProvider(
-        [
-            {
-                "content": "Routing to ingestion.",
-                "tool": "start_memory_ingestion",
-                "arguments": {"source_text": "needs clarification"},
-            },
-        ]
-    )
+def test_chat_api_get_session_and_cancel_removed_pending_process_path() -> None:
+    provider = ScriptedToolProvider([{"content": "Normal response."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=facade,
-        runtime_mode="agentic",
+        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
 
     response = client.post(
         "/chat/messages",
-        json=_message_payload("needs clarification"),
+        json=_message_payload("hello"),
         headers={"Authorization": "Bearer test-token"},
     )
     session_id = response.json()["session_id"]
@@ -815,19 +778,16 @@ def test_chat_api_get_session_and_cancel() -> None:
 
     assert session.status_code == 200
     assert session.json()["pending_process"] is None
-    active_frame = session.json()["active_agentic_frame"]
-    assert active_frame["status"] == "interrupted"
-    assert active_frame["active_tool_call_id"] == "call-1"
+    assert session.json()["active_agentic_frame"] is None
     assert cancelled.status_code == 200
-    assert cancelled.json()["status"] == ChatResponseStatus.CANCELLED.value
-
+    assert cancelled.json()["status"] == ChatResponseStatus.FAILED.value
+    assert cancelled.json()["diagnostics"][0]["code"] == "pending_process_cancel_removed"
 
 def test_chat_api_create_list_update_and_post_to_selected_session() -> None:
     provider = ScriptedToolProvider([{"content": "Stored in selected chat."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
         tool_facade=RecordingFacade(),
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)

@@ -129,44 +129,12 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             required=["action_id"],
         ),
         _definition(
-            "start_memory_ingestion",
-            (
-                "Start a memory ingestion subprocess only when the user clearly asks "
-                "to store, remember, record, update, or process a memory. Do not use "
-                "for greetings, small talk, or ordinary questions."
-            ),
-            states=conversation_states,
-            properties={
-                "source_text": string_property(
-                    "User-provided memory text or transcript to ingest, not a greeting.",
-                ),
-                "source_refs": array_property("Optional source or media references."),
-                "pending_process_policy": optional_string_property(
-                    "Policy for an active pending process, such as pause or cancel.",
-                ),
-                "metadata": object_property("Additional low-noise request metadata."),
-            },
-            required=["source_text"],
-        ),
-        _definition(
-            "query_memory_context",
-            "Retrieve memory context for a user question.",
-            states=[*conversation_states, AgenticStateId.MEMORY_QUERY],
-            properties={
-                "question": string_property("User question to answer from memory."),
-                "seed_id": optional_string_property("Known seed node id if already resolved."),
-                "desired_view": optional_string_property("Requested view such as timeline or map."),
-                "metadata": object_property("Additional low-noise query metadata."),
-            },
-            required=["question"],
-        ),
-        _definition(
             "update_memory_graph",
             (
                 "Start a graph update subprocess when the user asks to update, "
                 "correct, revise, or maintain memory graph state."
             ),
-            states=[*conversation_states, *memory_ingestion_states, *memory_creation_states],
+            states=[*memory_ingestion_states, *memory_creation_states],
             properties={
                 "source_text": string_property("User-provided update or correction text."),
                 "guidelines": optional_string_property(

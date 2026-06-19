@@ -25,8 +25,6 @@ class AgenticStateRunResult(AgenticModel):
     message_delta: list[ChatMessage] = Field(default_factory=list)
     structured_output: dict[str, Any] | None = None
     tool_events: list[AgenticToolEvent] = Field(default_factory=list)
-    handoff_target: str | None = None
-    handoff_arguments: dict[str, Any] = Field(default_factory=dict)
     terminal: bool = True
     status: str = "ok"
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -37,7 +35,6 @@ class AgenticRunResult(AgenticModel):
     visited_states: list[AgenticStateId] = Field(default_factory=list)
     state_results: list[AgenticStateRunResult] = Field(default_factory=list)
     status: str = "ok"
-    pending_process_hints: list[dict[str, Any]] = Field(default_factory=list)
     interruption: dict[str, Any] | None = None
     compact_trace: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

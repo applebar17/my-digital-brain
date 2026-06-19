@@ -58,8 +58,8 @@ class ScriptedToolProvider:
         tools_mapping: dict[str, object],
         max_tool_calls: int | None = None,
     ) -> ChatResult:
-        if "start_memory_ingestion" in tools_mapping:
-            tools_mapping["start_memory_ingestion"](source_text="hello from telegram")
+        if "ingest_memory" in tools_mapping:
+            tools_mapping["ingest_memory"]()
         content = "accepted:hello from telegram"
         return ChatResult(
             content=content,
@@ -118,7 +118,6 @@ def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
         tool_facade=facade,
-        runtime_mode="agentic",
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=ScriptedToolProvider())),
     )
     client = _telegram_client(runtime)
@@ -133,12 +132,15 @@ def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None
     assert response.json()["method"] == "sendMessage"
     assert response.json()["chat_id"] == "100"
     assert response.json()["text"] == "accepted:hello from telegram"
-    assert facade.last_request is not None
-    assert facade.last_request.channel == "telegram"
+    assert facade.last_request is None
 
 
 def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:
-    runtime = ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=ConsumerFacade())
+    runtime = ChatRuntime(
+        store=InMemoryChatSessionStore(),
+        tool_facade=ConsumerFacade(),
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=ScriptedToolProvider())),
+    )
     client = _telegram_client(runtime, allowed_user_ids="999")
 
     missing_secret = client.post(

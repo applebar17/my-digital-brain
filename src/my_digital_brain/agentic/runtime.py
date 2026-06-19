@@ -10,8 +10,6 @@ from my_digital_brain.agentic.contexts import (
     ContradictionJudgeResultContext,
     ContradictionReviewContext,
     ConversationContext,
-    GraphUpdateContext,
-    QueryRetrievalPlanningContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.history import AgenticHistoryService
@@ -175,9 +173,8 @@ class AgenticStateRunner:
                 route=route,
             )
         tool_events = invocation.execution_context.tool_events[event_start:]
-        handoff_target, handoff_arguments = _last_handoff(tool_events)
         has_error = any(
-            event.status not in {"ok", "accepted", "needs_user_input"}
+            event.status not in {"ok", "accepted", "interrupted"}
             for event in tool_events
         )
         state_run_result = AgenticStateRunResult(
@@ -185,9 +182,7 @@ class AgenticStateRunner:
             assistant_text=result.content or None,
             message_delta=list(result.message_delta),
             tool_events=tool_events,
-            handoff_target=handoff_target,
-            handoff_arguments=handoff_arguments,
-            terminal=handoff_target is None,
+            terminal=True,
             status="error" if has_error else "ok",
             metadata={
                 "provider": result.metadata.provider,
@@ -227,7 +222,6 @@ class AgenticStateRunner:
                 _trace_json_section(
                     "ERROR / DIAGNOSTICS",
                     {
-                        "handoff_target": state_run_result.handoff_target,
                         "terminal": state_run_result.terminal,
                         "status": state_run_result.status,
                     },
@@ -516,7 +510,7 @@ class AgenticStateRunner:
             )
         tool_events = execution_context.tool_events[event_start:]
         has_error = any(
-            event.status not in {"ok", "accepted", "needs_user_input"}
+            event.status not in {"ok", "accepted", "interrupted"}
             for event in tool_events
         )
         return AgenticStateRunResult(
@@ -548,230 +542,72 @@ class AgenticRuntime:
         start_payload: Any | None = None,
     ) -> AgenticRunResult:
         current_state = start_state or self._entry_state(conversation_context)
-        owner_state = current_state
         current_payload: Any = start_payload if start_payload is not None else conversation_context
         execution_context.agentic_runtime = self
         execution_context.conversation_context = conversation_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
-        for _ in range(self.max_state_transitions):
-            state_result = self.state_runner.run_state(
-                AgenticStateInvocation(
-                    state_id=current_state,
-                    context_payload=current_payload,
-                    execution_context=execution_context,
-                ),
-            )
-            state_results.append(state_result)
-            compact_trace.append(_compact_state_trace(state_result))
+        state_result = self.state_runner.run_state(
+            AgenticStateInvocation(
+                state_id=current_state,
+                context_payload=current_payload,
+                execution_context=execution_context,
+            ),
+        )
+        state_results.append(state_result)
+        compact_trace.append(_compact_state_trace(state_result))
 
-            if state_result.status == "interrupted":
-                interruption = self._persist_interrupted_frame(
-                    state_result,
-                    conversation_context,
-                    execution_context,
-                    current_payload,
-                    compact_trace,
-                )
-                return AgenticRunResult(
-                    final_text=state_result.assistant_text,
-                    visited_states=[result.state_id for result in state_results],
-                    state_results=state_results,
-                    status="needs_user_input",
-                    interruption=interruption,
-                    compact_trace=compact_trace,
-                    metadata={
-                        "user_visible_owner": current_state.value,
-                        "interrupted_process": current_state.value,
-                    },
-                )
-
-            if state_result.handoff_target == "memory_query":
-                current_state = AgenticStateId.MEMORY_QUERY
-                current_payload = _query_context_from_handoff(
-                    conversation_context,
-                    state_result.handoff_arguments,
-                    self.state_runner.history_service,
-                )
-                continue
-
-            if state_result.handoff_target == "graph_update":
-                current_state = AgenticStateId.GRAPH_UPDATE
-                current_payload = _graph_update_context_from_handoff(
-                    conversation_context,
-                    state_result.handoff_arguments,
-                    self.state_runner.history_service,
-                )
-                continue
-
-            if state_result.handoff_target == "contradiction_review":
-                current_state = AgenticStateId.CONTRADICTION_REVIEW
-                current_payload = _contradiction_context_from_handoff(
-                    state_result.handoff_arguments,
-                )
-                continue
-
-            direct_pending_hints = _pending_process_hints([state_result])
-            if direct_pending_hints:
-                interrupt_text = (
-                    state_result.tool_events[-1].output
-                    if state_result.tool_events
-                    else None
-                ) or state_result.assistant_text
-                return AgenticRunResult(
-                    final_text=interrupt_text,
-                    visited_states=[result.state_id for result in state_results],
-                    state_results=state_results,
-                    status="needs_user_input",
-                    pending_process_hints=direct_pending_hints,
-                    compact_trace=compact_trace,
-                    metadata={
-                        "user_visible_owner": current_state.value,
-                        "interrupted_process": current_state.value,
-                    },
-                )
-
-            if current_state == AgenticStateId.CONTRADICTION_REVIEW:
-                structured_result = self._run_contradiction_structured_result(
-                    current_payload,
-                    state_result,
-                    execution_context,
-                )
-                state_results.append(structured_result)
-                compact_trace.append(_compact_state_trace(structured_result))
-                pending_hints = _contradiction_pending_process_hints(structured_result)
-                if pending_hints:
-                    return AgenticRunResult(
-                        final_text=(
-                            structured_result.structured_output or {}
-                        ).get("clarification_question")
-                        or structured_result.assistant_text,
-                        visited_states=[result.state_id for result in state_results],
-                        state_results=state_results,
-                        status="needs_user_input",
-                        pending_process_hints=pending_hints,
-                        compact_trace=compact_trace,
-                        metadata={
-                            "contradiction_intent": "needs_clarification",
-                            "user_visible_owner": AgenticStateId.CONTRADICTION_REVIEW.value,
-                        },
-                    )
-                contradiction_status = _contradiction_runtime_status(structured_result)
-                if current_state != owner_state and contradiction_status != "error":
-                    final_result = self._finalize_with_owner(
-                        owner_state,
-                        conversation_context,
-                        execution_context,
-                        structured_result,
-                    )
-                    state_results.append(final_result)
-                    compact_trace.append(_compact_state_trace(final_result))
-                    return AgenticRunResult(
-                        final_text=(
-                            final_result.assistant_text
-                            or self.state_runner.history_service.state_result_summary(
-                                structured_result,
-                            )
-                        ),
-                        visited_states=[result.state_id for result in state_results],
-                        state_results=state_results,
-                        status=final_result.status,
-                        pending_process_hints=_pending_process_hints(state_results),
-                        compact_trace=compact_trace,
-                        metadata={
-                            "user_visible_owner": owner_state.value,
-                            "completed_process": current_state.value,
-                            "contradiction_intent": (
-                                structured_result.structured_output or {}
-                            ).get("intent"),
-                        },
-                    )
-                return AgenticRunResult(
-                    final_text=structured_result.assistant_text,
-                    visited_states=[result.state_id for result in state_results],
-                    state_results=state_results,
-                    status=contradiction_status,
-                    pending_process_hints=_pending_process_hints(state_results),
-                    compact_trace=compact_trace,
-                    metadata={
-                        "contradiction_intent": (
-                            structured_result.structured_output or {}
-                        ).get("intent"),
-                    },
-                )
-
-            if current_state != owner_state and not _requires_direct_user_visibility(
+        if state_result.status == "interrupted":
+            interruption = self._persist_interrupted_frame(
                 state_result,
-                state_results,
-            ):
-                final_result = self._finalize_with_owner(
-                    owner_state,
-                    conversation_context,
-                    execution_context,
-                    state_result,
-                )
-                state_results.append(final_result)
-                compact_trace.append(_compact_state_trace(final_result))
-                return AgenticRunResult(
-                    final_text=(
-                        final_result.assistant_text
-                        or self.state_runner.history_service.state_result_summary(
-                            state_result,
-                        )
-                    ),
-                    visited_states=[result.state_id for result in state_results],
-                    state_results=state_results,
-                    status=final_result.status,
-                    pending_process_hints=_pending_process_hints(state_results),
-                    compact_trace=compact_trace,
-                    metadata={
-                        "user_visible_owner": owner_state.value,
-                        "completed_process": current_state.value,
-                    },
-                )
-
+                conversation_context,
+                execution_context,
+                current_payload,
+                compact_trace,
+            )
             return AgenticRunResult(
-                final_text=state_result.assistant_text
-                or self.state_runner.history_service.state_result_summary(state_result),
+                final_text=state_result.assistant_text,
                 visited_states=[result.state_id for result in state_results],
                 state_results=state_results,
-                status=state_result.status,
-                pending_process_hints=_pending_process_hints(state_results),
+                status="interrupted",
+                interruption=interruption,
                 compact_trace=compact_trace,
+                metadata={
+                    "user_visible_owner": current_state.value,
+                    "interrupted_process": current_state.value,
+                },
+            )
+
+        if current_state == AgenticStateId.CONTRADICTION_REVIEW:
+            structured_result = self._run_contradiction_structured_result(
+                current_payload,
+                state_result,
+                execution_context,
+            )
+            state_results.append(structured_result)
+            compact_trace.append(_compact_state_trace(structured_result))
+            contradiction_status = _contradiction_runtime_status(structured_result)
+            return AgenticRunResult(
+                final_text=structured_result.assistant_text,
+                visited_states=[result.state_id for result in state_results],
+                state_results=state_results,
+                status=contradiction_status,
+                compact_trace=compact_trace,
+                metadata={
+                    "contradiction_intent": (
+                        structured_result.structured_output or {}
+                    ).get("intent"),
+                },
             )
 
         return AgenticRunResult(
-            final_text="I could not complete the agentic flow because the state transition limit was reached.",
+            final_text=state_result.assistant_text
+            or self.state_runner.history_service.state_result_summary(state_result),
             visited_states=[result.state_id for result in state_results],
             state_results=state_results,
-            status="max_transitions_exceeded",
-            pending_process_hints=_pending_process_hints(state_results),
+            status=state_result.status,
             compact_trace=compact_trace,
-        )
-
-    def _finalize_with_owner(
-        self,
-        owner_state: AgenticStateId,
-        conversation_context: ConversationContext,
-        execution_context: AgenticToolExecutionContext,
-        completed_state_result: AgenticStateRunResult,
-    ) -> AgenticStateRunResult:
-        owner_context = self.state_runner.history_service.owner_finalization_context(
-            conversation_context,
-            completed_state=completed_state_result,
-        )
-        return self.state_runner.run_state(
-            AgenticStateInvocation(
-                state_id=owner_state,
-                context_payload=owner_context,
-                execution_context=execution_context,
-                metadata={
-                    "owner_finalization": True,
-                    "completed_state": _state_value(completed_state_result.state_id),
-                    "disable_tools": True,
-                },
-            ),
         )
 
     def _run_contradiction_structured_result(
@@ -872,7 +708,7 @@ class AgenticRuntime:
                 final_text=state_result.assistant_text,
                 visited_states=[state_result.state_id],
                 state_results=[state_result],
-                status="needs_user_input",
+                status="interrupted",
                 interruption=interruption,
                 compact_trace=compact_trace,
             )
@@ -972,7 +808,7 @@ class AgenticRuntime:
                 final_text=parent_result.assistant_text,
                 visited_states=[child_result.state_id, parent_result.state_id],
                 state_results=[child_result, parent_result],
-                status="needs_user_input",
+                status="interrupted",
                 interruption=interruption,
                 compact_trace=compact_trace,
             )
@@ -1127,118 +963,6 @@ class AgenticRuntime:
             source_text=fallback_text,
         )
 
-def _query_context_from_handoff(
-    conversation_context: ConversationContext,
-    arguments: dict[str, Any],
-    history_service: AgenticHistoryService,
-) -> QueryRetrievalPlanningContext:
-    metadata = dict(arguments.get("metadata") or {})
-    seed_id = arguments.get("seed_id")
-    if seed_id:
-        metadata["seed_id"] = seed_id
-    return QueryRetrievalPlanningContext(
-        question=arguments.get("question")
-        or conversation_context.current_message.content
-        or "",
-        conversation=history_service.child_conversation_context(conversation_context),
-        desired_view=arguments.get("desired_view"),
-        metadata=metadata,
-    )
-
-
-def _graph_update_context_from_handoff(
-    conversation_context: ConversationContext,
-    arguments: dict[str, Any],
-    history_service: AgenticHistoryService,
-) -> GraphUpdateContext:
-    metadata = dict(arguments.get("metadata") or {})
-    target_ids = list(arguments.get("target_ids") or [])
-    target_id = arguments.get("target_id")
-    if target_id and target_id not in target_ids:
-        target_ids.append(str(target_id))
-    return GraphUpdateContext(
-        source_text=arguments.get("source_text")
-        or arguments.get("correction_text")
-        or conversation_context.current_message.content
-        or "",
-        conversation=history_service.child_conversation_context(conversation_context),
-        guidelines=arguments.get("guidelines")
-        or "Update the memory graph using deterministic tools.",
-        desired_work=arguments.get("desired_work"),
-        target_ids=[str(target_id) for target_id in target_ids if target_id],
-        source_refs=list(arguments.get("source_refs") or []),
-        metadata=metadata,
-    )
-
-
-def _contradiction_context_from_handoff(arguments: dict[str, Any]) -> ContradictionReviewContext:
-    return ContradictionReviewContext(
-        proposed_write_ref=arguments.get("proposed_write_ref"),
-        proposed_write=dict(arguments.get("proposed_write") or {}),
-        affected_entity_refs=list(arguments.get("affected_entity_refs") or []),
-        affected_relationship_refs=list(arguments.get("affected_relationship_refs") or []),
-        source_refs=list(arguments.get("source_refs") or []),
-        agent_doubt=arguments.get("agent_doubt") or "The agent requested contradiction review.",
-        metadata=dict(arguments.get("metadata") or {}),
-    )
-
-
-def _last_handoff(events: list[AgenticToolEvent]) -> tuple[str | None, dict[str, Any]]:
-    for event in reversed(events):
-        data = event.data or {}
-        target = data.get("handoff_target")
-        if isinstance(target, str) and target:
-            arguments = data.get("handoff_arguments")
-            return target, arguments if isinstance(arguments, dict) else {}
-    return None, {}
-
-
-def _pending_process_hints(
-    state_results: list[AgenticStateRunResult],
-) -> list[dict[str, Any]]:
-    hints: list[dict[str, Any]] = []
-    for result in state_results:
-        for event in result.tool_events:
-            data = event.data or {}
-            if "pending_process" in data:
-                hints.append(data["pending_process"])
-            result_payload = data.get("result")
-            if isinstance(result_payload, dict) and result_payload.get("pending_process"):
-                hints.append(result_payload["pending_process"])
-    return hints
-
-
-def _contradiction_pending_process_hints(
-    state_result: AgenticStateRunResult,
-) -> list[dict[str, Any]]:
-    output = state_result.structured_output or {}
-    if output.get("intent") != "needs_clarification":
-        return []
-    question = str(output.get("clarification_question") or "").strip()
-    if not question:
-        return []
-    return [
-        {
-            "process_id": new_uuid(),
-            "kind": "memory_ingestion",
-            "status": "pending",
-            "question": question,
-            "metadata": {
-                "source": "contradiction_review",
-                "state_id": AgenticStateId.CONTRADICTION_REVIEW.value,
-                "judge_request_id": output.get("judge_request_id"),
-                "judge_decision_id": output.get("judge_decision_id"),
-                "intent": output.get("intent"),
-                "decision": output.get("decision"),
-                "severity": output.get("severity"),
-                "affected_refs": output.get("affected_refs") or [],
-                "source_refs": output.get("source_refs") or [],
-                "resume_context": output.get("resume_context") or {},
-            },
-        }
-    ]
-
-
 def _contradiction_runtime_status(state_result: AgenticStateRunResult) -> str:
     if state_result.status == "error":
         return "error"
@@ -1251,30 +975,12 @@ def _contradiction_runtime_status(state_result: AgenticStateRunResult) -> str:
     return "ok"
 
 
-def _requires_direct_user_visibility(
-    state_result: AgenticStateRunResult,
-    state_results: list[AgenticStateRunResult],
-) -> bool:
-    if _pending_process_hints(state_results):
-        return True
-    for event in state_result.tool_events:
-        data = event.data or {}
-        if data.get("operation") == "request_user_confirmation":
-            return True
-        if "confirmation" in data:
-            return True
-        if "pending_process" in data:
-            return True
-    return False
-
-
 def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:
     return {
         "state_id": _state_value(state_result.state_id),
         "status": state_result.status,
         "assistant_text": state_result.assistant_text,
         "structured_output": state_result.structured_output,
-        "handoff_target": state_result.handoff_target,
         "tools": [
             {
                 "tool_name": event.tool_name,

@@ -15,7 +15,7 @@ from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.debug import record_tool_execution
 
 
-NON_ERROR_TOOL_STATUSES = {"ok", "accepted", "needs_user_input"}
+NON_ERROR_TOOL_STATUSES = {"ok", "accepted", "interrupted"}
 
 
 class ToolCallInterruption(Exception):
@@ -254,7 +254,7 @@ class GenAIToolExecutionMixin:
             status=str(result.status),
             metadata={"duration_ms": duration_ms, "arg_keys": sorted(args.keys())},
         )
-        if result.status == "needs_user_input":
+        if result.status == "interrupted":
             self._attach_interruption_ids(result, tool_call_id=tool_call.id, tool_name=fn_name)
             raise ToolCallInterruption(
                 tool_call_id=tool_call.id,

@@ -72,12 +72,12 @@ def test_history_service_child_projection_removes_channel_metadata() -> None:
 def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> None:
     service = AgenticHistoryService()
     tool_call = NeutralConversationMessage.assistant_tool_call(
-        "query_memory_context",
+        "query_memory",
         {"question": "What about Marco?"},
     )
     tool_output = NeutralConversationMessage.tool_output_message(
         tool_call_id=tool_call.tool_call.tool_call_id,
-        name="query_memory_context",
+        name="query_memory",
         content='{"status":"ok"}',
     )
     conversation = ConversationContext(
@@ -112,7 +112,7 @@ def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> N
         "assistant",
         "user",
     ]
-    assert messages[1].tool_calls[0]["function"]["name"] == "query_memory_context"
+    assert messages[1].tool_calls[0]["function"]["name"] == "query_memory"
     assert messages[2].tool_call_id == tool_call.tool_call.tool_call_id
     assert messages[-1].content == "And Alessia?"
     assert "history" not in prompt_context
@@ -148,7 +148,6 @@ def test_history_service_compacts_tool_events_for_planning_checkpoint_context() 
     service.append_tool_events_to_planning_context(
         planning_context,
         state_result,
-        skip_handoff_targets={"contradiction_review"},
     )
 
     assert len(planning_context.prior_tool_outputs) == 2

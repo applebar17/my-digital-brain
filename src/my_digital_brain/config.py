@@ -86,10 +86,6 @@ class Settings(BaseSettings):
         default="change-me-web-chat-token",
         alias="WEB_CHAT_AUTH_TOKEN",
     )
-    chat_runtime_mode: Literal["agentic", "deterministic"] = Field(
-        default="agentic",
-        alias="CHAT_RUNTIME_MODE",
-    )
     chat_debug_commands_enabled: bool = Field(
         default=False,
         alias="CHAT_DEBUG_COMMANDS_ENABLED",

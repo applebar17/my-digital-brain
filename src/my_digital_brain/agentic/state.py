@@ -16,7 +16,6 @@ class AgenticStateConfig(AgenticModel):
     produced_context_type: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
     forbidden_tools: list[str] = Field(default_factory=list)
-    handoff_targets: list[str] = Field(default_factory=list)
     max_tool_calls: int = Field(default=3, ge=0)
     model_task: str | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
@@ -31,18 +30,13 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             required_context_type="ConversationContext",
             produced_context_type="ToolResultContext",
             allowed_tools=[
-                "start_memory_ingestion",
-                "query_memory_context",
-                "update_memory_graph",
+                "query_memory",
+                "ingest_memory",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
                 "raw_graph_query",
                 "focused_extraction",
-            ],
-            handoff_targets=[
-                "memory_query",
-                "graph_update",
             ],
             model_task="conversation_entry",
         ),
@@ -64,17 +58,10 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
-                "start_memory_ingestion",
+                "ingest_memory",
                 "update_memory_graph",
                 "raw_graph_query",
                 "focused_extraction",
-            ],
-            handoff_targets=[
-                "entity_ingestion_planning",
-                "relationship_ingestion_planning",
-                "focused_extraction_planning",
-                "validation_resolution",
-                "clarification_waiting",
             ],
             max_tool_calls=2,
             model_task="reasoning_checkpoint",
@@ -97,16 +84,10 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
-                "start_memory_ingestion",
+                "ingest_memory",
                 "update_memory_graph",
                 "raw_graph_query",
                 "focused_extraction",
-            ],
-            handoff_targets=[
-                "entity_ingestion_planning",
-                "relationship_ingestion_planning",
-                "missing_entity_planning",
-                "clarification_waiting",
             ],
             max_tool_calls=2,
             model_task="planning_checkpoint",
@@ -118,7 +99,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             required_context_type="QueryRetrievalPlanningContext",
             produced_context_type="AnswerContext",
             allowed_tools=[
-                "query_memory_context",
                 "get_context_package",
                 "get_entity_detail",
                 "get_memories_involving_node",
@@ -130,15 +110,10 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
-                "start_memory_ingestion",
+                "ingest_memory",
                 "update_memory_graph",
                 "request_user_clarification",
                 "raw_graph_query",
-            ],
-            handoff_targets=[
-                "query_retrieval_planning",
-                "query_context_retrieval",
-                "answer_generation",
             ],
             model_task="memory_query",
         ),
@@ -158,8 +133,8 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "request_user_clarification",
             ],
             forbidden_tools=[
-                "start_memory_ingestion",
-                "query_memory_context",
+                "ingest_memory",
+                "query_memory",
                 "execute_graph_write_plan",
                 "raw_graph_query",
             ],
@@ -185,8 +160,8 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "request_user_clarification",
             ],
             forbidden_tools=[
-                "start_memory_ingestion",
-                "query_memory_context",
+                "ingest_memory",
+                "query_memory",
                 "execute_graph_write_plan",
                 "raw_graph_query",
             ],
@@ -219,11 +194,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "delete_graph_node",
                 "archive_memory",
             ],
-            handoff_targets=[
-                "graph_update_target_resolution",
-                "graph_update_execution",
-                "clarification_waiting",
-            ],
             max_tool_calls=8,
             model_task="graph_update",
         ),
@@ -246,11 +216,6 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "create_contradiction_record",
                 "apply_merge",
                 "raw_graph_query",
-            ],
-            handoff_targets=[
-                "write_plan_ready",
-                "clarification_waiting",
-                "validation_resolution",
             ],
             model_task="contradiction_review",
         ),

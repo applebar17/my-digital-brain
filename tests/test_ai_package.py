@@ -59,7 +59,7 @@ def test_genai_message_builder_preserves_valid_chat_message_sequence() -> None:
                     "id": "call-1",
                     "type": "function",
                     "function": {
-                        "name": "start_memory_ingestion",
+                        "name": "ingest_memory",
                         "arguments": "{}",
                     },
                 }

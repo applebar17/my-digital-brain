@@ -45,34 +45,9 @@ def build_chat_runtime(
     store: ChatSessionStore,
     graph_service: Any | None = None,
 ) -> ChatRuntime:
-    """Build the production chat runtime from app settings.
+    """Build the production agentic chat runtime from app settings."""
 
-    If provider construction fails, return a runtime that responds through the
-    normal chat response shape instead of failing FastAPI dependency creation.
-    """
-
-    if settings.chat_runtime_mode == "deterministic":
-        return ChatRuntime(
-            store=store,
-            tool_facade=MemoryBackendToolFacade(graph_service=graph_service),
-            runtime_mode="deterministic",
-            graph_service=graph_service,
-            debug_commands_enabled=settings.chat_debug_commands_enabled,
-            ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
-        )
-
-    try:
-        provider = build_ai_provider(settings)
-    except RuntimeError as exc:
-        return ChatRuntime(
-            store=store,
-            tool_facade=MemoryBackendToolFacade(graph_service=graph_service),
-            runtime_mode="deterministic",
-            graph_service=graph_service,
-            debug_commands_enabled=settings.chat_debug_commands_enabled,
-            ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
-            runtime_unavailable_reason=str(exc),
-        )
+    provider = build_ai_provider(settings)
 
     router = StaticModelRouter(
         settings=genai_settings_from_app_settings(settings),
@@ -113,7 +88,6 @@ def build_chat_runtime(
     return ChatRuntime(
         store=store,
         tool_facade=facade,
-        runtime_mode="agentic",
         agentic_runtime=agentic_runtime,
         graph_service=graph_service,
         ingestion_service=ingestion_service,

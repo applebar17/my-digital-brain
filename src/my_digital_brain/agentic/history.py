@@ -236,16 +236,10 @@ class AgenticHistoryService:
     def tool_result_contexts_from_events(
         self,
         events: Iterable[AgenticToolEvent],
-        *,
-        skip_handoff_targets: set[str] | None = None,
     ) -> list[ToolResultContext]:
-        skipped = skip_handoff_targets or set()
         results: list[ToolResultContext] = []
         for event in events:
             data = event.data or {}
-            handoff_target = data.get("handoff_target")
-            if isinstance(handoff_target, str) and handoff_target in skipped:
-                continue
             results.append(
                 ToolResultContext(
                     tool_name=event.tool_name,
@@ -269,13 +263,10 @@ class AgenticHistoryService:
         self,
         planning_context: PlanningContext,
         state_result: AgenticStateRunResult,
-        *,
-        skip_handoff_targets: set[str] | None = None,
     ) -> None:
         planning_context.prior_tool_outputs.extend(
             self.tool_result_contexts_from_events(
                 state_result.tool_events,
-                skip_handoff_targets=skip_handoff_targets,
             ),
         )
 

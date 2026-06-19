@@ -31,12 +31,12 @@ from my_digital_brain.prompts import PromptNotFoundError, PromptRegistry
 def test_neutral_conversation_messages_validate_expected_shapes() -> None:
     user = NeutralConversationMessage.user("Yesterday I met Marco.")
     call = NeutralConversationMessage.assistant_tool_call(
-        "start_memory_ingestion",
-        {"source_text": "Yesterday I met Marco."},
+        "ingest_memory",
+        {},
     )
     output = NeutralConversationMessage.tool_output_message(
         tool_call_id=call.tool_call.tool_call_id,
-        name="start_memory_ingestion",
+        name="ingest_memory",
         status=ToolResultStatus.ACCEPTED,
         content="Memory accepted.",
     )
@@ -45,7 +45,7 @@ def test_neutral_conversation_messages_validate_expected_shapes() -> None:
     )
 
     assert user.content == "Yesterday I met Marco."
-    assert call.tool_call.name == "start_memory_ingestion"
+    assert call.tool_call.name == "ingest_memory"
     assert output.tool_output.status == ToolResultStatus.ACCEPTED.value
     assert summary.content.startswith("Older discussion")
 
@@ -166,9 +166,8 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert "pending_process_review" not in {state.value for state in configs}
     assert entry.prompt_id == "conversation_entry"
     assert entry.allowed_tools == [
-        "start_memory_ingestion",
-        "query_memory_context",
-        "update_memory_graph",
+        "query_memory",
+        "ingest_memory",
     ]
     assert configs[AgenticStateId.MEMORY_INGESTION].required_context_type == (
         "MemoryIngestionContext"
@@ -252,10 +251,10 @@ def test_deterministic_router_does_not_expose_control_tools_to_conversation_entr
     assert status_route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
     assert status_route.tool_call is None
     assert status_route.assistant_message is not None
-    assert "control layer" in status_route.assistant_message.content
+    assert "tool surface" in status_route.assistant_message.content
     assert cancel_route.tool_call is None
     assert cancel_route.assistant_message is not None
-    assert "no active pending process" in cancel_route.assistant_message.content
+    assert "Pending-process cancellation" in cancel_route.assistant_message.content
 
 
 def test_deterministic_router_keeps_pending_context_in_conversation_entry() -> None:

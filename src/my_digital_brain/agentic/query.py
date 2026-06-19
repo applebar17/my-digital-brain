@@ -172,7 +172,7 @@ class MemoryQueryFoundationService:
     ) -> ToolResultContext:
         if answer is None:
             return ToolResultContext(
-                tool_name="query_memory_context",
+                tool_name="query_memory",
                 status=ToolResultStatus.FAILED,
                 summary=retrieval.no_memory_reason or "No memory context was found.",
                 unresolved_questions=[retrieval.question],
@@ -181,7 +181,7 @@ class MemoryQueryFoundationService:
             )
         title = retrieval.seed_title or retrieval.seed_id or "matching memory"
         return ToolResultContext(
-            tool_name="query_memory_context",
+            tool_name="query_memory",
             status=ToolResultStatus.OK,
             summary=f"Retrieved graph context for {title}.",
             important_refs=[retrieval.seed_id] if retrieval.seed_id else [],

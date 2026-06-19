@@ -327,7 +327,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
                 "llm.tool_interrupted",
                 component="genai",
                 step="call_openai",
-                status="needs_user_input",
+                status="interrupted",
                 model=model,
                 provider="azure_openai" if self.settings.is_azure else "openai",
                 duration_ms=int((time.monotonic() - call_start) * 1000),

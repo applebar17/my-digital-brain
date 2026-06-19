@@ -225,12 +225,13 @@ The LLM chooses actions and proposes parameters. Backend services validate param
 
 The default `conversation_entry` tool surface should stay small:
 
-- `start_memory_ingestion`
-- `query_memory_context`
-- `update_memory_graph`
+- `ingest_memory`
+- `query_memory`
 
-Default answering is a non-tool path. Clarification handling, validation, write
-execution, and lifecycle controls are not broad conversation-entry tools.
+Default answering is a non-tool path. Graph updates are reached through the
+memory ingestion plan rather than exposed as a competing top-level tool.
+Clarification handling, validation, write execution, and lifecycle controls are
+not broad conversation-entry tools.
 Clarification is handled as a continuation of the tool call that requested it:
 the runtime persists an interrupted agentic frame with the assistant tool call
 still open, the UI returns structured answers, and the backend appends one

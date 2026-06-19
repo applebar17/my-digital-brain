@@ -105,7 +105,7 @@ class ScriptedToolCallingProvider:
                 if context is not None:
                     context.current_tool_call_id = previous_tool_call_id
                     context.current_tool_name = previous_tool_name
-            if getattr(tool_result, "status", None) == "needs_user_input":
+            if getattr(tool_result, "status", None) == "interrupted":
                 raise ToolCallInterruption(
                     tool_call_id=tool_call_id,
                     tool_name=str(tool_name),
@@ -268,125 +268,53 @@ def test_conversation_entry_without_tool_call_returns_terminal_assistant_respons
     assert result.state_results[0].terminal is True
     prompt_payload = provider.calls[0]["request"].messages[1].content
     assert "channel_metadata" not in str(prompt_payload)
-    assert provider.calls[0]["tool_names"] == [
-        "query_memory_context",
-        "start_memory_ingestion",
-        "update_memory_graph",
-    ]
+    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
 
 
-def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None:
+def test_conversation_entry_query_tool_returns_placeholder_without_handoff() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
                 "content": "Routing to memory query.",
-                "tool": "query_memory_context",
+                "tool": "query_memory",
                 "arguments": {
                     "question": "What do I remember about Marco?",
                     "seed_id": "node-marco",
-                },
-            },
-            {
-                "content": "Marco is stored as your university friend.",
-                "tool": "get_context_package",
-                "arguments": {"node_id": "node-marco"},
-            },
-            {"content": "Marco is stored as your university friend."},
-        ]
-    )
-    graph = FakeGraphService()
-    runtime = AgenticRuntime(_runner(provider))
-
-    result = runtime.run(
-        _conversation(),
-        AgenticToolExecutionContext(graph_service=graph),
-    )
-
-    assert result.status == "ok"
-    assert result.final_text == "Marco is stored as your university friend."
-    assert result.visited_states == [
-        AgenticStateId.CONVERSATION_ENTRY.value,
-        AgenticStateId.MEMORY_QUERY.value,
-        AgenticStateId.CONVERSATION_ENTRY.value,
-    ]
-    assert result.state_results[0].handoff_target == "memory_query"
-    assert result.state_results[1].tool_events[0].tool_name == "get_context_package"
-    assert graph.calls == [("get_context_package", "node-marco")]
-    assert provider.calls[0]["max_tool_calls"] == 3
-    assert provider.calls[0]["tool_names"] == [
-        "query_memory_context",
-        "start_memory_ingestion",
-        "update_memory_graph",
-    ]
-    assert [message.role for message in result.state_results[0].message_delta] == [
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    assert result.state_results[0].message_delta[0].tool_calls[0]["function"]["name"] == (
-        "query_memory_context"
-    )
-    assert result.state_results[0].message_delta[1].tool_call_id == (
-        result.state_results[0].message_delta[0].tool_calls[0]["id"]
-    )
-    assert provider.calls[2]["tool_names"] == []
-    assert provider.calls[2]["max_tool_calls"] == 0
-    assert provider.calls[2]["request"].messages[1].content == "I met Marco yesterday."
-    assert "owner_finalization" in provider.calls[2]["request"].messages[0].content
-
-
-def test_update_tool_runs_nested_graph_update_and_compacts_to_parent_tool_result() -> None:
-    provider = ScriptedToolCallingProvider(
-        [
-            {
-                "content": "Routing to graph update.",
-                "tool": "update_memory_graph",
-                "arguments": {
-                    "source_text": "Marco was from university, not work.",
-                    "guidelines": "Apply this as a correction.",
-                    "desired_work": "correct_or_update_memory_graph",
-                    "target_ids": ["node-marco"],
-                    "source_refs": [],
+                    "desired_view": None,
                     "metadata": {},
                 },
-            },
-            {
-                "content": "Memory log created.",
-                "tool": "create_memory_log",
-                "arguments": {
-                    "log_text": "Marco was from university, not work.",
-                    "host_target_ids": ["node-marco"],
-                    "primary_host_target_id": None,
-                    "involved_target_ids": [],
-                    "relationship_context_target_ids": [],
-                    "media_refs": [],
-                    "log_kind": "correction",
-                    "source_kind": "chat",
-                    "happened_at": None,
-                },
-            },
+            }
         ]
     )
-    graph = FakeGraphService()
+    runtime = AgenticRuntime(_runner(provider))
+
+    result = runtime.run(_conversation(), AgenticToolExecutionContext())
+
+    assert result.status == "error"
+    assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
+    event = result.state_results[0].tool_events[0]
+    assert event.tool_name == "query_memory"
+    assert event.status == "blocked"
+    assert event.data["error_code"] == "memory_query_frame_not_implemented"
+    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
+
+def test_conversation_entry_ingest_tool_returns_placeholder_without_graph_update_handoff() -> None:
+    provider = ScriptedToolCallingProvider(
+        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
+    )
     runtime = AgenticRuntime(_runner(provider))
 
     result = runtime.run(
         _conversation("Marco was from university, not work."),
-        AgenticToolExecutionContext(graph_service=graph),
+        AgenticToolExecutionContext(graph_service=FakeGraphService()),
     )
 
-    assert result.status == "ok"
+    assert result.status == "error"
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
-    assert result.state_results[0].handoff_target is None
-    parent_event = result.state_results[0].tool_events[0]
-    assert parent_event.tool_name == "update_memory_graph"
-    assert parent_event.data["operation"] == "update_memory_graph"
-    assert parent_event.data["visited_states"] == [AgenticStateId.GRAPH_UPDATE.value]
-    assert parent_event.data["state_results"][0]["tool_events"][0]["tool_name"] == (
-        "create_memory_log"
-    )
-    assert "upsert_node:MemoryLog" in graph.mutations
-
+    event = result.state_results[0].tool_events[0]
+    assert event.tool_name == "ingest_memory"
+    assert event.status == "blocked"
+    assert event.data["error_code"] == "memory_ingestion_frame_not_implemented"
 
 def test_pending_context_stays_in_conversation_entry() -> None:
     provider = ScriptedToolCallingProvider(
@@ -404,11 +332,7 @@ def test_pending_context_stays_in_conversation_entry() -> None:
     result = runtime.run(conversation, AgenticToolExecutionContext())
 
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
-    assert provider.calls[0]["tool_names"] == [
-        "query_memory_context",
-        "start_memory_ingestion",
-        "update_memory_graph",
-    ]
+    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
 
 
 def test_missing_graph_dependency_produces_tool_error_without_crashing() -> None:
@@ -481,7 +405,7 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
     )
 
     assert result.status == "interrupted"
-    assert result.tool_events[0].status == "needs_user_input"
+    assert result.tool_events[0].status == "interrupted"
     interruption = result.metadata["interruption"]
     assert interruption["tool_name"] == "request_user_clarification"
     assert interruption["tool_call_id"] == "call-1"
@@ -494,21 +418,9 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
     )
 
 
-def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> None:
+def test_graph_update_clarification_resumes_same_frame() -> None:
     provider = ScriptedToolCallingProvider(
         [
-            {
-                "content": "Routing to graph update.",
-                "tool": "update_memory_graph",
-                "arguments": {
-                    "source_text": "Marco was from university, not work.",
-                    "guidelines": "Apply this as a correction.",
-                    "desired_work": "correct_or_update_memory_graph",
-                    "target_ids": ["node-marco"],
-                    "source_refs": [],
-                    "metadata": {},
-                },
-            },
             {
                 "content": "Need target detail.",
                 "tool": "request_user_clarification",
@@ -529,8 +441,7 @@ def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> 
                     ],
                 },
             },
-            {"content": "Graph update child completed."},
-            {"content": "Parent saw the graph update result."},
+            {"content": "Graph update resumed."},
         ]
     )
     store = InMemoryChatSessionStore()
@@ -551,20 +462,21 @@ def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> 
     interrupted = runtime.run(
         _conversation("Marco was from university, not work."),
         execution_context,
+        start_state=AgenticStateId.GRAPH_UPDATE,
+        start_payload=GraphUpdateContext(
+            source_text="Marco was from university, not work.",
+            conversation=_conversation("Marco was from university, not work."),
+        ),
     )
 
-    assert interrupted.status == "needs_user_input"
-    parent_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
-    child_packet = parent_frame.clarification_packet
-    assert child_packet is not None
-    assert child_packet.frame_id != parent_frame.frame_id
-    child_frame = store.get_agentic_frame(child_packet.frame_id)
-    assert child_frame.parent_frame_id == parent_frame.frame_id
-    assert child_frame.parent_tool_call_id == parent_frame.active_tool_call_id
+    assert interrupted.status == "interrupted"
+    frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
+    packet = frame.clarification_packet
+    assert packet is not None
+    option_id = packet.questions[0].options[0].option_id
 
-    option_id = child_packet.questions[0].options[0].option_id
     resumed = runtime.resume_frame(
-        child_frame,
+        frame,
         AgenticToolExecutionContext(
             graph_service=FakeGraphService(),
             chat_store=store,
@@ -574,12 +486,12 @@ def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> 
         ),
         clarification_answer_summary="Clarification answers: Marco from university.",
         answer_packet=ClarificationAnswerPacket(
-            packet_id=child_packet.packet_id,
-            frame_id=child_packet.frame_id,
-            tool_call_id=child_packet.tool_call_id or "",
+            packet_id=packet.packet_id,
+            frame_id=packet.frame_id,
+            tool_call_id=packet.tool_call_id or "",
             answers=[
                 {
-                    "question_id": child_packet.questions[0].question_id,
+                    "question_id": packet.questions[0].question_id,
                     "selected_option_ids": [option_id],
                     "free_text": None,
                 }
@@ -588,29 +500,12 @@ def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> 
     )
 
     assert resumed.status == "ok"
-    assert resumed.final_text == "Parent saw the graph update result."
-    assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
-    completed_parent = store.get_agentic_frame(parent_frame.frame_id)
-    assert completed_parent.status == "completed"
-    parent_tool_messages = [
-        message
-        for message in completed_parent.messages
-        if message.get("role") == "tool"
-    ]
-    assert parent_tool_messages[-1]["tool_call_id"] == parent_frame.active_tool_call_id
-    assert '"operation":"update_memory_graph"' in parent_tool_messages[-1]["content"]
+    assert resumed.final_text == "Graph update resumed."
+    assert store.get_agentic_frame(frame.frame_id).status == "completed"
 
-
-def test_start_memory_ingestion_tool_delegates_to_backend_facade() -> None:
+def test_ingest_memory_tool_does_not_delegate_to_backend_facade() -> None:
     provider = ScriptedToolCallingProvider(
-        [
-            {
-                "content": "Routing to ingestion.",
-                "tool": "start_memory_ingestion",
-                "arguments": {"source_text": "Yesterday I met Marco."},
-            },
-            {"content": "I stored that memory."},
-        ]
+        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
     )
     facade = FakeBackendFacade()
     runtime = AgenticRuntime(_runner(provider))
@@ -625,23 +520,25 @@ def test_start_memory_ingestion_tool_delegates_to_backend_facade() -> None:
         ),
     )
 
-    assert result.status == "ok"
-    assert result.final_text == "Routing to ingestion."
-    assert facade.calls[0][1].text == "Yesterday I met Marco."
-    assert result.state_results[0].tool_events[0].tool_name == "start_memory_ingestion"
-    assert result.state_results[0].tool_events[0].data["operation"] == (
-        "start_memory_ingestion"
+    assert result.status == "error"
+    assert facade.calls == []
+    assert result.state_results[0].tool_events[0].tool_name == "ingest_memory"
+    assert result.state_results[0].tool_events[0].data["error_code"] == (
+        "memory_ingestion_frame_not_implemented"
     )
-    assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
 
-
-def test_max_state_transition_limit_prevents_runaway_handoffs() -> None:
+def test_handoff_payloads_do_not_switch_runtime_state() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
                 "content": "Routing to memory query.",
-                "tool": "query_memory_context",
-                "arguments": {"question": "What about Marco?"},
+                "tool": "query_memory",
+                "arguments": {
+                    "question": "What about Marco?",
+                    "seed_id": None,
+                    "desired_view": None,
+                    "metadata": {},
+                },
             }
         ]
     )
@@ -649,9 +546,8 @@ def test_max_state_transition_limit_prevents_runaway_handoffs() -> None:
 
     result = runtime.run(_conversation(), AgenticToolExecutionContext())
 
-    assert result.status == "max_transitions_exceeded"
+    assert result.status == "error"
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
-
 
 def test_state_runner_accepts_specialist_context_and_records_tool_events() -> None:
     provider = ScriptedToolCallingProvider(
@@ -859,8 +755,6 @@ def test_contradiction_review_question_becomes_pending_process_hint() -> None:
         AgenticStateId.CONTRADICTION_REVIEW.value,
         AgenticStateId.CONTRADICTION_REVIEW.value,
     ]
-    assert result.pending_process_hints[0]["kind"] == "memory_ingestion"
-    assert result.pending_process_hints[0]["question"] == "Was the meeting in Milan or Turin?"
     assert result.metadata["contradiction_intent"] == "needs_clarification"
     assert provider.structured_calls[0].output_schema.__name__ == (
         "ContradictionJudgeResultContext"
@@ -889,6 +783,5 @@ def test_contradiction_review_free_form_question_without_structured_intent_is_no
         start_state=AgenticStateId.CONTRADICTION_REVIEW,
     )
 
-    assert result.pending_process_hints == []
     assert result.status == "ok"
     assert result.metadata["contradiction_intent"] == "emit_verdict"

@@ -58,8 +58,6 @@ class AgenticToolExecutionContext:
     sender_id: str | None = None
     message_id: str | None = None
     current_text: str | None = None
-    pending_process_context: Any | None = None
-    pending_process_contexts: list[Any] = field(default_factory=list)
     conversation_history_refs: list[str] = field(default_factory=list)
     tool_events: list[AgenticToolEvent] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -94,7 +92,7 @@ class AgenticToolBindings:
             "query_memory",
             "memory_query_frame_not_implemented",
             "query_memory is registered for the future tool-frame runtime but is not active yet.",
-            suggested_next_action="Keep using the legacy query_memory_context path until Wave 3 activates query_memory.",
+            suggested_next_action="Wait for Wave 3 to activate the memory_query child frame.",
             diagnostics={
                 "question": question,
                 "seed_id": seed_id,
@@ -108,7 +106,7 @@ class AgenticToolBindings:
             "ingest_memory",
             "memory_ingestion_frame_not_implemented",
             "ingest_memory is a no-argument routing tool registered for the future tool-frame runtime.",
-            suggested_next_action="Keep using the legacy start_memory_ingestion path until Wave 3 activates ingest_memory.",
+            suggested_next_action="Wait for Wave 3 to activate the memory_ingestion child frame.",
             diagnostics={
                 "state_id": self.context.state_id,
                 "current_text_available": bool((self.context.current_text or "").strip()),
@@ -133,56 +131,6 @@ class AgenticToolBindings:
             },
         )
 
-    def _handle_start_memory_ingestion(
-        self,
-        source_text: str,
-        source_refs: list[str] | None = None,
-        pending_process_policy: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> ToolResult:
-        request = self._chat_request(
-            source_text,
-            metadata={
-                "source_refs": source_refs or [],
-                "pending_process_policy": pending_process_policy,
-                **(metadata or {}),
-            },
-        )
-        if isinstance(request, ToolResult):
-            return request
-        return self._facade_call("start_memory_ingestion", request)
-
-    def _handle_query_memory_context(
-        self,
-        question: str,
-        seed_id: str | None = None,
-        desired_view: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> ToolResult:
-        if self._is_handoff_state():
-            return _handoff_result(
-                "query_memory_context",
-                "memory_query",
-                {
-                    "question": question,
-                    "seed_id": seed_id,
-                    "desired_view": desired_view,
-                    "metadata": metadata or {},
-                },
-                output="Memory query handoff requested.",
-            )
-        request = self._chat_request(
-            question,
-            metadata={
-                "seed_id": seed_id,
-                "desired_view": desired_view,
-                **(metadata or {}),
-            },
-        )
-        if isinstance(request, ToolResult):
-            return request
-        return self._facade_call("query_memory_context", request)
-
     def _handle_update_memory_graph(
         self,
         source_text: str,
@@ -203,10 +151,6 @@ class AgenticToolBindings:
             "pending_process_policy": pending_process_policy,
             "metadata": metadata or {},
         }
-        if self.context.state_id == AgenticStateId.CONVERSATION_ENTRY.value:
-            nested = self._run_nested_graph_update(arguments)
-            if nested is not None:
-                return nested
         if self.context.state_id in {
             AgenticStateId.MEMORY_INGESTION.value,
             AgenticStateId.MEMORY_CREATION.value,
@@ -222,60 +166,6 @@ class AgenticToolBindings:
         if isinstance(request, ToolResult):
             return request
         return self._facade_call("update_memory_graph", request)
-
-    def _run_nested_graph_update(self, arguments: dict[str, Any]) -> ToolResult | None:
-        runtime = self.context.agentic_runtime
-        conversation = self.context.conversation_context
-        if runtime is None or conversation is None:
-            return None
-        from my_digital_brain.agentic.contexts import GraphUpdateContext
-
-        child_context = GraphUpdateContext(
-            source_text=arguments["source_text"],
-            conversation=runtime.state_runner.history_service.child_conversation_context(
-                conversation,
-            ),
-            guidelines=arguments["guidelines"],
-            desired_work=arguments.get("desired_work"),
-            target_ids=[str(value) for value in arguments.get("target_ids") or []],
-            source_refs=list(arguments.get("source_refs") or []),
-            metadata=dict(arguments.get("metadata") or {}),
-        )
-        child_execution = self._child_execution_context()
-        result = runtime.run(
-            conversation,
-            child_execution,
-            start_state=AgenticStateId.GRAPH_UPDATE,
-            start_payload=child_context,
-        )
-        if result.status == "needs_user_input":
-            packet = (result.interruption or {}).get("clarification_packet")
-            return ToolResult(
-                status="needs_user_input",
-                output=result.final_text or "Clarification needed.",
-                data={
-                    "operation": "update_memory_graph",
-                    "child_frame_id": (result.interruption or {}).get("frame_id"),
-                    "clarification_packet": packet,
-                    "interruption": result.interruption,
-                    "compact_trace": result.compact_trace,
-                },
-            )
-        summary = result.final_text or "Graph update completed."
-        return ToolResult(
-            status="ok" if result.status == "ok" else result.status,
-            output=summary,
-            data={
-                "operation": "update_memory_graph",
-                "summary": summary,
-                "visited_states": [str(state) for state in result.visited_states],
-                "state_results": [
-                    state_result.model_dump(mode="json", exclude_none=True)
-                    for state_result in result.state_results
-                ],
-                "compact_trace": result.compact_trace,
-            },
-        )
 
     def _child_execution_context(self) -> AgenticToolExecutionContext:
         return AgenticToolExecutionContext(
@@ -344,7 +234,7 @@ class AgenticToolBindings:
 
         question = packet.questions[0].question
         return ToolResult(
-            status="needs_user_input",
+            status="interrupted",
             output=question,
             data={
                 "operation": "request_user_clarification",
@@ -952,7 +842,7 @@ class AgenticToolBindings:
         except Exception as exc:
             return _exception_result(name, exc)
         tool_result = _chat_result_to_tool_result(name, result)
-        if tool_result.status == "needs_user_input":
+        if tool_result.status == "interrupted":
             self._normalize_clarification_tool_result(tool_result)
         return tool_result
 
@@ -994,7 +884,6 @@ class AgenticToolBindings:
         text: str,
         *,
         metadata: dict[str, Any],
-        pending_process_context: Any | None = None,
     ) -> Any | ToolResult:
         missing = [
             key
@@ -1015,9 +904,6 @@ class AgenticToolBindings:
             conversation_id=str(self.context.conversation_id),
             owner_id=str(self.context.owner_id),
             text=text,
-            pending_process_context=pending_process_context
-            if pending_process_context is not None
-            else self.context.pending_process_context,
             conversation_history_refs=list(self.context.conversation_history_refs),
             metadata={
                 "sender_id": self.context.sender_id,
@@ -1035,13 +921,13 @@ def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
     payload = _serialize(result)
     status = str(payload.get("status", "ok"))
     is_error = status == "failed"
-    is_needs_user_input = status == "needs_user_input"
+    is_interrupted = status == "interrupted"
     packet = payload.get("clarification_packet")
     data = {"operation": tool_name, "result": payload}
-    if is_needs_user_input and isinstance(packet, dict):
+    if is_interrupted and isinstance(packet, dict):
         data["clarification_packet"] = packet
     return ToolResult(
-        status="needs_user_input" if is_needs_user_input else "error" if is_error else "ok",
+        status="interrupted" if is_interrupted else "error" if is_error else "ok",
         output=payload.get("primary_text") or f"{tool_name} completed.",
         data=data,
         error=(
@@ -1184,24 +1070,6 @@ def _dedupe_strings(values: list[str]) -> list[str]:
             seen.add(text)
             result.append(text)
     return result
-
-
-def _handoff_result(
-    operation: str,
-    target_state: str,
-    arguments: dict[str, Any],
-    *,
-    output: str,
-) -> ToolResult:
-    return ToolResult(
-        status="accepted",
-        output=output,
-        data={
-            "operation": operation,
-            "handoff_target": target_state,
-            "handoff_arguments": arguments,
-        },
-    )
 
 
 def _serialize(value: Any) -> Any:

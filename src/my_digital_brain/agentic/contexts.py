@@ -95,11 +95,16 @@ class ConversationContext(AgenticModel):
     def model_facing_payload(self) -> dict[str, Any]:
         """Return prompt-safe context without backend-only channel metadata."""
 
-        return self.model_dump(
+        payload = self.model_dump(
             mode="json",
             exclude={"channel_metadata"},
             exclude_none=True,
         )
+        if not self.pending_process:
+            payload.pop("pending_process", None)
+        if not self.pending_processes:
+            payload.pop("pending_processes", None)
+        return payload
 
 
 class EvidenceSpan(AgenticModel):
