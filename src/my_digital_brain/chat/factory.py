@@ -11,10 +11,6 @@ from my_digital_brain.ai.providers import AzureOpenAIProvider, OpenAIProvider
 from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import ChatSessionStore
-from my_digital_brain.chat.tool_facade import (
-    LLMGraphContextAnswerGenerator,
-    MemoryBackendToolFacade,
-)
 from my_digital_brain.config import Settings
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
 from my_digital_brain.ingestion.extractors import (
@@ -79,18 +75,13 @@ def build_chat_runtime(
         semantic_search_service=semantic_search_service,
         execute_write_plan=settings.ingestion_execute_write_plan,
     )
-    facade = MemoryBackendToolFacade(
-        graph_service=graph_service,
-        ingestion_service=ingestion_service,
-        semantic_search_service=semantic_search_service,
-        answer_generator=LLMGraphContextAnswerGenerator(provider, router=router),
-    )
     return ChatRuntime(
         store=store,
-        tool_facade=facade,
         agentic_runtime=agentic_runtime,
         graph_service=graph_service,
         ingestion_service=ingestion_service,
+        semantic_search_service=semantic_search_service,
+        vectorization_service=getattr(ingestion_service, "vectorization_service", None),
         history_service=history_service,
         debug_commands_enabled=settings.chat_debug_commands_enabled,
         ai_flow_debug_enabled=settings.ai_flow_debug_enabled,

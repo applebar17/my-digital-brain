@@ -34,7 +34,6 @@ from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
 from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatResponseStatus
-from my_digital_brain.chat.facade import ChatToolRequest, ChatToolResult
 from my_digital_brain.chat.models import ClarificationAnswerPacket
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 
@@ -219,39 +218,22 @@ class FakeGraphService:
         }
 
 
-class FakeBackendFacade:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, ChatToolRequest]] = []
 
-    def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("start_memory_ingestion", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Memory accepted by backend.",
-            metadata={"operation": "start_memory_ingestion"},
-        )
+def _runner(provider: ScriptedToolCallingProvider) -> AgenticStateRunner:
+    return AgenticStateRunner(provider=provider)
 
 
 def _conversation(text: str = "What do I remember about Marco?") -> ConversationContext:
     return ConversationContext(
         current_message=NeutralConversationMessage.user(text),
-        history=[
-            NeutralConversationMessage.user("I met Marco yesterday."),
-            NeutralConversationMessage.assistant("I received this memory."),
-        ],
-        timezone="Europe/Rome",
         channel_metadata=ChannelSessionMetadata(
-            channel="telegram",
-            conversation_id="chat-1",
+            channel="web",
+            conversation_id="conversation-1",
             owner_id="owner-1",
             session_id="session-1",
-            sender_id="sender-1",
         ),
     )
 
-
-def _runner(provider: ScriptedToolCallingProvider) -> AgenticStateRunner:
-    return AgenticStateRunner(provider=provider)
 
 
 def test_conversation_entry_without_tool_call_returns_terminal_assistant_response() -> None:
@@ -601,22 +583,29 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
     assert resumed.status == "ok"
     assert resumed.final_text == "Conversation parent resumed."
     assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
-    assert store.get_agentic_frame(parent_frame.frame_id).status == "completed"
+    completed_parent = store.get_agentic_frame(parent_frame.frame_id)
+    assert completed_parent.status == "completed"
+    parent_tool_messages = [
+        message for message in completed_parent.messages if message.get("role") == "tool"
+    ]
+    assert len(parent_tool_messages) == 1
+    parent_tool_payload = json.loads(parent_tool_messages[0]["content"])
+    assert parent_tool_payload["data"]["child_frame_id"] == child_frame.frame_id
+    assert parent_tool_payload["data"]["child_status"] == "ok"
+    assert "state_result" not in parent_tool_payload["data"]
 
-def test_ingest_memory_tool_does_not_delegate_to_backend_facade() -> None:
+def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
             {"content": "Memory ingestion complete."},
         ]
     )
-    facade = FakeBackendFacade()
     runtime = AgenticRuntime(_runner(provider))
 
     result = runtime.run(
         _conversation("Yesterday I met Marco."),
         AgenticToolExecutionContext(
-            backend_facade=facade,
             session_id="session-1",
             conversation_id="conversation-1",
             owner_id="owner-1",
@@ -624,11 +613,11 @@ def test_ingest_memory_tool_does_not_delegate_to_backend_facade() -> None:
     )
 
     assert result.status == "ok"
-    assert facade.calls == []
     assert result.state_results[0].tool_events[0].tool_name == "ingest_memory"
     assert result.state_results[0].tool_events[0].data["child_state_id"] == (
         AgenticStateId.MEMORY_INGESTION.value
     )
+    assert "state_results" not in result.state_results[0].tool_events[0].data
 
 def test_child_frames_do_not_use_handoff_state_switching() -> None:
     provider = ScriptedToolCallingProvider(

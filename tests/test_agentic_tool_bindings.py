@@ -13,12 +13,6 @@ from my_digital_brain.agentic import (
     default_agentic_tool_registry,
     default_state_configs,
 )
-from my_digital_brain.chat.enums import ChatResponseStatus
-from my_digital_brain.chat.facade import (
-    CancelPendingProcessRequest,
-    ChatToolRequest,
-    ChatToolResult,
-)
 from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
@@ -27,66 +21,6 @@ from my_digital_brain.graph.models import (
 )
 from my_digital_brain.prompts import PromptRegistry
 
-
-class FakeFacade:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, Any]] = []
-
-    def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("start_memory_ingestion", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Memory accepted.",
-            metadata={"operation": "start_memory_ingestion"},
-        )
-
-    def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("query_memory_context", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.OK,
-            primary_text="Memory context found.",
-            metadata={"operation": "query_memory_context"},
-        )
-
-    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("update_memory_graph", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Graph update accepted.",
-            metadata={"operation": "update_memory_graph"},
-        )
-
-    def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("get_conversation_status", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.OK,
-            primary_text="No pending process.",
-            metadata={"operation": "get_conversation_status"},
-        )
-
-    def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
-        self.calls.append(("cancel_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.CANCELLED,
-            primary_text="Cancelled.",
-            metadata={"operation": "cancel_pending_process", "clear_pending_process": True},
-        )
-
-    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
-        self.calls.append(("pause_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Paused.",
-            metadata={"operation": "pause_pending_process", "clear_pending_process": True},
-        )
-
-    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("resume_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Resumed.",
-            metadata={"operation": "resume_pending_process", "clear_pending_process": True},
-        )
 
 
 class FakeContextPackage(BaseModel):
@@ -383,8 +317,7 @@ def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
 
 
 def test_top_level_tools_require_agentic_runtime_without_legacy_facade() -> None:
-    facade = FakeFacade()
-    execution_context = _execution_context(backend_facade=facade)
+    execution_context = _execution_context()
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     mapping = build_agentic_tool_mapping(config, execution_context)
 
@@ -406,7 +339,6 @@ def test_top_level_tools_require_agentic_runtime_without_legacy_facade() -> None
     assert ingest.error is not None
     assert ingest.error.code == "missing_dependency"
     assert "agentic_runtime" in ingest.error.message
-    assert facade.calls == []
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
     graph = FakeGraphService()

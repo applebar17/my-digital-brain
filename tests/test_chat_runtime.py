@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 
 from fastapi import FastAPI
@@ -17,11 +18,6 @@ from my_digital_brain.chat.enums import (
     PendingProcessStatus,
 )
 from my_digital_brain.chat.clarification import build_clarification_packet
-from my_digital_brain.chat.facade import (
-    CancelPendingProcessRequest,
-    ChatToolRequest,
-    ChatToolResult,
-)
 from my_digital_brain.chat.models import (
     AgenticFrame,
     ChatResponse,
@@ -35,76 +31,6 @@ from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.config import Settings
 
-
-class RecordingFacade:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, object]] = []
-
-    def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("start_memory_ingestion", request))
-        if request.text == "needs clarification":
-            packet = _clarification_packet(frame_id="facade-frame")
-            return ChatToolResult(
-                status=ChatResponseStatus.NEEDS_USER_INPUT,
-                primary_text="Which Marco do you mean?",
-                pending_process=PendingProcessRef(
-                    process_id="process-1",
-                    kind=PendingProcessKind.MEMORY_INGESTION,
-                    question="Which Marco do you mean?",
-                    metadata={
-                        "clarification_packet": packet.model_dump(
-                            mode="json",
-                            exclude_none=True,
-                        )
-                    },
-                ),
-                clarification_packet=packet,
-            )
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Memory accepted.",
-        )
-
-    def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("query_memory_context", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Query accepted.",
-        )
-
-    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("update_memory_graph", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Graph update accepted.",
-        )
-
-    def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("get_conversation_status", request))
-        return ChatToolResult(status=ChatResponseStatus.OK, primary_text="Status checked.")
-
-    def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
-        self.calls.append(("cancel_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.CANCELLED,
-            primary_text="Cancelled.",
-        )
-
-    def pause_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
-        self.calls.append(("pause_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Paused.",
-            metadata={"clear_pending_process": True},
-        )
-
-    def resume_pending_process(self, request: ChatToolRequest) -> ChatToolResult:
-        self.calls.append(("resume_pending_process", request))
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text="Resumed.",
-            metadata={"clear_pending_process": True},
-        )
 
 
 class ScriptedToolProvider:
@@ -222,20 +148,18 @@ def test_in_memory_store_keeps_session_and_messages_separate() -> None:
 
 
 def test_chat_runtime_requires_agentic_runtime() -> None:
-    facade = RecordingFacade()
+    assert "tool_facade" not in inspect.signature(ChatRuntime).parameters
 
     try:
-        ChatRuntime(store=InMemoryChatSessionStore(), tool_facade=facade)
+        ChatRuntime(store=InMemoryChatSessionStore())
     except Exception as exc:
         assert "requires an AgenticRuntime" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("ChatRuntime should fail without an AgenticRuntime")
 
-    assert facade.calls == []
 
 def test_agentic_runtime_ignores_legacy_pending_context() -> None:
     provider = ScriptedToolProvider([{"content": "Handled as a normal message."}])
-    facade = RecordingFacade()
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
         channel=ChatChannel.WEB,
@@ -254,7 +178,6 @@ def test_agentic_runtime_ignores_legacy_pending_context() -> None:
     )
     runtime = ChatRuntime(
         store=store,
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -266,7 +189,6 @@ def test_agentic_runtime_ignores_legacy_pending_context() -> None:
     assert response.status == ChatResponseStatus.OK
     assert "pending_process" not in system_prompt
     assert store.get_active_pending_process_context(session.session_id) is not None
-    assert facade.calls == []
 
 def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
     store = InMemoryChatSessionStore()
@@ -334,7 +256,6 @@ def test_agentic_context_does_not_include_pending_process_overview() -> None:
     )
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -347,7 +268,6 @@ def test_agentic_context_does_not_include_pending_process_overview() -> None:
     assert "candidate_graph_snapshot" not in system_prompt
 
 def test_debug_commands_are_normal_agentic_messages() -> None:
-    facade = RecordingFacade()
     provider = ScriptedToolProvider([
         {"content": "Ask handled normally."},
         {"content": "Correction handled normally."},
@@ -355,7 +275,6 @@ def test_debug_commands_are_normal_agentic_messages() -> None:
     ])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
         debug_commands_enabled=True,
     )
@@ -369,14 +288,11 @@ def test_debug_commands_are_normal_agentic_messages() -> None:
         "Correction handled normally.",
         "Cancel handled normally.",
     ]
-    assert facade.calls == []
 
-def test_debug_commands_do_not_enable_facade_fallback_by_default() -> None:
-    facade = RecordingFacade()
+def test_debug_commands_do_not_enable_legacy_fallback_by_default() -> None:
     provider = ScriptedToolProvider([{"content": "Status handled normally."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -384,14 +300,12 @@ def test_debug_commands_do_not_enable_facade_fallback_by_default() -> None:
 
     assert response.status == ChatResponseStatus.OK
     assert response.primary_text == "Status handled normally."
-    assert facade.calls == []
 
 def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it() -> None:
     provider = ScriptedToolProvider([{"content": "I can help with that."}])
     store = InMemoryChatSessionStore()
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -408,7 +322,6 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
 def test_agentic_runtime_does_not_inject_pending_context_into_conversation_entry() -> None:
     provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
     store = InMemoryChatSessionStore()
-    facade = RecordingFacade()
     session = store.get_or_create_session(
         channel=ChatChannel.WEB,
         external_conversation_id="conversation-1",
@@ -426,7 +339,6 @@ def test_agentic_runtime_does_not_inject_pending_context_into_conversation_entry
     )
     runtime = ChatRuntime(
         store=store,
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -447,7 +359,6 @@ def test_agentic_ingestion_runs_without_pending_process() -> None:
     store = InMemoryChatSessionStore()
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
@@ -483,7 +394,6 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
     packet = _save_interrupted_frame(store, session.session_id, state_id="memory_query")
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -556,7 +466,6 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
     )
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -653,7 +562,6 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
     )
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -711,7 +619,6 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
     packet = _save_interrupted_frame(store, session.session_id, state_id="memory_query")
     runtime = ChatRuntime(
         store=store,
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(ScriptedToolProvider([]))),
     )
     client = _client(runtime)
@@ -742,11 +649,9 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
 
 
 def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
-    facade = RecordingFacade()
     provider = ScriptedToolProvider([{"content": "I can help with that."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -767,7 +672,6 @@ def test_chat_api_get_session_and_cancel_removed_pending_process_path() -> None:
     provider = ScriptedToolProvider([{"content": "Normal response."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)
@@ -800,7 +704,6 @@ def test_chat_api_create_list_update_and_post_to_selected_session() -> None:
     provider = ScriptedToolProvider([{"content": "Stored in selected chat."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=RecordingFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
     client = _client(runtime)

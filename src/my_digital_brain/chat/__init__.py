@@ -9,13 +9,6 @@ from my_digital_brain.chat.enums import (
     PendingProcessKind,
     PendingProcessStatus,
 )
-from my_digital_brain.chat.facade import (
-    BackendToolFacade,
-    CancelPendingProcessRequest,
-    ChatToolRequest,
-    ChatToolResult,
-    NoopBackendToolFacade,
-)
 from my_digital_brain.chat.models import (
     ChatAction,
     ChatDiagnostic,
@@ -36,17 +29,9 @@ from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.relational_store import RelationalChatSessionStore
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
 from my_digital_brain.chat.telegram import TelegramSendMessage, TelegramWebhookAdapter
-from my_digital_brain.chat.tool_facade import (
-    DeterministicGraphContextAnswerGenerator,
-    GraphContextAnswerGenerator,
-    LLMGraphContextAnswerGenerator,
-    MemoryBackendToolFacade,
-)
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 
 __all__ = [
-    "BackendToolFacade",
-    "CancelPendingProcessRequest",
     "ChatAction",
     "ChatChannel",
     "ChatDiagnostic",
@@ -56,8 +41,6 @@ __all__ = [
     "ChatResponseStatus",
     "ChatRuntime",
     "ChatSessionStore",
-    "ChatToolRequest",
-    "ChatToolResult",
     "ConversationHistoryItem",
     "ConversationMessage",
     "ConversationMessageRole",
@@ -66,14 +49,9 @@ __all__ = [
     "ConversationSessionList",
     "ConversationSessionSummary",
     "ConversationStatus",
-    "DeterministicGraphContextAnswerGenerator",
-    "GraphContextAnswerGenerator",
     "IncomingChatMessage",
     "IncomingMediaRef",
     "InMemoryChatSessionStore",
-    "LLMGraphContextAnswerGenerator",
-    "MemoryBackendToolFacade",
-    "NoopBackendToolFacade",
     "PendingProcessContext",
     "PendingProcessKind",
     "PendingProcessRef",

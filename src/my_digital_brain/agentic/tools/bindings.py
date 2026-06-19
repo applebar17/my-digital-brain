@@ -53,7 +53,6 @@ GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = {
 @dataclass(slots=True)
 class AgenticToolExecutionContext:
     state_id: str | None = None
-    backend_facade: Any | None = None
     graph_service: Any | None = None
     ingestion_service: Any | None = None
     semantic_search_service: Any | None = None
@@ -203,35 +202,6 @@ class AgenticToolBindings:
             payload=update_context,
         )
 
-    def _child_execution_context(self) -> AgenticToolExecutionContext:
-        return AgenticToolExecutionContext(
-            backend_facade=self.context.backend_facade,
-            graph_service=self.context.graph_service,
-            ingestion_service=self.context.ingestion_service,
-            semantic_search_service=self.context.semantic_search_service,
-            vectorization_service=self.context.vectorization_service,
-            chat_store=self.context.chat_store,
-            session_id=self.context.session_id,
-            channel=self.context.channel,
-            conversation_id=self.context.conversation_id,
-            owner_id=self.context.owner_id,
-            sender_id=self.context.sender_id,
-            message_id=self.context.message_id,
-            current_text=self.context.current_text,
-            conversation_history_refs=list(self.context.conversation_history_refs),
-            metadata=dict(self.context.metadata),
-            frame_id=new_uuid(),
-            parent_frame_id=self.context.frame_id,
-            parent_tool_call_id=self.context.current_tool_call_id,
-            current_tool_call_id=self.context.current_tool_call_id,
-            current_tool_name=self.context.current_tool_name,
-            current_tool_arguments=dict(self.context.current_tool_arguments),
-            provider_messages=list(self.context.provider_messages),
-            agentic_runtime=self.context.agentic_runtime,
-            conversation_context=self.context.conversation_context,
-            current_payload=self.context.current_payload,
-        )
-
     def _run_child_frame(
         self,
         *,
@@ -285,11 +255,7 @@ class AgenticToolBindings:
         desired_view: str | None = None,
         limit: int = 5,
     ) -> dict[str, Any]:
-        semantic = self.context.semantic_search_service or getattr(
-            self.context.backend_facade,
-            "semantic_search_service",
-            None,
-        )
+        semantic = self.context.semantic_search_service
         if semantic is None or not query.strip():
             return {
                 "status": "skipped",
@@ -347,15 +313,6 @@ class AgenticToolBindings:
             retryable=True,
             details={"action_id": action_id},
         )
-
-    def _handle_get_conversation_status(
-        self,
-        metadata: dict[str, Any] | None = None,
-    ) -> ToolResult:
-        request = self._chat_request(self.context.current_text or "", metadata=metadata or {})
-        if isinstance(request, ToolResult):
-            return request
-        return self._facade_call("get_conversation_status", request)
 
     def _handle_request_user_clarification(
         self,
@@ -597,11 +554,7 @@ class AgenticToolBindings:
                     },
                 )
 
-            semantic = self.context.semantic_search_service or getattr(
-                self.context.backend_facade,
-                "semantic_search_service",
-                None,
-            )
+            semantic = self.context.semantic_search_service
             candidates: list[Any] = []
             if semantic is not None:
                 try:
@@ -944,7 +897,6 @@ class AgenticToolBindings:
         service = (
             self.context.vectorization_service
             or getattr(self.context.ingestion_service, "vectorization_service", None)
-            or getattr(self.context.backend_facade, "vectorization_service", None)
         )
         if service is None:
             return {
@@ -980,48 +932,6 @@ class AgenticToolBindings:
                 ],
             }
 
-    def _facade_call(self, name: str, request: Any) -> ToolResult:
-        facade = self.context.backend_facade
-        if facade is None:
-            return _missing_dependency(name, "backend_facade")
-        try:
-            method = getattr(facade, name)
-        except AttributeError:
-            return _tool_error(
-                name,
-                "facade_method_missing",
-                f"Backend facade does not implement '{name}'.",
-                "Use a configured MemoryBackendToolFacade or avoid this tool in the state.",
-                retryable=False,
-            )
-        try:
-            result = method(request)
-        except Exception as exc:
-            return _exception_result(name, exc)
-        tool_result = _chat_result_to_tool_result(name, result)
-        if tool_result.status == "interrupted":
-            self._normalize_clarification_tool_result(tool_result)
-        return tool_result
-
-    def _normalize_clarification_tool_result(self, result: ToolResult) -> None:
-        if not isinstance(result.data, dict):
-            return
-        packet = result.data.get("clarification_packet")
-        if not isinstance(packet, dict):
-            payload = result.data.get("result")
-            if isinstance(payload, dict):
-                packet = payload.get("clarification_packet")
-        if not isinstance(packet, dict):
-            return
-        frame_id = self.context.frame_id or new_uuid()
-        self.context.frame_id = frame_id
-        packet["frame_id"] = frame_id
-        result.data["frame_id"] = frame_id
-        result.data["clarification_packet"] = packet
-        payload = result.data.get("result")
-        if isinstance(payload, dict):
-            payload["clarification_packet"] = packet
-
     def _graph_call(self, name: str, callback) -> ToolResult:
         graph = self.context.graph_service
         if graph is None:
@@ -1035,43 +945,6 @@ class AgenticToolBindings:
             output=f"{name} completed.",
             data={"operation": name, "result": _serialize(result)},
         )
-
-    def _chat_request(
-        self,
-        text: str,
-        *,
-        metadata: dict[str, Any],
-    ) -> Any | ToolResult:
-        missing = [
-            key
-            for key, value in {
-                "session_id": self.context.session_id,
-                "conversation_id": self.context.conversation_id,
-                "owner_id": self.context.owner_id,
-            }.items()
-            if not value
-        ]
-        if missing:
-            return _missing_runtime_context("chat_tool_request", missing)
-        from my_digital_brain.chat.facade import ChatToolRequest
-
-        return ChatToolRequest(
-            session_id=str(self.context.session_id),
-            channel=self.context.channel,
-            conversation_id=str(self.context.conversation_id),
-            owner_id=str(self.context.owner_id),
-            text=text,
-            conversation_history_refs=list(self.context.conversation_history_refs),
-            metadata={
-                "sender_id": self.context.sender_id,
-                "message_id": self.context.message_id,
-                **self.context.metadata,
-                **{key: value for key, value in metadata.items() if value is not None},
-            },
-        )
-
-    def _is_handoff_state(self) -> bool:
-        return self.context.state_id == AgenticStateId.CONVERSATION_ENTRY.value
 
 
 def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPackage | None:
@@ -1100,32 +973,6 @@ def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPack
         metadata={"source": "scoped_retrieval"},
     )
 
-
-def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
-    payload = _serialize(result)
-    status = str(payload.get("status", "ok"))
-    is_error = status == "failed"
-    is_interrupted = status == "interrupted"
-    packet = payload.get("clarification_packet")
-    data = {"operation": tool_name, "result": payload}
-    if is_interrupted and isinstance(packet, dict):
-        data["clarification_packet"] = packet
-    return ToolResult(
-        status="interrupted" if is_interrupted else "error" if is_error else "ok",
-        output=payload.get("primary_text") or f"{tool_name} completed.",
-        data=data,
-        error=(
-            ToolError(
-                message=payload.get("primary_text") or f"{tool_name} failed.",
-                code="backend_tool_failed",
-                hint="Inspect diagnostics and adjust the tool call or ask the user.",
-                retryable=False,
-                details=payload,
-            )
-            if is_error
-            else None
-        ),
-    )
 
 
 def _update_tool_result(
@@ -1278,16 +1125,6 @@ def _missing_dependency(tool_name: str, dependency: str) -> ToolResult:
         details={"missing_dependency": dependency},
     )
 
-
-def _missing_runtime_context(tool_name: str, missing: list[str]) -> ToolResult:
-    return _tool_error(
-        tool_name,
-        "missing_runtime_context",
-        f"Tool '{tool_name}' is missing required runtime context: {', '.join(missing)}.",
-        "Pass session/conversation/owner context before exposing chat facade tools.",
-        retryable=False,
-        details={"missing_fields": missing},
-    )
 
 
 def _exception_result(tool_name: str, exc: Exception) -> ToolResult:

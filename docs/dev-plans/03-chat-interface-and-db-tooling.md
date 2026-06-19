@@ -560,7 +560,7 @@ The web chat should be a perfect substitute for Telegram for core workflows:
 
 ## Wave 3: Query, Answer, And Correction Facade Integration
 
-Status: implemented with `MemoryBackendToolFacade`, deterministic and provider-backed answer generation hooks in `src/my_digital_brain/chat/tool_facade.py`, and coverage in `tests/test_chat_tool_facade.py`.
+Status: superseded. The historical `MemoryBackendToolFacade` path was removed from active runtime during the agentic frame cleanup. Production chat now calls the agentic runtime with direct service dependencies; query/ingestion/update behavior lives behind agentic tools and child frames.
 
 ### Summary
 

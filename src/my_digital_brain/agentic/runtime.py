@@ -652,7 +652,6 @@ class AgenticRuntime:
         tool_name: str,
     ) -> ToolResult:
         child_context = AgenticToolExecutionContext(
-            backend_facade=parent_execution_context.backend_facade,
             graph_service=parent_execution_context.graph_service,
             ingestion_service=parent_execution_context.ingestion_service,
             semantic_search_service=parent_execution_context.semantic_search_service,
@@ -722,10 +721,6 @@ class AgenticRuntime:
                 "affected_graph_ids": _collect_child_payload_values(result, "affected_graph_ids"),
                 "refreshed_vector_scopes": _collect_child_payload_values(result, "refreshed_vector_scopes"),
                 "diagnostics": result.compact_trace,
-                "state_results": [
-                    state_result.model_dump(mode="json", exclude_none=True)
-                    for state_result in result.state_results
-                ],
             },
         )
 
@@ -953,7 +948,7 @@ class AgenticRuntime:
                 "child_frame_id": child_frame.frame_id,
                 "child_state_id": child_frame.state_id,
                 "summary": summary,
-                "state_result": child_result.model_dump(mode="json", exclude_none=True),
+                "child_status": child_result.status,
             },
         )
         tool_message = {

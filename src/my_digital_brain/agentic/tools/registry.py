@@ -152,12 +152,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             required=[],
         ),
         _definition(
-            "get_conversation_status",
-            "Developer/debug status shortcut. Not exposed to model-visible states by default.",
-            states=[],
-            properties={"metadata": object_property("Optional status metadata.")},
-        ),
-        _definition(
             "request_user_clarification",
             (
                 "Ask the user one to three direct, user-friendly clarification questions "

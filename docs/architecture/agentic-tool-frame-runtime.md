@@ -414,21 +414,33 @@ Scope:
 - ensure child completion returns one compact result to the parent tool call;
 - ensure deterministic writes refresh affected vector scopes behind the tool.
 
-### Wave 4: Stabilization, Overview, And UAT
+### Wave 4: Agentic Runtime Hardening And Legacy Cleanup
 
-Goal: verify the new architecture and document the final behavior.
+Status: implemented as the frame-runtime cleanup baseline. Production chat no
+longer constructs or passes a chat tool facade into agentic execution. Nested
+agentic tools receive direct service dependencies and return compact results to
+parent tool calls. Legacy facade modules are intentionally unavailable from
+package exports.
+
+Goal: prove the new architecture is the only active runtime path.
 
 Scope:
 
-- add end-to-end tests for:
-  - query flow;
-  - simple memory creation;
-  - memory creation with clarification;
-  - ingestion plan that calls `graph_update`;
-  - structured validation error retry;
-  - absence of pending-process/handoff runtime paths;
-- update architecture diagrams and AI-engineering notes;
-- reduce noisy frame/tool logs while keeping useful diagnostics;
-- run manual UAT against the OpenAI client;
-- confirm legacy hidden behavior is gone and unsupported flows fail visibly.
+- production chat runtime accepts direct services only: graph, ingestion,
+  semantic search, vectorization, and chat store;
+- `conversation_entry` remains limited to `query_memory` and `ingest_memory`;
+- child completion returns one compact tool result upward, not serialized child
+  state traces;
+- child clarification stores the child as `interrupted` and parent as
+  `waiting_child`, with only the child frame UI-active;
+- pending-process storage/API fields remain compatibility-only and are not used
+  for prompt context, routing, creation, resume, pause, or cancel;
+- old facade ingestion/query/update behavior is removed from production imports
+  and tests;
+- AI-flow prompt/tool traces are recorded only when `AI_FLOW_DEBUG_ENABLED` opens
+  a trace session; default runtime logs should remain low-noise.
+
+Local log reset remains an explicit developer action. There is no hidden compose
+startup hook for deleting logs; for a local reset, stop the stack and remove the
+needed files under `logs/` before restarting.
 

@@ -8,43 +8,12 @@ from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
 from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatChannel, ChatResponseStatus
-from my_digital_brain.chat.facade import (
-    CancelPendingProcessRequest,
-    ChatToolRequest,
-    ChatToolResult,
-)
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.chat.telegram import TelegramWebhookAdapter
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 from my_digital_brain.config import Settings
 
-
-class ConsumerFacade:
-    def __init__(self) -> None:
-        self.last_request: ChatToolRequest | None = None
-
-    def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
-        self.last_request = request
-        return ChatToolResult(
-            status=ChatResponseStatus.ACCEPTED,
-            primary_text=f"accepted:{request.text or 'media'}",
-        )
-
-    def query_memory_context(self, request: ChatToolRequest) -> ChatToolResult:
-        self.last_request = request
-        return ChatToolResult(primary_text="query accepted")
-
-    def update_memory_graph(self, request: ChatToolRequest) -> ChatToolResult:
-        self.last_request = request
-        return ChatToolResult(primary_text="graph update accepted")
-
-    def get_conversation_status(self, request: ChatToolRequest) -> ChatToolResult:
-        self.last_request = request
-        return ChatToolResult(primary_text="status")
-
-    def cancel_pending_process(self, request: CancelPendingProcessRequest) -> ChatToolResult:
-        return ChatToolResult(status=ChatResponseStatus.CANCELLED, primary_text="cancelled")
 
 
 class ScriptedToolProvider:
@@ -114,10 +83,8 @@ def test_telegram_adapter_normalizes_voice_update_without_text() -> None:
 
 
 def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None:
-    facade = ConsumerFacade()
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=facade,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=ScriptedToolProvider())),
     )
     client = _telegram_client(runtime)
@@ -132,13 +99,11 @@ def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None
     assert response.json()["method"] == "sendMessage"
     assert response.json()["chat_id"] == "100"
     assert response.json()["text"] == "accepted:hello from telegram"
-    assert facade.last_request is None
 
 
 def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
-        tool_facade=ConsumerFacade(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=ScriptedToolProvider())),
     )
     client = _telegram_client(runtime, allowed_user_ids="999")

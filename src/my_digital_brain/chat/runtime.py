@@ -25,10 +25,6 @@ from my_digital_brain.chat.enums import (
     ConversationMessageRole,
 )
 from my_digital_brain.chat.exceptions import ChatValidationError
-from my_digital_brain.chat.facade import (
-    BackendToolFacade,
-    NoopBackendToolFacade,
-)
 from my_digital_brain.chat.models import (
     ChatResponse,
     ChatDiagnostic,
@@ -47,22 +43,24 @@ class ChatRuntime:
     def __init__(
         self,
         store: ChatSessionStore | None = None,
-        tool_facade: BackendToolFacade | None = None,
         *,
         agentic_runtime: AgenticRuntime | None = None,
         graph_service: object | None = None,
         ingestion_service: object | None = None,
+        semantic_search_service: object | None = None,
+        vectorization_service: object | None = None,
         history_service: AgenticHistoryService | None = None,
         debug_commands_enabled: bool = False,
         ai_flow_debug_enabled: bool = False,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
-        self.tool_facade = tool_facade or NoopBackendToolFacade()
         if agentic_runtime is None:
             raise ChatValidationError("ChatRuntime requires an AgenticRuntime.")
         self.agentic_runtime = agentic_runtime
         self.graph_service = graph_service
         self.ingestion_service = ingestion_service
+        self.semantic_search_service = semantic_search_service
+        self.vectorization_service = vectorization_service
         self.history_service = history_service or AgenticHistoryService()
         self.debug_commands_enabled = debug_commands_enabled
         self.ai_flow_debug_enabled = ai_flow_debug_enabled
@@ -343,9 +341,10 @@ class ChatRuntime:
         validate_clarification_answers(packet, complete_answer_packet)
         answer_summary = summarize_clarification_answers(packet, complete_answer_packet)
         execution_context = AgenticToolExecutionContext(
-            backend_facade=self.tool_facade,
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
+            semantic_search_service=self.semantic_search_service,
+            vectorization_service=self.vectorization_service,
             chat_store=self.store,
             session_id=session.session_id,
             channel=str(session.channel),
@@ -424,9 +423,10 @@ class ChatRuntime:
             session_id,
         )
         execution_context = AgenticToolExecutionContext(
-            backend_facade=self.tool_facade,
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
+            semantic_search_service=self.semantic_search_service,
+            vectorization_service=self.vectorization_service,
             chat_store=self.store,
             session_id=session_id,
             channel=str(ChatChannel(message.channel)),

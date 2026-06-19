@@ -25,7 +25,6 @@ from my_digital_brain.core.ids import new_uuid
 
 BACKEND_ONLY_KEYS = {
     "channel_metadata",
-    "backend_facade",
     "graph_service",
     "ingestion_service",
     "chat_store",
