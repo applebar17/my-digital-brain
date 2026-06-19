@@ -10,6 +10,7 @@ export interface RenderedChatMessage {
 
 export interface ChatRuntimeState {
   pendingProcess?: PendingProcessRef | null;
+  activeClarification?: boolean;
   isSending: boolean;
   statusMessage?: string;
   errorMessage?: string;

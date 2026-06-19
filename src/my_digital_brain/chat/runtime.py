@@ -14,6 +14,8 @@ from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.clarification import (
+    answer_packet_from_progress,
+    merge_clarification_progress,
     render_clarification_questions,
     summarize_clarification_answers,
     validate_clarification_answers,
@@ -218,6 +220,14 @@ class ChatRuntime:
                     "status": response.status,
                     **(
                         {
+                            "ui_hidden": True,
+                            "message_kind": "clarification_prompt",
+                        }
+                        if response.clarification_packet is not None
+                        else {}
+                    ),
+                    **(
+                        {
                             "clarification_packet": response.clarification_packet.model_dump(
                                 mode="json",
                                 exclude_none=True,
@@ -372,26 +382,64 @@ class ChatRuntime:
             raise ChatValidationError("The agentic frame has no active clarification packet.")
         packet = frame.clarification_packet
         validate_clarification_answers(packet, answer_packet)
-        answer_summary = summarize_clarification_answers(packet, answer_packet)
+        progress = merge_clarification_progress(
+            packet,
+            frame.metadata.get("clarification_progress"),
+            answer_packet,
+        )
+        partial_answer_summary = summarize_clarification_answers(packet, answer_packet)
 
         self.store.append_message(
             ConversationMessage(
                 session_id=session.session_id,
                 channel_message_id=message_id,
                 role=ConversationMessageRole.USER,
-                text=answer_summary,
+                text=partial_answer_summary,
                 metadata={
                     "sender_id": sender_id,
+                    "ui_hidden": True,
+                    "message_kind": "clarification_answer",
                     "agentic_frame_id": frame.frame_id,
                     "tool_call_id": answer_packet.tool_call_id,
                     "clarification_answer_packet": answer_packet.model_dump(
                         mode="json",
                         exclude_none=True,
                     ),
-                    "clarification_answer_summary": answer_summary,
+                    "clarification_answer_summary": partial_answer_summary,
                 },
             ),
         )
+        frame = self.store.update_agentic_frame_status(
+            session.session_id,
+            frame.frame_id,
+            "interrupted",
+            metadata={"clarification_progress": progress},
+            clarification_packet=packet.model_dump(mode="json", exclude_none=True),
+        )
+        if not progress["is_complete"]:
+            response = ChatResponse(
+                session_id=session.session_id,
+                status=ChatResponseStatus.NEEDS_USER_INPUT,
+                primary_text="Clarification answer received.",
+                clarification_packet=packet,
+                metadata={
+                    "operation": "answer_clarification",
+                    "resumed_frame_id": frame.frame_id,
+                    "clarification_progress": progress,
+                },
+            )
+            self._persist_response(
+                session.session_id,
+                response,
+                source_message_id=message_id,
+                source_text=partial_answer_summary,
+                history_refs=self._history_refs(session.session_id, []),
+            )
+            return response
+
+        complete_answer_packet = answer_packet_from_progress(packet, progress)
+        validate_clarification_answers(packet, complete_answer_packet)
+        answer_summary = summarize_clarification_answers(packet, complete_answer_packet)
         execution_context = AgenticToolExecutionContext(
             backend_facade=self.tool_facade,
             graph_service=self.graph_service,
@@ -410,6 +458,10 @@ class ChatRuntime:
                     mode="json",
                     exclude_none=True,
                 ),
+                "complete_clarification_answer_packet": complete_answer_packet.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
                 "clarification_answer_summary": answer_summary,
             },
             frame_id=frame.frame_id,
@@ -420,7 +472,7 @@ class ChatRuntime:
             frame,
             execution_context,
             clarification_answer_summary=answer_summary,
-            answer_packet=answer_packet,
+            answer_packet=complete_answer_packet,
         )
         response = render_agentic_chat_response(result, session_id=session.session_id)
         response = response.model_copy(

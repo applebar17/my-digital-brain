@@ -475,6 +475,8 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_frame() -> No
     assert detail.messages[-1].role == "assistant"
     assert detail.messages[-1].pending_process_id is None
     assert "Clarification needed:" in (detail.messages[-1].text or "")
+    assert detail.messages[-1].metadata["ui_hidden"] is True
+    assert detail.messages[-1].metadata["message_kind"] == "clarification_prompt"
     assert "history_delta" in detail.messages[-1].metadata
     assert "compact_trace" not in response.metadata
 
@@ -526,6 +528,122 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
     messages = runtime.get_session_detail(session.session_id).messages
     assert messages[-2].role == "user"
     assert "Clarification answers:" in messages[-2].text
+    assert messages[-2].metadata["ui_hidden"] is True
+    assert messages[-2].metadata["message_kind"] == "clarification_answer"
+    assert store.get_agentic_frame(packet.frame_id).status == "completed"
+
+
+def test_clarification_answer_endpoint_accumulates_multi_question_progress_before_resuming() -> None:
+    provider = ScriptedToolProvider([{"content": "Resumed after all answers."}])
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    packet = _save_interrupted_frame(
+        store,
+        session.session_id,
+        state_id="memory_query",
+        questions=[
+            {
+                "question_id": "question-1",
+                "question": "Which Marco do you mean?",
+                "options": [
+                    {
+                        "option_id": "option-marco-university",
+                        "label": "Marco from university",
+                    }
+                ],
+            },
+            {
+                "question_id": "question-2",
+                "question": "What context should I keep?",
+                "options": [],
+                "free_text_allowed": True,
+            },
+        ],
+    )
+    runtime = ChatRuntime(
+        store=store,
+        tool_facade=RecordingFacade(),
+        runtime_mode="agentic",
+        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
+    )
+    client = _client(runtime)
+
+    first_response = client.post(
+        f"/chat/sessions/{session.session_id}/clarifications/{packet.frame_id}/answers",
+        json={
+            "owner_id": "owner-1",
+            "sender_id": "sender-1",
+            "message_id": "clarification-message-1",
+            "answer_packet": {
+                "packet_id": packet.packet_id,
+                "frame_id": packet.frame_id,
+                "tool_call_id": packet.tool_call_id,
+                "answers": [
+                    {
+                        "question_id": "question-1",
+                        "selected_option_ids": ["option-marco-university"],
+                        "free_text": None,
+                    }
+                ],
+            },
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert first_payload["status"] == ChatResponseStatus.NEEDS_USER_INPUT.value
+    assert first_payload["clarification_packet"]["packet_id"] == packet.packet_id
+    progress = first_payload["metadata"]["clarification_progress"]
+    assert progress["answered_question_ids"] == ["question-1"]
+    assert progress["current_question_id"] == "question-2"
+    assert progress["is_complete"] is False
+    assert provider.calls == []
+    frame = store.get_agentic_frame(packet.frame_id)
+    assert frame.status == "interrupted"
+    assert frame.metadata["clarification_progress"]["answers_by_question_id"][
+        "question-1"
+    ]["selected_option_ids"] == ["option-marco-university"]
+    messages = runtime.get_session_detail(session.session_id).messages
+    assert messages[-2].metadata["message_kind"] == "clarification_answer"
+    assert messages[-2].metadata["ui_hidden"] is True
+    assert messages[-1].metadata["message_kind"] == "clarification_prompt"
+    assert messages[-1].metadata["ui_hidden"] is True
+
+    final_response = client.post(
+        f"/chat/sessions/{session.session_id}/clarifications/{packet.frame_id}/answers",
+        json={
+            "owner_id": "owner-1",
+            "sender_id": "sender-1",
+            "message_id": "clarification-message-2",
+            "answer_packet": {
+                "packet_id": packet.packet_id,
+                "frame_id": packet.frame_id,
+                "tool_call_id": packet.tool_call_id,
+                "answers": [
+                    {
+                        "question_id": "question-2",
+                        "selected_option_ids": [],
+                        "free_text": "Keep that we met in Milan.",
+                    }
+                ],
+            },
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert final_response.status_code == 200
+    assert final_response.json()["primary_text"] == "Resumed after all answers."
+    assert len(provider.calls) == 1
+    tool_message = provider.calls[0]["request"].messages[-1]
+    assert tool_message.role == "tool"
+    assert tool_message.tool_call_id == packet.tool_call_id
+    assert "Marco from university" in tool_message.content
+    assert "Keep that we met in Milan." in tool_message.content
     assert store.get_agentic_frame(packet.frame_id).status == "completed"
 
 
@@ -789,11 +907,13 @@ def _save_interrupted_frame(
     frame_id: str = "frame-1",
     tool_call_id: str = "call-1",
     state_id: str = "memory_query",
+    questions: list[dict[str, object]] | None = None,
 ) -> ClarificationPacket:
     packet = _clarification_packet(
         frame_id=frame_id,
         tool_call_id=tool_call_id,
         state_id=state_id,
+        questions=questions,
     )
     store.save_agentic_frame(
         session_id,
@@ -840,6 +960,7 @@ def _clarification_packet(
     *,
     tool_call_id: str | None = "call-1",
     state_id: str = "memory_ingestion",
+    questions: list[dict[str, object]] | None = None,
 ) -> ClarificationPacket:
     return build_clarification_packet(
         frame_id=frame_id,
@@ -849,7 +970,8 @@ def _clarification_packet(
         reason="Multiple Marco candidates exist.",
         compact_summary="Need to know which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],
-        questions=[
+        questions=questions
+        or [
             {
                 "question_id": "question-1",
                 "question": "Which Marco do you mean?",

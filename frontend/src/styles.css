@@ -1441,6 +1441,17 @@ p {
   box-shadow: 0 18px 44px rgb(0 0 0 / 18%);
 }
 
+.memory-clarification-panel {
+  display: grid;
+  justify-items: start;
+  padding: 0 min(7vw, 72px) var(--space-4);
+  background: var(--surface-bright);
+}
+
+.memory-clarification-panel .memory-clarification-box {
+  width: min(680px, 100%);
+}
+
 .memory-clarification-header strong {
   display: block;
   color: var(--on-surface);
@@ -3884,6 +3895,10 @@ p {
 
   .memory-chat-thread {
     padding: var(--space-4);
+  }
+
+  .memory-clarification-panel {
+    padding: 0 var(--space-4) var(--space-4);
   }
 
   .memory-chat-message {

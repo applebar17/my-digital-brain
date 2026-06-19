@@ -5,7 +5,8 @@ interface ChatStatusBarProps {
 }
 
 export function ChatStatusBar({ runtime }: ChatStatusBarProps) {
-  const statusText = runtime.pendingProcess ? "Waiting for clarification" : "Active";
+  const statusText =
+    runtime.pendingProcess || runtime.activeClarification ? "Waiting for clarification" : "Active";
   const syncText = runtime.errorMessage ?? runtime.statusMessage ?? (runtime.isSending ? "Syncing context..." : "");
 
   return (

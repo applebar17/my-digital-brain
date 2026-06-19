@@ -14,6 +14,7 @@ from my_digital_brain.chat.enums import (
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
     AgenticFrame,
+    ClarificationPacket,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
@@ -553,7 +554,9 @@ class InMemoryChatSessionStore:
             if messages is not None:
                 update["messages"] = messages
             if clarification_packet is not None:
-                update["clarification_packet"] = clarification_packet
+                update["clarification_packet"] = ClarificationPacket.model_validate(
+                    clarification_packet,
+                )
             updated = frame.model_copy(update=update, deep=True)
             self._agentic_frames[frame_id] = updated
             self._sync_session_active_frame(session_id)
@@ -589,6 +592,7 @@ class InMemoryChatSessionStore:
                 if message.text
                 and message.role
                 in {ConversationMessageRole.USER, ConversationMessageRole.ASSISTANT}
+                and not _is_ui_hidden_message(message.metadata)
             ),
             None,
         )
@@ -634,6 +638,15 @@ def _preview_text(text: str | None, *, limit: int = 120) -> str | None:
     if not cleaned:
         return None
     return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
+
+
+def _is_ui_hidden_message(metadata: dict) -> bool:
+    if metadata.get("ui_hidden") is True:
+        return True
+    return metadata.get("message_kind") in {
+        "clarification_prompt",
+        "clarification_answer",
+    }
 
 
 def _can_autotitle(session: ConversationSession) -> bool:

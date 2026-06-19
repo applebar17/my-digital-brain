@@ -88,6 +88,14 @@ export interface ClarificationAnswerPacket {
   answers: ClarificationAnswer[];
 }
 
+export interface ClarificationProgress {
+  packet_id: string;
+  answered_question_ids: string[];
+  current_question_id?: string | null;
+  is_complete: boolean;
+  answers_by_question_id: Record<string, ClarificationAnswer>;
+}
+
 export interface SubmitClarificationAnswersRequest {
   owner_id: string;
   sender_id?: string | null;

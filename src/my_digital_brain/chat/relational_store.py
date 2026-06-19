@@ -25,6 +25,7 @@ from my_digital_brain.chat.models import (
 from my_digital_brain.chat.store import (
     _can_autotitle,
     _clean_title,
+    _is_ui_hidden_message,
     _preview_text,
     _title_from_text,
 )
@@ -512,19 +513,29 @@ class RelationalChatSessionStore:
             return _agentic_frame_from_record(record)
 
     def _summary_for_record(self, db, record: ChatSessionRecord) -> ConversationSessionSummary:
-        last_message = db.scalar(
-            select(ChatMessageRecord)
-            .where(
-                ChatMessageRecord.session_id == record.id,
-                ChatMessageRecord.role.in_(
-                    [
-                        ConversationMessageRole.USER.value,
-                        ConversationMessageRole.ASSISTANT.value,
-                    ],
-                ),
+        recent_messages = list(
+            db.scalars(
+                select(ChatMessageRecord)
+                .where(
+                    ChatMessageRecord.session_id == record.id,
+                    ChatMessageRecord.role.in_(
+                        [
+                            ConversationMessageRole.USER.value,
+                            ConversationMessageRole.ASSISTANT.value,
+                        ],
+                    ),
+                )
+                .order_by(desc(ChatMessageRecord.created_at))
+                .limit(20),
             )
-            .order_by(desc(ChatMessageRecord.created_at))
-            .limit(1),
+        )
+        last_message = next(
+            (
+                message
+                for message in recent_messages
+                if not _is_ui_hidden_message(message.metadata_json or {})
+            ),
+            None,
         )
         pending = (
             db.get(ChatPendingProcessContextRecord, record.active_pending_process_id)

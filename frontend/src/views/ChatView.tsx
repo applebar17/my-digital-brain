@@ -18,6 +18,7 @@ import {
 import { ChatComposer } from "../features/chat/components/ChatComposer";
 import { ChatHistorySidebar } from "../features/chat/components/ChatHistorySidebar";
 import { ChatMessageList } from "../features/chat/components/ChatMessageList";
+import { ClarificationQuestionBox } from "../features/chat/components/ClarificationQuestionBox";
 import { ChatStatusBar } from "../features/chat/components/ChatStatusBar";
 import { ChatTopbar } from "../features/chat/components/ChatTopbar";
 import type { ChatRuntimeState, RenderedChatMessage } from "../features/chat/types";
@@ -30,6 +31,7 @@ import type {
   ChatResponse,
   ClarificationAnswerPacket,
   ClarificationPacket,
+  ClarificationProgress,
   ConversationSessionDetail,
   ConversationSessionSummary,
   PendingProcessRef
@@ -42,6 +44,9 @@ export function ChatView() {
   const [messages, setMessages] = useState<RenderedChatMessage[]>([]);
   const [pendingProcess, setPendingProcess] = useState<PendingProcessRef | null>(null);
   const [clarificationPacket, setClarificationPacket] = useState<ClarificationPacket | null>(null);
+  const [clarificationProgress, setClarificationProgress] = useState<ClarificationProgress | null>(
+    null
+  );
   const [sessionId, setSessionId] = useState<string>();
   const [activeConversationId, setActiveConversationId] = useState(defaultConversationId);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
@@ -56,6 +61,7 @@ export function ChatView() {
 
   const runtime: ChatRuntimeState = {
     pendingProcess,
+    activeClarification: Boolean(clarificationPacket),
     isSending,
     statusMessage,
     errorMessage
@@ -105,6 +111,7 @@ export function ChatView() {
         }
         setPendingProcess(detail.pending_process?.process_ref ?? null);
         setClarificationPacket(clarificationPacketFromSession(detail));
+        setClarificationProgress(clarificationProgressFromSession(detail));
         setProcessUpdates(processUpdatesFromSession(detail));
       } catch {
         if (!isCancelled) {
@@ -161,6 +168,7 @@ export function ChatView() {
       setSessionId(response.session_id);
       setPendingProcess(response.pending_process ?? null);
       setClarificationPacket(response.clarification_packet ?? null);
+      setClarificationProgress(clarificationProgressFromResponse(response));
       await reloadSession(response.session_id, response);
       try {
         await refreshRecentChats();
@@ -230,6 +238,7 @@ export function ChatView() {
       setMessages([]);
       setPendingProcess(null);
       setClarificationPacket(null);
+      setClarificationProgress(null);
       await refreshRecentChats();
       setStatusMessage("New chat ready");
     } catch (error) {
@@ -246,13 +255,17 @@ export function ChatView() {
       if (fallbackResponse) {
         setMessages((current) => [
           ...current,
-          {
-            id: fallbackResponse.response_id,
-            role: "assistant",
-            text: fallbackResponse.primary_text,
-            createdAt: fallbackResponse.created_at,
-            status: fallbackResponse.status
-          }
+          ...(fallbackResponse.clarification_packet
+            ? []
+            : [
+                {
+                  id: fallbackResponse.response_id,
+                  role: "assistant" as const,
+                  text: fallbackResponse.primary_text,
+                  createdAt: fallbackResponse.created_at,
+                  status: fallbackResponse.status
+                }
+              ])
         ]);
         return;
       }
@@ -272,6 +285,7 @@ export function ChatView() {
     setMessages(messagesFromSession(detail.messages));
     setPendingProcess(detail.pending_process?.process_ref ?? null);
     setClarificationPacket(clarificationPacketFromSession(detail));
+    setClarificationProgress(clarificationProgressFromSession(detail));
   }
 
   async function handleSubmitClarification(answerPacket: ClarificationAnswerPacket) {
@@ -297,6 +311,7 @@ export function ChatView() {
       );
       setPendingProcess(response.pending_process ?? null);
       setClarificationPacket(response.clarification_packet ?? null);
+      setClarificationProgress(clarificationProgressFromResponse(response));
       await reloadSession(response.session_id, response);
       await refreshRecentChats();
       setStatusMessage(`Response received: ${response.status}`);
@@ -330,6 +345,7 @@ export function ChatView() {
           setMessages([]);
           setPendingProcess(null);
           setClarificationPacket(null);
+          setClarificationProgress(null);
           setProcessUpdates([]);
         }
       }
@@ -384,11 +400,19 @@ export function ChatView() {
           <ChatMessageList
             messages={messages}
             pendingProcess={pendingProcess}
-            clarificationPacket={clarificationPacket}
             isProcessing={isSending}
             processUpdates={processUpdates}
-            onSubmitClarification={(packet) => void handleSubmitClarification(packet)}
           />
+          {clarificationPacket ? (
+            <div className="memory-clarification-panel">
+              <ClarificationQuestionBox
+                packet={clarificationPacket}
+                progress={clarificationProgress}
+                isSubmitting={isSending}
+                onSubmit={(packet) => void handleSubmitClarification(packet)}
+              />
+            </div>
+          ) : null}
           <ChatComposer value={draft} isSending={isSending} onChange={setDraft} onSubmit={handleSubmit} />
         </main>
       </section>
@@ -414,6 +438,18 @@ function clarificationPacketFromSession(
   return null;
 }
 
+function clarificationProgressFromSession(
+  detail: ConversationSessionDetail
+): ClarificationProgress | null {
+  const progress = detail.active_agentic_frame?.metadata.clarification_progress;
+  return isClarificationProgress(progress) ? progress : null;
+}
+
+function clarificationProgressFromResponse(response: ChatResponse): ClarificationProgress | null {
+  const progress = response.metadata.clarification_progress;
+  return isClarificationProgress(progress) ? progress : null;
+}
+
 function isClarificationPacket(value: unknown): value is ClarificationPacket {
   if (!value || typeof value !== "object") {
     return false;
@@ -423,5 +459,19 @@ function isClarificationPacket(value: unknown): value is ClarificationPacket {
     typeof packet.packet_id === "string" &&
     typeof packet.frame_id === "string" &&
     Array.isArray(packet.questions)
+  );
+}
+
+function isClarificationProgress(value: unknown): value is ClarificationProgress {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const progress = value as Partial<ClarificationProgress>;
+  return (
+    typeof progress.packet_id === "string" &&
+    Array.isArray(progress.answered_question_ids) &&
+    typeof progress.is_complete === "boolean" &&
+    Boolean(progress.answers_by_question_id) &&
+    typeof progress.answers_by_question_id === "object"
   );
 }

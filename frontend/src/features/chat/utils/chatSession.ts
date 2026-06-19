@@ -44,7 +44,11 @@ export function filterRecentChats(
 
 export function messagesFromSession(messages: ConversationMessage[]): RenderedChatMessage[] {
   return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter(
+      (message) =>
+        (message.role === "user" || message.role === "assistant") &&
+        !isUiHiddenMessage(message.metadata)
+    )
     .map((message) => ({
       id: message.channel_message_id ?? message.message_id,
       role: (message.role === "user" ? "user" : "assistant") as "user" | "assistant",
@@ -52,4 +56,14 @@ export function messagesFromSession(messages: ConversationMessage[]): RenderedCh
       createdAt: message.created_at,
       status: typeof message.metadata.status === "string" ? message.metadata.status : undefined
     }));
+}
+
+function isUiHiddenMessage(metadata: Record<string, unknown>): boolean {
+  if (metadata.ui_hidden === true) {
+    return true;
+  }
+  return (
+    metadata.message_kind === "clarification_prompt" ||
+    metadata.message_kind === "clarification_answer"
+  );
 }
