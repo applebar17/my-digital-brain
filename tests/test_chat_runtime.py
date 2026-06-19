@@ -437,9 +437,12 @@ def test_agentic_runtime_does_not_inject_pending_context_into_conversation_entry
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
     assert "pending_process" not in system_prompt
 
-def test_agentic_ingestion_placeholder_is_fail_visible_without_pending_process() -> None:
+def test_agentic_ingestion_runs_without_pending_process() -> None:
     provider = ScriptedToolProvider(
-        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
+        [
+            {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {"content": "Memory ingestion complete."},
+        ]
     )
     store = InMemoryChatSessionStore()
     runtime = ChatRuntime(
@@ -451,13 +454,23 @@ def test_agentic_ingestion_placeholder_is_fail_visible_without_pending_process()
     response = runtime.handle_message(_message(text="Remember this memory."))
     detail = store.get_session_detail(response.session_id)
 
-    assert response.status == ChatResponseStatus.FAILED
+    assert response.status == ChatResponseStatus.OK
     assert response.pending_process is None
     assert response.clarification_packet is None
     assert detail.active_agentic_frame is None
     assert detail.pending_process is None
     assert detail.messages[-1].pending_process_id is None
-    assert response.metadata["agentic_status"] == "error"
+    assert response.metadata["agentic_status"] == "ok"
+    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
+    assert provider.calls[1]["tool_names"] == [
+        "get_context_package",
+        "get_entity_detail",
+        "get_neighborhood_view",
+        "get_target_evidence",
+        "request_user_clarification",
+        "run_memory_creation",
+        "update_memory_graph",
+    ]
 
 def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
     provider = ScriptedToolProvider([{"content": "Resumed."}])

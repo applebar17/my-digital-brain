@@ -56,6 +56,8 @@ def _named_handler(
     execution_context: AgenticToolExecutionContext,
 ) -> Callable[..., ToolResult]:
     def wrapped(**kwargs: Any) -> ToolResult:
+        previous_arguments = dict(execution_context.current_tool_arguments)
+        execution_context.current_tool_arguments = dict(kwargs)
         try:
             result = handler(**kwargs)
         except Exception as exc:  # pragma: no cover - defensive boundary
@@ -69,6 +71,8 @@ def _named_handler(
                     retryable=False,
                 ),
             )
+        finally:
+            execution_context.current_tool_arguments = previous_arguments
         execution_context.tool_events.append(_event_from_result(name, result))
         return result
 

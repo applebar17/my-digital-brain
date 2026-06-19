@@ -7,6 +7,14 @@ from typing import Any
 from pydantic import BaseModel
 
 from my_digital_brain.ai.models import ToolError, ToolResult
+from my_digital_brain.agentic.contexts import (
+    GraphContextPackage,
+    GraphUpdateContext,
+    MemoryCreationContext,
+    MemoryIngestionContext,
+    MemoryPlanAction,
+    QueryRetrievalPlanningContext,
+)
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.core.ids import new_uuid
@@ -66,6 +74,8 @@ class AgenticToolExecutionContext:
     parent_tool_call_id: str | None = None
     current_tool_call_id: str | None = None
     current_tool_name: str | None = None
+    current_tool_arguments: dict[str, Any] = field(default_factory=dict)
+    provider_messages: list[dict[str, Any]] = field(default_factory=list)
     agentic_runtime: Any | None = None
     conversation_context: Any | None = None
     current_payload: Any | None = None
@@ -88,30 +98,48 @@ class AgenticToolBindings:
         desired_view: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
-        return _placeholder_child_frame_result(
-            "query_memory",
-            "memory_query_frame_not_implemented",
-            "query_memory is registered for the future tool-frame runtime but is not active yet.",
-            suggested_next_action="Wait for Wave 3 to activate the memory_query child frame.",
-            diagnostics={
-                "question": question,
+        conversation = self._conversation_context()
+        retrieval = self._semantic_retrieval(
+            question,
+            seed_id=seed_id,
+            desired_view=desired_view,
+            limit=5,
+        )
+        query_context = QueryRetrievalPlanningContext(
+            question=question,
+            conversation=conversation,
+            seed_aliases={"seed": seed_id} if seed_id else {},
+            desired_view=desired_view,
+            metadata={
+                **(metadata or {}),
                 "seed_id": seed_id,
-                "desired_view": desired_view,
-                "metadata": metadata or {},
+                "retrieval": retrieval,
             },
+        )
+        return self._run_child_frame(
+            tool_name="query_memory",
+            state_id=AgenticStateId.MEMORY_QUERY,
+            payload=query_context,
         )
 
     def _handle_ingest_memory(self) -> ToolResult:
-        return _placeholder_child_frame_result(
-            "ingest_memory",
-            "memory_ingestion_frame_not_implemented",
-            "ingest_memory is a no-argument routing tool registered for the future tool-frame runtime.",
-            suggested_next_action="Wait for Wave 3 to activate the memory_ingestion child frame.",
-            diagnostics={
-                "state_id": self.context.state_id,
-                "current_text_available": bool((self.context.current_text or "").strip()),
-                "frame_id": self.context.frame_id,
+        conversation = self._conversation_context()
+        source_text = self._source_text_from_context()
+        retrieval = self._semantic_retrieval(source_text, limit=5) if source_text else {}
+        ingestion_context = MemoryIngestionContext(
+            conversation=conversation,
+            graph_context=_graph_context_from_retrieval(retrieval),
+            timezone=conversation.timezone,
+            current_time=conversation.current_time,
+            metadata={
+                "source_text": source_text,
+                "retrieval": retrieval,
             },
+        )
+        return self._run_child_frame(
+            tool_name="ingest_memory",
+            state_id=AgenticStateId.MEMORY_INGESTION,
+            payload=ingestion_context,
         )
 
     def _handle_run_memory_creation(
@@ -119,21 +147,29 @@ class AgenticToolBindings:
         action_id: str,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
-        return _placeholder_child_frame_result(
-            "run_memory_creation",
-            "memory_creation_frame_not_implemented",
-            "run_memory_creation is registered as a future child-frame starter but is not active yet.",
-            suggested_next_action="Implement memory_creation frame routing before executing creation actions through this tool.",
-            diagnostics={
-                "action_id": action_id,
-                "metadata": metadata or {},
-                "state_id": self.context.state_id,
-            },
+        action = self._memory_plan_action(action_id, metadata=metadata or {})
+        if isinstance(action, ToolResult):
+            return action
+        conversation = self._conversation_context()
+        current_payload = self.context.current_payload
+        graph_context = getattr(current_payload, "graph_context", None)
+        creation_context = MemoryCreationContext(
+            conversation=conversation,
+            action=action,
+            graph_context=graph_context,
+            timezone=getattr(current_payload, "timezone", conversation.timezone),
+            current_time=getattr(current_payload, "current_time", conversation.current_time),
+            metadata={"source": "run_memory_creation", **(metadata or {})},
+        )
+        return self._run_child_frame(
+            tool_name="run_memory_creation",
+            state_id=AgenticStateId.MEMORY_CREATION,
+            payload=creation_context,
         )
 
     def _handle_update_memory_graph(
         self,
-        source_text: str,
+        source_text: str | None = None,
         guidelines: str | None = None,
         desired_work: str | None = None,
         target_ids: list[str] | None = None,
@@ -141,31 +177,31 @@ class AgenticToolBindings:
         pending_process_policy: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
-        arguments = {
-            "source_text": source_text,
-            "guidelines": guidelines
-            or "Update the memory graph using deterministic graph tools.",
-            "desired_work": desired_work,
-            "target_ids": target_ids or [],
-            "source_refs": source_refs or [],
-            "pending_process_policy": pending_process_policy,
-            "metadata": metadata or {},
-        }
-        if self.context.state_id in {
-            AgenticStateId.MEMORY_INGESTION.value,
-            AgenticStateId.MEMORY_CREATION.value,
-        }:
-            return _placeholder_child_frame_result(
+        del pending_process_policy
+        resolved_source = (source_text or self._source_text_from_context()).strip()
+        if not resolved_source:
+            return _update_tool_error(
                 "update_memory_graph",
-                "graph_update_frame_routing_not_implemented",
-                "update_memory_graph is registered for child-frame use but frame routing is not active yet.",
-                suggested_next_action="Implement graph_update child-frame routing before invoking this tool from ingestion or creation.",
-                diagnostics=arguments,
+                "missing_source_text",
+                "Graph update needs source text from the current frame history.",
+                "Retry from a frame with a current user message or pass source_text explicitly.",
+                retryable=True,
             )
-        request = self._chat_request(source_text, metadata=arguments)
-        if isinstance(request, ToolResult):
-            return request
-        return self._facade_call("update_memory_graph", request)
+        update_context = GraphUpdateContext(
+            source_text=resolved_source,
+            conversation=self._conversation_context(),
+            guidelines=guidelines or "Update the memory graph using deterministic tools.",
+            desired_work=desired_work,
+            target_ids=target_ids or [],
+            source_refs=source_refs or [],
+            graph_context=getattr(self.context.current_payload, "graph_context", None),
+            metadata=metadata or {},
+        )
+        return self._run_child_frame(
+            tool_name="update_memory_graph",
+            state_id=AgenticStateId.GRAPH_UPDATE,
+            payload=update_context,
+        )
 
     def _child_execution_context(self) -> AgenticToolExecutionContext:
         return AgenticToolExecutionContext(
@@ -187,8 +223,129 @@ class AgenticToolBindings:
             frame_id=new_uuid(),
             parent_frame_id=self.context.frame_id,
             parent_tool_call_id=self.context.current_tool_call_id,
+            current_tool_call_id=self.context.current_tool_call_id,
+            current_tool_name=self.context.current_tool_name,
+            current_tool_arguments=dict(self.context.current_tool_arguments),
+            provider_messages=list(self.context.provider_messages),
             agentic_runtime=self.context.agentic_runtime,
             conversation_context=self.context.conversation_context,
+            current_payload=self.context.current_payload,
+        )
+
+    def _run_child_frame(
+        self,
+        *,
+        tool_name: str,
+        state_id: AgenticStateId,
+        payload: Any,
+    ) -> ToolResult:
+        runtime = self.context.agentic_runtime
+        if runtime is None:
+            return _missing_dependency(tool_name, "agentic_runtime")
+        conversation = self._conversation_context()
+        return runtime.run_child_frame(
+            parent_execution_context=self.context,
+            conversation_context=conversation,
+            child_state=state_id,
+            child_payload=payload,
+            tool_name=tool_name,
+        )
+
+    def _conversation_context(self):
+        if self.context.conversation_context is not None:
+            return self.context.conversation_context
+        from my_digital_brain.agentic.contexts import ConversationContext
+        from my_digital_brain.agentic.messages import NeutralConversationMessage
+
+        current_text = self._source_text_from_context() or "Message"
+        return ConversationContext(
+            current_message=NeutralConversationMessage.user(current_text),
+        )
+
+    def _source_text_from_context(self) -> str:
+        if self.context.current_text and self.context.current_text.strip():
+            return self.context.current_text.strip()
+        conversation = self.context.conversation_context
+        if conversation is not None:
+            current = getattr(getattr(conversation, "current_message", None), "content", None)
+            if isinstance(current, str) and current.strip():
+                return current.strip()
+        for message in reversed(self.context.provider_messages):
+            if message.get("role") == "user":
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+        return ""
+
+    def _semantic_retrieval(
+        self,
+        query: str,
+        *,
+        seed_id: str | None = None,
+        desired_view: str | None = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        semantic = self.context.semantic_search_service or getattr(
+            self.context.backend_facade,
+            "semantic_search_service",
+            None,
+        )
+        if semantic is None or not query.strip():
+            return {
+                "status": "skipped",
+                "reason": "semantic_search_service_missing" if semantic is None else "empty_query",
+                "desired_view": desired_view,
+            }
+        try:
+            kwargs = {"limit": limit}
+            if seed_id:
+                kwargs["target_ids"] = [seed_id]
+            if hasattr(semantic, "search_hybrid"):
+                result = semantic.search_hybrid(query, **kwargs)
+            elif hasattr(semantic, "search_semantic"):
+                result = semantic.search_semantic(query, **kwargs)
+            else:
+                result = semantic.search(query=query, **kwargs)
+            return {"status": "ok", "desired_view": desired_view, "result": _serialize(result)}
+        except Exception as exc:
+            return {
+                "status": "error",
+                "error_code": "semantic_retrieval_failed",
+                "message": str(exc),
+                "exception_type": exc.__class__.__name__,
+                "desired_view": desired_view,
+            }
+
+    def _memory_plan_action(
+        self,
+        action_id: str,
+        *,
+        metadata: dict[str, Any],
+    ) -> MemoryPlanAction | ToolResult:
+        candidates: list[Any] = []
+        current_payload = self.context.current_payload
+        if current_payload is not None:
+            payload_metadata = getattr(current_payload, "metadata", {}) or {}
+            plan = payload_metadata.get("memory_plan") or payload_metadata.get("plan")
+            if isinstance(plan, dict):
+                candidates.extend(plan.get("actions") or [])
+            candidates.extend(payload_metadata.get("plan_actions") or [])
+        if metadata.get("action"):
+            candidates.append(metadata["action"])
+        for candidate in candidates:
+            try:
+                action = MemoryPlanAction.model_validate(candidate)
+            except Exception:
+                continue
+            if action.action_id == action_id:
+                return action
+        return _update_tool_error(
+            "run_memory_creation",
+            "memory_plan_action_not_found",
+            f"Memory creation action '{action_id}' was not found in the active ingestion context.",
+            "Retry with an action_id from the current MemoryPlan or include metadata.action.",
+            retryable=True,
+            details={"action_id": action_id},
         )
 
     def _handle_get_conversation_status(
@@ -917,6 +1074,33 @@ class AgenticToolBindings:
         return self.context.state_id == AgenticStateId.CONVERSATION_ENTRY.value
 
 
+def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPackage | None:
+    if retrieval.get("status") != "ok":
+        return None
+    result = retrieval.get("result")
+    if not isinstance(result, dict):
+        return None
+    packages = result.get("context_packages") or []
+    aliases: dict[str, str] = {}
+    candidate_matches: list[dict[str, Any]] = []
+    for index, package in enumerate(packages[:5], start=1):
+        if isinstance(package, dict):
+            package_id = str(package.get("package_id") or f"retrieval_package_{index}")
+            aliases[package_id] = str(package.get("target_id") or package.get("seed_id") or package_id)
+            candidate_matches.append(package)
+    hits = result.get("hits") or []
+    for hit in hits[:10]:
+        if isinstance(hit, dict):
+            candidate_matches.append(hit)
+    if not aliases and not candidate_matches:
+        return None
+    return GraphContextPackage(
+        aliases=aliases,
+        candidate_matches=candidate_matches,
+        metadata={"source": "scoped_retrieval"},
+    )
+
+
 def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
     payload = _serialize(result)
     status = str(payload.get("status", "ok"))
@@ -1082,44 +1266,6 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
     return value
-
-
-def _placeholder_child_frame_result(
-    tool_name: str,
-    error_code: str,
-    summary: str,
-    *,
-    suggested_next_action: str,
-    diagnostics: dict[str, Any] | None = None,
-) -> ToolResult:
-    payload = {
-        "summary": summary,
-        "created_refs": [],
-        "updated_refs": [],
-        "affected_graph_ids": [],
-        "refreshed_vector_scopes": [],
-        "diagnostics": [diagnostics or {}],
-        "suggested_next_action": suggested_next_action,
-        "error_code": error_code,
-        "retryable": False,
-        "validation_details": None,
-    }
-    return ToolResult(
-        status="blocked",
-        output=summary,
-        data={
-            "operation": tool_name,
-            **payload,
-        },
-        error=ToolError(
-            message=summary,
-            code=error_code,
-            type="not_implemented",
-            hint=suggested_next_action,
-            retryable=False,
-            details=diagnostics or {},
-        ),
-    )
 
 
 def _missing_dependency(tool_name: str, dependency: str) -> ToolResult:

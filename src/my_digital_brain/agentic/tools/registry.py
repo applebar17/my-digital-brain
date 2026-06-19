@@ -136,7 +136,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             ),
             states=[*memory_ingestion_states, *memory_creation_states],
             properties={
-                "source_text": string_property("User-provided update or correction text."),
+                "source_text": optional_string_property(
+                    "Optional update/correction text. Use null when the child frame should derive it from history.",
+                ),
                 "guidelines": optional_string_property(
                     "Invocation guidelines from the caller. Use null if none.",
                 ),
@@ -147,7 +149,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "source_refs": array_property("Optional source or media references."),
                 "metadata": object_property("Additional low-noise request metadata."),
             },
-            required=["source_text"],
+            required=[],
         ),
         _definition(
             "get_conversation_status",

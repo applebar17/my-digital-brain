@@ -382,7 +382,7 @@ def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
         registry.definitions_for_state(entry_config)
 
 
-def test_top_level_tools_return_fail_visible_placeholders_without_legacy_facade() -> None:
+def test_top_level_tools_require_agentic_runtime_without_legacy_facade() -> None:
     facade = FakeFacade()
     execution_context = _execution_context(backend_facade=facade)
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
@@ -398,10 +398,14 @@ def test_top_level_tools_return_fail_visible_placeholders_without_legacy_facade(
     )
     ingest = mapping["ingest_memory"]()
 
-    assert query.status == "blocked"
-    assert query.data["error_code"] == "memory_query_frame_not_implemented"
-    assert ingest.status == "blocked"
-    assert ingest.data["error_code"] == "memory_ingestion_frame_not_implemented"
+    assert query.status == "error"
+    assert query.error is not None
+    assert query.error.code == "missing_dependency"
+    assert "agentic_runtime" in query.error.message
+    assert ingest.status == "error"
+    assert ingest.error is not None
+    assert ingest.error.code == "missing_dependency"
+    assert "agentic_runtime" in ingest.error.message
     assert facade.calls == []
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
@@ -524,28 +528,7 @@ def test_request_user_clarification_is_not_exposed_to_memory_query() -> None:
     assert "request_user_clarification" not in toolbox.tools_by_name
 
 
-def test_future_tool_placeholders_return_structured_blocked_payloads() -> None:
-    entry_config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
-    entry_mapping = build_agentic_tool_mapping(
-        entry_config,
-        _execution_context(current_text="Remember I met Marco yesterday."),
-    )
-
-    query = entry_mapping["query_memory"](
-        question="What do I know about Marco?",
-        seed_id=None,
-        desired_view=None,
-        metadata={},
-    )
-    ingest = entry_mapping["ingest_memory"]()
-
-    assert query.status == "blocked"
-    assert query.data["error_code"] == "memory_query_frame_not_implemented"
-    assert query.data["created_refs"] == []
-    assert ingest.status == "blocked"
-    assert ingest.data["error_code"] == "memory_ingestion_frame_not_implemented"
-    assert ingest.data["affected_graph_ids"] == []
-
+def test_child_frame_tools_fail_visibly_without_runtime_or_plan_action() -> None:
     ingestion_config = default_state_configs()[AgenticStateId.MEMORY_INGESTION]
     ingestion_mapping = build_agentic_tool_mapping(
         ingestion_config,
@@ -564,7 +547,9 @@ def test_future_tool_placeholders_return_structured_blocked_payloads() -> None:
         metadata={},
     )
 
-    assert creation.status == "blocked"
-    assert creation.data["error_code"] == "memory_creation_frame_not_implemented"
-    assert update.status == "blocked"
-    assert update.data["error_code"] == "graph_update_frame_routing_not_implemented"
+    assert creation.status == "recoverable_error"
+    assert creation.data["error_code"] == "memory_plan_action_not_found"
+    assert update.status == "error"
+    assert update.error is not None
+    assert update.error.code == "missing_dependency"
+    assert "agentic_runtime" in update.error.message

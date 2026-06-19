@@ -422,6 +422,14 @@ class AgenticStateRunner:
                 packet.setdefault("tool_call_id", exc.tool_call_id)
                 packet.setdefault("tool_name", exc.tool_name)
         tool_events = invocation.execution_context.tool_events[event_start:]
+        interruption_owner = None
+        parent_frame_id = invocation.execution_context.parent_frame_id
+        if isinstance(exc.result.data, dict):
+            interruption_owner = exc.result.data.get("interruption_owner")
+            if interruption_owner == "child":
+                frame_id = str(exc.result.data.get("child_frame_id") or frame_id)
+                parent_frame_id = str(exc.result.data.get("parent_frame_id") or parent_frame_id or "") or None
+                packet = exc.result.data.get("clarification_packet") or packet
         return AgenticStateRunResult(
             state_id=state_config.state_id,
             assistant_text=exc.result.output,
@@ -438,13 +446,26 @@ class AgenticStateRunner:
                 "model": route.model,
                 "route": route.model_dump(mode="json", exclude_none=True),
                 "interruption": {
+                    "interruption_owner": interruption_owner,
                     "frame_id": frame_id,
-                    "state_id": _state_value(state_config.state_id),
-                    "tool_call_id": exc.tool_call_id,
-                    "tool_name": exc.tool_name,
+                    "state_id": (
+                        str(exc.result.data.get("child_state_id"))
+                        if isinstance(exc.result.data, dict) and exc.result.data.get("child_state_id")
+                        else _state_value(state_config.state_id)
+                    ),
+                    "tool_call_id": (
+                        str(exc.result.data.get("tool_call_id"))
+                        if isinstance(exc.result.data, dict) and exc.result.data.get("tool_call_id")
+                        else exc.tool_call_id
+                    ),
+                    "tool_name": (
+                        str(exc.result.data.get("tool_name"))
+                        if isinstance(exc.result.data, dict) and exc.result.data.get("tool_name")
+                        else exc.tool_name
+                    ),
                     "messages": messages,
                     "clarification_packet": packet,
-                    "parent_frame_id": invocation.execution_context.parent_frame_id,
+                    "parent_frame_id": parent_frame_id,
                     "parent_tool_call_id": invocation.execution_context.parent_tool_call_id,
                 },
             },
@@ -559,13 +580,24 @@ class AgenticRuntime:
         compact_trace.append(_compact_state_trace(state_result))
 
         if state_result.status == "interrupted":
-            interruption = self._persist_interrupted_frame(
-                state_result,
-                conversation_context,
-                execution_context,
-                current_payload,
-                compact_trace,
-            )
+            interruption_metadata = dict(state_result.metadata.get("interruption") or {})
+            if interruption_metadata.get("interruption_owner") == "child":
+                interruption = {
+                    "frame_id": interruption_metadata.get("frame_id"),
+                    "state_id": interruption_metadata.get("state_id"),
+                    "tool_call_id": interruption_metadata.get("tool_call_id"),
+                    "tool_name": interruption_metadata.get("tool_name"),
+                    "clarification_packet": interruption_metadata.get("clarification_packet"),
+                    "parent_frame_id": interruption_metadata.get("parent_frame_id"),
+                }
+            else:
+                interruption = self._persist_interrupted_frame(
+                    state_result,
+                    conversation_context,
+                    execution_context,
+                    current_payload,
+                    compact_trace,
+                )
             return AgenticRunResult(
                 final_text=state_result.assistant_text,
                 visited_states=[result.state_id for result in state_results],
@@ -575,7 +607,7 @@ class AgenticRuntime:
                 compact_trace=compact_trace,
                 metadata={
                     "user_visible_owner": current_state.value,
-                    "interrupted_process": current_state.value,
+                    "interrupted_process": interruption.get("state_id") or current_state.value,
                 },
             )
 
@@ -609,6 +641,156 @@ class AgenticRuntime:
             status=state_result.status,
             compact_trace=compact_trace,
         )
+
+    def run_child_frame(
+        self,
+        *,
+        parent_execution_context: AgenticToolExecutionContext,
+        conversation_context: ConversationContext,
+        child_state: AgenticStateId,
+        child_payload: Any,
+        tool_name: str,
+    ) -> ToolResult:
+        child_context = AgenticToolExecutionContext(
+            backend_facade=parent_execution_context.backend_facade,
+            graph_service=parent_execution_context.graph_service,
+            ingestion_service=parent_execution_context.ingestion_service,
+            semantic_search_service=parent_execution_context.semantic_search_service,
+            vectorization_service=parent_execution_context.vectorization_service,
+            chat_store=parent_execution_context.chat_store,
+            session_id=parent_execution_context.session_id,
+            channel=parent_execution_context.channel,
+            conversation_id=parent_execution_context.conversation_id,
+            owner_id=parent_execution_context.owner_id,
+            sender_id=parent_execution_context.sender_id,
+            message_id=parent_execution_context.message_id,
+            current_text=parent_execution_context.current_text,
+            conversation_history_refs=list(parent_execution_context.conversation_history_refs),
+            metadata=dict(parent_execution_context.metadata),
+            frame_id=new_uuid(),
+            parent_frame_id=parent_execution_context.frame_id,
+            parent_tool_call_id=parent_execution_context.current_tool_call_id,
+            agentic_runtime=self,
+            conversation_context=conversation_context,
+        )
+        result = self.run(
+            conversation_context,
+            child_context,
+            start_state=child_state,
+            start_payload=child_payload,
+        )
+        if result.status == "interrupted":
+            parent_frame = self._persist_waiting_child_frame(
+                parent_execution_context,
+                conversation_context,
+                child_result=result,
+                tool_name=tool_name,
+            )
+            interruption = dict(result.interruption or {})
+            return ToolResult(
+                status="interrupted",
+                output=result.final_text or "Child frame needs clarification.",
+                data={
+                    "operation": tool_name,
+                    "interruption_owner": "child",
+                    "parent_frame_id": parent_frame.get("frame_id"),
+                    "child_frame_id": interruption.get("frame_id"),
+                    "child_state_id": interruption.get("state_id") or child_state.value,
+                    "tool_call_id": interruption.get("tool_call_id"),
+                    "tool_name": interruption.get("tool_name"),
+                    "clarification_packet": interruption.get("clarification_packet"),
+                    "summary": result.final_text or "Child frame needs clarification.",
+                    "created_refs": [],
+                    "updated_refs": [],
+                    "affected_graph_ids": [],
+                    "refreshed_vector_scopes": [],
+                    "diagnostics": result.compact_trace,
+                    "suggested_next_action": "Answer the active clarification so the child frame can continue.",
+                },
+            )
+        summary = result.final_text or "Child frame completed."
+        return ToolResult(
+            status="ok" if result.status == "ok" else result.status,
+            output=summary,
+            data={
+                "operation": tool_name,
+                "summary": summary,
+                "child_state_id": child_state.value,
+                "visited_states": [_state_value(state) for state in result.visited_states],
+                "created_refs": _collect_child_payload_values(result, "created_refs"),
+                "updated_refs": _collect_child_payload_values(result, "updated_refs"),
+                "affected_graph_ids": _collect_child_payload_values(result, "affected_graph_ids"),
+                "refreshed_vector_scopes": _collect_child_payload_values(result, "refreshed_vector_scopes"),
+                "diagnostics": result.compact_trace,
+                "state_results": [
+                    state_result.model_dump(mode="json", exclude_none=True)
+                    for state_result in result.state_results
+                ],
+            },
+        )
+
+    def _persist_waiting_child_frame(
+        self,
+        parent_execution_context: AgenticToolExecutionContext,
+        conversation_context: ConversationContext,
+        *,
+        child_result: AgenticRunResult,
+        tool_name: str,
+    ) -> dict[str, Any]:
+        if parent_execution_context.chat_store is None:
+            return {"frame_id": parent_execution_context.frame_id}
+        from my_digital_brain.chat.models import AgenticFrame
+
+        frame_id = parent_execution_context.frame_id or new_uuid()
+        parent_execution_context.frame_id = frame_id
+        messages = list(parent_execution_context.provider_messages)
+        if not messages and parent_execution_context.current_tool_call_id:
+            messages = [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": parent_execution_context.current_tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": parent_execution_context.current_tool_name or tool_name,
+                                "arguments": json.dumps(
+                                    parent_execution_context.current_tool_arguments,
+                                    ensure_ascii=True,
+                                    sort_keys=True,
+                                    default=str,
+                                ),
+                            },
+                        }
+                    ],
+                }
+            ]
+        child_interruption = dict(child_result.interruption or {})
+        frame = AgenticFrame(
+            frame_id=frame_id,
+            session_id=parent_execution_context.session_id or conversation_context.context_id,
+            state_id=parent_execution_context.state_id or AgenticStateId.CONVERSATION_ENTRY.value,
+            status="waiting_child",
+            messages=messages,
+            context_payload=_frame_context_payload(
+                parent_execution_context.current_payload,
+                conversation_context,
+            ),
+            compact_trace=list(child_result.compact_trace),
+            parent_frame_id=parent_execution_context.parent_frame_id,
+            parent_tool_call_id=parent_execution_context.parent_tool_call_id,
+            active_tool_call_id=parent_execution_context.current_tool_call_id,
+            active_tool_name=parent_execution_context.current_tool_name or tool_name,
+            metadata={
+                "waiting_for_child_frame_id": child_interruption.get("frame_id"),
+                "waiting_for_child_state_id": child_interruption.get("state_id"),
+                "child_tool_call_id": child_interruption.get("tool_call_id"),
+                "child_tool_name": child_interruption.get("tool_name"),
+            },
+        )
+        parent_execution_context.chat_store.save_agentic_frame(frame.session_id, frame)
+        return {"frame_id": frame.frame_id, "status": frame.status}
 
     def _run_contradiction_structured_result(
         self,
@@ -973,6 +1155,23 @@ def _contradiction_runtime_status(state_result: AgenticStateRunResult) -> str:
     if intent == "needs_context":
         return "needs_context"
     return "ok"
+
+
+def _collect_child_payload_values(result: AgenticRunResult, key: str) -> list[str]:
+    values: list[str] = []
+    for state_result in result.state_results:
+        for event in state_result.tool_events:
+            data = event.data or {}
+            raw = data.get(key)
+            if isinstance(raw, list):
+                values.extend(str(item) for item in raw if item)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    return deduped
 
 
 def _compact_state_trace(state_result: AgenticStateRunResult) -> dict[str, Any]:

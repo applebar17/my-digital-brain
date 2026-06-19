@@ -78,6 +78,7 @@ class GenAIToolExecutionMixin:
         tools_mapping: dict[str, Callable[..., Any]],
         tools_by_name: dict[str, ToolSpec] | None = None,
         include_tool_meta: bool = False,
+        messages_snapshot: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         fn_name = tool_call.function.name
         raw_args = tool_call.function.arguments or "{}"
@@ -208,9 +209,13 @@ class GenAIToolExecutionMixin:
         context = getattr(tool_fn, "_agentic_execution_context", None)
         previous_tool_call_id = getattr(context, "current_tool_call_id", None)
         previous_tool_name = getattr(context, "current_tool_name", None)
+        previous_tool_arguments = getattr(context, "current_tool_arguments", None)
+        previous_provider_messages = getattr(context, "provider_messages", None)
         if context is not None:
             context.current_tool_call_id = tool_call.id
             context.current_tool_name = fn_name
+            context.current_tool_arguments = dict(args)
+            context.provider_messages = list(messages_snapshot or [])
         try:
             output = tool_fn(**args)
             result = self._normalize_tool_output(output)
@@ -227,6 +232,8 @@ class GenAIToolExecutionMixin:
             if context is not None:
                 context.current_tool_call_id = previous_tool_call_id
                 context.current_tool_name = previous_tool_name
+                context.current_tool_arguments = previous_tool_arguments or {}
+                context.provider_messages = previous_provider_messages or []
 
         duration_ms = int((time.monotonic() - start) * 1000)
         meta["duration_ms"] = duration_ms

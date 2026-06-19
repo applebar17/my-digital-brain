@@ -271,7 +271,7 @@ def test_conversation_entry_without_tool_call_returns_terminal_assistant_respons
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
 
 
-def test_conversation_entry_query_tool_returns_placeholder_without_handoff() -> None:
+def test_conversation_entry_query_tool_runs_memory_query_child_frame() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
@@ -283,24 +283,39 @@ def test_conversation_entry_query_tool_returns_placeholder_without_handoff() -> 
                     "desired_view": None,
                     "metadata": {},
                 },
-            }
+            },
+            {"content": "Marco is a university friend."},
         ]
     )
     runtime = AgenticRuntime(_runner(provider))
 
     result = runtime.run(_conversation(), AgenticToolExecutionContext())
 
-    assert result.status == "error"
+    assert result.status == "ok"
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
     event = result.state_results[0].tool_events[0]
     assert event.tool_name == "query_memory"
-    assert event.status == "blocked"
-    assert event.data["error_code"] == "memory_query_frame_not_implemented"
+    assert event.status == "ok"
+    assert event.data["child_state_id"] == AgenticStateId.MEMORY_QUERY.value
+    assert event.data["summary"] == "Marco is a university friend."
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
+    assert provider.calls[1]["tool_names"] == [
+        "get_context_package",
+        "get_entity_detail",
+        "get_latest_contact_details",
+        "get_map_view",
+        "get_memories_involving_node",
+        "get_neighborhood_view",
+        "get_target_evidence",
+        "get_timeline",
+    ]
 
-def test_conversation_entry_ingest_tool_returns_placeholder_without_graph_update_handoff() -> None:
+def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> None:
     provider = ScriptedToolCallingProvider(
-        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
+        [
+            {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {"content": "Memory ingestion complete."},
+        ]
     )
     runtime = AgenticRuntime(_runner(provider))
 
@@ -309,12 +324,13 @@ def test_conversation_entry_ingest_tool_returns_placeholder_without_graph_update
         AgenticToolExecutionContext(graph_service=FakeGraphService()),
     )
 
-    assert result.status == "error"
+    assert result.status == "ok"
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
     event = result.state_results[0].tool_events[0]
     assert event.tool_name == "ingest_memory"
-    assert event.status == "blocked"
-    assert event.data["error_code"] == "memory_ingestion_frame_not_implemented"
+    assert event.status == "ok"
+    assert event.data["child_state_id"] == AgenticStateId.MEMORY_INGESTION.value
+    assert event.data["summary"] == "Memory ingestion complete."
 
 def test_pending_context_stays_in_conversation_entry() -> None:
     provider = ScriptedToolCallingProvider(
@@ -503,9 +519,96 @@ def test_graph_update_clarification_resumes_same_frame() -> None:
     assert resumed.final_text == "Graph update resumed."
     assert store.get_agentic_frame(frame.frame_id).status == "completed"
 
+def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent() -> None:
+    provider = ScriptedToolCallingProvider(
+        [
+            {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {
+                "content": "Need target detail.",
+                "tool": "request_user_clarification",
+                "arguments": {
+                    "reason": "Need to confirm target.",
+                    "target_refs": ["node-marco"],
+                    "questions": [
+                        {
+                            "question": "Which Marco should I use?",
+                            "options": [{"label": "Marco from university"}],
+                            "free_text_allowed": True,
+                            "required": True,
+                            "selection_mode": "single",
+                        }
+                    ],
+                },
+            },
+            {"content": "Ingestion child resumed."},
+            {"content": "Conversation parent resumed."},
+        ]
+    )
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    runtime = AgenticRuntime(_runner(provider))
+
+    interrupted = runtime.run(
+        _conversation("Remember Marco from university."),
+        AgenticToolExecutionContext(
+            chat_store=store,
+            session_id=session.session_id,
+            conversation_id="conversation-1",
+            owner_id="owner-1",
+        ),
+    )
+
+    assert interrupted.status == "interrupted"
+    child_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
+    assert child_frame.state_id == AgenticStateId.MEMORY_INGESTION.value
+    assert child_frame.status == "interrupted"
+    assert child_frame.clarification_packet is not None
+    parent_frame = store.get_agentic_frame(child_frame.parent_frame_id or "")
+    assert parent_frame.state_id == AgenticStateId.CONVERSATION_ENTRY.value
+    assert parent_frame.status == "waiting_child"
+    assert parent_frame.active_tool_name == "ingest_memory"
+    assert store.get_active_agentic_frame(session.session_id).frame_id == child_frame.frame_id
+
+    packet = child_frame.clarification_packet
+    question = packet.questions[0]
+    resumed = runtime.resume_frame(
+        child_frame,
+        AgenticToolExecutionContext(
+            chat_store=store,
+            session_id=session.session_id,
+            conversation_id="conversation-1",
+            owner_id="owner-1",
+        ),
+        clarification_answer_summary="Clarification answers: Marco from university.",
+        answer_packet=ClarificationAnswerPacket(
+            packet_id=packet.packet_id,
+            frame_id=packet.frame_id,
+            tool_call_id=packet.tool_call_id or "",
+            answers=[
+                {
+                    "question_id": question.question_id,
+                    "selected_option_ids": [question.options[0].option_id],
+                    "free_text": None,
+                }
+            ],
+        ),
+    )
+
+    assert resumed.status == "ok"
+    assert resumed.final_text == "Conversation parent resumed."
+    assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
+    assert store.get_agentic_frame(parent_frame.frame_id).status == "completed"
+
 def test_ingest_memory_tool_does_not_delegate_to_backend_facade() -> None:
     provider = ScriptedToolCallingProvider(
-        [{"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}}]
+        [
+            {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {"content": "Memory ingestion complete."},
+        ]
     )
     facade = FakeBackendFacade()
     runtime = AgenticRuntime(_runner(provider))
@@ -520,14 +623,14 @@ def test_ingest_memory_tool_does_not_delegate_to_backend_facade() -> None:
         ),
     )
 
-    assert result.status == "error"
+    assert result.status == "ok"
     assert facade.calls == []
     assert result.state_results[0].tool_events[0].tool_name == "ingest_memory"
-    assert result.state_results[0].tool_events[0].data["error_code"] == (
-        "memory_ingestion_frame_not_implemented"
+    assert result.state_results[0].tool_events[0].data["child_state_id"] == (
+        AgenticStateId.MEMORY_INGESTION.value
     )
 
-def test_handoff_payloads_do_not_switch_runtime_state() -> None:
+def test_child_frames_do_not_use_handoff_state_switching() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
@@ -539,15 +642,19 @@ def test_handoff_payloads_do_not_switch_runtime_state() -> None:
                     "desired_view": None,
                     "metadata": {},
                 },
-            }
+            },
+            {"content": "Memory query complete."},
         ]
     )
     runtime = AgenticRuntime(_runner(provider), max_state_transitions=1)
 
     result = runtime.run(_conversation(), AgenticToolExecutionContext())
 
-    assert result.status == "error"
+    assert result.status == "ok"
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
+    assert result.state_results[0].tool_events[0].data["visited_states"] == [
+        AgenticStateId.MEMORY_QUERY.value,
+    ]
 
 def test_state_runner_accepts_specialist_context_and_records_tool_events() -> None:
     provider = ScriptedToolCallingProvider(

@@ -230,6 +230,7 @@ The default `conversation_entry` tool surface should stay small:
 
 Default answering is a non-tool path. Graph updates are reached through the
 memory ingestion plan rather than exposed as a competing top-level tool.
+Nested agentic tools follow the frame rule: pass history and compact context down, then return one compact tool result up. Existing retrieval, context, write, and vectorization services may be reused behind these tools only when they do not reintroduce pending-process review, handoff metadata, or facade-level ingestion routing.
 Clarification handling, validation, write execution, and lifecycle controls are
 not broad conversation-entry tools.
 Clarification is handled as a continuation of the tool call that requested it:

@@ -97,6 +97,12 @@ The parent does not receive the child's full internal message trace. It receives
 a compact result with the useful outcome, created/updated refs, diagnostics, and
 failure/clarification state if relevant.
 
+If a child interrupts for clarification, the child frame is stored as
+`interrupted` and remains the UI-active frame. The parent frame is stored as
+`waiting_child`, preserving the parent assistant tool call without becoming a
+second user-facing clarification. When the child completes, the backend appends
+one compact tool result to the parent tool call and resumes the parent.
+
 ## Clarification
 
 Clarification is not a pending-process workflow.

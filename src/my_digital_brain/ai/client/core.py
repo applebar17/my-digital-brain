@@ -317,6 +317,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
                         tools_mapping=tools_mapping,
                         tools_by_name=tools_by_name,
                         include_tool_meta=include_tool_meta,
+                        messages_snapshot=list(params.get("messages") or []),
                     )
                     params["messages"].append(tool_result)
                     tool_calls_executed += 1
