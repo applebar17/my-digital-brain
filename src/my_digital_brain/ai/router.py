@@ -21,7 +21,6 @@ SMART_MODEL_TASKS = {
     "ingestion_relationship_context_extraction",
     "memory_question_answer",
     "memory_query",
-    "pending_process_review",
     "planning_checkpoint",
     "query_retrieval_planning",
 }

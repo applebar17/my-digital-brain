@@ -219,19 +219,19 @@ def cancel_chat_session_process(
 
 
 @router.post(
-    "/sessions/{session_id}/clarifications/{process_id}/answers",
+    "/sessions/{session_id}/clarifications/{frame_id}/answers",
     response_model=ChatResponse,
     dependencies=[Depends(require_web_chat_auth)],
 )
 def submit_clarification_answers(
     session_id: str,
-    process_id: str,
+    frame_id: str,
     request: SubmitClarificationAnswersRequest,
     runtime: ChatRuntime = Depends(get_chat_runtime),
 ) -> ChatResponse:
     try:
-        if request.answer_packet.process_id != process_id:
-            raise ChatValidationError("Clarification answer process id does not match URL.")
+        if request.answer_packet.frame_id != frame_id:
+            raise ChatValidationError("Clarification answer frame id does not match URL.")
         return runtime.answer_clarification(
             session_id,
             owner_id=request.owner_id,

@@ -102,7 +102,9 @@ class ClarificationHistoryMessage(ChatModel):
 
 class ClarificationPacket(ChatModel):
     packet_id: str = Field(default_factory=new_uuid)
-    process_id: str
+    frame_id: str
+    tool_call_id: str | None = None
+    tool_name: str | None = None
     origin_state_id: str
     reason: str
     questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
@@ -119,8 +121,28 @@ class ClarificationAnswer(ChatModel):
 
 class ClarificationAnswerPacket(ChatModel):
     packet_id: str
-    process_id: str
+    frame_id: str
+    tool_call_id: str
     answers: list[ClarificationAnswer] = Field(min_length=1, max_length=3)
+
+
+class AgenticFrame(ChatModel):
+    frame_id: str = Field(default_factory=new_uuid)
+    session_id: str
+    state_id: str
+    status: str = "interrupted"
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    context_payload: dict[str, Any] = Field(default_factory=dict)
+    compact_trace: list[dict[str, Any]] = Field(default_factory=list)
+    parent_frame_id: str | None = None
+    parent_tool_call_id: str | None = None
+    active_tool_call_id: str | None = None
+    active_tool_name: str | None = None
+    clarification_packet: ClarificationPacket | None = None
+    expires_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationSession(ChatModel):
@@ -131,6 +153,7 @@ class ConversationSession(ChatModel):
     title: str = "New chat"
     status: ConversationStatus = ConversationStatus.ACTIVE
     active_pending_process_id: str | None = None
+    active_agentic_frame_id: str | None = None
     last_message_at: datetime | None = None
     archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -203,6 +226,7 @@ class ConversationSessionDetail(ChatModel):
     messages: list[ConversationMessage] = Field(default_factory=list)
     pending_process: PendingProcessContext | None = None
     pending_processes: list[PendingProcessContext] = Field(default_factory=list)
+    active_agentic_frame: AgenticFrame | None = None
 
 
 class ConversationSessionSummary(ChatModel):
@@ -213,6 +237,7 @@ class ConversationSessionSummary(ChatModel):
     title: str
     status: ConversationStatus
     active_pending_process_id: str | None = None
+    active_agentic_frame_id: str | None = None
     pending_process_status: PendingProcessStatus | None = None
     last_message_preview: str | None = None
     last_message_at: datetime | None = None

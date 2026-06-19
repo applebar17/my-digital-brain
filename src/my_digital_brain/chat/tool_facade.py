@@ -363,7 +363,7 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                     f"{result.clarification.options}"
                 )
             packet = build_clarification_packet(
-                process_id=result.ingestion_id,
+                frame_id=result.ingestion_id,
                 origin_state_id="memory_ingestion",
                 reason=result.clarification.reason,
                 questions=[

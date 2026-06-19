@@ -86,12 +86,12 @@ export function cancelChatSessionProcess(
 
 export function submitClarificationAnswers(
   sessionId: string,
-  processId: string,
+  frameId: string,
   request: SubmitClarificationAnswersRequest,
   bearerToken: string
 ): Promise<ChatResponse> {
   return apiRequest<ChatResponse>(
-    `/chat/sessions/${sessionId}/clarifications/${processId}/answers`,
+    `/chat/sessions/${sessionId}/clarifications/${frameId}/answers`,
     {
       method: "POST",
       body: request,

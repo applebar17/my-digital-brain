@@ -73,6 +73,7 @@ def _named_handler(
         return result
 
     wrapped.__name__ = name
+    wrapped._agentic_execution_context = execution_context  # type: ignore[attr-defined]
     return wrapped
 
 

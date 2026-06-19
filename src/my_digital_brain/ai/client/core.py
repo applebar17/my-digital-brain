@@ -22,7 +22,7 @@ from .diagnostics import _llm_prompt_diagnostics
 from .errors import _provider_error_details
 from .retrying import GenAIRetryMixin
 from .settings import GenAISettings, get_genai_settings
-from .tool_execution import GenAIToolExecutionMixin
+from .tool_execution import GenAIToolExecutionMixin, ToolCallInterruption
 
 class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
     def __init__(
@@ -320,6 +320,21 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
                     )
                     params["messages"].append(tool_result)
                     tool_calls_executed += 1
+        except ToolCallInterruption as exc:
+            exc.messages = list(params.get("messages") or [])
+            log_event(
+                self.logger,
+                "llm.tool_interrupted",
+                component="genai",
+                step="call_openai",
+                status="needs_user_input",
+                model=model,
+                provider="azure_openai" if self.settings.is_azure else "openai",
+                duration_ms=int((time.monotonic() - call_start) * 1000),
+                tool_name=exc.tool_name,
+                tool_call_id=exc.tool_call_id,
+            )
+            raise
         except Exception as exc:
             duration_ms = int((time.monotonic() - call_start) * 1000)
             prompt_diagnostics = _llm_prompt_diagnostics(

@@ -42,6 +42,7 @@ class ChatSessionRecord(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     active_pending_process_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    active_agentic_frame_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -69,6 +70,23 @@ class ChatPendingProcessContextRecord(TimestampMixin, Base):
     process_metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     context_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     conversation_history_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+class ChatAgenticFrameRecord(TimestampMixin, Base):
+    __tablename__ = "chat_agentic_frames"
+
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    state_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    messages_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    context_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    compact_trace_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    parent_frame_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    parent_tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    active_tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    active_tool_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    clarification_packet_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class IngestionSession(TimestampMixin, Base):

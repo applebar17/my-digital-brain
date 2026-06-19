@@ -12,7 +12,6 @@ from my_digital_brain.agentic import (
     ConversationContext,
     DeterministicAgenticRouter,
     NeutralConversationMessage,
-    PendingMessageIntent,
     PendingProcessContext,
     PlanningActionContext,
     PlanningPurposeGuidelines,
@@ -133,9 +132,9 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     configs = default_state_configs()
 
     entry = configs[AgenticStateId.CONVERSATION_ENTRY]
-    pending = configs[AgenticStateId.PENDING_PROCESS_REVIEW]
     reasoning = configs[AgenticStateId.REASONING_CHECKPOINT]
 
+    assert "pending_process_review" not in {state.value for state in configs}
     assert entry.prompt_id == "conversation_entry"
     assert entry.allowed_tools == [
         "start_memory_ingestion",
@@ -145,9 +144,6 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert "cancel_pending_process" not in entry.allowed_tools
     assert "get_conversation_status" not in entry.allowed_tools
     assert "focused_extraction" in entry.forbidden_tools
-    assert "pause_pending_process" in pending.allowed_tools
-    assert "cancel_pending_process" in pending.allowed_tools
-    assert pending.required_context_type == "ConversationContext"
     assert reasoning.prompt_id == "reasoning_checkpoint"
     assert reasoning.required_context_type == "ReasoningCheckpointContext"
     assert reasoning.produced_context_type == "ReasoningCheckpointResultContext"
@@ -238,7 +234,6 @@ def test_deterministic_router_keeps_pending_context_in_conversation_entry() -> N
     route = router.route(context)
 
     assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.pending_intent is None
     assert route.tool_call is None
     assert route.assistant_message is not None
     assert "Provider-backed conversation routing" in route.assistant_message.content
@@ -259,7 +254,6 @@ def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None
     route = router.route(context)
 
     assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.pending_intent is None
     assert route.tool_call is None
     assert route.assistant_message is not None
     assert "Provider-backed conversation routing" in route.assistant_message.content

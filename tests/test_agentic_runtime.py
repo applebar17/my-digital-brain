@@ -30,10 +30,13 @@ from my_digital_brain.ai.schemas import (
     ChatResult,
     ProviderCallMetadata,
 )
+from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
 from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import ChatResponseStatus
 from my_digital_brain.chat.facade import ChatToolRequest, ChatToolResult
+from my_digital_brain.chat.models import ClarificationAnswerPacket
+from my_digital_brain.chat.store import InMemoryChatSessionStore
 
 
 class ScriptedToolCallingProvider:
@@ -89,7 +92,29 @@ class ScriptedToolCallingProvider:
                     ],
                 )
             )
-            tool_result = tools_mapping[tool_name](**arguments)
+            tool_fn = tools_mapping[tool_name]
+            context = getattr(tool_fn, "_agentic_execution_context", None)
+            previous_tool_call_id = getattr(context, "current_tool_call_id", None)
+            previous_tool_name = getattr(context, "current_tool_name", None)
+            if context is not None:
+                context.current_tool_call_id = tool_call_id
+                context.current_tool_name = str(tool_name)
+            try:
+                tool_result = tool_fn(**arguments)
+            finally:
+                if context is not None:
+                    context.current_tool_call_id = previous_tool_call_id
+                    context.current_tool_name = previous_tool_name
+            if getattr(tool_result, "status", None) == "needs_user_input":
+                raise ToolCallInterruption(
+                    tool_call_id=tool_call_id,
+                    tool_name=str(tool_name),
+                    result=tool_result,
+                    messages=[
+                        message.model_dump(mode="json", exclude_none=True)
+                        for message in [*request.messages, *message_delta]
+                    ],
+                )
             message_delta.append(
                 ChatMessage(
                     role="tool",
@@ -310,7 +335,7 @@ def test_conversation_entry_query_tool_hands_off_to_memory_query_state() -> None
     assert "owner_finalization" in provider.calls[2]["request"].messages[0].content
 
 
-def test_update_handoff_reaches_graph_update_specialist_state() -> None:
+def test_update_tool_runs_nested_graph_update_and_compacts_to_parent_tool_result() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
@@ -351,13 +376,15 @@ def test_update_handoff_reaches_graph_update_specialist_state() -> None:
     )
 
     assert result.status == "ok"
-    assert result.visited_states == [
-        AgenticStateId.CONVERSATION_ENTRY.value,
-        AgenticStateId.GRAPH_UPDATE.value,
-        AgenticStateId.CONVERSATION_ENTRY.value,
-    ]
-    assert result.state_results[0].handoff_target == "graph_update"
-    assert result.state_results[1].tool_events[0].tool_name == "create_memory_log"
+    assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
+    assert result.state_results[0].handoff_target is None
+    parent_event = result.state_results[0].tool_events[0]
+    assert parent_event.tool_name == "update_memory_graph"
+    assert parent_event.data["operation"] == "update_memory_graph"
+    assert parent_event.data["visited_states"] == [AgenticStateId.GRAPH_UPDATE.value]
+    assert parent_event.data["state_results"][0]["tool_events"][0]["tool_name"] == (
+        "create_memory_log"
+    )
     assert "upsert_node:MemoryLog" in graph.mutations
 
 
@@ -454,14 +481,129 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
         )
     )
 
-    assert result.status == "ok"
+    assert result.status == "interrupted"
     assert result.tool_events[0].status == "needs_user_input"
-    assert result.tool_events[0].data["pending_process"]["question"] == (
+    interruption = result.metadata["interruption"]
+    assert interruption["tool_name"] == "request_user_clarification"
+    assert interruption["tool_call_id"] == "call-1"
+    assert interruption["clarification_packet"]["tool_call_id"] == "call-1"
+    assert interruption["clarification_packet"]["questions"][0]["question"] == (
         "Which target should I use?"
+    )
+    assert result.message_delta[0].tool_calls[0]["function"]["name"] == (
+        "request_user_clarification"
     )
 
 
-def test_ingestion_handoff_delegates_to_backend_facade() -> None:
+def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> None:
+    provider = ScriptedToolCallingProvider(
+        [
+            {
+                "content": "Routing to graph update.",
+                "tool": "update_memory_graph",
+                "arguments": {
+                    "source_text": "Marco was from university, not work.",
+                    "guidelines": "Apply this as a correction.",
+                    "desired_work": "correct_or_update_memory_graph",
+                    "target_ids": ["node-marco"],
+                    "source_refs": [],
+                    "metadata": {},
+                },
+            },
+            {
+                "content": "Need target detail.",
+                "tool": "request_user_clarification",
+                "arguments": {
+                    "reason": "Need to confirm which Marco to update.",
+                    "compact_summary": "Target disambiguation needed.",
+                    "target_refs": ["node-marco", "node-marco-work"],
+                    "questions": [
+                        {
+                            "question": "Which Marco should be updated?",
+                            "options": [
+                                {"label": "Marco from university", "recommended": True},
+                                {"label": "Marco from work"},
+                            ],
+                            "free_text_allowed": True,
+                            "required": True,
+                            "selection_mode": "single",
+                        }
+                    ],
+                },
+            },
+            {"content": "Graph update child completed."},
+            {"content": "Parent saw the graph update result."},
+        ]
+    )
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    runtime = AgenticRuntime(_runner(provider))
+    execution_context = AgenticToolExecutionContext(
+        graph_service=FakeGraphService(),
+        chat_store=store,
+        session_id=session.session_id,
+        conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+
+    interrupted = runtime.run(
+        _conversation("Marco was from university, not work."),
+        execution_context,
+    )
+
+    assert interrupted.status == "needs_user_input"
+    parent_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
+    child_packet = parent_frame.clarification_packet
+    assert child_packet is not None
+    assert child_packet.frame_id != parent_frame.frame_id
+    child_frame = store.get_agentic_frame(child_packet.frame_id)
+    assert child_frame.parent_frame_id == parent_frame.frame_id
+    assert child_frame.parent_tool_call_id == parent_frame.active_tool_call_id
+
+    option_id = child_packet.questions[0].options[0].option_id
+    resumed = runtime.resume_frame(
+        child_frame,
+        AgenticToolExecutionContext(
+            graph_service=FakeGraphService(),
+            chat_store=store,
+            session_id=session.session_id,
+            conversation_id="conversation-1",
+            owner_id="owner-1",
+        ),
+        clarification_answer_summary="Clarification answers: Marco from university.",
+        answer_packet=ClarificationAnswerPacket(
+            packet_id=child_packet.packet_id,
+            frame_id=child_packet.frame_id,
+            tool_call_id=child_packet.tool_call_id or "",
+            answers=[
+                {
+                    "question_id": child_packet.questions[0].question_id,
+                    "selected_option_ids": [option_id],
+                    "free_text": None,
+                }
+            ],
+        ),
+    )
+
+    assert resumed.status == "ok"
+    assert resumed.final_text == "Parent saw the graph update result."
+    assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
+    completed_parent = store.get_agentic_frame(parent_frame.frame_id)
+    assert completed_parent.status == "completed"
+    parent_tool_messages = [
+        message
+        for message in completed_parent.messages
+        if message.get("role") == "tool"
+    ]
+    assert parent_tool_messages[-1]["tool_call_id"] == parent_frame.active_tool_call_id
+    assert '"operation":"update_memory_graph"' in parent_tool_messages[-1]["content"]
+
+
+def test_start_memory_ingestion_tool_delegates_to_backend_facade() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
@@ -486,13 +628,13 @@ def test_ingestion_handoff_delegates_to_backend_facade() -> None:
     )
 
     assert result.status == "ok"
-    assert result.final_text == "I stored that memory."
+    assert result.final_text == "Routing to ingestion."
     assert facade.calls[0][1].text == "Yesterday I met Marco."
-    assert result.compact_trace[-2]["backend_process"] == "memory_ingestion_precheck"
-    assert result.visited_states == [
-        AgenticStateId.CONVERSATION_ENTRY.value,
-        AgenticStateId.CONVERSATION_ENTRY.value,
-    ]
+    assert result.state_results[0].tool_events[0].tool_name == "start_memory_ingestion"
+    assert result.state_results[0].tool_events[0].data["operation"] == (
+        "start_memory_ingestion"
+    )
+    assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
 
 
 def test_max_state_transition_limit_prevents_runaway_handoffs() -> None:

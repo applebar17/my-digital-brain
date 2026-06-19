@@ -16,16 +16,20 @@ from my_digital_brain.core.ids import new_uuid
 
 def build_clarification_packet(
     *,
-    process_id: str,
+    frame_id: str,
     origin_state_id: str,
     reason: str,
     questions: list[dict[str, Any]],
+    tool_call_id: str | None = None,
+    tool_name: str | None = None,
     compact_summary: str | None = None,
     target_refs: list[str] | None = None,
     history_delta: list[dict[str, Any]] | None = None,
 ) -> ClarificationPacket:
     packet = ClarificationPacket(
-        process_id=process_id,
+        frame_id=frame_id,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
         origin_state_id=origin_state_id,
         reason=reason,
         questions=[
@@ -77,8 +81,10 @@ def validate_clarification_answers(
 ) -> None:
     if answers.packet_id != packet.packet_id:
         raise ChatValidationError("Clarification answer packet does not match the active packet.")
-    if answers.process_id != packet.process_id:
-        raise ChatValidationError("Clarification answer process id does not match.")
+    if answers.frame_id != packet.frame_id:
+        raise ChatValidationError("Clarification answer frame id does not match.")
+    if packet.tool_call_id and answers.tool_call_id != packet.tool_call_id:
+        raise ChatValidationError("Clarification answer tool call id does not match.")
 
     questions = {question.question_id: question for question in packet.questions}
     for answer in answers.answers:

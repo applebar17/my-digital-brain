@@ -200,10 +200,7 @@ class AgenticHistoryService:
         state = AgenticStateId(state_id)
         if isinstance(payload, ConversationContext):
             projected = payload.model_copy(deep=True)
-            if state not in {
-                AgenticStateId.CONVERSATION_ENTRY,
-                AgenticStateId.PENDING_PROCESS_REVIEW,
-            }:
+            if state != AgenticStateId.CONVERSATION_ENTRY:
                 projected = self.child_conversation_context(projected)
             return self._model_payload(projected)
         return self._model_payload(payload)
@@ -396,10 +393,7 @@ class AgenticHistoryService:
                 conversation = possible
         if conversation is None:
             return None
-        if state not in {
-            AgenticStateId.CONVERSATION_ENTRY,
-            AgenticStateId.PENDING_PROCESS_REVIEW,
-        }:
+        if state != AgenticStateId.CONVERSATION_ENTRY:
             return self.child_conversation_context(conversation)
         return conversation
 

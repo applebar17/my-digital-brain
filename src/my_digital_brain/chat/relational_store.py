@@ -12,6 +12,8 @@ from my_digital_brain.chat.enums import (
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
+    AgenticFrame,
+    ClarificationPacket,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
@@ -29,6 +31,7 @@ from my_digital_brain.chat.store import (
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.storage.relational import RelationalSessionProvider
 from my_digital_brain.storage.relational_models import (
+    ChatAgenticFrameRecord,
     ChatMessageRecord,
     ChatPendingProcessContextRecord,
     ChatSessionRecord,
@@ -68,6 +71,7 @@ class RelationalChatSessionStore:
             title=_clean_title(title),
             status=ConversationStatus.ACTIVE.value,
             active_pending_process_id=None,
+            active_agentic_frame_id=None,
             last_message_at=None,
             archived_at=None,
         )
@@ -107,6 +111,7 @@ class RelationalChatSessionStore:
                 title="New chat",
                 status=ConversationStatus.ACTIVE.value,
                 active_pending_process_id=None,
+                active_agentic_frame_id=None,
                 last_message_at=None,
                 archived_at=None,
             )
@@ -175,6 +180,7 @@ class RelationalChatSessionStore:
             record.status = ConversationStatus.ARCHIVED.value
             record.archived_at = now
             record.active_pending_process_id = None
+            record.active_agentic_frame_id = None
             record.updated_at = now
             db.flush()
             return _session_from_record(record)
@@ -243,6 +249,7 @@ class RelationalChatSessionStore:
                 statuses={PendingProcessStatus.PENDING, PendingProcessStatus.PAUSED},
                 limit=5,
             ),
+            active_agentic_frame=self.get_active_agentic_frame(session_id),
         )
 
     def save_pending_process_context(
@@ -404,6 +411,106 @@ class RelationalChatSessionStore:
                 session.updated_at = reference_time
             return expired_ids
 
+    def save_agentic_frame(self, session_id: str, frame: AgenticFrame) -> AgenticFrame:
+        with self.sessions.session() as db:
+            session = db.get(ChatSessionRecord, session_id)
+            if session is None:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            now = utc_now()
+            record = db.get(ChatAgenticFrameRecord, frame.frame_id)
+            if record is None:
+                record = ChatAgenticFrameRecord(
+                    id=frame.frame_id,
+                    created_at=frame.created_at,
+                    updated_at=now,
+                    metadata_json=frame.metadata,
+                    session_id=session_id,
+                    state_id=frame.state_id,
+                    status=frame.status,
+                    messages_json=frame.messages,
+                    context_payload_json=frame.context_payload,
+                    compact_trace_json=frame.compact_trace,
+                    parent_frame_id=frame.parent_frame_id,
+                    parent_tool_call_id=frame.parent_tool_call_id,
+                    active_tool_call_id=frame.active_tool_call_id,
+                    active_tool_name=frame.active_tool_name,
+                    clarification_packet_json=(
+                        frame.clarification_packet.model_dump(mode="json", exclude_none=True)
+                        if frame.clarification_packet is not None
+                        else None
+                    ),
+                    expires_at=frame.expires_at,
+                )
+                db.add(record)
+            else:
+                _apply_agentic_frame(record, frame, updated_at=now)
+            db.flush()
+            self._sync_active_agentic_frame(db, session_id)
+            db.flush()
+            return _agentic_frame_from_record(record)
+
+    def get_agentic_frame(self, frame_id: str) -> AgenticFrame:
+        with self.sessions.session() as db:
+            record = db.get(ChatAgenticFrameRecord, frame_id)
+            if record is None:
+                raise ChatNotFoundError(f"Agentic frame not found: {frame_id}")
+            return _agentic_frame_from_record(record)
+
+    def get_active_agentic_frame(self, session_id: str) -> AgenticFrame | None:
+        frames = self.list_agentic_frames(session_id, statuses={"interrupted"}, limit=1)
+        return frames[0] if frames else None
+
+    def list_agentic_frames(
+        self,
+        session_id: str,
+        *,
+        statuses: set[str] | None = None,
+        limit: int = 5,
+    ) -> list[AgenticFrame]:
+        normalized_statuses = {str(status) for status in statuses} if statuses else None
+        with self.sessions.session() as db:
+            if db.get(ChatSessionRecord, session_id) is None:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            statement = select(ChatAgenticFrameRecord).where(
+                ChatAgenticFrameRecord.session_id == session_id,
+            )
+            if normalized_statuses is not None:
+                statement = statement.where(
+                    ChatAgenticFrameRecord.status.in_(normalized_statuses),
+                )
+            statement = statement.order_by(desc(ChatAgenticFrameRecord.updated_at)).limit(
+                max(0, limit),
+            )
+            return [_agentic_frame_from_record(record) for record in db.scalars(statement)]
+
+    def update_agentic_frame_status(
+        self,
+        session_id: str,
+        frame_id: str,
+        status: str,
+        *,
+        metadata: dict | None = None,
+        messages: list[dict] | None = None,
+        clarification_packet: dict | None = None,
+    ) -> AgenticFrame:
+        with self.sessions.session() as db:
+            if db.get(ChatSessionRecord, session_id) is None:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            record = db.get(ChatAgenticFrameRecord, frame_id)
+            if record is None or record.session_id != session_id:
+                raise ChatNotFoundError(f"Agentic frame not found: {frame_id}")
+            record.status = status
+            record.updated_at = utc_now()
+            record.metadata_json = {**(record.metadata_json or {}), **(metadata or {})}
+            if messages is not None:
+                record.messages_json = messages
+            if clarification_packet is not None:
+                record.clarification_packet_json = clarification_packet
+            db.flush()
+            self._sync_active_agentic_frame(db, session_id)
+            db.flush()
+            return _agentic_frame_from_record(record)
+
     def _summary_for_record(self, db, record: ChatSessionRecord) -> ConversationSessionSummary:
         last_message = db.scalar(
             select(ChatMessageRecord)
@@ -432,6 +539,7 @@ class RelationalChatSessionStore:
             title=record.title,
             status=record.status,
             active_pending_process_id=record.active_pending_process_id,
+            active_agentic_frame_id=record.active_agentic_frame_id,
             pending_process_status=pending.status if pending else None,
             last_message_preview=_preview_text(last_message.text if last_message else None),
             last_message_at=record.last_message_at,
@@ -440,6 +548,22 @@ class RelationalChatSessionStore:
             updated_at=record.updated_at,
             metadata=record.metadata_json or {},
         )
+
+    def _sync_active_agentic_frame(self, db, session_id: str) -> None:
+        session = db.get(ChatSessionRecord, session_id)
+        if session is None:
+            raise ChatNotFoundError(f"Chat session not found: {session_id}")
+        active = db.scalar(
+            select(ChatAgenticFrameRecord)
+            .where(
+                ChatAgenticFrameRecord.session_id == session_id,
+                ChatAgenticFrameRecord.status == "interrupted",
+            )
+            .order_by(desc(ChatAgenticFrameRecord.updated_at))
+            .limit(1),
+        )
+        session.active_agentic_frame_id = active.id if active is not None else None
+        session.updated_at = utc_now()
 
 
 def _session_from_record(record: ChatSessionRecord) -> ConversationSession:
@@ -451,6 +575,7 @@ def _session_from_record(record: ChatSessionRecord) -> ConversationSession:
         title=record.title,
         status=record.status,
         active_pending_process_id=record.active_pending_process_id,
+        active_agentic_frame_id=record.active_agentic_frame_id,
         last_message_at=record.last_message_at,
         archived_at=record.archived_at,
         created_at=record.created_at,
@@ -466,6 +591,7 @@ def _apply_session(record: ChatSessionRecord, session: ConversationSession) -> N
     record.title = session.title
     record.status = str(session.status)
     record.active_pending_process_id = session.active_pending_process_id
+    record.active_agentic_frame_id = session.active_agentic_frame_id
     record.last_message_at = session.last_message_at
     record.archived_at = session.archived_at
     record.metadata_json = session.metadata
@@ -519,3 +645,55 @@ def _apply_pending_context(
     record.process_metadata_json = context.process_ref.metadata
     record.context_json = context.context
     record.conversation_history_refs_json = context.conversation_history_refs
+
+
+def _agentic_frame_from_record(record: ChatAgenticFrameRecord) -> AgenticFrame:
+    packet = (
+        ClarificationPacket.model_validate(record.clarification_packet_json)
+        if isinstance(record.clarification_packet_json, dict)
+        else None
+    )
+    return AgenticFrame(
+        frame_id=record.id,
+        session_id=record.session_id,
+        state_id=record.state_id,
+        status=record.status,
+        messages=list(record.messages_json or []),
+        context_payload=record.context_payload_json or {},
+        compact_trace=list(record.compact_trace_json or []),
+        parent_frame_id=record.parent_frame_id,
+        parent_tool_call_id=record.parent_tool_call_id,
+        active_tool_call_id=record.active_tool_call_id,
+        active_tool_name=record.active_tool_name,
+        clarification_packet=packet,
+        expires_at=record.expires_at,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        metadata=record.metadata_json or {},
+    )
+
+
+def _apply_agentic_frame(
+    record: ChatAgenticFrameRecord,
+    frame: AgenticFrame,
+    *,
+    updated_at: datetime,
+) -> None:
+    record.updated_at = updated_at
+    record.metadata_json = frame.metadata
+    record.session_id = frame.session_id
+    record.state_id = frame.state_id
+    record.status = frame.status
+    record.messages_json = frame.messages
+    record.context_payload_json = frame.context_payload
+    record.compact_trace_json = frame.compact_trace
+    record.parent_frame_id = frame.parent_frame_id
+    record.parent_tool_call_id = frame.parent_tool_call_id
+    record.active_tool_call_id = frame.active_tool_call_id
+    record.active_tool_name = frame.active_tool_name
+    record.clarification_packet_json = (
+        frame.clarification_packet.model_dump(mode="json", exclude_none=True)
+        if frame.clarification_packet is not None
+        else None
+    )
+    record.expires_at = frame.expires_at

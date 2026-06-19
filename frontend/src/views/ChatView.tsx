@@ -286,7 +286,7 @@ export function ChatView() {
     try {
       const response = await submitClarificationAnswers(
         sessionId,
-        answerPacket.process_id,
+        answerPacket.frame_id,
         {
           owner_id: defaultOwnerId,
           sender_id: defaultSenderId,
@@ -399,6 +399,10 @@ export function ChatView() {
 function clarificationPacketFromSession(
   detail: ConversationSessionDetail
 ): ClarificationPacket | null {
+  const framePacket = detail.active_agentic_frame?.clarification_packet;
+  if (isClarificationPacket(framePacket)) {
+    return framePacket;
+  }
   const contextPacket = detail.pending_process?.context.clarification_packet;
   if (isClarificationPacket(contextPacket)) {
     return contextPacket;
@@ -417,7 +421,7 @@ function isClarificationPacket(value: unknown): value is ClarificationPacket {
   const packet = value as Partial<ClarificationPacket>;
   return (
     typeof packet.packet_id === "string" &&
-    typeof packet.process_id === "string" &&
+    typeof packet.frame_id === "string" &&
     Array.isArray(packet.questions)
   );
 }

@@ -64,7 +64,9 @@ export interface ClarificationHistoryMessage {
 
 export interface ClarificationPacket {
   packet_id: string;
-  process_id: string;
+  frame_id: string;
+  tool_call_id?: string | null;
+  tool_name?: string | null;
   origin_state_id: string;
   reason: string;
   questions: ClarificationQuestion[];
@@ -81,7 +83,8 @@ export interface ClarificationAnswer {
 
 export interface ClarificationAnswerPacket {
   packet_id: string;
-  process_id: string;
+  frame_id: string;
+  tool_call_id: string;
   answers: ClarificationAnswer[];
 }
 
@@ -139,6 +142,7 @@ export interface ConversationSession {
   title: string;
   status: string;
   active_pending_process_id?: string | null;
+  active_agentic_frame_id?: string | null;
   last_message_at?: string | null;
   archived_at?: string | null;
   created_at: string;
@@ -168,11 +172,31 @@ export interface PendingProcessContext {
   metadata: Record<string, unknown>;
 }
 
+export interface AgenticFrame {
+  frame_id: string;
+  session_id: string;
+  state_id: string;
+  status: string;
+  messages: Record<string, unknown>[];
+  context_payload: Record<string, unknown>;
+  compact_trace: Record<string, unknown>[];
+  parent_frame_id?: string | null;
+  parent_tool_call_id?: string | null;
+  active_tool_call_id?: string | null;
+  active_tool_name?: string | null;
+  clarification_packet?: ClarificationPacket | null;
+  expires_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface ConversationSessionDetail {
   session: ConversationSession;
   messages: ConversationMessage[];
   pending_process?: PendingProcessContext | null;
   pending_processes?: PendingProcessContext[];
+  active_agentic_frame?: AgenticFrame | null;
 }
 
 export interface ConversationSessionSummary {
@@ -183,6 +207,7 @@ export interface ConversationSessionSummary {
   title: string;
   status: string;
   active_pending_process_id?: string | null;
+  active_agentic_frame_id?: string | null;
   pending_process_status?: string | null;
   last_message_preview?: string | null;
   last_message_at?: string | null;

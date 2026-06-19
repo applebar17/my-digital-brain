@@ -85,10 +85,7 @@ def _definition(
 
 
 def _default_definitions() -> list[AgenticToolDefinition]:
-    conversation_states = [
-        AgenticStateId.CONVERSATION_ENTRY,
-        AgenticStateId.PENDING_PROCESS_REVIEW,
-    ]
+    conversation_states = [AgenticStateId.CONVERSATION_ENTRY]
     memory_query_states = [AgenticStateId.MEMORY_QUERY]
     graph_update_states = [AgenticStateId.GRAPH_UPDATE]
     contradiction_states = [AgenticStateId.CONTRADICTION_REVIEW]
@@ -156,32 +153,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             properties={"metadata": object_property("Optional status metadata.")},
         ),
         _definition(
-            "cancel_pending_process",
-            "Cancel an active pending process when the user explicitly asks.",
-            states=[AgenticStateId.PENDING_PROCESS_REVIEW],
-            properties={
-                "pending_process_id": optional_string_property("Pending process id to cancel."),
-                "reason": optional_string_property("User-facing cancellation reason."),
-            },
-        ),
-        _definition(
-            "resume_pending_process",
-            "Resume a selected pending process using the current message and recent history.",
-            states=[AgenticStateId.PENDING_PROCESS_REVIEW],
-            properties={
-                "pending_process_id": optional_string_property("Pending process id to resume."),
-            },
-        ),
-        _definition(
-            "pause_pending_process",
-            "Pause a pending process without forcing the current message into it.",
-            states=[AgenticStateId.PENDING_PROCESS_REVIEW],
-            properties={
-                "pending_process_id": optional_string_property("Pending process id to pause."),
-                "reason": optional_string_property("Why the process should remain paused."),
-            },
-        ),
-        _definition(
             "request_user_clarification",
             (
                 "Ask the user one to three structured clarification questions when "
@@ -189,7 +160,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "process interruption, not for normal final answers."
             ),
             states=[
-                AgenticStateId.PENDING_PROCESS_REVIEW,
                 AgenticStateId.MEMORY_QUERY,
                 AgenticStateId.GRAPH_UPDATE,
                 AgenticStateId.CONTRADICTION_REVIEW,

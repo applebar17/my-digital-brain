@@ -6,10 +6,8 @@ from typing import Literal
 from my_digital_brain.agentic.contexts import (
     ChannelSessionMetadata,
     ConversationContext as AgenticConversationContext,
-    GraphUpdateContext,
     PendingProcessContext as AgenticPendingProcessContext,
 )
-from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
@@ -26,7 +24,6 @@ from my_digital_brain.chat.enums import (
     ChatResponseStatus,
     ConversationStatus,
     ConversationMessageRole,
-    PendingProcessKind,
     PendingProcessStatus,
 )
 from my_digital_brain.chat.exceptions import ChatValidationError
@@ -45,7 +42,6 @@ from my_digital_brain.chat.models import (
     ConversationSessionList,
     ConversationSessionDetail,
     ClarificationAnswerPacket,
-    ClarificationPacket,
     IncomingChatMessage,
     PendingProcessContext,
 )
@@ -360,15 +356,21 @@ class ChatRuntime:
         message_id: str,
         answer_packet: ClarificationAnswerPacket,
     ) -> ChatResponse:
+        if self.agentic_runtime is None:
+            raise ChatValidationError("Clarification continuation requires an AgenticRuntime.")
         session = self.store.get_session(session_id)
         if session.owner_id != owner_id:
             raise ChatValidationError("Chat session does not belong to the request owner.")
-        pending_context = self.store.get_pending_process_context(answer_packet.process_id)
-        if pending_context.process_ref.process_id != session.active_pending_process_id:
-            raise ChatValidationError(
-                "Clarification answers must target the active pending process.",
-            )
-        packet = self._clarification_packet_from_pending(pending_context)
+        if not hasattr(self.store, "get_agentic_frame"):
+            raise ChatValidationError("The chat store does not support agentic frames.")
+        frame = self.store.get_agentic_frame(answer_packet.frame_id)
+        if frame.session_id != session.session_id:
+            raise ChatValidationError("Clarification answers must target this chat session.")
+        if frame.status != "interrupted":
+            raise ChatValidationError("Clarification frame is not waiting for user input.")
+        if frame.clarification_packet is None:
+            raise ChatValidationError("The agentic frame has no active clarification packet.")
+        packet = frame.clarification_packet
         validate_clarification_answers(packet, answer_packet)
         answer_summary = summarize_clarification_answers(packet, answer_packet)
 
@@ -378,9 +380,10 @@ class ChatRuntime:
                 channel_message_id=message_id,
                 role=ConversationMessageRole.USER,
                 text=answer_summary,
-                pending_process_id=pending_context.process_ref.process_id,
                 metadata={
                     "sender_id": sender_id,
+                    "agentic_frame_id": frame.frame_id,
+                    "tool_call_id": answer_packet.tool_call_id,
                     "clarification_answer_packet": answer_packet.model_dump(
                         mode="json",
                         exclude_none=True,
@@ -388,176 +391,6 @@ class ChatRuntime:
                     "clarification_answer_summary": answer_summary,
                 },
             ),
-        )
-        resumed_context = pending_context.model_copy(
-            update={
-                "context": {
-                    **pending_context.context,
-                    "clarification_answer_packet": answer_packet.model_dump(
-                        mode="json",
-                        exclude_none=True,
-                    ),
-                    "clarification_answer_summary": answer_summary,
-                },
-            },
-            deep=True,
-        )
-        if (
-            str(pending_context.process_ref.kind) == PendingProcessKind.MEMORY_UPDATE.value
-            and self.agentic_runtime is not None
-        ):
-            response = self._resume_graph_update_clarification(
-                session,
-                owner_id=owner_id,
-                sender_id=sender_id,
-                message_id=message_id,
-                pending_context=resumed_context,
-                answer_summary=answer_summary,
-                answer_packet=answer_packet,
-            )
-        else:
-            result = self.tool_facade.resume_pending_process(
-                ChatToolRequest(
-                    session_id=session.session_id,
-                    channel=str(session.channel),
-                    conversation_id=session.external_conversation_id,
-                    owner_id=owner_id,
-                    text=answer_summary,
-                    pending_process_context=resumed_context,
-                    conversation_history_refs=pending_context.conversation_history_refs,
-                    metadata={
-                        "message_id": message_id,
-                        "clarification_answer_packet": answer_packet.model_dump(
-                            mode="json",
-                            exclude_none=True,
-                        ),
-                        "clarification_answer_summary": answer_summary,
-                    },
-                ),
-            )
-            response = ChatResponse(
-                session_id=session.session_id,
-                status=result.status,
-                primary_text=result.primary_text,
-                pending_process=result.pending_process,
-                clarification_packet=result.clarification_packet,
-                actions=result.actions,
-                evidence=result.evidence,
-                diagnostics=result.diagnostics,
-                metadata={
-                    **result.metadata,
-                    "operation": "answer_clarification",
-                    "resumed_operation": result.metadata.get(
-                        "resumed_operation",
-                        "resume_pending_process",
-                    ),
-                },
-            )
-        if response.metadata.get("clear_pending_process"):
-            self.store.update_pending_process_status(
-                session.session_id,
-                pending_context.process_ref.process_id,
-                PendingProcessStatus.COMPLETED,
-                metadata={
-                    "completed_by": "answer_clarification",
-                    "clarification_answer_summary": answer_summary,
-                },
-                context_updates={
-                    "resumable": False,
-                    "clarification_answer_summary": answer_summary,
-                },
-            )
-        self._persist_response(
-            session.session_id,
-            response,
-            source_message_id=message_id,
-            source_text=answer_summary,
-            history_refs=pending_context.conversation_history_refs,
-        )
-        return response
-
-    def _resume_graph_update_clarification(
-        self,
-        session: ConversationSession,
-        *,
-        owner_id: str,
-        sender_id: str,
-        message_id: str,
-        pending_context: PendingProcessContext,
-        answer_summary: str,
-        answer_packet: ClarificationAnswerPacket,
-    ) -> ChatResponse:
-        if self.agentic_runtime is None:
-            raise ChatValidationError("Agentic runtime mode requires an AgenticRuntime.")
-        original_text = str(
-            pending_context.context.get("source_text")
-            or pending_context.context.get("original_text")
-            or pending_context.process_ref.metadata.get("source_text")
-            or "",
-        ).strip()
-        source_text = "\n\n".join(
-            item for item in [original_text, answer_summary] if item
-        ) or answer_summary
-        incoming = IncomingChatMessage(
-            channel=session.channel,
-            session_id=session.session_id,
-            conversation_id=session.external_conversation_id,
-            sender_id=sender_id,
-            owner_id=owner_id,
-            message_id=message_id,
-            text=answer_summary,
-            pending_process_id=pending_context.process_ref.process_id,
-            conversation_history_refs=pending_context.conversation_history_refs,
-            metadata={
-                "clarification_answer_packet": answer_packet.model_dump(
-                    mode="json",
-                    exclude_none=True,
-                ),
-                "clarification_answer_summary": answer_summary,
-                "timezone": pending_context.context.get("timezone", "UTC"),
-            },
-        )
-        conversation_context = self._agentic_conversation_context(
-            incoming,
-            session.session_id,
-            pending_context,
-            self._pending_process_contexts(session.session_id),
-        )
-        graph_update_context = GraphUpdateContext(
-            source_text=source_text,
-            conversation=conversation_context,
-            guidelines=str(
-                pending_context.context.get("guidelines")
-                or pending_context.process_ref.metadata.get("guidelines")
-                or "Update the memory graph using deterministic tools.",
-            ),
-            desired_work=(
-                pending_context.context.get("desired_work")
-                or pending_context.process_ref.metadata.get("desired_work")
-            ),
-            target_ids=[
-                str(target_id)
-                for target_id in (
-                    pending_context.context.get("target_ids")
-                    or pending_context.process_ref.metadata.get("target_ids")
-                    or pending_context.context.get("unresolved_targets")
-                    or []
-                )
-            ],
-            source_refs=list(
-                pending_context.context.get("source_refs")
-                or pending_context.process_ref.metadata.get("source_refs")
-                or []
-            ),
-            timezone=str(pending_context.context.get("timezone") or "UTC"),
-            metadata={
-                "clarification_answer_packet": answer_packet.model_dump(
-                    mode="json",
-                    exclude_none=True,
-                ),
-                "clarification_answer_summary": answer_summary,
-                "resumed_from_pending_process_id": pending_context.process_ref.process_id,
-            },
         )
         execution_context = AgenticToolExecutionContext(
             backend_facade=self.tool_facade,
@@ -571,26 +404,43 @@ class ChatRuntime:
             sender_id=sender_id,
             message_id=message_id,
             current_text=answer_summary,
-            pending_process_context=pending_context,
-            pending_process_contexts=self._pending_process_contexts(session.session_id),
-            conversation_history_refs=pending_context.conversation_history_refs,
-            metadata=graph_update_context.metadata,
+            conversation_history_refs=self._history_refs(session.session_id, []),
+            metadata={
+                "clarification_answer_packet": answer_packet.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
+                "clarification_answer_summary": answer_summary,
+            },
+            frame_id=frame.frame_id,
+            parent_frame_id=frame.parent_frame_id,
+            parent_tool_call_id=frame.parent_tool_call_id,
         )
-        result = self.agentic_runtime.run(
-            conversation_context,
+        result = self.agentic_runtime.resume_frame(
+            frame,
             execution_context,
-            start_state=AgenticStateId.GRAPH_UPDATE,
-            start_payload=graph_update_context,
+            clarification_answer_summary=answer_summary,
+            answer_packet=answer_packet,
         )
         response = render_agentic_chat_response(result, session_id=session.session_id)
-        metadata = {
-            **response.metadata,
-            "operation": "answer_clarification",
-            "resumed_operation": "graph_update",
-        }
-        if response.pending_process is None and response.status != ChatResponseStatus.NEEDS_USER_INPUT:
-            metadata["clear_pending_process"] = True
-        return response.model_copy(update={"metadata": metadata}, deep=True)
+        response = response.model_copy(
+            update={
+                "metadata": {
+                    **response.metadata,
+                    "operation": "answer_clarification",
+                    "resumed_frame_id": frame.frame_id,
+                }
+            },
+            deep=True,
+        )
+        self._persist_response(
+            session.session_id,
+            response,
+            source_message_id=message_id,
+            source_text=answer_summary,
+            history_refs=self._history_refs(session.session_id, []),
+        )
+        return response
 
     def _call_facade(
         self,
@@ -837,19 +687,6 @@ class ChatRuntime:
                 }
             },
         )
-
-    def _clarification_packet_from_pending(
-        self,
-        pending_context: PendingProcessContext,
-    ) -> ClarificationPacket:
-        packet = pending_context.context.get("clarification_packet")
-        if not isinstance(packet, dict):
-            packet = pending_context.process_ref.metadata.get("clarification_packet")
-        if not isinstance(packet, dict):
-            raise ChatValidationError(
-                "The pending process does not contain a structured clarification packet.",
-            )
-        return ClarificationPacket.model_validate(packet)
 
     def _pending_process_contexts(self, session_id: str) -> list[PendingProcessContext]:
         if not hasattr(self.store, "list_pending_process_contexts"):

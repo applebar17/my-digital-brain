@@ -12,7 +12,6 @@ class AgenticNodeKind(StrEnum):
 
 class AgenticStateId(StrEnum):
     CONVERSATION_ENTRY = "conversation_entry"
-    PENDING_PROCESS_REVIEW = "pending_process_review"
     REASONING_CHECKPOINT = "reasoning_checkpoint"
     PLANNING_CHECKPOINT = "planning_checkpoint"
     CONTRADICTION_REVIEW = "contradiction_review"
@@ -26,18 +25,6 @@ class NeutralMessageKind(StrEnum):
     ASSISTANT_TOOL_CALL = "assistant_tool_call"
     TOOL_OUTPUT = "tool_output"
     COMPACTED_SUMMARY = "compacted_summary"
-
-
-class PendingMessageIntent(StrEnum):
-    CLARIFICATION_ANSWER = "clarification_answer"
-    NEW_MEMORY = "new_memory"
-    QUESTION = "question"
-    CORRECTION = "correction"
-    CANCEL = "cancel"
-    SKIP = "skip"
-    PAUSE = "pause"
-    UNCLEAR = "unclear"
-    NORMAL_CHAT = "normal_chat"
 
 
 class ToolResultStatus(StrEnum):

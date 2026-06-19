@@ -678,6 +678,24 @@ should include status, user-facing summary, machine-readable error code when
 applicable, created/updated record refs, affected graph ids, refreshed vector
 scopes, diagnostics, and suggested next action for the invoking state.
 
+Clarification is implemented as a provider tool-call continuation, not as a
+separate pending-process review state. When a state or nested tool calls
+`request_user_clarification`, the runtime persists an `AgenticFrame` with the
+state id, parent frame/tool-call refs, model messages, compact context, trace,
+active clarification packet, and expiry. The stored messages keep the assistant
+tool-call message open. When the UI submits answers, the backend validates the
+answer packet against the stored packet, appends exactly one `tool` message for
+the original `tool_call_id`, and continues the same state-local message history.
+
+Nested agentic execution follows the same rule: history moves down into child
+frames, and compact tool outputs move back up. A parent state may call
+`update_memory_graph`; the backend starts a child graph-update frame; the child
+may call deterministic graph tools or request clarification; when the child
+completes, the parent receives one compact tool output summarizing created or
+updated refs, affected targets, vector refreshes, diagnostics, and any remaining
+need for user input. The parent does not receive the child's full internal trace
+as ordinary model-facing history.
+
 `NodeUpdatePlanDraft` remains useful as a planning, trace, or compact batch
 artifact, but it is not the only inner execution mechanism. The inner update
 loop can call deterministic tools directly for specific actions such as
@@ -882,9 +900,16 @@ ProfileMemory hit
 ### Wave 5: Agentic Update Tooling
 
 - Add a graph update agentic state for node and memory updates.
+- Add `AgenticFrame` persistence for interrupted top-level and nested agentic
+  states, including `frame_id`, `state_id`, parent frame/tool-call refs, status,
+  messages, compact context, trace, expiry, and active clarification packet.
 - Use `update_memory_graph` as the canonical production tool name.
 - Remove the legacy correction-specific production route/tooling from active
   agentic state configuration.
+- Remove `pending_process_review` from active agentic state configuration,
+  model-visible routing, prompts, and toolboxes. Existing legacy pending records
+  may remain as compatibility storage only; they are not the clarification
+  continuation mechanism.
 - Expose the graph update state through a callable tool so other agents and
   processes can invoke it non-deterministically when their LLM chooses the tool.
 - Allow deterministic planner actions to invoke the same update state when a
@@ -906,6 +931,10 @@ ProfileMemory hit
   consistently.
 - Return structured validation/execution errors to the update state so it can
   recover with another tool call when the failure is manageable.
+- Treat `request_user_clarification` as an interrupting tool. The UI receives a
+  `ClarificationPacket` with `frame_id`, `tool_call_id`, `tool_name`, questions,
+  options, and history delta. Submitted answers target the frame and original
+  tool call, then resume by appending the matching provider `tool` message.
 - Keep validation structurally strict: block missing required fields, invalid
   formats or types, unsupported graph shapes, and consistency violations, but do
   not attempt semantic truth judgment over user-provided content.
@@ -918,6 +947,8 @@ ProfileMemory hit
   lifecycle tooling to a future TODO/policy wave.
 - Update reasoning/planning/extraction prompts with domain-node versus
   `MemoryLog` definitions, rules, and few-shot examples.
+- Lock the mantra in docs and prompts: pass history down into nested frames,
+  return compact tool results up to invoking frames.
 - Return compact tool output to the invoking conversation state.
 
 ### Deferred Wave: Node Summary Refresh

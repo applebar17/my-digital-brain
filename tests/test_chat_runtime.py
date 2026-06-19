@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from my_digital_brain.api.routes import chat as chat_routes
 from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
+from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
 from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import (
@@ -20,6 +23,7 @@ from my_digital_brain.chat.facade import (
     ChatToolResult,
 )
 from my_digital_brain.chat.models import (
+    AgenticFrame,
     ChatResponse,
     ClarificationPacket,
     ConversationMessage,
@@ -39,7 +43,7 @@ class RecordingFacade:
     def start_memory_ingestion(self, request: ChatToolRequest) -> ChatToolResult:
         self.calls.append(("start_memory_ingestion", request))
         if request.text == "needs clarification":
-            packet = _clarification_packet(process_id="process-1")
+            packet = _clarification_packet(frame_id="facade-frame")
             return ChatToolResult(
                 status=ChatResponseStatus.NEEDS_USER_INPUT,
                 primary_text="Which Marco do you mean?",
@@ -122,11 +126,54 @@ class ScriptedToolProvider:
         self.calls.append({"request": request, "tool_names": sorted(toolbox.tools_by_name)})
         tool_name = step.get("tool")
         if isinstance(tool_name, str):
-            tools_mapping[tool_name](**step.get("arguments", {}))
+            tool_call_id = f"call-{len(self.calls)}"
+            assistant_message = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": _json_arguments(step.get("arguments", {})),
+                        },
+                    }
+                ],
+            }
+            tool_fn = tools_mapping[tool_name]
+            context = getattr(tool_fn, "_agentic_execution_context", None)
+            previous_tool_call_id = getattr(context, "current_tool_call_id", None)
+            previous_tool_name = getattr(context, "current_tool_name", None)
+            if context is not None:
+                context.current_tool_call_id = tool_call_id
+                context.current_tool_name = tool_name
+            try:
+                tool_result = tool_fn(**step.get("arguments", {}))
+            finally:
+                if context is not None:
+                    context.current_tool_call_id = previous_tool_call_id
+                    context.current_tool_name = previous_tool_name
+            if getattr(tool_result, "status", None) == "needs_user_input":
+                raise ToolCallInterruption(
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    result=tool_result,
+                    messages=[
+                        *[
+                            message.model_dump(mode="json", exclude_none=True)
+                            for message in request.messages
+                        ],
+                        assistant_message,
+                    ],
+                )
         return ChatResult(
             content=str(step.get("content") or ""),
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
+
+
+def _json_arguments(arguments: object) -> str:
+    return json.dumps(arguments if isinstance(arguments, dict) else {}, sort_keys=True)
 
 
 def test_chat_response_uses_primary_text_with_structured_sidecars() -> None:
@@ -392,7 +439,7 @@ def test_agentic_runtime_mode_keeps_pending_context_in_conversation_entry() -> N
     ]
 
 
-def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> None:
+def test_agentic_ingestion_clarification_is_rendered_and_stored_as_frame() -> None:
     provider = ScriptedToolProvider(
         [
             {
@@ -415,43 +462,32 @@ def test_agentic_ingestion_clarification_is_rendered_and_stored_as_pending() -> 
 
     assert response.status == ChatResponseStatus.NEEDS_USER_INPUT
     assert response.primary_text == "Which Marco do you mean?"
-    assert response.pending_process is not None
+    assert response.pending_process is None
     assert response.clarification_packet is not None
+    assert response.clarification_packet.frame_id
+    assert response.clarification_packet.tool_call_id == "call-1"
     assert response.clarification_packet.history_delta[0].role == "assistant"
     assert "Which Marco do you mean?" in response.clarification_packet.history_delta[0].content
-    assert detail.pending_process.process_ref.process_id == response.pending_process.process_id
+    assert detail.active_agentic_frame is not None
+    assert detail.active_agentic_frame.frame_id == response.clarification_packet.frame_id
+    assert detail.active_agentic_frame.active_tool_call_id == "call-1"
+    assert detail.pending_process is None
     assert detail.messages[-1].role == "assistant"
-    assert detail.messages[-1].pending_process_id == response.pending_process.process_id
+    assert detail.messages[-1].pending_process_id is None
     assert "Clarification needed:" in (detail.messages[-1].text or "")
     assert "history_delta" in detail.messages[-1].metadata
     assert "compact_trace" not in response.metadata
 
 
-def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -> None:
-    provider = ScriptedToolProvider([])
+def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
+    provider = ScriptedToolProvider([{"content": "Resumed."}])
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
         channel=ChatChannel.WEB,
         external_conversation_id="conversation-1",
         owner_id="owner-1",
     )
-    packet = _clarification_packet(process_id="process-1")
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question=packet.questions[0].question,
-                metadata={"clarification_packet": packet.model_dump(mode="json")},
-            ),
-            context={
-                "summary": "Need Marco disambiguation.",
-                "source_text": "Yesterday I met Marco in Milan.",
-                "clarification_packet": packet.model_dump(mode="json"),
-            },
-        ),
-    )
+    packet = _save_interrupted_frame(store, session.session_id, state_id="memory_query")
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
@@ -462,14 +498,15 @@ def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -
     option_id = packet.questions[0].options[0].option_id
 
     response = client.post(
-        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        f"/chat/sessions/{session.session_id}/clarifications/{packet.frame_id}/answers",
         json={
             "owner_id": "owner-1",
             "sender_id": "sender-1",
             "message_id": "clarification-message-1",
             "answer_packet": {
                 "packet_id": packet.packet_id,
-                "process_id": packet.process_id,
+                "frame_id": packet.frame_id,
+                "tool_call_id": packet.tool_call_id,
                 "answers": [
                     {
                         "question_id": packet.questions[0].question_id,
@@ -484,13 +521,12 @@ def test_clarification_answer_endpoint_validates_and_resumes_pending_process() -
 
     assert response.status_code == 200
     assert response.json()["primary_text"] == "Resumed."
-    assert provider.calls == []
+    assert provider.calls[0]["request"].messages[-1].role == "tool"
+    assert provider.calls[0]["request"].messages[-1].tool_call_id == packet.tool_call_id
     messages = runtime.get_session_detail(session.session_id).messages
     assert messages[-2].role == "user"
     assert "Clarification answers:" in messages[-2].text
-    assert store.get_pending_process_context("process-1").process_ref.status == (
-        PendingProcessStatus.COMPLETED
-    )
+    assert store.get_agentic_frame(packet.frame_id).status == "completed"
 
 
 def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> None:
@@ -501,26 +537,12 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
         external_conversation_id="conversation-1",
         owner_id="owner-1",
     )
-    packet = _clarification_packet(process_id="process-1")
-    store.save_pending_process_context(
+    packet = _save_interrupted_frame(
+        store,
         session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_UPDATE,
-                question=packet.questions[0].question,
-                metadata={
-                    "clarification_packet": packet.model_dump(mode="json"),
-                    "guidelines": "Apply as correction.",
-                    "desired_work": "correct_or_update_memory_graph",
-                },
-            ),
-            context={
-                "source_text": "Marco was from work.",
-                "target_ids": ["node-marco"],
-                "clarification_packet": packet.model_dump(mode="json"),
-            },
-        ),
+        frame_id="graph-frame-1",
+        tool_call_id="graph-call-1",
+        state_id="graph_update",
     )
     runtime = ChatRuntime(
         store=store,
@@ -532,14 +554,15 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
     option_id = packet.questions[0].options[0].option_id
 
     response = client.post(
-        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        f"/chat/sessions/{session.session_id}/clarifications/{packet.frame_id}/answers",
         json={
             "owner_id": "owner-1",
             "sender_id": "sender-1",
             "message_id": "clarification-message-1",
             "answer_packet": {
                 "packet_id": packet.packet_id,
-                "process_id": packet.process_id,
+                "frame_id": packet.frame_id,
+                "tool_call_id": packet.tool_call_id,
                 "answers": [
                     {
                         "question_id": packet.questions[0].question_id,
@@ -554,7 +577,7 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
 
     assert response.status_code == 200
     assert response.json()["primary_text"] == "Graph update resumed."
-    assert response.json()["metadata"]["resumed_operation"] == "graph_update"
+    assert response.json()["metadata"]["resumed_frame_id"] == packet.frame_id
     assert provider.calls[0]["tool_names"] == [
         "create_graph_node",
         "create_memory_log",
@@ -569,9 +592,7 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
         "resolve_graph_update_targets",
         "upsert_graph_relationship",
     ]
-    assert store.get_pending_process_context("process-1").process_ref.status == (
-        PendingProcessStatus.COMPLETED
-    )
+    assert store.get_agentic_frame(packet.frame_id).status == "completed"
 
 
 def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
@@ -581,19 +602,7 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
         external_conversation_id="conversation-1",
         owner_id="owner-1",
     )
-    packet = _clarification_packet(process_id="process-1")
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question=packet.questions[0].question,
-                metadata={"clarification_packet": packet.model_dump(mode="json")},
-            ),
-            context={"clarification_packet": packet.model_dump(mode="json")},
-        ),
-    )
+    packet = _save_interrupted_frame(store, session.session_id, state_id="memory_query")
     runtime = ChatRuntime(
         store=store,
         tool_facade=RecordingFacade(),
@@ -603,13 +612,14 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
     client = _client(runtime)
 
     response = client.post(
-        f"/chat/sessions/{session.session_id}/clarifications/process-1/answers",
+        f"/chat/sessions/{session.session_id}/clarifications/{packet.frame_id}/answers",
         json={
             "owner_id": "owner-1",
             "message_id": "clarification-message-1",
             "answer_packet": {
                 "packet_id": packet.packet_id,
-                "process_id": packet.process_id,
+                "frame_id": packet.frame_id,
+                "tool_call_id": packet.tool_call_id,
                 "answers": [
                     {
                         "question_id": packet.questions[0].question_id,
@@ -686,7 +696,10 @@ def test_chat_api_get_session_and_cancel() -> None:
     )
 
     assert session.status_code == 200
-    assert session.json()["pending_process"]["process_ref"]["process_id"] == "process-1"
+    assert session.json()["pending_process"] is None
+    active_frame = session.json()["active_agentic_frame"]
+    assert active_frame["status"] == "interrupted"
+    assert active_frame["active_tool_call_id"] == "call-1"
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == ChatResponseStatus.CANCELLED.value
 
@@ -769,10 +782,70 @@ def _message_payload(text: str, session_id: str | None = None) -> dict[str, obje
     return payload
 
 
-def _clarification_packet(process_id: str) -> ClarificationPacket:
+def _save_interrupted_frame(
+    store: InMemoryChatSessionStore,
+    session_id: str,
+    *,
+    frame_id: str = "frame-1",
+    tool_call_id: str = "call-1",
+    state_id: str = "memory_query",
+) -> ClarificationPacket:
+    packet = _clarification_packet(
+        frame_id=frame_id,
+        tool_call_id=tool_call_id,
+        state_id=state_id,
+    )
+    store.save_agentic_frame(
+        session_id,
+        AgenticFrame(
+            frame_id=frame_id,
+            session_id=session_id,
+            state_id=state_id,
+            status="interrupted",
+            messages=[
+                {"role": "system", "content": "Test system prompt."},
+                {"role": "user", "content": "Yesterday I met Marco in Milan."},
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "request_user_clarification",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+            ],
+            context_payload={
+                "conversation": {
+                    "current_message": {
+                        "role": "user",
+                        "content": "Yesterday I met Marco in Milan.",
+                    }
+                }
+            },
+            active_tool_call_id=tool_call_id,
+            active_tool_name="request_user_clarification",
+            clarification_packet=packet,
+        ),
+    )
+    return packet
+
+
+def _clarification_packet(
+    frame_id: str,
+    *,
+    tool_call_id: str | None = "call-1",
+    state_id: str = "memory_ingestion",
+) -> ClarificationPacket:
     return build_clarification_packet(
-        process_id=process_id,
-        origin_state_id="memory_ingestion",
+        frame_id=frame_id,
+        tool_call_id=tool_call_id,
+        tool_name="request_user_clarification" if tool_call_id else None,
+        origin_state_id=state_id,
         reason="Multiple Marco candidates exist.",
         compact_summary="Need to know which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],

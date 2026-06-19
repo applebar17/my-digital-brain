@@ -63,6 +63,14 @@ class AgenticToolExecutionContext:
     conversation_history_refs: list[str] = field(default_factory=list)
     tool_events: list[AgenticToolEvent] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    frame_id: str | None = None
+    parent_frame_id: str | None = None
+    parent_tool_call_id: str | None = None
+    current_tool_call_id: str | None = None
+    current_tool_name: str | None = None
+    agentic_runtime: Any | None = None
+    conversation_context: Any | None = None
+    current_payload: Any | None = None
 
 
 class AgenticToolBindings:
@@ -82,18 +90,6 @@ class AgenticToolBindings:
         pending_process_policy: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
-        if self._is_handoff_state():
-            return _handoff_result(
-                "start_memory_ingestion",
-                "memory_ingestion_precheck",
-                {
-                    "source_text": source_text,
-                    "source_refs": source_refs or [],
-                    "pending_process_policy": pending_process_policy,
-                    "metadata": metadata or {},
-                },
-                output="Memory ingestion handoff requested.",
-            )
         request = self._chat_request(
             source_text,
             metadata={
@@ -157,17 +153,92 @@ class AgenticToolBindings:
             "pending_process_policy": pending_process_policy,
             "metadata": metadata or {},
         }
-        if self._is_handoff_state():
-            return _handoff_result(
-                "update_memory_graph",
-                "graph_update",
-                arguments,
-                output="Graph update handoff requested.",
-            )
+        if self.context.state_id == AgenticStateId.CONVERSATION_ENTRY.value:
+            nested = self._run_nested_graph_update(arguments)
+            if nested is not None:
+                return nested
         request = self._chat_request(source_text, metadata=arguments)
         if isinstance(request, ToolResult):
             return request
         return self._facade_call("update_memory_graph", request)
+
+    def _run_nested_graph_update(self, arguments: dict[str, Any]) -> ToolResult | None:
+        runtime = self.context.agentic_runtime
+        conversation = self.context.conversation_context
+        if runtime is None or conversation is None:
+            return None
+        from my_digital_brain.agentic.contexts import GraphUpdateContext
+
+        child_context = GraphUpdateContext(
+            source_text=arguments["source_text"],
+            conversation=runtime.state_runner.history_service.child_conversation_context(
+                conversation,
+            ),
+            guidelines=arguments["guidelines"],
+            desired_work=arguments.get("desired_work"),
+            target_ids=[str(value) for value in arguments.get("target_ids") or []],
+            source_refs=list(arguments.get("source_refs") or []),
+            metadata=dict(arguments.get("metadata") or {}),
+        )
+        child_execution = self._child_execution_context()
+        result = runtime.run(
+            conversation,
+            child_execution,
+            start_state=AgenticStateId.GRAPH_UPDATE,
+            start_payload=child_context,
+        )
+        if result.status == "needs_user_input":
+            packet = (result.interruption or {}).get("clarification_packet")
+            return ToolResult(
+                status="needs_user_input",
+                output=result.final_text or "Clarification needed.",
+                data={
+                    "operation": "update_memory_graph",
+                    "child_frame_id": (result.interruption or {}).get("frame_id"),
+                    "clarification_packet": packet,
+                    "interruption": result.interruption,
+                    "compact_trace": result.compact_trace,
+                },
+            )
+        summary = result.final_text or "Graph update completed."
+        return ToolResult(
+            status="ok" if result.status == "ok" else result.status,
+            output=summary,
+            data={
+                "operation": "update_memory_graph",
+                "summary": summary,
+                "visited_states": [str(state) for state in result.visited_states],
+                "state_results": [
+                    state_result.model_dump(mode="json", exclude_none=True)
+                    for state_result in result.state_results
+                ],
+                "compact_trace": result.compact_trace,
+            },
+        )
+
+    def _child_execution_context(self) -> AgenticToolExecutionContext:
+        return AgenticToolExecutionContext(
+            backend_facade=self.context.backend_facade,
+            graph_service=self.context.graph_service,
+            ingestion_service=self.context.ingestion_service,
+            semantic_search_service=self.context.semantic_search_service,
+            vectorization_service=self.context.vectorization_service,
+            chat_store=self.context.chat_store,
+            session_id=self.context.session_id,
+            channel=self.context.channel,
+            conversation_id=self.context.conversation_id,
+            owner_id=self.context.owner_id,
+            sender_id=self.context.sender_id,
+            message_id=self.context.message_id,
+            current_text=self.context.current_text,
+            conversation_history_refs=list(self.context.conversation_history_refs),
+            metadata=dict(self.context.metadata),
+            frame_id=new_uuid(),
+            parent_frame_id=self.context.frame_id,
+            parent_tool_call_id=self.context.current_tool_call_id,
+            agentic_runtime=self.context.agentic_runtime,
+            conversation_context=self.context.conversation_context,
+        )
 
     def _handle_get_conversation_status(
         self,
@@ -177,200 +248,6 @@ class AgenticToolBindings:
         if isinstance(request, ToolResult):
             return request
         return self._facade_call("get_conversation_status", request)
-
-    def _handle_cancel_pending_process(
-        self,
-        pending_process_id: str | None = None,
-        reason: str | None = None,
-    ) -> ToolResult:
-        selection = self._select_pending_process(
-            "cancel_pending_process",
-            pending_process_id,
-        )
-        if isinstance(selection, ToolResult):
-            return selection
-        if not self.context.session_id or not self.context.owner_id:
-            return _missing_runtime_context(
-                "cancel_pending_process",
-                ["session_id", "owner_id"],
-            )
-        from my_digital_brain.chat.facade import CancelPendingProcessRequest
-        from my_digital_brain.chat.enums import PendingProcessStatus
-
-        process_id, pending_context = selection
-        request = CancelPendingProcessRequest(
-            session_id=self.context.session_id,
-            owner_id=self.context.owner_id,
-            pending_process_id=process_id,
-            reason=reason,
-            metadata={"discard_resumable_checkpoint": True},
-        )
-        if self.context.chat_store is not None:
-            try:
-                self.context.chat_store.update_pending_process_status(
-                    self.context.session_id,
-                    process_id,
-                    PendingProcessStatus.CANCELLED,
-                    metadata={
-                        "cancel_reason": reason,
-                        "resumable": False,
-                    },
-                    context_updates={"resumable": False},
-                )
-            except Exception as exc:
-                return _exception_result("cancel_pending_process", exc)
-        if self.context.backend_facade is not None:
-            result = self._facade_call("cancel_pending_process", request)
-            result.data = {
-                **(result.data or {}),
-                "operation": "cancel_pending_process",
-                "pending_process_id": process_id,
-                "pending_process_summary": _compact_pending_context(pending_context),
-                "clear_pending_process": True,
-            }
-            return result
-        return ToolResult(
-            status="ok",
-            output="Pending process cancelled.",
-            data={
-                "operation": "cancel_pending_process",
-                "pending_process_id": process_id,
-                "pending_process_summary": _compact_pending_context(pending_context),
-                "clear_pending_process": True,
-            },
-        )
-
-    def _handle_resume_pending_process(
-        self,
-        pending_process_id: str | None = None,
-    ) -> ToolResult:
-        selection = self._select_pending_process(
-            "resume_pending_process",
-            pending_process_id,
-        )
-        if isinstance(selection, ToolResult):
-            return selection
-        process_id, pending_context = selection
-        request = self._chat_request(
-            self.context.current_text or "",
-            metadata={
-                "pending_process_id": process_id,
-                "resume_policy": "refresh_context_before_write",
-            },
-            pending_process_context=pending_context,
-        )
-        if isinstance(request, ToolResult):
-            return request
-        facade = self.context.backend_facade
-        if facade is None:
-            return _missing_dependency("resume_pending_process", "backend_facade")
-        if not hasattr(facade, "resume_pending_process"):
-            return _tool_error(
-                "resume_pending_process",
-                "unsupported_backend_facade",
-                "The configured backend facade cannot resume pending processes.",
-                "Configure a facade with resume_pending_process or ask the user to restart the memory.",
-                retryable=False,
-            )
-        result = self._facade_call("resume_pending_process", request)
-        result_payload = result.data.get("result") if result.data else None
-        result_metadata = (
-            result_payload.get("metadata")
-            if isinstance(result_payload, dict)
-            and isinstance(result_payload.get("metadata"), dict)
-            else {}
-        )
-        if (
-            self.context.chat_store is not None
-            and result.status == "ok"
-            and result_metadata.get("clear_pending_process")
-        ):
-            from my_digital_brain.chat.enums import PendingProcessStatus
-
-            try:
-                self.context.chat_store.update_pending_process_status(
-                    request.session_id,
-                    process_id,
-                    PendingProcessStatus.COMPLETED,
-                    metadata={
-                        "completed_by": "resume_pending_process",
-                        "resume_policy": "refresh_context_before_write",
-                    },
-                    context_updates={"resumable": False},
-                )
-            except Exception as exc:
-                return _exception_result("resume_pending_process", exc)
-        result.data = {
-            **(result.data or {}),
-            "operation": "resume_pending_process",
-            "pending_process_id": process_id,
-            "pending_process_summary": _compact_pending_context(pending_context),
-            "resume_policy": "refresh_context_before_write",
-        }
-        return result
-
-    def _handle_pause_pending_process(
-        self,
-        pending_process_id: str | None = None,
-        reason: str | None = None,
-    ) -> ToolResult:
-        selection = self._select_pending_process(
-            "pause_pending_process",
-            pending_process_id,
-        )
-        if isinstance(selection, ToolResult):
-            return selection
-        process_id, pending_context = selection
-        if not self.context.session_id:
-            return _missing_runtime_context("pause_pending_process", ["session_id"])
-        if self.context.chat_store is not None:
-            from my_digital_brain.chat.enums import PendingProcessStatus
-
-            try:
-                pending_context = self.context.chat_store.update_pending_process_status(
-                    self.context.session_id,
-                    process_id,
-                    PendingProcessStatus.PAUSED,
-                    metadata={
-                        "pause_reason": reason,
-                        "resumable": True,
-                    },
-                    context_updates={"resumable": True},
-                )
-            except Exception as exc:
-                return _exception_result("pause_pending_process", exc)
-        if self.context.backend_facade is not None and hasattr(
-            self.context.backend_facade,
-            "pause_pending_process",
-        ):
-            from my_digital_brain.chat.facade import CancelPendingProcessRequest
-
-            request = CancelPendingProcessRequest(
-                session_id=self.context.session_id,
-                owner_id=self.context.owner_id or "owner",
-                pending_process_id=process_id,
-                reason=reason,
-            )
-            result = self._facade_call("pause_pending_process", request)
-            result.data = {
-                **(result.data or {}),
-                "operation": "pause_pending_process",
-                "pending_process_id": process_id,
-                "pending_process_summary": _compact_pending_context(pending_context),
-                "clear_pending_process": True,
-            }
-            return result
-        return ToolResult(
-            status="ok",
-            output="Pending process paused.",
-            data={
-                "operation": "pause_pending_process",
-                "pending_process_id": process_id,
-                "reason": reason,
-                "pending_process_summary": _compact_pending_context(pending_context),
-                "clear_pending_process": True,
-            },
-        )
 
     def _handle_request_user_clarification(
         self,
@@ -382,10 +259,11 @@ class AgenticToolBindings:
         from my_digital_brain.chat.clarification import build_clarification_packet
 
         state_id = self.context.state_id or "unknown"
-        process_id = self._pending_process_id() or new_uuid()
+        frame_id = self.context.frame_id or new_uuid()
+        self.context.frame_id = frame_id
         try:
             packet = build_clarification_packet(
-                process_id=process_id,
+                frame_id=frame_id,
                 origin_state_id=state_id,
                 reason=reason,
                 questions=questions,
@@ -406,28 +284,12 @@ class AgenticToolBindings:
             )
 
         question = packet.questions[0].question
-        pending_process = {
-            "process_id": process_id,
-            "kind": _clarification_process_kind(state_id, self.context.pending_process_context),
-            "status": "pending",
-            "question": question,
-            "metadata": {
-                "source": "request_user_clarification",
-                "state_id": state_id,
-                "reason": reason,
-                "summary": compact_summary or reason,
-                "unresolved_targets": packet.target_refs,
-                "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
-                "resume_strategy": _clarification_resume_strategy(state_id),
-                "checkpoint_schema_version": "clarification_v1",
-            },
-        }
         return ToolResult(
             status="needs_user_input",
             output=question,
             data={
                 "operation": "request_user_clarification",
-                "pending_process": pending_process,
+                "frame_id": frame_id,
                 "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
                 "history_delta": [
                     message.model_dump(mode="json", exclude_none=True)
@@ -1030,7 +892,29 @@ class AgenticToolBindings:
             result = method(request)
         except Exception as exc:
             return _exception_result(name, exc)
-        return _chat_result_to_tool_result(name, result)
+        tool_result = _chat_result_to_tool_result(name, result)
+        if tool_result.status == "needs_user_input":
+            self._normalize_clarification_tool_result(tool_result)
+        return tool_result
+
+    def _normalize_clarification_tool_result(self, result: ToolResult) -> None:
+        if not isinstance(result.data, dict):
+            return
+        packet = result.data.get("clarification_packet")
+        if not isinstance(packet, dict):
+            payload = result.data.get("result")
+            if isinstance(payload, dict):
+                packet = payload.get("clarification_packet")
+        if not isinstance(packet, dict):
+            return
+        frame_id = self.context.frame_id or new_uuid()
+        self.context.frame_id = frame_id
+        packet["frame_id"] = frame_id
+        result.data["frame_id"] = frame_id
+        result.data["clarification_packet"] = packet
+        payload = result.data.get("result")
+        if isinstance(payload, dict):
+            payload["clarification_packet"] = packet
 
     def _graph_call(self, name: str, callback) -> ToolResult:
         graph = self.context.graph_service
@@ -1084,93 +968,23 @@ class AgenticToolBindings:
             },
         )
 
-    def _pending_process_id(self) -> str | None:
-        pending = self.context.pending_process_context
-        if pending is None:
-            return None
-        process_ref = getattr(pending, "process_ref", None)
-        if process_ref is not None:
-            return getattr(process_ref, "process_id", None)
-        return getattr(pending, "process_id", None)
-
-    def _select_pending_process(
-        self,
-        tool_name: str,
-        pending_process_id: str | None = None,
-    ) -> tuple[str, Any] | ToolResult:
-        candidates = self._pending_candidates()
-        if pending_process_id:
-            for candidate in candidates:
-                process_id = _pending_context_id(candidate)
-                if process_id == pending_process_id:
-                    return process_id, candidate
-            if self.context.chat_store is not None:
-                try:
-                    loaded = self.context.chat_store.get_pending_process_context(
-                        pending_process_id,
-                    )
-                    return pending_process_id, loaded
-                except Exception:
-                    pass
-            return _tool_error(
-                tool_name,
-                "unknown_pending_process",
-                f"Pending process '{pending_process_id}' is not available in this context.",
-                "Select one of the visible pending process ids or ask the user which process to use.",
-                retryable=True,
-                details={"available_process_ids": [_pending_context_id(item) for item in candidates]},
-            )
-        active_id = self._pending_process_id()
-        if active_id:
-            for candidate in candidates:
-                if _pending_context_id(candidate) == active_id:
-                    return active_id, candidate
-        if len(candidates) == 1:
-            process_id = _pending_context_id(candidates[0])
-            if process_id:
-                return process_id, candidates[0]
-        if not candidates:
-            return _tool_error(
-                tool_name,
-                "missing_pending_process",
-                "No pending process is available for this action.",
-                "Answer normally, start a new memory, or ask the user what they want to do.",
-                retryable=False,
-            )
-        return _tool_error(
-            tool_name,
-            "ambiguous_pending_process",
-            "Multiple pending processes are available and no process id was selected.",
-            "Call the tool again with one of the visible pending_process_id values.",
-            retryable=True,
-            details={"available_process_ids": [_pending_context_id(item) for item in candidates]},
-        )
-
-    def _pending_candidates(self) -> list[Any]:
-        candidates: list[Any] = []
-        if self.context.pending_process_context is not None:
-            candidates.append(self.context.pending_process_context)
-        for pending in self.context.pending_process_contexts:
-            process_id = _pending_context_id(pending)
-            if process_id and all(_pending_context_id(item) != process_id for item in candidates):
-                candidates.append(pending)
-        return candidates
-
     def _is_handoff_state(self) -> bool:
-        return self.context.state_id in {
-            AgenticStateId.CONVERSATION_ENTRY.value,
-            AgenticStateId.PENDING_PROCESS_REVIEW.value,
-        }
+        return self.context.state_id == AgenticStateId.CONVERSATION_ENTRY.value
 
 
 def _chat_result_to_tool_result(tool_name: str, result: Any) -> ToolResult:
     payload = _serialize(result)
     status = str(payload.get("status", "ok"))
     is_error = status == "failed"
+    is_needs_user_input = status == "needs_user_input"
+    packet = payload.get("clarification_packet")
+    data = {"operation": tool_name, "result": payload}
+    if is_needs_user_input and isinstance(packet, dict):
+        data["clarification_packet"] = packet
     return ToolResult(
-        status="error" if is_error else "ok",
+        status="needs_user_input" if is_needs_user_input else "error" if is_error else "ok",
         output=payload.get("primary_text") or f"{tool_name} completed.",
-        data={"operation": tool_name, "result": payload},
+        data=data,
         error=(
             ToolError(
                 message=payload.get("primary_text") or f"{tool_name} failed.",
@@ -1311,66 +1125,6 @@ def _dedupe_strings(values: list[str]) -> list[str]:
             seen.add(text)
             result.append(text)
     return result
-
-
-def _pending_context_id(pending_context: Any) -> str | None:
-    process_ref = getattr(pending_context, "process_ref", None)
-    if process_ref is not None:
-        process_id = getattr(process_ref, "process_id", None)
-        return str(process_id) if process_id else None
-    process_id = getattr(pending_context, "process_id", None)
-    return str(process_id) if process_id else None
-
-
-def _compact_pending_context(pending_context: Any) -> dict[str, Any]:
-    process_ref = getattr(pending_context, "process_ref", None)
-    context = getattr(pending_context, "context", {}) or {}
-    if process_ref is not None:
-        metadata = getattr(process_ref, "metadata", {}) or {}
-        return {
-            "process_id": getattr(process_ref, "process_id", None),
-            "kind": getattr(process_ref, "kind", None),
-            "status": getattr(process_ref, "status", None),
-            "question": getattr(process_ref, "question", None),
-            "compact_summary": context.get("summary"),
-            "unresolved_targets": metadata.get("unresolved_targets", []),
-        }
-    metadata = getattr(pending_context, "metadata", {}) or {}
-    return {
-        "process_id": getattr(pending_context, "process_id", None),
-        "kind": getattr(pending_context, "kind", None),
-        "status": getattr(pending_context, "status", None),
-        "question": getattr(pending_context, "question", None),
-        "compact_summary": getattr(pending_context, "compact_summary", None),
-        "unresolved_targets": getattr(pending_context, "unresolved_targets", [])
-        or metadata.get("unresolved_targets", []),
-    }
-
-
-def _clarification_process_kind(state_id: str, pending_context: Any | None) -> str:
-    from my_digital_brain.chat.enums import PendingProcessKind
-
-    process_ref = getattr(pending_context, "process_ref", None)
-    if process_ref is not None:
-        kind = getattr(process_ref, "kind", None)
-        if kind:
-            return str(getattr(kind, "value", kind))
-    if state_id == AgenticStateId.MEMORY_QUERY.value:
-        return PendingProcessKind.MEMORY_QUERY.value
-    if state_id == AgenticStateId.GRAPH_UPDATE.value:
-        return PendingProcessKind.MEMORY_UPDATE.value
-    return PendingProcessKind.MEMORY_INGESTION.value
-
-
-def _clarification_resume_strategy(state_id: str) -> str:
-    return {
-        AgenticStateId.PLANNING_CHECKPOINT.value: "planning_checkpoint",
-        AgenticStateId.CONTRADICTION_REVIEW.value: "contradiction_review",
-        AgenticStateId.MEMORY_QUERY.value: "memory_query",
-        AgenticStateId.GRAPH_UPDATE.value: "graph_update",
-        AgenticStateId.PENDING_PROCESS_REVIEW.value: "pending_process_review",
-        AgenticStateId.REASONING_CHECKPOINT.value: "reasoning_checkpoint",
-    }.get(state_id, "pending_process_review")
 
 
 def _handoff_result(

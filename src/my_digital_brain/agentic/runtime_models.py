@@ -38,6 +38,7 @@ class AgenticRunResult(AgenticModel):
     state_results: list[AgenticStateRunResult] = Field(default_factory=list)
     status: str = "ok"
     pending_process_hints: list[dict[str, Any]] = Field(default_factory=list)
+    interruption: dict[str, Any] | None = None
     compact_trace: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

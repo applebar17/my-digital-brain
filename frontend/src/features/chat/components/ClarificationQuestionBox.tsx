@@ -20,7 +20,7 @@ export function ClarificationQuestionBox({
   const [freeText, setFreeText] = useState<Record<string, string>>({});
 
   const canSubmit = useMemo(() => {
-    if (!packet || !onSubmit) {
+    if (!packet || !onSubmit || !packet.tool_call_id) {
       return false;
     }
     return packet.questions.every((question) => {
@@ -57,7 +57,8 @@ export function ClarificationQuestionBox({
     }
     onSubmit({
       packet_id: packet.packet_id,
-      process_id: packet.process_id,
+      frame_id: packet.frame_id,
+      tool_call_id: packet.tool_call_id ?? "",
       answers: packet.questions.map((question) => ({
         question_id: question.question_id,
         selected_option_ids: selected[question.question_id] ?? [],

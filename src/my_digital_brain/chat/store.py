@@ -13,6 +13,7 @@ from my_digital_brain.chat.enums import (
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
+    AgenticFrame,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
@@ -100,6 +101,31 @@ class ChatSessionStore(Protocol):
 
     def expire_pending_processes(self, now: datetime | None = None) -> list[str]: ...
 
+    def save_agentic_frame(self, session_id: str, frame: AgenticFrame) -> AgenticFrame: ...
+
+    def get_agentic_frame(self, frame_id: str) -> AgenticFrame: ...
+
+    def get_active_agentic_frame(self, session_id: str) -> AgenticFrame | None: ...
+
+    def list_agentic_frames(
+        self,
+        session_id: str,
+        *,
+        statuses: set[str] | None = None,
+        limit: int = 5,
+    ) -> list[AgenticFrame]: ...
+
+    def update_agentic_frame_status(
+        self,
+        session_id: str,
+        frame_id: str,
+        status: str,
+        *,
+        metadata: dict | None = None,
+        messages: list[dict] | None = None,
+        clarification_packet: dict | None = None,
+    ) -> AgenticFrame: ...
+
 
 class InMemoryChatSessionStore:
     """Local development store for chat runtime behavior."""
@@ -111,6 +137,8 @@ class InMemoryChatSessionStore:
         self._messages: dict[str, list[ConversationMessage]] = defaultdict(list)
         self._pending_contexts: dict[str, PendingProcessContext] = {}
         self._pending_session_ids: dict[str, set[str]] = defaultdict(set)
+        self._agentic_frames: dict[str, AgenticFrame] = {}
+        self._agentic_frame_session_ids: dict[str, set[str]] = defaultdict(set)
 
     def create_session(
         self,
@@ -292,6 +320,7 @@ class InMemoryChatSessionStore:
             messages=messages,
             pending_process=pending,
             pending_processes=pending_processes,
+            active_agentic_frame=self.get_active_agentic_frame(session_id),
         )
 
     def save_pending_process_context(
@@ -454,6 +483,99 @@ class InMemoryChatSessionStore:
 
         return expired_ids
 
+    def save_agentic_frame(self, session_id: str, frame: AgenticFrame) -> AgenticFrame:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            updated = frame.model_copy(
+                update={"session_id": session_id, "updated_at": utc_now()},
+                deep=True,
+            )
+            self._agentic_frames[updated.frame_id] = updated
+            self._agentic_frame_session_ids[session_id].add(updated.frame_id)
+            self._sync_session_active_frame(session_id)
+            return updated.model_copy(deep=True)
+
+    def get_agentic_frame(self, frame_id: str) -> AgenticFrame:
+        with self._lock:
+            try:
+                return self._agentic_frames[frame_id].model_copy(deep=True)
+            except KeyError as exc:
+                raise ChatNotFoundError(f"Agentic frame not found: {frame_id}") from exc
+
+    def get_active_agentic_frame(self, session_id: str) -> AgenticFrame | None:
+        frames = self.list_agentic_frames(session_id, statuses={"interrupted"}, limit=1)
+        return frames[0] if frames else None
+
+    def list_agentic_frames(
+        self,
+        session_id: str,
+        *,
+        statuses: set[str] | None = None,
+        limit: int = 5,
+    ) -> list[AgenticFrame]:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            normalized_statuses = {str(status) for status in statuses} if statuses else None
+            frames: list[AgenticFrame] = []
+            for frame_id in self._agentic_frame_session_ids.get(session_id, set()):
+                frame = self._agentic_frames.get(frame_id)
+                if frame is None:
+                    continue
+                if normalized_statuses is not None and frame.status not in normalized_statuses:
+                    continue
+                frames.append(frame.model_copy(deep=True))
+            frames.sort(key=lambda item: item.updated_at, reverse=True)
+            return frames[: max(0, limit)]
+
+    def update_agentic_frame_status(
+        self,
+        session_id: str,
+        frame_id: str,
+        status: str,
+        *,
+        metadata: dict | None = None,
+        messages: list[dict] | None = None,
+        clarification_packet: dict | None = None,
+    ) -> AgenticFrame:
+        with self._lock:
+            if session_id not in self._sessions:
+                raise ChatNotFoundError(f"Chat session not found: {session_id}")
+            frame = self.get_agentic_frame(frame_id)
+            if frame.session_id != session_id:
+                raise ChatNotFoundError(f"Agentic frame not found: {frame_id}")
+            update: dict[str, object] = {
+                "status": status,
+                "updated_at": utc_now(),
+                "metadata": {**frame.metadata, **(metadata or {})},
+            }
+            if messages is not None:
+                update["messages"] = messages
+            if clarification_packet is not None:
+                update["clarification_packet"] = clarification_packet
+            updated = frame.model_copy(update=update, deep=True)
+            self._agentic_frames[frame_id] = updated
+            self._sync_session_active_frame(session_id)
+            return updated.model_copy(deep=True)
+
+    def _sync_session_active_frame(self, session_id: str) -> None:
+        active = [
+            frame
+            for frame_id in self._agentic_frame_session_ids.get(session_id, set())
+            if (frame := self._agentic_frames.get(frame_id)) is not None
+            and frame.status == "interrupted"
+        ]
+        active.sort(key=lambda item: item.updated_at, reverse=True)
+        session = self._sessions[session_id]
+        self._sessions[session_id] = session.model_copy(
+            update={
+                "active_agentic_frame_id": active[0].frame_id if active else None,
+                "updated_at": utc_now(),
+            },
+            deep=True,
+        )
+
     @staticmethod
     def _copy_session(session: ConversationSession) -> ConversationSession:
         return session.model_copy(deep=True)
@@ -483,6 +605,7 @@ class InMemoryChatSessionStore:
             title=session.title,
             status=session.status,
             active_pending_process_id=session.active_pending_process_id,
+            active_agentic_frame_id=session.active_agentic_frame_id,
             pending_process_status=(
                 pending_context.process_ref.status if pending_context else None
             ),

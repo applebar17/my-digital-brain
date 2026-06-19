@@ -18,6 +18,24 @@ from my_digital_brain.debug import record_tool_execution
 NON_ERROR_TOOL_STATUSES = {"ok", "accepted", "needs_user_input"}
 
 
+class ToolCallInterruption(Exception):
+    """Raised when a tool needs user input before its tool output can be emitted."""
+
+    def __init__(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        result: ToolResult,
+        messages: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(f"Tool '{tool_name}' interrupted for user input.")
+        self.tool_call_id = tool_call_id
+        self.tool_name = tool_name
+        self.result = result
+        self.messages = messages or []
+
+
 class GenAIToolExecutionMixin:
     def _tool_budget_exceeded(
         self,
@@ -187,6 +205,12 @@ class GenAIToolExecutionMixin:
             )
 
         tool_fn = tools_mapping[fn_name]
+        context = getattr(tool_fn, "_agentic_execution_context", None)
+        previous_tool_call_id = getattr(context, "current_tool_call_id", None)
+        previous_tool_name = getattr(context, "current_tool_name", None)
+        if context is not None:
+            context.current_tool_call_id = tool_call.id
+            context.current_tool_name = fn_name
         try:
             output = tool_fn(**args)
             result = self._normalize_tool_output(output)
@@ -199,6 +223,10 @@ class GenAIToolExecutionMixin:
                 retryable=False,
             )
             result = ToolResult(status="error", error=error)
+        finally:
+            if context is not None:
+                context.current_tool_call_id = previous_tool_call_id
+                context.current_tool_name = previous_tool_name
 
         duration_ms = int((time.monotonic() - start) * 1000)
         meta["duration_ms"] = duration_ms
@@ -226,11 +254,34 @@ class GenAIToolExecutionMixin:
             status=str(result.status),
             metadata={"duration_ms": duration_ms, "arg_keys": sorted(args.keys())},
         )
+        if result.status == "needs_user_input":
+            self._attach_interruption_ids(result, tool_call_id=tool_call.id, tool_name=fn_name)
+            raise ToolCallInterruption(
+                tool_call_id=tool_call.id,
+                tool_name=fn_name,
+                result=result,
+            )
         return self._tool_message(
             tool_call.id,
             result,
             include_tool_meta=include_tool_meta,
         )
+
+    def _attach_interruption_ids(
+        self,
+        result: ToolResult,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> None:
+        if not isinstance(result.data, dict):
+            result.data = {"value": result.data}
+        result.data.setdefault("tool_call_id", tool_call_id)
+        result.data.setdefault("tool_name", tool_name)
+        packet = result.data.get("clarification_packet")
+        if isinstance(packet, dict):
+            packet.setdefault("tool_call_id", tool_call_id)
+            packet.setdefault("tool_name", tool_name)
 
     def _normalize_tool_output(self, output: Any) -> ToolResult:
         if isinstance(output, ToolResult):

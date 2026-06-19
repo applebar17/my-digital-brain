@@ -213,7 +213,7 @@ Context may include:
 
 - Current user message.
 - Relevant interaction history.
-- Pending process state.
+- Interrupted frame or clarification context.
 - Retrieved domain objects.
 - Source evidence.
 - User or tenant preferences.
@@ -255,11 +255,12 @@ The default conversation-entry tool surface should stay small:
 - `query_stored_context`
 - `update_persistent_state`
 
-Default answering is a non-tool path. Resume, pause, cancel, expire,
-clarification handling, validation, and write execution are not broad
-conversation-entry tools. Resume, pause, and cancel are state-specific tools for
-`pending_process_review`, where compact pending context exists and the model can
-infer the user's intent naturally.
+Default answering is a non-tool path. Clarification handling, validation, write
+execution, and lifecycle controls are not broad conversation-entry tools.
+Clarification is handled as a continuation of the tool call that requested it:
+the runtime persists an interrupted agentic frame with the assistant tool call
+still open, the client returns structured answers, and the backend appends one
+matching `tool` message before the same frame continues.
 
 Good tools should:
 
@@ -319,7 +320,7 @@ Guardrails may include:
 - Required structured output validation.
 - Confirmation before risky writes.
 - Privacy checks before provider calls.
-- Expiration for pending processes.
+- Expiration for interrupted agentic frames.
 - Retry limits.
 - Fallback behavior.
 - Read-only tool scopes for judge investigation.
@@ -430,39 +431,41 @@ Each state configuration should define:
 
 For example, an intake reasoning checkpoint needs the user source text, usable
 conversation history when relevant, the compact context package, current
-time/timezone, and a pending clarification answer when resuming. It should not
+time/timezone, and clarification answer context when resuming. It should not
 receive raw database records, unrelated metadata blobs, or internal transport
 details.
 
-### 12. Separate Pending Summaries From Resumable Snapshots
+### 12. Persist Interrupted Frames, Not Pending Review States
 
-Pending processes have two context layers:
+Clarification is a provider-message continuation, not a separate pending review
+workflow.
 
-- Model-facing summaries explain what is waiting in compact terms:
-  `process_id`, `kind`, `status`, `question`, `compact_summary`, and
-  `unresolved_targets`.
-- Backend-only snapshots preserve resumable state: source refs, intake ids,
-  resume step, checkpoint schema version, pending question, and process-specific
-  snapshot refs.
+When an allowed state calls a clarification tool, the backend should:
 
-The model should never receive the raw backend snapshot. It should choose
-between resume, pause, cancel, a new intake, a query, a correction, or normal
-chat from the compact summary plus current conversation history.
+- persist an agentic frame containing the state id, messages, compact context,
+  trace, parent frame/tool-call refs, active clarification packet, and expiry;
+- keep the assistant message with `tool_calls` in the stored frame and leave the
+  matching tool output absent until the user answers;
+- return a UI clarification packet containing `frame_id`, `tool_call_id`,
+  `tool_name`, questions, options, and a human-readable history delta;
+- validate submitted answers deterministically against the packet;
+- append exactly one `tool` message with the original `tool_call_id`;
+- continue the same state-local message history.
 
-Resume does not pass a `user_reply` tool argument. The current user message and
-recent history are already part of runtime context and must be used from there.
-Before any resumed write, the backend must refresh stored-context and rerun
-validation/resolution so stale checkpoints do not duplicate or conflict with
-records created by another process.
+This keeps provider transcripts valid while avoiding a deterministic pending
+review state. The UI may persist the clarification history delta as normal
+conversation messages for future context, but the model continuation is governed
+by the open tool call in the stored frame.
+
+Nested agentic work follows the same rule. A parent state calls a tool; the
+backend starts a child frame for the invoked state; the child may run its own
+LLM/tool loop and request clarification; when the child completes, the parent
+receives one compact tool output summarizing the child result, not the child's
+full internal trace.
 
 Structured clarification is a user-interaction contract, not a persistent-state
-mutation. Allowed states may call `request_user_clarification` with a small
-packet of questions, candidate answers, and free-text allowance. The client
-renders that packet as a question box. When the user submits answers, the
-backend validates the selected options, stores a user-visible answer summary,
-and resumes the originating process from a compact clarification-answer summary.
-Model-facing history should receive the answer summary, not raw widget state or
-backend-only snapshots.
+mutation. Model-facing history should receive the validated answer summary
+through the tool output, not raw widget state or backend-only snapshots.
 
 ### 13. Keep Channel Metadata Backend-Owned By Default
 
@@ -758,6 +761,6 @@ For a first implementation, these principles imply:
 - Support multiple input modalities through explicit source records and
   modality-specific preprocessing.
 - Use LLM-facing ID aliases for stored context and tool calls.
-- Keep pending process state compact, expiring, and split between model-facing
-  summaries and backend-only resumable snapshots.
+- Keep interrupted agentic frames compact, expiring, and aligned with provider
+  tool-call message history.
 - Add richer deterministic handling only when real usage shows the need.

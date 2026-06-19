@@ -13,18 +13,12 @@ from my_digital_brain.agentic import (
     default_agentic_tool_registry,
     default_state_configs,
 )
-from my_digital_brain.chat.enums import (
-    ChatResponseStatus,
-    PendingProcessKind,
-    PendingProcessStatus,
-)
+from my_digital_brain.chat.enums import ChatResponseStatus
 from my_digital_brain.chat.facade import (
     CancelPendingProcessRequest,
     ChatToolRequest,
     ChatToolResult,
 )
-from my_digital_brain.chat.models import PendingProcessContext, PendingProcessRef
-from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
@@ -283,27 +277,6 @@ def _execution_context(**kwargs: Any) -> AgenticToolExecutionContext:
     return AgenticToolExecutionContext(**{**defaults, **kwargs})
 
 
-def _pending_context(
-    process_id: str,
-    *,
-    question: str = "Which Marco?",
-) -> PendingProcessContext:
-    return PendingProcessContext(
-        process_ref=PendingProcessRef(
-            process_id=process_id,
-            kind=PendingProcessKind.MEMORY_INGESTION,
-            question=question,
-        ),
-        context={
-            "summary": f"Pending memory clarification: {question}",
-            "source_text": "Yesterday I met Marco in Milan.",
-            "checkpoint_schema_version": "v1",
-            "resume_step": "source_reprocess",
-            "unresolved_targets": ["person: Marco"],
-        },
-    )
-
-
 def test_registry_validates_default_state_configs_and_reasoning_planning_states() -> None:
     configs = default_state_configs()
     registry = default_agentic_tool_registry()
@@ -392,11 +365,11 @@ def test_registry_rejects_pending_tools_on_conversation_entry() -> None:
         deep=True,
     )
 
-    with pytest.raises(ValueError, match="not registered for state conversation_entry"):
+    with pytest.raises(ValueError, match="not registered"):
         registry.definitions_for_state(entry_config)
 
 
-def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> None:
+def test_top_level_tools_execute_or_handoff_without_pending_review() -> None:
     facade = FakeFacade()
     execution_context = _execution_context(backend_facade=facade)
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
@@ -410,14 +383,11 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
 
     result = mapping["start_memory_ingestion"](source_text="Yesterday I met Marco.")
 
-    assert result.status == "accepted"
-    assert result.output == "Memory ingestion handoff requested."
-    assert result.data["handoff_target"] == "memory_ingestion_precheck"
-    assert result.data["handoff_arguments"]["source_text"] == "Yesterday I met Marco."
-    assert execution_context.tool_events[0].data["handoff_target"] == (
-        "memory_ingestion_precheck"
-    )
-    assert facade.calls == []
+    assert result.status == "ok"
+    assert result.output == "Memory accepted."
+    assert result.data["operation"] == "start_memory_ingestion"
+    assert facade.calls[0][0] == "start_memory_ingestion"
+    assert facade.calls[0][1].text == "Yesterday I met Marco."
 
     update = mapping["update_memory_graph"](
         source_text="Marco was from university, not work.",
@@ -428,103 +398,10 @@ def test_top_level_tools_return_handoff_commands_without_facade_mutation() -> No
         metadata={},
     )
 
-    assert update.status == "accepted"
-    assert update.data["handoff_target"] == "graph_update"
-    assert update.data["handoff_arguments"]["source_text"] == (
-        "Marco was from university, not work."
-    )
-    assert facade.calls == []
-
-
-def test_resume_pending_process_uses_current_text_without_user_reply_argument() -> None:
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel="web",
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    pending = _pending_context("process-1")
-    store.save_pending_process_context(session.session_id, pending)
-    facade = FakeFacade()
-    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
-    mapping = build_agentic_tool_mapping(
-        config,
-        _execution_context(
-            backend_facade=facade,
-            chat_store=store,
-            session_id=session.session_id,
-            current_text="Marco from university",
-            pending_process_context=pending,
-            pending_process_contexts=[pending],
-        ),
-    )
-
-    schema = config.allowed_tools
-    assert "resume_pending_process" in schema
-    result = mapping["resume_pending_process"](pending_process_id="process-1")
-
-    assert result.status == "ok"
-    assert result.data["pending_process_id"] == "process-1"
-    assert facade.calls[0][0] == "resume_pending_process"
-    request = facade.calls[0][1]
-    assert isinstance(request, ChatToolRequest)
-    assert request.text == "Marco from university"
-    assert request.pending_process_context.process_ref.process_id == "process-1"
-    assert store.get_pending_process_context("process-1").process_ref.status == (
-        PendingProcessStatus.COMPLETED
-    )
-
-
-def test_pause_pending_process_clears_active_and_preserves_resumable_context() -> None:
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel="web",
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    pending = _pending_context("process-1")
-    store.save_pending_process_context(session.session_id, pending)
-    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
-    mapping = build_agentic_tool_mapping(
-        config,
-        _execution_context(
-            chat_store=store,
-            session_id=session.session_id,
-            pending_process_context=pending,
-            pending_process_contexts=[pending],
-        ),
-    )
-
-    result = mapping["pause_pending_process"](
-        pending_process_id="process-1",
-        reason="I don't remember",
-    )
-
-    paused = store.get_pending_process_context("process-1")
-    assert result.status == "ok"
-    assert result.data["clear_pending_process"] is True
-    assert paused.process_ref.status == PendingProcessStatus.PAUSED
-    assert paused.context["resumable"] is True
-    assert store.get_active_pending_process_context(session.session_id) is None
-
-
-def test_pending_tool_requires_process_id_when_multiple_processes_exist() -> None:
-    config = default_state_configs()[AgenticStateId.PENDING_PROCESS_REVIEW]
-    mapping = build_agentic_tool_mapping(
-        config,
-        _execution_context(
-            pending_process_contexts=[
-                _pending_context("process-1"),
-                _pending_context("process-2", question="Which Giovanni?"),
-            ],
-        ),
-    )
-
-    result = mapping["resume_pending_process"]()
-
-    assert result.status == "error"
-    assert result.error.code == "ambiguous_pending_process"
-    assert result.error.details["available_process_ids"] == ["process-1", "process-2"]
+    assert update.status == "ok"
+    assert update.data["operation"] == "update_memory_graph"
+    assert facade.calls[-1][0] == "update_memory_graph"
+    assert facade.calls[-1][1].text == "Marco was from university, not work."
 
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
@@ -597,9 +474,9 @@ def test_missing_dependency_returns_verbose_tool_error() -> None:
     assert "Configure AgenticToolExecutionContext.graph_service" in result.error.hint
 
 
-def test_request_user_clarification_creates_pending_process_hint() -> None:
+def test_request_user_clarification_creates_frame_packet() -> None:
     config = default_state_configs()[AgenticStateId.MEMORY_QUERY]
-    execution_context = _execution_context()
+    execution_context = _execution_context(frame_id="frame-1")
     mapping = build_agentic_tool_mapping(config, execution_context)
 
     result = mapping["request_user_clarification"](
@@ -622,16 +499,15 @@ def test_request_user_clarification_creates_pending_process_hint() -> None:
 
     assert result.status == "needs_user_input"
     assert result.data["operation"] == "request_user_clarification"
+    assert result.data["frame_id"] == "frame-1"
     packet = result.data["clarification_packet"]
-    pending = result.data["pending_process"]
-    assert packet["process_id"] == pending["process_id"]
+    assert "pending_process" not in result.data
+    assert packet["frame_id"] == "frame-1"
     assert packet["origin_state_id"] == AgenticStateId.MEMORY_QUERY.value
     assert packet["questions"][0]["options"][0]["label"] == "Marco from university"
     assert packet["history_delta"][0]["role"] == "assistant"
     assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
     assert result.data["history_delta"] == packet["history_delta"]
-    assert pending["kind"] == PendingProcessKind.MEMORY_QUERY.value
-    assert pending["metadata"]["clarification_packet"]["packet_id"] == packet["packet_id"]
     assert execution_context.tool_events[0].status == "needs_user_input"
 
 

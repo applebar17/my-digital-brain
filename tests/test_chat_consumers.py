@@ -60,9 +60,7 @@ class ScriptedToolProvider:
     ) -> ChatResult:
         if "start_memory_ingestion" in tools_mapping:
             tools_mapping["start_memory_ingestion"](source_text="hello from telegram")
-            content = "Routing to ingestion."
-        else:
-            content = "accepted:hello from telegram"
+        content = "accepted:hello from telegram"
         return ChatResult(
             content=content,
             metadata=ProviderCallMetadata.fake(model=request.model),

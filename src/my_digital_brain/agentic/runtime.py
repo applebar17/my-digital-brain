@@ -37,6 +37,8 @@ from my_digital_brain.ai.schemas import (
     ChatRequest,
     StructuredGenerationRequest,
 )
+from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
+from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
@@ -76,6 +78,10 @@ class AgenticStateRunner:
             if tools_disabled
             else build_agentic_toolbox(state_config, self.tool_registry)
         )
+        invocation.execution_context.frame_id = (
+            invocation.execution_context.frame_id or new_uuid()
+        )
+        invocation.execution_context.current_payload = invocation.context_payload
         event_start = len(invocation.execution_context.tool_events)
         tools_mapping = (
             {}
@@ -152,12 +158,22 @@ class AgenticStateRunner:
             context=context,
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
-        result = self.provider.generate_chat_with_tools(
-            request,
-            toolbox=toolbox,
-            tools_mapping=tools_mapping,
-            max_tool_calls=0 if tools_disabled else state_config.max_tool_calls,
-        )
+        try:
+            result = self.provider.generate_chat_with_tools(
+                request,
+                toolbox=toolbox,
+                tools_mapping=tools_mapping,
+                max_tool_calls=0 if tools_disabled else state_config.max_tool_calls,
+            )
+        except ToolCallInterruption as exc:
+            return self._interrupted_state_result(
+                state_config,
+                request,
+                invocation,
+                event_start,
+                exc,
+                route=route,
+            )
         tool_events = invocation.execution_context.tool_events[event_start:]
         handoff_target, handoff_arguments = _last_handoff(tool_events)
         has_error = any(
@@ -387,6 +403,136 @@ class AgenticStateRunner:
             expected_output=expected_output,
         )
 
+    def _interrupted_state_result(
+        self,
+        state_config: AgenticStateConfig,
+        request: ChatRequest,
+        invocation: AgenticStateInvocation,
+        event_start: int,
+        exc: ToolCallInterruption,
+        *,
+        route: Any,
+    ) -> AgenticStateRunResult:
+        frame_id = invocation.execution_context.frame_id or new_uuid()
+        messages = [_chat_message_to_frame_dict(message) for message in exc.messages]
+        if not messages:
+            messages = [
+                _chat_message_to_frame_dict(message)
+                for message in request.messages
+            ]
+        packet = None
+        if isinstance(exc.result.data, dict):
+            packet = exc.result.data.get("clarification_packet")
+            if isinstance(packet, dict):
+                packet = dict(packet)
+                packet.setdefault("tool_call_id", exc.tool_call_id)
+                packet.setdefault("tool_name", exc.tool_name)
+        tool_events = invocation.execution_context.tool_events[event_start:]
+        return AgenticStateRunResult(
+            state_id=state_config.state_id,
+            assistant_text=exc.result.output,
+            message_delta=[
+                ChatMessage.model_validate(message)
+                for message in messages[len(request.messages) :]
+                if message.get("role") in {"assistant", "tool"}
+            ],
+            tool_events=tool_events,
+            terminal=False,
+            status="interrupted",
+            metadata={
+                "provider": route.provider,
+                "model": route.model,
+                "route": route.model_dump(mode="json", exclude_none=True),
+                "interruption": {
+                    "frame_id": frame_id,
+                    "state_id": _state_value(state_config.state_id),
+                    "tool_call_id": exc.tool_call_id,
+                    "tool_name": exc.tool_name,
+                    "messages": messages,
+                    "clarification_packet": packet,
+                    "parent_frame_id": invocation.execution_context.parent_frame_id,
+                    "parent_tool_call_id": invocation.execution_context.parent_tool_call_id,
+                },
+            },
+        )
+
+    def continue_state_from_messages(
+        self,
+        *,
+        state_id: AgenticStateId,
+        messages: list[dict[str, Any]],
+        execution_context: AgenticToolExecutionContext,
+        metadata: dict[str, Any] | None = None,
+    ) -> AgenticStateRunResult:
+        state_config = self.state_configs[state_id]
+        state_value = _state_value(state_config.state_id)
+        model_task = state_config.model_task or state_value
+        context = AIRequestContext(
+            purpose=model_task,
+            prompt_id=state_config.prompt_id,
+            prompt_version=state_config.prompt_version,
+            metadata={"state_id": state_value, **(metadata or {})},
+        )
+        route = self.model_router.route(model_task, context)
+        toolbox = build_agentic_toolbox(state_config, self.tool_registry)
+        event_start = len(execution_context.tool_events)
+        execution_context.state_id = state_value
+        execution_context.current_payload = None
+        tools_mapping = build_agentic_tool_mapping(
+            state_config,
+            execution_context,
+            self.tool_registry,
+        )
+        request = ChatRequest(
+            model=route.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            messages=[
+                ChatMessage.model_validate(message)
+                for message in messages
+            ],
+            context=context,
+            metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+        )
+        try:
+            result = self.provider.generate_chat_with_tools(
+                request,
+                toolbox=toolbox,
+                tools_mapping=tools_mapping,
+                max_tool_calls=state_config.max_tool_calls,
+            )
+        except ToolCallInterruption as exc:
+            return self._interrupted_state_result(
+                state_config,
+                request,
+                AgenticStateInvocation(
+                    state_id=state_id,
+                    context_payload={},
+                    execution_context=execution_context,
+                ),
+                event_start,
+                exc,
+                route=route,
+            )
+        tool_events = execution_context.tool_events[event_start:]
+        has_error = any(
+            event.status not in {"ok", "accepted", "needs_user_input"}
+            for event in tool_events
+        )
+        return AgenticStateRunResult(
+            state_id=state_id,
+            assistant_text=result.content or None,
+            message_delta=list(result.message_delta),
+            tool_events=tool_events,
+            terminal=True,
+            status="error" if has_error else "ok",
+            metadata={
+                "provider": result.metadata.provider,
+                "model": result.metadata.model,
+                "route": route.model_dump(mode="json", exclude_none=True),
+            },
+        )
+
 
 @dataclass(slots=True)
 class AgenticRuntime:
@@ -404,6 +550,8 @@ class AgenticRuntime:
         current_state = start_state or self._entry_state(conversation_context)
         owner_state = current_state
         current_payload: Any = start_payload if start_payload is not None else conversation_context
+        execution_context.agentic_runtime = self
+        execution_context.conversation_context = conversation_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -417,6 +565,27 @@ class AgenticRuntime:
             )
             state_results.append(state_result)
             compact_trace.append(_compact_state_trace(state_result))
+
+            if state_result.status == "interrupted":
+                interruption = self._persist_interrupted_frame(
+                    state_result,
+                    conversation_context,
+                    execution_context,
+                    current_payload,
+                    compact_trace,
+                )
+                return AgenticRunResult(
+                    final_text=state_result.assistant_text,
+                    visited_states=[result.state_id for result in state_results],
+                    state_results=state_results,
+                    status="needs_user_input",
+                    interruption=interruption,
+                    compact_trace=compact_trace,
+                    metadata={
+                        "user_visible_owner": current_state.value,
+                        "interrupted_process": current_state.value,
+                    },
+                )
 
             if state_result.handoff_target == "memory_query":
                 current_state = AgenticStateId.MEMORY_QUERY
@@ -435,16 +604,6 @@ class AgenticRuntime:
                     self.state_runner.history_service,
                 )
                 continue
-
-            if state_result.handoff_target == "memory_ingestion_precheck":
-                return self._run_ingestion_backend(
-                    conversation_context,
-                    execution_context,
-                    state_results,
-                    compact_trace,
-                    state_result.handoff_arguments,
-                    owner_state,
-                )
 
             if state_result.handoff_target == "contradiction_review":
                 current_state = AgenticStateId.CONTRADICTION_REVIEW
@@ -615,37 +774,6 @@ class AgenticRuntime:
             ),
         )
 
-    def _finalize_backend_process_with_owner(
-        self,
-        owner_state: AgenticStateId,
-        conversation_context: ConversationContext,
-        execution_context: AgenticToolExecutionContext,
-        *,
-        process_name: str,
-        summary: str,
-        data: dict[str, Any],
-    ) -> AgenticStateRunResult:
-        owner_context = (
-            self.state_runner.history_service.owner_finalization_context_from_output(
-                conversation_context,
-                process_name=process_name,
-                summary=summary,
-                data=data,
-            )
-        )
-        return self.state_runner.run_state(
-            AgenticStateInvocation(
-                state_id=owner_state,
-                context_payload=owner_context,
-                execution_context=execution_context,
-                metadata={
-                    "owner_finalization": True,
-                    "completed_state": process_name,
-                    "disable_tools": True,
-                },
-            ),
-        )
-
     def _run_contradiction_structured_result(
         self,
         context_payload: Any,
@@ -681,82 +809,323 @@ class AgenticRuntime:
     def _entry_state(self, conversation_context: ConversationContext) -> AgenticStateId:
         return AgenticStateId.CONVERSATION_ENTRY
 
-    @traceable(name="Agentic Ingestion Backend Handoff", run_type="chain")
-    def _run_ingestion_backend(
+    def resume_frame(
         self,
-        conversation_context: ConversationContext,
+        frame: AgenticFrame,
         execution_context: AgenticToolExecutionContext,
-        state_results: list[AgenticStateRunResult],
-        compact_trace: list[dict[str, Any]],
-        handoff_arguments: dict[str, Any],
-        owner_state: AgenticStateId,
+        *,
+        clarification_answer_summary: str,
+        answer_packet: ClarificationAnswerPacket,
     ) -> AgenticRunResult:
-        facade = execution_context.backend_facade
-        if facade is None:
-            final_text = "Memory ingestion cannot run because backend_facade is not configured."
-            status = "error"
-            pending_hints = _pending_process_hints(state_results)
-        else:
-            from my_digital_brain.chat.facade import ChatToolRequest
-
-            request = ChatToolRequest(
-                session_id=execution_context.session_id or conversation_context.context_id,
-                channel=execution_context.channel,
-                conversation_id=(
-                    execution_context.conversation_id
-                    or conversation_context.context_id
+        if not frame.active_tool_call_id:
+            return AgenticRunResult(
+                final_text="The saved agentic frame has no open tool call to resume.",
+                visited_states=[AgenticStateId(frame.state_id)],
+                status="error",
+                compact_trace=[],
+            )
+        execution_context.agentic_runtime = self
+        execution_context.frame_id = frame.frame_id
+        execution_context.parent_frame_id = frame.parent_frame_id
+        execution_context.parent_tool_call_id = frame.parent_tool_call_id
+        conversation_context = self._conversation_context_from_frame(
+            frame,
+            fallback_text=clarification_answer_summary,
+        )
+        execution_context.conversation_context = conversation_context
+        tool_result = ToolResult(
+            status="ok",
+            output=clarification_answer_summary,
+            data={
+                "operation": "request_user_clarification",
+                "clarification_answer_summary": clarification_answer_summary,
+                "clarification_answer_packet": answer_packet.model_dump(
+                    mode="json",
+                    exclude_none=True,
                 ),
-                owner_id=execution_context.owner_id or "owner",
-                text=handoff_arguments.get("source_text")
-                or conversation_context.current_message.content
-                or "",
-                pending_process_context=execution_context.pending_process_context,
-                conversation_history_refs=list(execution_context.conversation_history_refs),
-                metadata={
-                    **execution_context.metadata,
-                    **(handoff_arguments.get("metadata") or {}),
-                    "source_refs": handoff_arguments.get("source_refs") or [],
-                },
+            },
+        )
+        tool_message = {
+            "role": "tool",
+            "tool_call_id": frame.active_tool_call_id,
+            "content": tool_result.model_dump_json(exclude_none=True),
+        }
+        resumed_messages = [*frame.messages, tool_message]
+        state_id = AgenticStateId(frame.state_id)
+        state_result = self.state_runner.continue_state_from_messages(
+            state_id=state_id,
+            messages=resumed_messages,
+            execution_context=execution_context,
+            metadata={"resumed_frame_id": frame.frame_id},
+        )
+        compact_trace = [_compact_state_trace(state_result)]
+        if state_result.status == "interrupted":
+            interruption = self._persist_interrupted_frame(
+                state_result,
+                conversation_context,
+                execution_context,
+                frame.context_payload,
+                compact_trace,
+                base_messages=resumed_messages,
             )
-            result = facade.start_memory_ingestion(request)
-            final_text = result.primary_text
-            status = "ok" if str(result.status) != "failed" else "error"
-            pending_hints = _pending_process_hints(state_results)
-            if result.pending_process is not None:
-                pending_hints.append(result.pending_process.model_dump(mode="json"))
-            compact_trace.append(
-                {
-                    "backend_process": "memory_ingestion_precheck",
-                    "status": str(result.status),
-                    "summary": result.primary_text,
-                },
+            return AgenticRunResult(
+                final_text=state_result.assistant_text,
+                visited_states=[state_result.state_id],
+                state_results=[state_result],
+                status="needs_user_input",
+                interruption=interruption,
+                compact_trace=compact_trace,
             )
-            if status == "ok" and result.pending_process is None:
-                final_result = self._finalize_backend_process_with_owner(
-                    owner_state,
-                    conversation_context,
-                    execution_context,
-                    process_name="memory_ingestion_precheck",
-                    summary=result.primary_text,
-                    data=result.model_dump(mode="json", exclude_none=True),
+        full_messages = [
+            *resumed_messages,
+            *[
+                message.model_dump(mode="json", exclude_none=True)
+                for message in state_result.message_delta
+            ],
+        ]
+        self._complete_frame(
+            frame,
+            execution_context=execution_context,
+            full_messages=full_messages,
+            state_result=state_result,
+        )
+        if frame.parent_frame_id and frame.parent_tool_call_id:
+            parent = self._load_frame(frame.parent_frame_id, execution_context=execution_context)
+            if parent is not None:
+                return self._resume_parent_frame(
+                    parent,
+                    child_frame=frame,
+                    child_result=state_result,
+                    execution_context=execution_context,
                 )
-                state_results.append(final_result)
-                compact_trace.append(_compact_state_trace(final_result))
-                final_text = final_result.assistant_text or result.primary_text
-                status = final_result.status
         return AgenticRunResult(
-            final_text=final_text,
-            visited_states=[result.state_id for result in state_results],
-            state_results=state_results,
-            status=status,
-            pending_process_hints=pending_hints,
+            final_text=(
+                state_result.assistant_text
+                or self.state_runner.history_service.state_result_summary(state_result)
+            ),
+            visited_states=[state_result.state_id],
+            state_results=[state_result],
+            status=state_result.status,
+            compact_trace=compact_trace,
+            metadata={"resumed_frame_id": frame.frame_id},
+        )
+
+    def _resume_parent_frame(
+        self,
+        parent: AgenticFrame,
+        *,
+        child_frame: AgenticFrame,
+        child_result: AgenticStateRunResult,
+        execution_context: AgenticToolExecutionContext,
+    ) -> AgenticRunResult:
+        if not parent.active_tool_call_id:
+            return AgenticRunResult(
+                final_text="The parent agentic frame has no open tool call.",
+                visited_states=[AgenticStateId(parent.state_id), child_result.state_id],
+                state_results=[child_result],
+                status="error",
+                compact_trace=[_compact_state_trace(child_result)],
+            )
+        summary = self.state_runner.history_service.state_result_summary(child_result)
+        tool_result = ToolResult(
+            status="ok" if child_result.status == "ok" else child_result.status,
+            output=summary,
+            data={
+                "operation": parent.active_tool_name or child_frame.state_id,
+                "child_frame_id": child_frame.frame_id,
+                "child_state_id": child_frame.state_id,
+                "summary": summary,
+                "state_result": child_result.model_dump(mode="json", exclude_none=True),
+            },
+        )
+        tool_message = {
+            "role": "tool",
+            "tool_call_id": parent.active_tool_call_id,
+            "content": tool_result.model_dump_json(exclude_none=True),
+        }
+        parent_messages = [*parent.messages, tool_message]
+        execution_context.frame_id = parent.frame_id
+        execution_context.parent_frame_id = parent.parent_frame_id
+        execution_context.parent_tool_call_id = parent.parent_tool_call_id
+        parent_conversation = self._conversation_context_from_frame(
+            parent,
+            fallback_text=summary,
+        )
+        execution_context.conversation_context = parent_conversation
+        parent_result = self.state_runner.continue_state_from_messages(
+            state_id=AgenticStateId(parent.state_id),
+            messages=parent_messages,
+            execution_context=execution_context,
+            metadata={"resumed_child_frame_id": child_frame.frame_id},
+        )
+        compact_trace = [_compact_state_trace(child_result), _compact_state_trace(parent_result)]
+        if parent_result.status == "interrupted":
+            interruption = self._persist_interrupted_frame(
+                parent_result,
+                parent_conversation,
+                execution_context,
+                parent.context_payload,
+                compact_trace,
+                base_messages=parent_messages,
+            )
+            return AgenticRunResult(
+                final_text=parent_result.assistant_text,
+                visited_states=[child_result.state_id, parent_result.state_id],
+                state_results=[child_result, parent_result],
+                status="needs_user_input",
+                interruption=interruption,
+                compact_trace=compact_trace,
+            )
+        full_messages = [
+            *parent_messages,
+            *[
+                message.model_dump(mode="json", exclude_none=True)
+                for message in parent_result.message_delta
+            ],
+        ]
+        self._complete_frame(
+            parent,
+            execution_context=execution_context,
+            full_messages=full_messages,
+            state_result=parent_result,
+        )
+        if parent.parent_frame_id and parent.parent_tool_call_id:
+            grandparent = self._load_frame(
+                parent.parent_frame_id,
+                execution_context=execution_context,
+            )
+            if grandparent is not None:
+                return self._resume_parent_frame(
+                    grandparent,
+                    child_frame=parent,
+                    child_result=parent_result,
+                    execution_context=execution_context,
+                )
+        return AgenticRunResult(
+            final_text=(
+                parent_result.assistant_text
+                or self.state_runner.history_service.state_result_summary(parent_result)
+            ),
+            visited_states=[child_result.state_id, parent_result.state_id],
+            state_results=[child_result, parent_result],
+            status=parent_result.status,
             compact_trace=compact_trace,
             metadata={
-                "user_visible_owner": owner_state.value,
-                "completed_process": "memory_ingestion_precheck",
+                "resumed_frame_id": parent.frame_id,
+                "completed_child_frame_id": child_frame.frame_id,
             },
         )
 
+    def _persist_interrupted_frame(
+        self,
+        state_result: AgenticStateRunResult,
+        conversation_context: ConversationContext,
+        execution_context: AgenticToolExecutionContext,
+        current_payload: Any,
+        compact_trace: list[dict[str, Any]],
+        *,
+        base_messages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        from my_digital_brain.chat.models import AgenticFrame, ClarificationPacket
+
+        interruption = dict(state_result.metadata.get("interruption") or {})
+        frame_id = str(interruption.get("frame_id") or execution_context.frame_id or new_uuid())
+        messages = list(interruption.get("messages") or base_messages or [])
+        packet_payload = interruption.get("clarification_packet")
+        packet = (
+            ClarificationPacket.model_validate(packet_payload)
+            if isinstance(packet_payload, dict)
+            else None
+        )
+        frame = AgenticFrame(
+            frame_id=frame_id,
+            session_id=execution_context.session_id or conversation_context.context_id,
+            state_id=str(interruption.get("state_id") or state_result.state_id.value),
+            status="interrupted",
+            messages=messages,
+            context_payload=_frame_context_payload(current_payload, conversation_context),
+            compact_trace=compact_trace,
+            parent_frame_id=interruption.get("parent_frame_id")
+            or execution_context.parent_frame_id,
+            parent_tool_call_id=interruption.get("parent_tool_call_id")
+            or execution_context.parent_tool_call_id,
+            active_tool_call_id=(
+                str(interruption["tool_call_id"]) if interruption.get("tool_call_id") else None
+            ),
+            active_tool_name=(
+                str(interruption["tool_name"]) if interruption.get("tool_name") else None
+            ),
+            clarification_packet=packet,
+            metadata={
+                "interrupted_state": _state_value(state_result.state_id),
+                "tool_call_id": interruption.get("tool_call_id"),
+                "tool_name": interruption.get("tool_name"),
+            },
+        )
+        if execution_context.chat_store is not None:
+            execution_context.chat_store.save_agentic_frame(frame.session_id, frame)
+        return {
+            "frame_id": frame.frame_id,
+            "state_id": frame.state_id,
+            "tool_call_id": frame.active_tool_call_id,
+            "tool_name": frame.active_tool_name,
+            "clarification_packet": (
+                frame.clarification_packet.model_dump(mode="json", exclude_none=True)
+                if frame.clarification_packet is not None
+                else None
+            ),
+        }
+
+    def _complete_frame(
+        self,
+        frame: AgenticFrame,
+        *,
+        execution_context: AgenticToolExecutionContext,
+        full_messages: list[dict[str, Any]],
+        state_result: AgenticStateRunResult,
+    ) -> None:
+        if execution_context.chat_store is None:
+            return
+        execution_context.chat_store.update_agentic_frame_status(
+            frame.session_id,
+            frame.frame_id,
+            "completed" if state_result.status == "ok" else state_result.status,
+            metadata={
+                "completed_state_status": state_result.status,
+                "summary": self.state_runner.history_service.state_result_summary(state_result),
+            },
+            messages=full_messages,
+            clarification_packet=None,
+        )
+
+    def _load_frame(
+        self,
+        frame_id: str,
+        *,
+        execution_context: AgenticToolExecutionContext,
+    ) -> AgenticFrame | None:
+        if execution_context.chat_store is None:
+            return None
+        try:
+            return execution_context.chat_store.get_agentic_frame(frame_id)
+        except Exception:
+            return None
+
+    def _conversation_context_from_frame(
+        self,
+        frame: AgenticFrame,
+        *,
+        fallback_text: str,
+    ) -> ConversationContext:
+        conversation_payload = frame.context_payload.get("conversation")
+        if isinstance(conversation_payload, dict):
+            try:
+                return ConversationContext.model_validate(conversation_payload)
+            except Exception:
+                pass
+        return self.state_runner.history_service.source_conversation_context(
+            source_text=fallback_text,
+        )
 
 def _query_context_from_handoff(
     conversation_context: ConversationContext,
@@ -940,6 +1309,36 @@ def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
         content=json.dumps(payload, ensure_ascii=False, indent=2, default=str),
         content_type="json",
     )
+
+
+def _chat_message_to_frame_dict(message: Any) -> dict[str, Any]:
+    if isinstance(message, dict):
+        return {
+            key: value
+            for key, value in message.items()
+            if key in {"role", "content", "name", "tool_calls", "tool_call_id"}
+        }
+    if hasattr(message, "model_dump"):
+        payload = message.model_dump(mode="json", exclude_none=True)
+        return {
+            key: value
+            for key, value in payload.items()
+            if key in {"role", "content", "name", "tool_calls", "tool_call_id"}
+        }
+    return {"role": getattr(message, "role", "assistant"), "content": getattr(message, "content", "")}
+
+
+def _frame_context_payload(current_payload: Any, conversation: ConversationContext) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "conversation": conversation.model_dump(mode="json", exclude_none=True),
+    }
+    if hasattr(current_payload, "model_dump"):
+        payload["current_payload"] = current_payload.model_dump(mode="json", exclude_none=True)
+    elif isinstance(current_payload, dict):
+        payload["current_payload"] = current_payload
+    else:
+        payload["current_payload"] = {"value": str(current_payload)}
+    return payload
 
 
 def _system_prompt_with_runtime_context(
