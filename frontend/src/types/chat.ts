@@ -70,7 +70,6 @@ export interface ClarificationPacket {
   origin_state_id: string;
   reason: string;
   questions: ClarificationQuestion[];
-  compact_summary?: string | null;
   target_refs: string[];
   history_delta: ClarificationHistoryMessage[];
 }

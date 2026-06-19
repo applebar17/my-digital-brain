@@ -86,8 +86,7 @@ export function ClarificationQuestionBox({
   return (
     <aside className="memory-clarification-box" aria-live="polite">
       <div className="memory-clarification-header">
-        <strong>Clarification needed</strong>
-        {packet.compact_summary ? <p>{packet.compact_summary}</p> : null}
+        <strong>Quick question</strong>
       </div>
 
       <section className="memory-clarification-question" key={currentQuestion.question_id}>

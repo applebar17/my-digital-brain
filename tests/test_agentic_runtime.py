@@ -449,7 +449,6 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
                 "tool": "request_user_clarification",
                 "arguments": {
                     "reason": "Two memory targets are plausible.",
-                    "compact_summary": "Need target disambiguation.",
                     "target_refs": ["NODE_000001", "NODE_000002"],
                     "questions": [
                         {
@@ -515,7 +514,6 @@ def test_nested_graph_update_clarification_resumes_child_then_parent_frame() -> 
                 "tool": "request_user_clarification",
                 "arguments": {
                     "reason": "Need to confirm which Marco to update.",
-                    "compact_summary": "Target disambiguation needed.",
                     "target_refs": ["node-marco", "node-marco-work"],
                     "questions": [
                         {

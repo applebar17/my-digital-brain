@@ -968,7 +968,6 @@ def _clarification_packet(
         tool_name="request_user_clarification" if tool_call_id else None,
         origin_state_id=state_id,
         reason="Multiple Marco candidates exist.",
-        compact_summary="Need to know which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],
         questions=questions
         or [

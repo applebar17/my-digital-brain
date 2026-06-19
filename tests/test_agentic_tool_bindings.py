@@ -481,7 +481,6 @@ def test_request_user_clarification_creates_frame_packet() -> None:
 
     result = mapping["request_user_clarification"](
         reason="Two people named Marco are plausible.",
-        compact_summary="Need to identify which Marco the user means.",
         target_refs=["NODE_000001", "NODE_000002"],
         questions=[
             {

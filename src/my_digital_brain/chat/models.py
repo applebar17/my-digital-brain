@@ -108,7 +108,6 @@ class ClarificationPacket(ChatModel):
     origin_state_id: str
     reason: str
     questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
-    compact_summary: str | None = None
     target_refs: list[str] = Field(default_factory=list)
     history_delta: list[ClarificationHistoryMessage] = Field(default_factory=list)
 

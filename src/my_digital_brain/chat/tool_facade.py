@@ -375,7 +375,6 @@ class MemoryBackendToolFacade(NoopBackendToolFacade):
                         "selection_mode": "single",
                     }
                 ],
-                compact_summary=clarification_summary,
                 target_refs=result.clarification.target_refs,
             )
             return ChatToolResult(

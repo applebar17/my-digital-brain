@@ -155,9 +155,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "request_user_clarification",
             (
-                "Ask the user one to three structured clarification questions when "
-                "the current state cannot continue safely. Use this only for a "
-                "process interruption, not for normal final answers."
+                "Ask the user one to three direct, user-friendly clarification questions "
+                "when the current state cannot continue safely. Questions must be "
+                "short, specific, and free of internal summaries or schema language."
             ),
             states=[
                 AgenticStateId.MEMORY_QUERY,
@@ -167,9 +167,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 AgenticStateId.PLANNING_CHECKPOINT,
             ],
             properties={
-                "reason": string_property("Why user input is required before continuing."),
-                "compact_summary": optional_string_property(
-                    "Short model-facing summary of the blocked process.",
+                "reason": string_property(
+                    "Internal reason user input is required before continuing. "
+                    "Do not include this as user-facing copy.",
                 ),
                 "target_refs": array_property("Candidate refs, graph aliases, or targets involved."),
                 "questions": _clarification_questions_property(),
@@ -420,16 +420,19 @@ def _node_detail_properties() -> dict[str, dict]:
 def _clarification_questions_property() -> dict:
     return {
         "type": "array",
-        "description": "One to three user-facing clarification questions.",
+        "description": (
+            "One to three short, direct user-facing clarification questions. Do not "
+            "include summaries, internal ids, schema labels, or process narration."
+        ),
         "minItems": 1,
         "maxItems": 3,
         "items": {
             "type": "object",
             "properties": {
-                "question": string_property("Natural user-facing question."),
+                "question": string_property("Short direct question in plain language."),
                 "options": {
                     "type": "array",
-                    "description": "Suggested answers. Free text remains allowed.",
+                    "description": "Concise suggested answers. Free text remains allowed.",
                     "maxItems": 5,
                     "items": {
                         "type": "object",

@@ -253,7 +253,6 @@ class AgenticToolBindings:
         self,
         reason: str,
         questions: list[dict[str, Any]],
-        compact_summary: str | None = None,
         target_refs: list[str] | None = None,
     ) -> ToolResult:
         from my_digital_brain.chat.clarification import build_clarification_packet
@@ -267,7 +266,6 @@ class AgenticToolBindings:
                 origin_state_id=state_id,
                 reason=reason,
                 questions=questions,
-                compact_summary=compact_summary,
                 target_refs=target_refs or [],
             )
         except Exception as exc:
@@ -276,8 +274,8 @@ class AgenticToolBindings:
                 "invalid_clarification_packet",
                 f"Clarification questions failed validation: {exc}",
                 (
-                    "Pass one to three concrete questions. Each question may include "
-                    "up to five options with labels."
+                    "Pass one to three short, direct user-facing questions. Each "
+                    "question may include up to five concise option labels."
                 ),
                 retryable=True,
                 details={"exception_type": exc.__class__.__name__},

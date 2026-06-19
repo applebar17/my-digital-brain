@@ -23,7 +23,6 @@ def build_clarification_packet(
     questions: list[dict[str, Any]],
     tool_call_id: str | None = None,
     tool_name: str | None = None,
-    compact_summary: str | None = None,
     target_refs: list[str] | None = None,
     history_delta: list[dict[str, Any]] | None = None,
 ) -> ClarificationPacket:
@@ -54,7 +53,6 @@ def build_clarification_packet(
             for question in questions[:3]
             if str(question.get("question") or "").strip()
         ],
-        compact_summary=compact_summary,
         target_refs=target_refs or [],
         history_delta=[
             ClarificationHistoryMessage.model_validate(item)
@@ -74,6 +72,7 @@ def build_clarification_packet(
             deep=True,
         )
     return packet
+
 
 
 def validate_clarification_answers(
@@ -201,8 +200,6 @@ def summarize_clarification_answers(
 
 def render_clarification_questions(packet: ClarificationPacket) -> str:
     lines = ["Clarification needed:"]
-    if packet.compact_summary:
-        lines.append(packet.compact_summary)
     for index, question in enumerate(packet.questions, start=1):
         lines.append(f"{index}. {question.question}")
         if question.options:
