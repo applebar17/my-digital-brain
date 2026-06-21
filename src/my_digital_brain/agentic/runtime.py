@@ -18,7 +18,7 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlan,
     NodeMemoryPlan,
 )
-from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanActionType, MemoryPlanningPhase
+from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanningPhase
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.planning_contracts import (
     PlanningPurposeGuidelines,
@@ -60,7 +60,6 @@ from my_digital_brain.agentic.runtime_helpers import (
     _compact_state_trace,
     _contradiction_runtime_status,
     _frame_context_payload,
-    _memory_ingestion_clarification_result,
     _memory_ingestion_error_result,
     _state_value,
     _structured_summary,
@@ -230,6 +229,8 @@ class AgenticRuntime:
                 tool_name=tool_name,
             )
             interruption = dict(result.interruption or {})
+            interrupted_child_frame_id = interruption.get("child_frame_id") or interruption.get("frame_id")
+            interrupted_child_state_id = interruption.get("child_state_id") or interruption.get("state_id") or child_state.value
             return ToolResult(
                 status="interrupted",
                 output=result.final_text or "Child frame needs clarification.",
@@ -237,8 +238,8 @@ class AgenticRuntime:
                     "operation": tool_name,
                     "interruption_owner": "child",
                     "parent_frame_id": parent_frame.get("frame_id"),
-                    "child_frame_id": interruption.get("frame_id"),
-                    "child_state_id": interruption.get("state_id") or child_state.value,
+                    "child_frame_id": interrupted_child_frame_id,
+                    "child_state_id": interrupted_child_state_id,
                     "tool_call_id": interruption.get("tool_call_id"),
                     "tool_name": interruption.get("tool_name"),
                     "clarification_packet": interruption.get("clarification_packet"),
@@ -252,6 +253,7 @@ class AgenticRuntime:
                 },
             )
         summary = result.final_text or "Child frame completed."
+        resolved_clarifications = list(result.metadata.get("resolved_clarifications") or [])
         return ToolResult(
             status="ok" if result.status == "ok" else result.status,
             output=summary,
@@ -264,6 +266,7 @@ class AgenticRuntime:
                 "updated_refs": _collect_child_payload_values(result, "updated_refs"),
                 "affected_graph_ids": _collect_child_payload_values(result, "affected_graph_ids"),
                 "refreshed_vector_scopes": _collect_child_payload_values(result, "refreshed_vector_scopes"),
+                "resolved_clarifications": resolved_clarifications,
                 "diagnostics": result.compact_trace,
             },
         )
@@ -283,19 +286,23 @@ class AgenticRuntime:
         frame_id = parent_execution_context.frame_id or new_uuid()
         parent_execution_context.frame_id = frame_id
         messages = list(parent_execution_context.provider_messages)
-        if not messages and parent_execution_context.current_tool_call_id:
+        active_tool_call_id = parent_execution_context.current_tool_call_id
+        active_tool_name = parent_execution_context.current_tool_name or tool_name
+        active_tool_arguments = dict(parent_execution_context.current_tool_arguments)
+        if not messages:
+            active_tool_call_id = active_tool_call_id or f"child-{new_uuid()}"
             messages = [
                 {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
                         {
-                            "id": parent_execution_context.current_tool_call_id,
+                            "id": active_tool_call_id,
                             "type": "function",
                             "function": {
-                                "name": parent_execution_context.current_tool_name or tool_name,
+                                "name": active_tool_name,
                                 "arguments": json.dumps(
-                                    parent_execution_context.current_tool_arguments,
+                                    active_tool_arguments,
                                     ensure_ascii=True,
                                     sort_keys=True,
                                     default=str,
@@ -306,6 +313,8 @@ class AgenticRuntime:
                 }
             ]
         child_interruption = dict(child_result.interruption or {})
+        interrupted_child_frame_id = child_interruption.get("child_frame_id") or child_interruption.get("frame_id")
+        interrupted_child_state_id = child_interruption.get("child_state_id") or child_interruption.get("state_id")
         frame = AgenticFrame(
             frame_id=frame_id,
             session_id=parent_execution_context.session_id or conversation_context.context_id,
@@ -319,16 +328,32 @@ class AgenticRuntime:
             compact_trace=list(child_result.compact_trace),
             parent_frame_id=parent_execution_context.parent_frame_id,
             parent_tool_call_id=parent_execution_context.parent_tool_call_id,
-            active_tool_call_id=parent_execution_context.current_tool_call_id,
-            active_tool_name=parent_execution_context.current_tool_name or tool_name,
+            active_tool_call_id=active_tool_call_id,
+            active_tool_name=active_tool_name,
             metadata={
-                "waiting_for_child_frame_id": child_interruption.get("frame_id"),
-                "waiting_for_child_state_id": child_interruption.get("state_id"),
+                "waiting_for_child_frame_id": interrupted_child_frame_id,
+                "waiting_for_child_state_id": interrupted_child_state_id,
                 "child_tool_call_id": child_interruption.get("tool_call_id"),
                 "child_tool_name": child_interruption.get("tool_name"),
             },
         )
         parent_execution_context.chat_store.save_agentic_frame(frame.session_id, frame)
+        if interrupted_child_frame_id:
+            try:
+                child_frame = parent_execution_context.chat_store.get_agentic_frame(str(interrupted_child_frame_id))
+                if not child_frame.parent_tool_call_id:
+                    parent_execution_context.chat_store.save_agentic_frame(
+                        child_frame.session_id,
+                        child_frame.model_copy(
+                            update={
+                                "parent_frame_id": frame.frame_id,
+                                "parent_tool_call_id": active_tool_call_id,
+                            },
+                            deep=True,
+                        ),
+                    )
+            except Exception:
+                pass
         return {"frame_id": frame.frame_id, "status": frame.status}
 
     def _run_contradiction_structured_result(
@@ -373,6 +398,7 @@ class AgenticRuntime:
         *,
         clarification_answer_summary: str,
         answer_packet: ClarificationAnswerPacket,
+        resolved_clarifications: list[dict[str, Any]] | None = None,
     ) -> AgenticRunResult:
         if not frame.active_tool_call_id:
             return AgenticRunResult(
@@ -390,6 +416,14 @@ class AgenticRuntime:
             fallback_text=clarification_answer_summary,
         )
         execution_context.conversation_context = conversation_context
+        if resolved_clarifications is None and frame.clarification_packet is not None:
+            from my_digital_brain.chat.clarification import resolved_clarifications_from_answers
+
+            resolved_clarifications = resolved_clarifications_from_answers(
+                frame.clarification_packet,
+                answer_packet,
+            )
+        resolved_clarifications = list(resolved_clarifications or frame.metadata.get("resolved_clarifications") or [])
         tool_result = ToolResult(
             status="ok",
             output=clarification_answer_summary,
@@ -400,6 +434,7 @@ class AgenticRuntime:
                     mode="json",
                     exclude_none=True,
                 ),
+                "resolved_clarifications": resolved_clarifications,
             },
         )
         tool_message = {
@@ -413,7 +448,7 @@ class AgenticRuntime:
             state_id=state_id,
             messages=resumed_messages,
             execution_context=execution_context,
-            metadata={"resumed_frame_id": frame.frame_id},
+            metadata={"resumed_frame_id": frame.frame_id, "resolved_clarifications": resolved_clarifications},
         )
         compact_trace = [_compact_state_trace(state_result)]
         if state_result.status == "interrupted":
@@ -464,7 +499,7 @@ class AgenticRuntime:
             state_results=[state_result],
             status=state_result.status,
             compact_trace=compact_trace,
-            metadata={"resumed_frame_id": frame.frame_id},
+            metadata={"resumed_frame_id": frame.frame_id, "resolved_clarifications": resolved_clarifications},
         )
 
     def _resume_parent_frame(
@@ -484,6 +519,7 @@ class AgenticRuntime:
                 compact_trace=[_compact_state_trace(child_result)],
             )
         summary = self.state_runner.history_service.state_result_summary(child_result)
+        resolved_clarifications = list(child_frame.metadata.get("resolved_clarifications") or child_result.metadata.get("resolved_clarifications") or [])
         tool_result = ToolResult(
             status="ok" if child_result.status == "ok" else child_result.status,
             output=summary,
@@ -493,6 +529,7 @@ class AgenticRuntime:
                 "child_state_id": child_frame.state_id,
                 "summary": summary,
                 "child_status": child_result.status,
+                "resolved_clarifications": resolved_clarifications,
             },
         )
         tool_message = {
@@ -513,7 +550,7 @@ class AgenticRuntime:
             state_id=AgenticStateId(parent.state_id),
             messages=parent_messages,
             execution_context=execution_context,
-            metadata={"resumed_child_frame_id": child_frame.frame_id},
+            metadata={"resumed_child_frame_id": child_frame.frame_id, "resolved_clarifications": resolved_clarifications},
         )
         compact_trace = [_compact_state_trace(child_result), _compact_state_trace(parent_result)]
         if parent_result.status == "interrupted":
@@ -570,6 +607,7 @@ class AgenticRuntime:
             metadata={
                 "resumed_frame_id": parent.frame_id,
                 "completed_child_frame_id": child_frame.frame_id,
+                "resolved_clarifications": resolved_clarifications,
             },
         )
 
@@ -648,8 +686,14 @@ class AgenticRuntime:
             frame.frame_id,
             "completed" if state_result.status == "ok" else state_result.status,
             metadata={
+                **frame.metadata,
                 "completed_state_status": state_result.status,
                 "summary": self.state_runner.history_service.state_result_summary(state_result),
+                **(
+                    {"resolved_clarifications": state_result.metadata["resolved_clarifications"]}
+                    if state_result.metadata.get("resolved_clarifications") is not None
+                    else {}
+                ),
             },
             messages=full_messages,
             clarification_packet=None,

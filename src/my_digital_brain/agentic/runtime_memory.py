@@ -22,7 +22,6 @@ from my_digital_brain.agentic.planning_contracts import PlanningPurposeGuideline
 from my_digital_brain.agentic.runtime_helpers import (
     _collect_memory_plan_refs,
     _compact_state_trace,
-    _memory_ingestion_clarification_result,
     _memory_ingestion_error_result,
 )
 from my_digital_brain.agentic.runtime_models import AgenticRunResult, AgenticStateInvocation, AgenticStateRunResult
@@ -39,8 +38,9 @@ class MemoryIngestionRuntimeService:
         execution_context: AgenticToolExecutionContext,
         conversation_context: ConversationContext,
     ) -> AgenticRunResult:
-        execution_context.agentic_runtime = self
+        execution_context.agentic_runtime = self.runtime
         execution_context.conversation_context = conversation_context
+        execution_context.state_id = AgenticStateId.MEMORY_INGESTION.value
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -304,12 +304,6 @@ class MemoryIngestionRuntimeService:
         compact_trace: list[dict[str, Any]] = []
         for step in steps:
             for action in step.actions:
-                if action.action_type == MemoryPlanActionType.ASK_CLARIFICATION:
-                    return _memory_ingestion_clarification_result(
-                        action,
-                        execution_context,
-                        conversation_context,
-                    )
                 child_state = (
                     AgenticStateId.GRAPH_UPDATE
                     if action.action_type == MemoryPlanActionType.UPDATE_NODE
@@ -326,6 +320,7 @@ class MemoryIngestionRuntimeService:
                         timezone=payload.timezone,
                         ref_context=payload.ref_context,
                         ref_packets=payload.ref_packets,
+                        resolved_clarifications=payload.resolved_clarifications,
                         metadata={
                             "source": "memory_ingestion_phase_plan",
                             "phase": action.metadata.get("phase"),
@@ -343,7 +338,10 @@ class MemoryIngestionRuntimeService:
                         graph_context=payload.graph_context,
                         current_time=payload.current_time,
                         timezone=payload.timezone,
-                        metadata={"action": action.model_dump(mode="json", exclude_none=True)},
+                        metadata={
+                            "action": action.model_dump(mode="json", exclude_none=True),
+                            "resolved_clarifications": payload.resolved_clarifications,
+                        },
                     )
                     tool_name = "update_memory_graph"
                 result = self.runtime.run_child_frame(

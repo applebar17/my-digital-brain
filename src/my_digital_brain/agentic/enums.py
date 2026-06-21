@@ -57,7 +57,6 @@ class MemoryPlanActionType(StrEnum):
     UPDATE_NODE = "update_node"
     CREATE_RELATIONSHIP = "create_relationship"
     CREATE_RELATIONSHIP_STATE = "create_relationship_state"
-    ASK_CLARIFICATION = "ask_clarification"
 
 
 class RefObjectKind(StrEnum):

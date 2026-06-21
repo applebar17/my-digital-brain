@@ -19,7 +19,7 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlan,
     NodeMemoryPlan,
 )
-from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanActionType, MemoryPlanningPhase
+from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanningPhase
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.planning_contracts import (
     PlanningPurposeGuidelines,
@@ -61,7 +61,6 @@ from my_digital_brain.agentic.runtime_helpers import (
     _compact_state_trace,
     _contradiction_runtime_status,
     _frame_context_payload,
-    _memory_ingestion_clarification_result,
     _memory_ingestion_error_result,
     _state_value,
     _structured_summary,
@@ -635,6 +634,7 @@ class AgenticStateRunner:
             terminal=True,
             status="error" if has_error else "ok",
             metadata={
+                **(metadata or {}),
                 "provider": result.metadata.provider,
                 "model": result.metadata.model,
                 "route": route.model_dump(mode="json", exclude_none=True),

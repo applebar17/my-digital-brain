@@ -111,11 +111,11 @@ def test_active_prompt_behavior_boundaries_are_present() -> None:
 
     assert "Current action" in creation
     assert "Tool error" in creation
-    assert "Ask clarification only when blocked" in creation
+    assert "Ask a direct clarification" in creation
     assert "compact ref-based result" in creation
 
     assert "Tool error" in update
-    assert "Ask clarification only when target or intent remains blocked" in update
+    assert "Ask a direct clarification" in update
 
 
 def test_dense_republic_day_uat_shape_uses_many_logs_and_ref_edges() -> None:

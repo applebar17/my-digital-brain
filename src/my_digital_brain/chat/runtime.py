@@ -14,6 +14,7 @@ from my_digital_brain.chat.clarification import (
     answer_packet_from_progress,
     merge_clarification_progress,
     render_clarification_questions,
+    resolved_clarifications_from_answers,
     summarize_clarification_answers,
     validate_clarification_answers,
 )
@@ -286,6 +287,7 @@ class ChatRuntime:
             answer_packet,
         )
         partial_answer_summary = summarize_clarification_answers(packet, answer_packet)
+        partial_resolved_clarifications = resolved_clarifications_from_answers(packet, answer_packet)
 
         self.store.append_message(
             ConversationMessage(
@@ -311,7 +313,13 @@ class ChatRuntime:
             session.session_id,
             frame.frame_id,
             "interrupted",
-            metadata={"clarification_progress": progress},
+            metadata={
+                "clarification_progress": progress,
+                "resolved_clarifications": [
+                    *list(frame.metadata.get("resolved_clarifications") or []),
+                    *partial_resolved_clarifications,
+                ],
+            },
             clarification_packet=packet.model_dump(mode="json", exclude_none=True),
         )
         if not progress["is_complete"]:
@@ -338,6 +346,7 @@ class ChatRuntime:
         complete_answer_packet = answer_packet_from_progress(packet, progress)
         validate_clarification_answers(packet, complete_answer_packet)
         answer_summary = summarize_clarification_answers(packet, complete_answer_packet)
+        resolved_clarifications = resolved_clarifications_from_answers(packet, complete_answer_packet)
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
@@ -362,6 +371,7 @@ class ChatRuntime:
                     exclude_none=True,
                 ),
                 "clarification_answer_summary": answer_summary,
+                "resolved_clarifications": resolved_clarifications,
             },
             frame_id=frame.frame_id,
             parent_frame_id=frame.parent_frame_id,
@@ -372,6 +382,7 @@ class ChatRuntime:
             execution_context,
             clarification_answer_summary=answer_summary,
             answer_packet=complete_answer_packet,
+            resolved_clarifications=resolved_clarifications,
         )
         response = render_agentic_chat_response(result, session_id=session.session_id)
         response = response.model_copy(

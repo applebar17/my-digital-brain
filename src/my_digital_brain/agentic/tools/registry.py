@@ -444,7 +444,7 @@ def _clarification_questions_property() -> dict:
                 "question": string_property("Direct user-facing question rendered verbatim. Good: What is Alessia's full name? Good: Which beach or beach club did you go to that afternoon? Bad: Clarify the exact place to improve node quality."),
                 "options": {
                     "type": "array",
-                    "description": "Concise suggested answers. Free text remains allowed.",
+                    "description": "Concise suggested answers rendered directly to the user. Free text remains allowed.",
                     "maxItems": 5,
                     "items": {
                         "type": "object",

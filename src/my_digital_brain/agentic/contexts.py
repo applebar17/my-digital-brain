@@ -473,6 +473,7 @@ class AgenticToolPayload(AgenticModel):
     validation_details: dict[str, Any] | None = None
     ref_context_delta: dict[str, Any] | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
+    resolved_clarifications: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PlannedRefPacket(AgenticModel):
@@ -662,6 +663,7 @@ class MemoryIngestionContext(AgenticModel):
     memory_plan_packet: MemoryPlanPacket | None = None
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
+    resolved_clarifications: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -685,6 +687,7 @@ class MemoryIngestionContext(AgenticModel):
                     else None
                 ),
                 "ref_packets": self.ref_packets,
+                "resolved_clarifications": self.resolved_clarifications,
             },
         )
 
@@ -710,6 +713,7 @@ class MemoryCreationContext(AgenticModel):
     prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
+    resolved_clarifications: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -727,6 +731,7 @@ class MemoryCreationContext(AgenticModel):
                     else None
                 ),
                 "ref_packets": self.ref_packets,
+                "resolved_clarifications": self.resolved_clarifications,
             },
         )
 

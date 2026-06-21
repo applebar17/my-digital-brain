@@ -178,6 +178,41 @@ def answer_packet_from_progress(
     )
 
 
+
+def resolved_clarifications_from_answers(
+    packet: ClarificationPacket,
+    answers: ClarificationAnswerPacket,
+) -> list[dict[str, Any]]:
+    question_by_id = {question.question_id: question for question in packet.questions}
+    resolved: list[dict[str, Any]] = []
+    for answer in answers.answers:
+        question = question_by_id.get(answer.question_id)
+        if question is None:
+            continue
+        selected = [
+            {
+                "option_id": option.option_id,
+                "label": option.label,
+                "recommended": option.recommended,
+            }
+            for option in question.options
+            if option.option_id in answer.selected_option_ids
+        ]
+        free_text = (answer.free_text or "").strip()
+        answer_text = free_text or ", ".join(option["label"] for option in selected)
+        resolved.append(
+            {
+                "question_id": question.question_id,
+                "question": question.question,
+                "answer": answer_text,
+                "selected_options": selected,
+                "free_text": free_text or None,
+                "source": "user",
+                "authoritative": True,
+            }
+        )
+    return resolved
+
 def summarize_clarification_answers(
     packet: ClarificationPacket,
     answers: ClarificationAnswerPacket,

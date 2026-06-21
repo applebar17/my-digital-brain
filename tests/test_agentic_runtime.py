@@ -166,27 +166,13 @@ def _tool_result_content(result: object) -> str:
     return json.dumps(result, default=str)
 
 
-def _memory_ingestion_structured_payloads(*, clarify: bool = False) -> list[dict[str, Any]]:
+def _memory_ingestion_structured_payloads() -> list[dict[str, Any]]:
     node_action = {
         "action_id": "node_action_0001",
-        "action_type": "ask_clarification" if clarify else "create_node",
+        "action_type": "create_node",
         "target_refs": ["node_new_0001"],
-        "rationale": "Confirm Marco target." if clarify else "Create Marco as a person candidate.",
-        "payload": (
-            {
-                "questions": [
-                    {
-                        "question": "Which Marco should I use?",
-                        "options": [{"label": "Marco from university"}],
-                        "free_text_allowed": True,
-                        "required": True,
-                        "selection_mode": "single",
-                    }
-                ]
-            }
-            if clarify
-            else {"created_refs": ["node_new_0001"]}
-        ),
+        "rationale": "Create Marco as a person candidate.",
+        "payload": {"created_refs": ["node_new_0001"]},
     }
     return [
         {
@@ -627,10 +613,28 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {"content": "Ingestion child resumed."},
+            {
+                "content": "Need clarification.",
+                "tool": "request_user_clarification",
+                "arguments": {
+                    "reason": "Marco is ambiguous.",
+                    "target_refs": ["node_new_0001"],
+                    "questions": [
+                        {
+                            "question": "Which Marco should I use?",
+                            "options": [{"label": "Marco from university"}],
+                            "free_text_allowed": True,
+                            "required": True,
+                            "selection_mode": "single",
+                        }
+                    ],
+                },
+            },
+            {"content": "Creation child resumed."},
+            {"content": "Ingestion parent resumed."},
             {"content": "Conversation parent resumed."},
         ],
-        structured_payloads=_memory_ingestion_structured_payloads(clarify=True),
+        structured_payloads=_memory_ingestion_structured_payloads(),
     )
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
@@ -652,13 +656,16 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
 
     assert interrupted.status == "interrupted"
     child_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
-    assert child_frame.state_id == AgenticStateId.MEMORY_INGESTION.value
+    assert child_frame.state_id == AgenticStateId.MEMORY_CREATION.value
     assert child_frame.status == "interrupted"
     assert child_frame.clarification_packet is not None
     parent_frame = store.get_agentic_frame(child_frame.parent_frame_id or "")
-    assert parent_frame.state_id == AgenticStateId.CONVERSATION_ENTRY.value
     assert parent_frame.status == "waiting_child"
-    assert parent_frame.active_tool_name == "ingest_memory"
+    assert parent_frame.active_tool_name == "run_memory_creation"
+    top_parent_frame = store.get_agentic_frame(parent_frame.parent_frame_id or "")
+    assert top_parent_frame.state_id == AgenticStateId.CONVERSATION_ENTRY.value
+    assert top_parent_frame.status == "waiting_child"
+    assert top_parent_frame.active_tool_name == "ingest_memory"
     assert store.get_active_agentic_frame(session.session_id).frame_id == child_frame.frame_id
 
     packet = child_frame.clarification_packet
@@ -689,15 +696,16 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
     assert resumed.status == "ok"
     assert resumed.final_text == "Conversation parent resumed."
     assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
-    completed_parent = store.get_agentic_frame(parent_frame.frame_id)
+    completed_parent = store.get_agentic_frame(top_parent_frame.frame_id)
     assert completed_parent.status == "completed"
     parent_tool_messages = [
         message for message in completed_parent.messages if message.get("role") == "tool"
     ]
     assert len(parent_tool_messages) == 1
     parent_tool_payload = json.loads(parent_tool_messages[0]["content"])
-    assert parent_tool_payload["data"]["child_frame_id"] == child_frame.frame_id
+    assert parent_tool_payload["data"]["child_frame_id"] == parent_frame.frame_id
     assert parent_tool_payload["data"]["child_status"] == "ok"
+    assert parent_tool_payload["data"]["resolved_clarifications"]
     assert "state_result" not in parent_tool_payload["data"]
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
@@ -1085,65 +1093,3 @@ def test_structured_state_repairs_validation_error_once() -> None:
 
 
 
-def test_memory_ingestion_clarification_renders_ai_questions_verbatim() -> None:
-    action = {
-        "action_id": "clarify_action_0001",
-        "action_type": "ask_clarification",
-        "target_refs": ["node_new_alessia", "node_new_beach"],
-        "rationale": "Clarify missing user-facing details.",
-        "payload": {
-            "questions": [
-                {
-                    "question": "What is Alessia's full name?",
-                    "free_text_allowed": True,
-                    "required": True,
-                },
-                {
-                    "question": "Which beach or beach club did you go to that afternoon?",
-                    "free_text_allowed": True,
-                    "required": True,
-                },
-            ]
-        },
-    }
-    provider = ScriptedToolCallingProvider(
-        steps=[{"tool": "ingest_memory", "arguments": {}}, {"content": "Waiting for clarification."}],
-        structured_payloads=_memory_ingestion_structured_payloads_with_clarification(action),
-    )
-    runtime = AgenticRuntime(AgenticStateRunner(provider=provider))
-    result = runtime.run(
-        ConversationContext(
-            current_message=NeutralConversationMessage.user("Remember the barbeque."),
-        ),
-        AgenticToolExecutionContext(session_id="session-clarify-rationale"),
-    )
-
-    questions = [
-        question["question"]
-        for question in result.interruption["clarification_packet"]["questions"]
-    ]
-    assert questions == [
-        "What is Alessia's full name?",
-        "Which beach or beach club did you go to that afternoon?",
-    ]
-    assert all(not question.startswith("Can you clarify") for question in questions)
-
-
-def _memory_ingestion_structured_payloads_with_clarification(action: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {
-            "highlights": {"logs": ["The source mentions a barbeque."]},
-            "planning_guidance": "Clarify before planning nodes.",
-        },
-        {
-            "summary": "Need clarification before node planning.",
-            "steps": [
-                {
-                    "step_id": "node_step_0001",
-                    "phase": "nodes",
-                    "actions": [action],
-                }
-            ],
-            "node_plan_packet": {"summary": "Clarification required."},
-        },
-    ]

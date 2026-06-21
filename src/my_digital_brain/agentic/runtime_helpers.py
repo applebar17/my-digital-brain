@@ -15,9 +15,6 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticRunResult,
     AgenticStateRunResult,
 )
-from my_digital_brain.agentic.tools import AgenticToolExecutionContext
-from my_digital_brain.ai.schemas import ChatMessage
-from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.debug import AIFlowTraceSection
 
 
@@ -45,102 +42,6 @@ def _memory_ingestion_error_result(
         status="error",
         compact_trace=compact_trace,
     )
-
-
-def _memory_ingestion_clarification_result(
-    action: Any,
-    execution_context: AgenticToolExecutionContext,
-    conversation_context: ConversationContext,
-) -> AgenticRunResult:
-    from my_digital_brain.chat.clarification import build_clarification_packet
-
-    frame_id = execution_context.frame_id or new_uuid()
-    execution_context.frame_id = frame_id
-    clarification_tool_call_id = f"clarification-{new_uuid()}"
-    questions = action.payload.get("questions") or []
-    if not questions:
-        questions = [
-            {
-                "question": "What detail should I clarify before continuing?",
-                "free_text_allowed": True,
-                "required": True,
-                "selection_mode": "single",
-            }
-        ]
-    packet = build_clarification_packet(
-        frame_id=frame_id,
-        origin_state_id=AgenticStateId.MEMORY_INGESTION.value,
-        reason=action.rationale or "Memory ingestion needs clarification.",
-        questions=questions,
-        tool_call_id=clarification_tool_call_id,
-        tool_name="request_user_clarification",
-        target_refs=action.target_refs,
-    )
-    interruption = {
-        "frame_id": frame_id,
-        "state_id": AgenticStateId.MEMORY_INGESTION.value,
-        "tool_call_id": clarification_tool_call_id,
-        "tool_name": "request_user_clarification",
-        "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
-    }
-    if execution_context.chat_store is not None:
-        from my_digital_brain.chat.models import AgenticFrame
-
-        frame = AgenticFrame(
-            frame_id=frame_id,
-            session_id=execution_context.session_id or conversation_context.context_id,
-            state_id=AgenticStateId.MEMORY_INGESTION.value,
-            status="interrupted",
-            messages=[
-                {
-                    "role": "user",
-                    "content": conversation_context.current_message.content or "Clarification needed.",
-                },
-                {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "id": clarification_tool_call_id,
-                            "type": "function",
-                            "function": {
-                                "name": "request_user_clarification",
-                                "arguments": "{}",
-                            },
-                        }
-                    ],
-                },
-            ],
-            context_payload=_frame_context_payload(None, conversation_context),
-            compact_trace=[],
-            parent_frame_id=execution_context.parent_frame_id,
-            parent_tool_call_id=execution_context.parent_tool_call_id,
-            active_tool_call_id=clarification_tool_call_id,
-            active_tool_name="request_user_clarification",
-            clarification_packet=packet,
-            metadata={
-                "interrupted_state": AgenticStateId.MEMORY_INGESTION.value,
-                "tool_call_id": clarification_tool_call_id,
-                "tool_name": "request_user_clarification",
-            },
-        )
-        execution_context.chat_store.save_agentic_frame(frame.session_id, frame)
-    state_result = AgenticStateRunResult(
-        state_id=AgenticStateId.MEMORY_INGESTION,
-        assistant_text=packet.questions[0].question,
-        terminal=False,
-        status="interrupted",
-        metadata={"interruption": interruption},
-    )
-    return AgenticRunResult(
-        final_text=state_result.assistant_text,
-        visited_states=[state_result.state_id],
-        state_results=[state_result],
-        status="interrupted",
-        interruption=interruption,
-        compact_trace=[_compact_state_trace(state_result)],
-        metadata={"user_visible_owner": AgenticStateId.MEMORY_INGESTION.value},
-    )
-
 
 
 

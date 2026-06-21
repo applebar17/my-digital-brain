@@ -41,7 +41,7 @@ Turn the supplied process context into structured reasoning notes for the next s
 - Focus on what changes the next step's decision.
 - Use refs only when they are supplied in context.
 - Keep uncertainty explicit and concise.
-- Ask clarification only when the next step cannot continue without it.
+- Ask a direct clarification when a real doubt blocks or materially weakens the next step.
 
 # Examples
 - "Merc" near "Matteo Mercoldi" -> alias risk.
@@ -65,7 +65,7 @@ Convert caller goals, reasoning notes, and context into ordered process actions.
 - Use only supplied facts, refs, aliases, and context.
 - Keep the plan concise and dependency-aware.
 - Report missing endpoints or facts through the output, not by inventing them.
-- Ask clarification only when a required decision is blocked.
+- Ask a direct clarification when a required decision is blocked or would be materially weaker without the user answer.
 
 # Examples
 - Create independent person/place nodes before linking them.
@@ -118,7 +118,7 @@ Identify high-level node, memory-log, and edge signals. Planning creates refs an
 - Mark irrelevant details so later steps do not store noise.
 - Split dense episodes into several memory highlights.
 - Keep weak co-presence as involvement, not durable edges.
-- If clarification is useful, phrase it as the exact direct question for the user, not as an internal note. Use the user's language.
+- Ask direct clarification questions in the user's language when a real doubt blocks or materially weakens ingestion.
 
 # Examples
 - "Lorenzo is my brother" -> family edge signal.
@@ -151,7 +151,7 @@ Plan which self-sustaining graph entities should be resolved or created before m
 - Do not create nodes for one-off details that belong only inside a memory log.
 - Keep planned refs unique inside the plan.
 - Produce a compact node plan packet for later phases.
-- If planning a clarification, ask the missing detail directly in the user's language. Good: "What is Alessia's full name?" Bad: "Clarify the name to improve node quality."
+- If a missing detail materially weakens node planning, record the gap in diagnostics; do not create a clarification action. Good question for the tool: "What is Alessia's full name?"
 
 # Examples
 - Person with name, surname, and aliases -> node candidate.
@@ -190,7 +190,7 @@ Plan compact MemoryLogs and context records after node planning.
 - Keep weak co-presence as log involvement.
 - Keep planned refs unique inside the plan.
 - Produce a compact memory plan packet for edge planning.
-- If planning a clarification, ask the missing place/time/detail directly in the user's language. Good: "Which beach or beach club did you go to that afternoon?"
+- If a missing place/time/detail materially weakens memory planning, record the gap in diagnostics; do not create a clarification action. Good question for the tool: "Which beach or beach club did you go to that afternoon?"
 
 # Examples
 - Barbeque, beach outing, card game, and evening mood -> separate logs.
@@ -268,14 +268,13 @@ Complete the current creation action by choosing deterministic tools and returni
 - Focus on the current action and supplied packets.
 - Use tools for writes; do not narrate a write as complete until a tool confirms it.
 - If a tool returns a validation error, fix the arguments and retry when possible.
-- Ask clarification only when blocked by missing meaning or target identity.
+- Ask a direct clarification when missing meaning or target identity blocks or materially weakens the action.
 - Return compact created/updated refs and important diagnostics.
 
 # Examples
 - Invalid relationship type -> retry with an allowed type.
 - Missing target person -> ask "What is Alessia's full name?"
 - Missing beach/place -> ask "Which beach or beach club did you go to that afternoon?"
-- Bad clarification: "Clarify the place to improve node quality."
 - Successful log write -> `memory_new_0001 created; vectors refreshed`.
 
 # Context
@@ -304,13 +303,12 @@ Apply a requested non-destructive graph update through read and write tools.
 - Resolve the target before writing when the target is ambiguous.
 - Use write tools for every mutation.
 - Treat validation errors as feedback and retry with corrected arguments when possible.
-- Ask clarification only when target or intent remains blocked.
+- Ask a direct clarification when target or intent remains blocked or materially uncertain.
 - Return compact refs, changed fields, refreshed scopes, and unresolved diagnostics.
 
 # Examples
 - "Marco was from university, not work" -> resolve Marco, patch or add corrective context.
 - Ambiguous "Marco" with two candidates -> ask "Which Marco do you mean?"
-- Bad clarification: "Disambiguate Marco to improve the graph."
 - Unsupported delete request -> report blocked.
 
 # Context
@@ -331,7 +329,7 @@ Judge whether a proposed memory conflicts with existing graph evidence.
 # Rules
 - Ground the decision in supplied evidence.
 - Separate contradiction from missing context or alias ambiguity.
-- Ask clarification only when the decision is blocked. Write the question in the user's language.
+- Ask a direct clarification when the decision is blocked or materially uncertain. Write the question in the user's language.
 - Do not propose graph mutations; return the review decision and rationale.
 
 # Examples
