@@ -220,6 +220,18 @@ class GenAIToolExecutionMixin:
             output = tool_fn(**args)
             result = self._normalize_tool_output(output)
         except Exception as exc:  # pragma: no cover
+            self.logger.exception(
+                "tool.call.exception",
+                extra={
+                    "event": "tool.call.exception",
+                    "component": "tool",
+                    "step": "execute_tool_call",
+                    "tool_name": fn_name,
+                    "error_type": exc.__class__.__name__,
+                    "arg_keys": sorted(args.keys()) if isinstance(args, dict) else [],
+                    "duration_ms": int((time.monotonic() - start) * 1000),
+                },
+            )
             error = ToolError(
                 message=f"Tool '{fn_name}' raised: {exc}",
                 code="tool_exception",

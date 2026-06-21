@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -67,6 +68,9 @@ from my_digital_brain.agentic.runtime_helpers import (
     _system_prompt_with_runtime_context,
     _trace_json_section,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -360,6 +364,18 @@ class AgenticStateRunner:
                 ),
             )
         except ValidationError as exc:
+            LOGGER.exception(
+                "agentic.structured_state.validation_error",
+                extra={
+                    "event": "agentic.structured_state.validation_error",
+                    "state_id": state_value,
+                    "prompt_id": prompt_id,
+                    "schema_id": output_schema.__name__,
+                    "model": route.model,
+                    "error_type": exc.__class__.__name__,
+                    "validation_error_count": len(exc.errors()),
+                },
+            )
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=f"{state_value} returned invalid structured output: {exc}",
