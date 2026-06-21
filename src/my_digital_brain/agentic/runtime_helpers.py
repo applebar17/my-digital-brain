@@ -56,6 +56,7 @@ def _memory_ingestion_clarification_result(
 
     frame_id = execution_context.frame_id or new_uuid()
     execution_context.frame_id = frame_id
+    clarification_tool_call_id = f"clarification-{new_uuid()}"
     questions = action.payload.get("questions") or []
     if not questions:
         questions = [
@@ -71,12 +72,14 @@ def _memory_ingestion_clarification_result(
         origin_state_id=AgenticStateId.MEMORY_INGESTION.value,
         reason=action.rationale or "Memory ingestion needs clarification.",
         questions=questions,
+        tool_call_id=clarification_tool_call_id,
+        tool_name="request_user_clarification",
         target_refs=action.target_refs,
     )
     interruption = {
         "frame_id": frame_id,
         "state_id": AgenticStateId.MEMORY_INGESTION.value,
-        "tool_call_id": execution_context.current_tool_call_id or frame_id,
+        "tool_call_id": clarification_tool_call_id,
         "tool_name": "request_user_clarification",
         "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
     }
@@ -88,17 +91,35 @@ def _memory_ingestion_clarification_result(
             session_id=execution_context.session_id or conversation_context.context_id,
             state_id=AgenticStateId.MEMORY_INGESTION.value,
             status="interrupted",
-            messages=[],
+            messages=[
+                {
+                    "role": "user",
+                    "content": conversation_context.current_message.content or "Clarification needed.",
+                },
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": clarification_tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "request_user_clarification",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+            ],
             context_payload=_frame_context_payload(None, conversation_context),
             compact_trace=[],
             parent_frame_id=execution_context.parent_frame_id,
             parent_tool_call_id=execution_context.parent_tool_call_id,
-            active_tool_call_id=execution_context.current_tool_call_id or new_uuid(),
+            active_tool_call_id=clarification_tool_call_id,
             active_tool_name="request_user_clarification",
             clarification_packet=packet,
             metadata={
                 "interrupted_state": AgenticStateId.MEMORY_INGESTION.value,
-                "tool_call_id": execution_context.current_tool_call_id,
+                "tool_call_id": clarification_tool_call_id,
                 "tool_name": "request_user_clarification",
             },
         )

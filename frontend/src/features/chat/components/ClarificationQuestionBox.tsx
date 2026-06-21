@@ -35,7 +35,7 @@ export function ClarificationQuestionBox({
   }, [packet?.packet_id, currentQuestion?.question_id]);
 
   const canSubmit = useMemo(() => {
-    if (!packet || !currentQuestion || !onSubmit || !packet.tool_call_id) {
+    if (!packet || !currentQuestion || !onSubmit) {
       return false;
     }
     if (!currentQuestion.required) {
@@ -91,10 +91,10 @@ export function ClarificationQuestionBox({
 
       <section className="memory-clarification-question" key={currentQuestion.question_id}>
         <h3>
-          <span>
+          <span className="memory-clarification-count">
             {Math.max(currentIndex + 1, 1)} / {packet.questions.length}
-          </span>{" "}
-          {currentQuestion.question}
+          </span>
+          <span className="memory-clarification-question-text">{currentQuestion.question}</span>
         </h3>
         {currentQuestion.options.length > 0 ? (
           <div className="memory-clarification-options">

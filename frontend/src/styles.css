@@ -1473,6 +1473,7 @@ p {
 
 .memory-clarification-question h3 {
   display: flex;
+  align-items: flex-start;
   gap: var(--space-2);
   margin: 0;
   color: var(--on-surface);
@@ -1480,9 +1481,16 @@ p {
   line-height: 20px;
 }
 
-.memory-clarification-question h3 span {
+.memory-clarification-count {
+  flex: 0 0 44px;
   color: var(--on-surface-variant);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.memory-clarification-question-text {
+  min-width: 0;
+  flex: 1;
 }
 
 .memory-clarification-options {
