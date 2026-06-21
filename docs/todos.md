@@ -194,25 +194,20 @@ ingestion runtime promotion.
 
 ### Prompt Inventory And Cleanup
 
-Status: the active prompt inventory follows the frame-based agentic runtime.
-Memory ingestion prompts are code-managed constants mirrored to the file-backed
-`PromptRegistry` templates for compatibility.
+Status: active prompts are code-managed constants mirrored to the file-backed
+`PromptRegistry` templates for compatibility. See
+`docs/ai-engineering/prompt-inventory.md` for state ownership.
 
 - Active runtime state prompts:
   `conversation_entry`, `memory_query`, `memory_ingestion`,
   `memory_node_planning`, `memory_log_planning`, `memory_edge_planning`,
   `memory_creation`, `graph_update`, `contradiction_review`,
   `reasoning_checkpoint`, and `planning_checkpoint`.
-- Legacy or inert prompt surfaces:
-  `pending_process_review`, `correction_intake`, and `correction_proposal` are
-  not active production routing guidance. Remove their files when no tests or
-  compatibility docs reference them.
-- Planned/scaffold prompt surfaces still needing ownership review:
-  `query_retrieval_planning`, `profile_memory_extraction`,
-  `maintenance_review`, `clarification_classifier`, and `answer_generation`.
-- If `answer_generation` remains in scope, wire
-  `LLMGraphContextAnswerGenerator` to the file-backed template and remove the
-  inline prompt body.
+- Removed prompt surfaces:
+  `pending_process_review`, `correction_intake`, `correction_proposal`,
+  `ingestion_planner`, `query_retrieval_planning`, `profile_memory_extraction`,
+  `maintenance_review`, `clarification_classifier`, and `answer_generation` are
+  not production prompt owners. Do not load them from runtime code.
 - Keep prompt files, state configs, contracts, and real runtime invocation paths
   aligned. Do not add a second active prompt family when replacing a flow;
   update the current prompt or delete the obsolete one.

@@ -14,7 +14,6 @@ SUMMARIZATION_TASK = "summarization"
 EMBEDDING_TASK = "embedding"
 SPEECH_TO_TEXT_TASK = "speech_to_text"
 SMART_MODEL_TASKS = {
-    "answer_generation",
     "conversation_entry",
     "graph_update",
     "ingestion_perception_extraction",
@@ -22,7 +21,6 @@ SMART_MODEL_TASKS = {
     "memory_question_answer",
     "memory_query",
     "planning_checkpoint",
-    "query_retrieval_planning",
 }
 REASONING_MODEL_TASKS = {"contradiction_review", "reasoning_checkpoint"}
 DEFAULT_STRUCTURED_TASKS = {

@@ -56,10 +56,10 @@ def test_wave3_agentic_state_configs_are_registered_with_safe_toolboxes() -> Non
 def test_wave3_prompt_templates_are_registered() -> None:
     registry = PromptRegistry()
 
-    assert "graph_update state" in registry.load("graph_update").template
-    assert "contradiction review state" in registry.load("contradiction_review").template
-    assert "Extract durable profile memory" in registry.load("profile_memory_extraction").template
-    assert "Review memory maintenance suggestions" in registry.load("maintenance_review").template
+    assert "graph update agent" in registry.load("graph_update").template
+    assert "contradiction reviewer" in registry.load("contradiction_review").template
+    assert "Tool error" in registry.load("graph_update").template
+    assert "Ground the decision" in registry.load("contradiction_review").template
 
 
 def test_graph_update_context_carries_guidelines_and_target_hints() -> None:

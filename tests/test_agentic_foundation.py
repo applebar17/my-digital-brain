@@ -226,15 +226,15 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
     prompt = default_registry.load("conversation_entry")
 
     assert prompt.prompt_id == "conversation_entry"
-    assert "top-level tools" in prompt.template
-    assert "structured output schema" in default_registry.load(
+    assert "chat entry router" in prompt.template
+    assert "structured reasoning notes" in default_registry.load(
         "reasoning_checkpoint",
     ).template
-    assert "reusable planning checkpoint" in default_registry.load(
+    assert "ordered process actions" in default_registry.load(
         "planning_checkpoint",
     ).template
-    assert "memory ingestion state" in default_registry.load("memory_ingestion").template
-    assert "memory creation state" in default_registry.load("memory_creation").template
+    assert "memory reasoner" in default_registry.load("memory_ingestion").template
+    assert "memory action executor" in default_registry.load("memory_creation").template
 
     prompt_dir = tmp_path / "example"
     prompt_dir.mkdir()
@@ -406,16 +406,13 @@ def test_memory_ingestion_prompt_locks_reasoner_boundary() -> None:
     template = PromptRegistry().load("memory_ingestion").template
 
     assert "# Context" in template
-    assert "# Hard Rules" in template
-    assert "# Guidelines" in template
+    assert "# Rules" in template
     assert "# Examples" in template
-    assert "# Output Contract" in template
     assert "Hydrated graph context" in template
     assert "Known aliases and candidate mentions" in template
-    assert "Do not allocate refs" in template
-    assert "Do not write" in template
-    assert "Do not emit `node_new_*`" in template
-    assert "MemoryIngestionReasoning" in template
+    assert "do not create refs" in template
+    assert "Planning creates refs and actions" in template
+    assert "Stay high-level" in template
 
 
 def test_three_phase_memory_plan_contracts_and_packets_validate() -> None:
@@ -525,20 +522,18 @@ def test_three_phase_planning_prompts_include_handoff_packets() -> None:
     edge = registry.load("memory_edge_planning").template
 
     assert "Reasoning inventory packet" in node
-    assert "Current refs" in node
+    assert "Known refs" in node
     assert "Existing graph candidates" in node
-    assert "node_plan_packet" in node
-    assert "NodeMemoryPlan" in node
+    assert "Resolve aliases and duplicate candidates" in node
 
     assert "Node plan packet" in memory
     assert "Irrelevant details" in memory
-    assert "memory_plan_packet" in memory
-    assert "MemoryLogMemoryPlan" in memory
+    assert "weak co-presence as log involvement" in memory
 
     assert "Node plan packet" in edge
     assert "Memory plan packet" in edge
-    assert "Edge endpoints must be known local refs" in edge
-    assert "EdgeMemoryPlan" in edge
+    assert "Edge endpoints must be known refs" in edge
+    assert "never loose names" in edge
 
 
 def test_ref_context_contracts_allocate_and_hide_backend_ids() -> None:

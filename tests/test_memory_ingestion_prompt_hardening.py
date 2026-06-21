@@ -21,7 +21,7 @@ from my_digital_brain.agentic import (
     PlannedRefPacket,
     ReasoningHighlights,
 )
-from my_digital_brain.prompts import MEMORY_PROMPT_TEMPLATES, PromptRegistry
+from my_digital_brain.prompts import ACTIVE_PROMPT_TEMPLATES, MEMORY_PROMPT_TEMPLATES, PromptRegistry
 
 
 UUID_RE = re.compile(
@@ -45,64 +45,77 @@ PROMPT_VARIABLES = {
 }
 
 
-def test_memory_prompt_constants_match_file_backed_registry() -> None:
+def test_active_prompt_constants_match_file_backed_registry() -> None:
     registry = PromptRegistry()
 
-    for prompt_id, template in MEMORY_PROMPT_TEMPLATES.items():
+    for prompt_id, template in ACTIVE_PROMPT_TEMPLATES.items():
         assert registry.load(prompt_id).template == template
 
 
-def test_memory_prompt_family_renders_required_sections_and_clean_packets() -> None:
+def test_active_prompt_family_is_lean_and_clean() -> None:
     registry = PromptRegistry()
+    noise_phrases = (
+        "backend ids",
+        "backend id",
+        "raw metadata",
+        "prompt traces",
+        "vector ids",
+        "my digital brain",
+    )
 
-    for prompt_id in MEMORY_PROMPT_TEMPLATES:
+    for prompt_id, template in ACTIVE_PROMPT_TEMPLATES.items():
         rendered = registry.render(prompt_id, variables=PROMPT_VARIABLES)
 
-        for section in (
-            "# Identity",
-            "# Context",
-            "# Hard Rules",
-            "# Guidelines",
-            "# Examples",
-            "# Output Contract",
-        ):
-            assert section in rendered
+        assert "# Role" in rendered
+        assert "# Task" in rendered
+        assert "# Context" in rendered
+        assert len(template) < 1800
         assert not UUID_RE.search(rendered)
-        assert "raw metadata" in rendered
-        assert "prompt traces" in rendered
-        assert "vector ids" in rendered
-        assert "backend ids" in rendered or "backend id" in rendered
+        lowered = rendered.lower()
+        for phrase in noise_phrases:
+            assert phrase not in lowered, f"{prompt_id} contains prompt noise: {phrase}"
 
 
-def test_phase_prompts_lock_required_packet_labels_and_boundaries() -> None:
+def test_active_prompt_behavior_boundaries_are_present() -> None:
     registry = PromptRegistry()
+
+    conversation = registry.load("conversation_entry").template
+    assert "query_memory" in conversation
+    assert "ingest_memory" in conversation
+    assert "update_memory_graph" not in conversation
+    assert "start_memory_ingestion" not in conversation
+
+    ingestion = registry.render("memory_ingestion", variables=PROMPT_VARIABLES)
+    assert "Stay high-level" in ingestion
+    assert "do not create refs" in ingestion
+    assert "Split dense episodes" in ingestion
 
     node = registry.render("memory_node_planning", variables=PROMPT_VARIABLES)
     memory = registry.render("memory_log_planning", variables=PROMPT_VARIABLES)
     edge = registry.render("memory_edge_planning", variables=PROMPT_VARIABLES)
     creation = registry.render("memory_creation", variables=PROMPT_VARIABLES)
+    update = registry.load("graph_update").template
 
-    assert "Reasoning inventory packet" in node
-    assert "Current refs" in node
-    assert "Existing graph candidates and possible duplicates" in node
-    assert "node_plan_packet" in node
+    assert "Node: a self-sustaining entity" in node
     assert "Resolve aliases and duplicate candidates" in node
+    assert "node_plan_packet" not in node
 
     assert "Node plan packet" in memory
-    assert "Irrelevant details to avoid" in memory
-    assert "memory_plan_packet" in memory
     assert "one or two giant logs" in memory
+    assert "weak co-presence as log involvement" in memory
 
-    assert "Node plan packet" in edge
     assert "Memory plan packet" in edge
-    assert "Edge endpoints must be known local refs" in edge
+    assert "Edge endpoints must be known refs" in edge
     assert "never loose names" in edge
-    assert "weak co-presence" in edge
+    assert "strong signals" in edge
 
     assert "Current action" in creation
-    assert "deterministic write tools" in creation
-    assert "validation error" in creation.lower()
-    assert "compact ref-based results" in creation
+    assert "Tool error" in creation
+    assert "Ask clarification only when blocked" in creation
+    assert "compact ref-based result" in creation
+
+    assert "Tool error" in update
+    assert "Ask clarification only when target or intent remains blocked" in update
 
 
 def test_dense_republic_day_uat_shape_uses_many_logs_and_ref_edges() -> None:

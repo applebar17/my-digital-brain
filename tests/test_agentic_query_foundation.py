@@ -96,12 +96,13 @@ def test_memory_query_state_config_is_registered_with_read_only_tools() -> None:
     assert config.required_context_type == "QueryRetrievalPlanningContext"
 
 
-def test_wave2_prompt_templates_are_registered() -> None:
+def test_memory_query_prompt_template_is_registered() -> None:
     registry = PromptRegistry()
 
-    assert "memory query state" in registry.load("memory_query").template
-    assert "Plan graph retrieval" in registry.load("query_retrieval_planning").template
-    assert "Generate a grounded answer" in registry.load("answer_generation").template
+    template = registry.load("memory_query").template
+    assert "memory answerer" in template
+    assert "read tools" in template
+    assert "Do not ask clarification" in template
 
 
 def test_query_foundation_without_graph_returns_no_memory_tool_context() -> None:

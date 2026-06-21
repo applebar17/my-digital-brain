@@ -226,7 +226,7 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_target_evidence",
         "request_user_clarification",
     ]
-    assert "reasoning checkpoint for a network graph process" in PromptRegistry().load(
+    assert "structured reasoning notes" in PromptRegistry().load(
         "reasoning_checkpoint",
     ).template
     assert generic_planning.prompt_id == "planning_checkpoint"
@@ -237,7 +237,7 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_target_evidence",
         "request_user_clarification",
     ]
-    assert "reusable planning checkpoint" in PromptRegistry().load(
+    assert "ordered process actions" in PromptRegistry().load(
         "planning_checkpoint",
     ).template
 

@@ -1,24 +1,38 @@
 """Centralized prompt registry and template loading."""
 
-from my_digital_brain.prompts.models import PromptTemplate
-from my_digital_brain.prompts.registry import PromptNotFoundError, PromptRegistry
-from my_digital_brain.prompts.memory_ingestion import (
+from my_digital_brain.prompts.active import (
+    ACTIVE_PROMPT_TEMPLATES,
+    CONTRADICTION_REVIEW_SYSTEM_TEMPLATE,
+    CONVERSATION_ENTRY_SYSTEM_TEMPLATE,
+    GRAPH_UPDATE_SYSTEM_TEMPLATE,
     MEMORY_CREATION_SYSTEM_TEMPLATE,
     MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE,
     MEMORY_INGESTION_SYSTEM_TEMPLATE,
     MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE,
     MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE,
     MEMORY_PROMPT_TEMPLATES,
+    MEMORY_QUERY_SYSTEM_TEMPLATE,
+    PLANNING_CHECKPOINT_SYSTEM_TEMPLATE,
+    REASONING_CHECKPOINT_SYSTEM_TEMPLATE,
 )
+from my_digital_brain.prompts.models import PromptTemplate
+from my_digital_brain.prompts.registry import PromptNotFoundError, PromptRegistry
 
 __all__ = [
+    "ACTIVE_PROMPT_TEMPLATES",
+    "CONTRADICTION_REVIEW_SYSTEM_TEMPLATE",
+    "CONVERSATION_ENTRY_SYSTEM_TEMPLATE",
+    "GRAPH_UPDATE_SYSTEM_TEMPLATE",
     "MEMORY_CREATION_SYSTEM_TEMPLATE",
     "MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE",
     "MEMORY_INGESTION_SYSTEM_TEMPLATE",
     "MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE",
     "MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE",
     "MEMORY_PROMPT_TEMPLATES",
+    "MEMORY_QUERY_SYSTEM_TEMPLATE",
+    "PLANNING_CHECKPOINT_SYSTEM_TEMPLATE",
     "PromptNotFoundError",
     "PromptRegistry",
     "PromptTemplate",
+    "REASONING_CHECKPOINT_SYSTEM_TEMPLATE",
 ]
