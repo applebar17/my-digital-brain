@@ -1,4 +1,4 @@
-﻿# Memory Ingestion Reasoning, Planning, And LLM-Facing Refs
+# Memory Ingestion Reasoning, Planning, And LLM-Facing Refs
 
 ## Purpose
 
@@ -51,6 +51,40 @@ refs and persistent graph identifiers.
   audit, trace, backend metadata, raw payloads, timestamps unrelated to the
   reasoning task, and duplicate fields should be removed before the model sees
   them.
+- Each implementation wave must keep the affected code clean. When a new
+  contract, tool, packet builder, prompt path, or orchestration path replaces an
+  older behavior, update the existing code in place and remove or quarantine the
+  deprecated path in the same wave whenever practical. Prefer visible failures
+  over hidden legacy fallback behavior. Do not keep wrappers, compatibility
+  branches, unused prompt fragments, unused tool handlers, or duplicate model
+  shapes unless a current public API, migration, or test explicitly requires
+  them.
+
+## Implementation Hygiene
+
+The architecture should be implemented with cleanup as part of every step, not
+as a vague final task. The expected rule is:
+
+```text
+new path in, obsolete active path out
+```
+
+For every wave:
+
+- update the current affected implementation rather than layering a parallel
+  production path beside it;
+- remove model-visible legacy tools, prompts, routing branches, and tests once
+  the replacement is active;
+- keep migration-only or API-compatibility code inert, clearly named, and out of
+  model-visible/runtime orchestration;
+- avoid hardcoded `None` fields, placeholder output fields, and legacy schema
+  remnants when the field is no longer semantically used;
+- keep tool schemas, context contracts, prompt builders, and tests aligned with
+  the actual runtime behavior;
+- prefer failing visibly with structured diagnostics over silently falling back
+  to an older orchestration path;
+- keep logs and tool results compact, ref-based, and free from prompt/raw trace
+  noise unless an explicit debug flag is enabled.
 
 ## LLM-Friendly Packets
 
@@ -798,6 +832,10 @@ representative contexts and assert that required sections, placeholders, hard
 rules, and examples are present.
 
 ## Implementation Waves
+
+Cleanup applies to every wave. Wave 4 is the final hardening pass, but earlier
+waves should remove affected legacy code as soon as the replacement behavior is
+active and covered.
 
 ### Wave 1: Contracts And Ref Context
 
