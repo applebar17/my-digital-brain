@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
 from pydantic import Field, model_validator
@@ -26,6 +27,8 @@ from my_digital_brain.agentic.enums import (
 from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
+
+_PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[0-9]{4}\b")
 
 BACKEND_ONLY_KEYS = {
     "metadata",
@@ -339,6 +342,138 @@ class QueryRetrievalResultContext(AgenticModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class NodeReasoningHighlights(AgenticModel):
+    persons: str = ""
+    places: str = ""
+    events: str = ""
+    social_circles: str = ""
+    topics_or_objects: str = ""
+    other: str = ""
+
+    def has_signal(self) -> bool:
+        return any(
+            value.strip()
+            for value in (
+                self.persons,
+                self.places,
+                self.events,
+                self.social_circles,
+                self.topics_or_objects,
+                self.other,
+            )
+        )
+
+
+class EdgeReasoningHighlights(AgenticModel):
+    family: str = ""
+    relationships: str = ""
+    perception_or_affect: str = ""
+    event_place_links: str = ""
+    other: str = ""
+
+    def has_signal(self) -> bool:
+        return any(
+            value.strip()
+            for value in (
+                self.family,
+                self.relationships,
+                self.perception_or_affect,
+                self.event_place_links,
+                self.other,
+            )
+        )
+
+
+class ReasoningHighlights(AgenticModel):
+    nodes: NodeReasoningHighlights = Field(default_factory=NodeReasoningHighlights)
+    logs: list[str] = Field(default_factory=list)
+    edges: EdgeReasoningHighlights = Field(default_factory=EdgeReasoningHighlights)
+
+    def has_signal(self) -> bool:
+        return self.nodes.has_signal() or bool(self.logs) or self.edges.has_signal()
+
+
+class AliasReasoningHint(AgenticModel):
+    main_mention: str = Field(description="Primary source mention or normalized name.")
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="Possible aliases, nicknames, misspellings, or role mentions.",
+    )
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "AliasReasoningHint":
+        if not self.main_mention.strip():
+            raise ValueError("Alias hint requires a main_mention.")
+        self.aliases = [alias for alias in self.aliases if alias.strip()]
+        return self
+
+
+class IrrelevantDetailHint(AgenticModel):
+    detail: str = Field(description="Detail that later states should usually ignore.")
+    reason: str | None = None
+    category: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "IrrelevantDetailHint":
+        if not self.detail.strip():
+            raise ValueError("Irrelevant detail requires detail text.")
+        return self
+
+
+class ReasoningAmbiguity(AgenticModel):
+    subject: str = Field(description="Ambiguous mention, relation, or memory boundary.")
+    description: str = Field(description="Why the subject is ambiguous.")
+    possible_interpretations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "ReasoningAmbiguity":
+        if not self.subject.strip() or not self.description.strip():
+            raise ValueError("Ambiguity requires subject and description.")
+        return self
+
+
+class ReasoningDuplicateNote(AgenticModel):
+    mention: str = Field(description="Source mention or candidate identity needing duplicate checks.")
+    note: str = Field(description="Duplicate or resolution guidance for the planner.")
+    candidate_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "ReasoningDuplicateNote":
+        if not self.mention.strip() or not self.note.strip():
+            raise ValueError("Duplicate note requires mention and note.")
+        return self
+
+
+class MemoryIngestionReasoning(AgenticModel):
+    highlights: ReasoningHighlights = Field(default_factory=ReasoningHighlights)
+    possible_aliases: list[AliasReasoningHint] = Field(default_factory=list)
+    irrelevant_details: list[IrrelevantDetailHint] = Field(default_factory=list)
+    ambiguities: list[ReasoningAmbiguity] = Field(default_factory=list)
+    duplicate_or_resolution_notes: list[ReasoningDuplicateNote] = Field(default_factory=list)
+    missing_context_questions: list[str] = Field(default_factory=list)
+    planning_guidance: str = ""
+
+    @model_validator(mode="after")
+    def _validate_reasoning_boundary(self) -> "MemoryIngestionReasoning":
+        _reject_proposed_refs(self.model_dump(mode="json"))
+        useful = (
+            self.highlights.has_signal()
+            or self.possible_aliases
+            or self.irrelevant_details
+            or self.ambiguities
+            or self.duplicate_or_resolution_notes
+            or any(question.strip() for question in self.missing_context_questions)
+            or self.planning_guidance.strip()
+        )
+        if not useful:
+            raise ValueError("MemoryIngestionReasoning requires at least one useful signal.")
+        self.missing_context_questions = [
+            question for question in self.missing_context_questions if question.strip()
+        ]
+        return self
+
+
 class AgenticToolPayload(AgenticModel):
     summary: str
     created_refs: list[str] = Field(default_factory=list)
@@ -383,6 +518,8 @@ class MemoryIngestionContext(AgenticModel):
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
+    reasoning: MemoryIngestionReasoning | None = None
+    reasoning_packets: list[dict[str, Any]] = Field(default_factory=list)
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -395,6 +532,8 @@ class MemoryIngestionContext(AgenticModel):
                 "current_time": self.current_time,
                 "timezone": self.timezone,
                 "prior_tool_outputs": self.prior_tool_outputs,
+                "reasoning": self.reasoning,
+                "reasoning_packets": self.reasoning_packets,
                 "ref_context": (
                     self.ref_context.model_facing_packet()
                     if self.ref_context is not None
@@ -605,6 +744,25 @@ class MaintenanceReviewResultContext(AgenticModel):
         if not self.suggestions and not self.no_action_reason:
             raise ValueError("Maintenance review requires suggestions or no_action_reason.")
         return self
+
+
+
+def _reject_proposed_refs(value: Any) -> None:
+    if isinstance(value, str):
+        match = _PROPOSED_REF_RE.search(value)
+        if match:
+            raise ValueError(
+                "Memory ingestion reasoning must not allocate proposed refs; "
+                f"found {match.group(0)}."
+            )
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _reject_proposed_refs(item)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _reject_proposed_refs(item)
 
 
 def _compact_prompt_payload(value: Any) -> Any:

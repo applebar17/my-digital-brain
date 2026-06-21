@@ -60,6 +60,14 @@ work:
   unresolved endpoints.
 - Durable writes happen only after backend validation and write-plan assembly.
 
+For the ref-based memory ingestion architecture, the first reasoner is a
+structured inventory, not a planner. It separates high-level node, MemoryLog,
+and edge highlights; captures possible aliases; identifies irrelevant details;
+and records ambiguity/duplicate notes. It must not allocate refs, emit
+executable actions, or mutate storage. Planning owns concrete refs and action
+shape, and aliases/irrelevant details must be carried forward as clearly labeled
+packets.
+
 The model may use local refs only when the process goal requires orchestration
 between objects. A ref-consuming extraction step may use only refs created by
 earlier steps or graph aliases explicitly provided by the backend.

@@ -8,6 +8,15 @@ from pydantic import ValidationError
 from my_digital_brain.ai.models import ToolResult as ProviderToolResult
 from my_digital_brain.agentic import (
     AgenticStateId,
+    ReasoningHighlights,
+    ReasoningDuplicateNote,
+    ReasoningAmbiguity,
+    NodeReasoningHighlights,
+    MemoryIngestionReasoning,
+    MemoryIngestionContext,
+    IrrelevantDetailHint,
+    EdgeReasoningHighlights,
+    AliasReasoningHint,
     ChannelContextProjection,
     ChannelSessionMetadata,
     ConversationContext,
@@ -305,6 +314,130 @@ def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None
     assert route.assistant_message is not None
     assert "Provider-backed conversation routing" in route.assistant_message.content
 
+
+
+def test_memory_ingestion_reasoning_contract_accepts_guidance_not_actions() -> None:
+    reasoning = MemoryIngestionReasoning(
+        highlights=ReasoningHighlights(
+            nodes=NodeReasoningHighlights(
+                persons="The main people are Lorenzo, Gianluca, Merc, and Bri.",
+                places="The beach and Bar Mario are relevant places.",
+            ),
+            logs=[
+                "The user spent the afternoon at the beach with friends.",
+                "The user noticed the Moon atmosphere was not great.",
+            ],
+            edges=EdgeReasoningHighlights(
+                family="Lorenzo is described as the user's brother.",
+                perception_or_affect="The beach atmosphere may need a perception record.",
+            ),
+        ),
+        possible_aliases=[
+            AliasReasoningHint(
+                main_mention="Matteo Mercoldi",
+                aliases=["Merc"],
+                notes="Check existing people before creating a duplicate.",
+            ),
+        ],
+        irrelevant_details=[
+            IrrelevantDetailHint(
+                detail="Incidental co-presence at the beach should not become durable edges.",
+                reason="Weak relationship evidence.",
+                category="weak_edge",
+            ),
+        ],
+        ambiguities=[
+            ReasoningAmbiguity(
+                subject="Fabione",
+                description="Nickname may map to Riccardo Cau.",
+                possible_interpretations=["Riccardo Cau", "new person"],
+            ),
+        ],
+        duplicate_or_resolution_notes=[
+            ReasoningDuplicateNote(
+                mention="Bri",
+                note="Likely an alias; check existing graph candidates.",
+                candidate_refs=["node_0002"],
+            ),
+        ],
+        missing_context_questions=["Which person does Fabione refer to if graph candidates conflict?"],
+        planning_guidance="Split dense source text into several compact MemoryLogs.",
+    )
+
+    payload = reasoning.model_dump(mode="json")
+
+    assert payload["highlights"]["nodes"]["persons"].startswith("The main people")
+    assert payload["possible_aliases"][0]["aliases"] == ["Merc"]
+    assert payload["irrelevant_details"][0]["category"] == "weak_edge"
+    assert payload["duplicate_or_resolution_notes"][0]["candidate_refs"] == ["node_0002"]
+
+
+def test_memory_ingestion_reasoning_rejects_empty_payload_and_proposed_refs() -> None:
+    with pytest.raises(ValidationError, match="at least one useful signal"):
+        MemoryIngestionReasoning()
+
+    with pytest.raises(ValidationError, match="must not allocate proposed refs"):
+        MemoryIngestionReasoning(
+            highlights=ReasoningHighlights(
+                nodes=NodeReasoningHighlights(
+                    persons="Create node_new_0001 for Lorenzo.",
+                ),
+            ),
+        )
+
+    with pytest.raises(ValidationError):
+        MemoryIngestionReasoning(
+            highlights=ReasoningHighlights(logs=["One useful log highlight."]),
+            backend_id="node-backend-1",
+        )
+
+    with pytest.raises(ValidationError):
+        MemoryIngestionReasoning(
+            highlights=ReasoningHighlights(logs=["One useful log highlight."]),
+            action_type="create_node",
+        )
+
+
+def test_memory_ingestion_context_carries_reasoning_packets_without_backend_ids() -> None:
+    ref_context = RefContext()
+    ref_context.add_hydrated("node", backend_id="node-backend-marco", label="Person", name="Marco")
+    conversation = ConversationContext(
+        current_message=NeutralConversationMessage.user("Remember the beach afternoon with Merc."),
+    )
+    reasoning = MemoryIngestionReasoning(
+        highlights=ReasoningHighlights(logs=["The source describes a beach afternoon."]),
+        planning_guidance="Keep this as an episodic memory highlight.",
+    )
+
+    context = MemoryIngestionContext(
+        conversation=conversation,
+        reasoning=reasoning,
+        reasoning_packets=[{"label": "Hydrated graph context", "packets": [{"ref": "node_0001"}]}],
+        ref_context=ref_context,
+        ref_packets=[{"ref": "node_0001", "kind": "node", "name": "Marco"}],
+    )
+    payload = context.model_facing_payload()
+
+    assert payload["reasoning"]["planning_guidance"] == "Keep this as an episodic memory highlight."
+    assert payload["reasoning_packets"][0]["label"] == "Hydrated graph context"
+    assert payload["ref_context"][0]["ref"] == "node_0001"
+    assert "node-backend-marco" not in str(payload)
+
+
+def test_memory_ingestion_prompt_locks_reasoner_boundary() -> None:
+    template = PromptRegistry().load("memory_ingestion").template
+
+    assert "# Context" in template
+    assert "# Hard Rules" in template
+    assert "# Guidelines" in template
+    assert "# Examples" in template
+    assert "# Output Contract" in template
+    assert "Hydrated graph context" in template
+    assert "Known aliases and candidate mentions" in template
+    assert "Do not allocate refs" in template
+    assert "Do not write" in template
+    assert "Do not emit `node_new_*`" in template
+    assert "MemoryIngestionReasoning" in template
 
 
 def test_ref_context_contracts_allocate_and_hide_backend_ids() -> None:
