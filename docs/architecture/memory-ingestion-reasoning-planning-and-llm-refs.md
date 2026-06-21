@@ -559,6 +559,70 @@ semantic retrieval + hydration
 -> compact result
 ```
 
+Planning order is fixed for the first implementation: nodes, then MemoryLogs,
+then edges. Each phase must compact the previous phase output before handoff so
+the next planner receives the information it needs without raw child traces or
+full execution dumps.
+
+### Phase Handoff Packets
+
+Each planning phase produces a compact handoff packet in addition to its raw
+validated plan. The packet is model-facing and should use refs, names, concise
+summaries, aliases, relevant statuses, and planner notes only. It must exclude
+backend ids, raw tool traces, full validation payloads, and unrelated fields.
+
+Node planning creates a `node_plan_packet` for memory planning. It should
+include:
+
+- planned or resolved node refs;
+- label/type and display name;
+- aliases and source mentions needed by MemoryLog host/involved selection;
+- duplicate/no-op decisions relevant to later references;
+- compact notes about which source mentions should not become nodes.
+
+Memory planning receives the `node_plan_packet` and creates a
+`memory_plan_packet` for edge planning. It should include:
+
+- planned MemoryLog/context refs;
+- host and involved refs;
+- compact memory summaries and time/place/source hints;
+- context record intents such as `Perception`, `Claim`, or
+  `RelationshipContext`;
+- notes about weak co-presence that should remain memory involvement rather
+  than durable edges.
+
+Edge planning receives both `node_plan_packet` and `memory_plan_packet`. It
+uses them to create durable relationship/context plans only where endpoints are
+known refs and the source supports a durable link.
+
+Prompt templates for planning phases must include explicit placeholders for
+these packets. The first implementation should support at least:
+
+```text
+Node planner context:
+{reasoning_inventory_packet}
+{ref_context_packet}
+{duplicate_candidate_packets}
+
+Memory planner context:
+{reasoning_inventory_packet}
+{node_plan_packet}
+{ref_context_packet}
+{irrelevant_details_packet}
+
+Edge planner context:
+{reasoning_inventory_packet}
+{node_plan_packet}
+{memory_plan_packet}
+{ref_context_packet}
+{relationship_candidate_packets}
+```
+
+These packets are prompt inputs, not hidden backend state. The prompt text must
+label each packet in natural language so the model knows whether it is reading
+reasoner guidance, planned node output, planned memory output, current refs, or
+duplicate/relationship candidates.
+
 ### Node Planning
 
 Input:
@@ -888,10 +952,17 @@ Scope:
   durable edges;
 - add planning contracts for each phase, including step-based plans with
   `parallel` and `sequential` execution modes;
-- execute phases in order:
+- execute phases in fixed order:
   - node plan and execution;
-  - memory plan and execution;
+  - MemoryLog/context plan and execution;
   - edge plan and execution;
+- after node planning/execution, build a compact `node_plan_packet` for memory
+  planning;
+- after MemoryLog/context planning/execution, build a compact
+  `memory_plan_packet` for edge planning;
+- pass both `node_plan_packet` and `memory_plan_packet` into the edge planner;
+- include packet placeholders and labels in the node, memory, and edge prompt
+  templates so handoff context is visible and understandable to the LLM;
 - update the ref context after each phase;
 - ensure edge planning receives all node and memory refs needed for stable
   linking;
