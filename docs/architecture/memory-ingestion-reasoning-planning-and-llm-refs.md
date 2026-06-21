@@ -722,6 +722,81 @@ user's cousin. Created context_new_0001 for the perception that the Moon
 atmosphere was not great.
 ```
 
+## Prompt Template Hardening
+
+The final implementation wave should include full prompt-template tuning for the
+reasoner, node planner, memory planner, edge planner, and action execution
+states.
+
+Production prompts should be code-managed, reviewed, and tested. Prompt templates
+should live in Python modules as importable f-string-style string constants or
+builder functions, not only as loose markdown files. Runtime-specific values
+should be passed through typed placeholders and rendered by small prompt-builder
+functions.
+
+Preferred shape:
+
+```python
+MEMORY_REASONING_SYSTEM_TEMPLATE = """
+# Identity
+{identity}
+
+# Context
+{context_packet}
+
+# Hard Rules
+{hard_rules}
+
+# Guidelines
+{guidelines}
+
+# Examples
+{shots}
+
+# Output Contract
+{output_contract}
+"""
+```
+
+Each prompt template should contain at least:
+
+- `# Identity`: the state role and responsibility boundary.
+- `# Context`: labeled packets such as hydrated graph context, aliases,
+  irrelevant details, duplicate candidates, prior step results, and current
+  refs.
+- `# Hard Rules`: non-negotiable constraints, for example no raw backend ids,
+  reasoner does not create refs, edge planner uses refs only, action frames
+  execute one action.
+- `# Guidelines`: judgement guidance, for example how to split MemoryLogs, when
+  to keep weak co-presence as involvement, and how to use aliases.
+- `# Examples`: few-shot examples for the state, including dense-memory
+  decomposition, duplicate handling, weak-edge no-op, and current-action
+  execution.
+- `# Output Contract`: the exact structured output schema or tool-use contract
+  expected from the state.
+
+Prompt builders should keep stable reusable instructions near the beginning of
+the prompt and put request-specific context after the stable rules. Context
+packets must remain labeled and compact; do not inject raw object dumps.
+
+State-specific prompt expectations:
+
+- Reasoner prompt: emphasizes high-level guidance, `possible_aliases`,
+  `irrelevant_details`, ambiguities, and no ref/action creation.
+- Node planner prompt: emphasizes duplicate checks, alias resolution, and
+  create/update/no-op planning with refs.
+- Memory planner prompt: emphasizes compact MemoryLog boundaries and when to use
+  `MemoryLog`, `Claim`, `Perception`, or other context records.
+- Edge planner prompt: emphasizes refs-only endpoints, durable edges only, and
+  weak co-presence as memory involvement.
+- Action execution prompt: emphasizes one current action as the latest user
+  message, deterministic write tools, validation-error recovery, and compact
+  action results.
+
+The prompt-template wave should include prompt fixtures and tests that render
+representative contexts and assert that required sections, placeholders, hard
+rules, and examples are present.
+
 ## Implementation Waves
 
 ### Wave 1: Contracts And Ref Context
@@ -787,13 +862,21 @@ Scope:
   frames;
 - aggregate action outputs into compact step results for later phases.
 
-### Wave 4: UAT Hardening And Cleanup
+### Wave 4: Prompt Tuning, UAT Hardening, And Cleanup
 
-Goal: prove dense memories decompose correctly and remove older collapsed-plan
-paths.
+Goal: finalize prompt templates, prove dense memories decompose correctly, and
+remove older collapsed-plan paths.
 
 Scope:
 
+- move production prompt templates into importable Python f-string-style string
+  constants or builder functions with typed placeholders;
+- require prompt sections for context, hard rules, guidelines, examples, and
+  output contracts;
+- add few-shot examples for reasoner, node planner, memory planner, edge
+  planner, and action execution states;
+- add prompt rendering tests for required sections, placeholders, hard rules,
+  and examples;
 - add UAT fixtures for dense social/episodic sources;
 - assert that long source messages produce multiple compact MemoryLogs and
   useful durable edges;
