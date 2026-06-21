@@ -441,7 +441,7 @@ def _clarification_questions_property() -> dict:
         "items": {
             "type": "object",
             "properties": {
-                "question": string_property("Short direct question in plain language."),
+                "question": string_property("Short direct user-facing question addressed to the user. Use a question the UI can render verbatim, for example: Can you tell me where the barbeque happened?"),
                 "options": {
                     "type": "array",
                     "description": "Concise suggested answers. Free text remains allowed.",

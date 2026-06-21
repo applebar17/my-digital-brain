@@ -1082,3 +1082,51 @@ def test_structured_state_repairs_validation_error_once() -> None:
     assert repair_messages[-1].role == "user"
     assert "previous structured output did not validate" in repair_messages[-1].content
     assert "node_new_lorenzo" in repair_messages[-1].content
+
+
+
+def test_memory_ingestion_clarification_rationale_becomes_user_facing_question() -> None:
+    action = {
+        "action_id": "clarify_action_0001",
+        "action_type": "ask_clarification",
+        "target_refs": ["node_new_barbeque"],
+        "rationale": "Chiarire il luogo esatto del barbeque e il contenuto del progetto personale per migliorare la qualit? dei nodi/riassunti (senza creare nodi inutili).",
+        "payload": {},
+    }
+    provider = ScriptedToolCallingProvider(
+        steps=[{"tool": "ingest_memory", "arguments": {}}, {"content": "Waiting for clarification."}],
+        structured_payloads=_memory_ingestion_structured_payloads_with_clarification(action),
+    )
+    runtime = AgenticRuntime(AgenticStateRunner(provider=provider))
+    result = runtime.run(
+        ConversationContext(
+            current_message=NeutralConversationMessage.user("Remember the barbeque."),
+        ),
+        AgenticToolExecutionContext(session_id="session-clarify-rationale"),
+    )
+
+    packet = result.interruption["clarification_packet"]
+    question = packet["questions"][0]["question"]
+    assert question.startswith("Can you clarify this for me:")
+    assert question.endswith("?")
+    assert not question.startswith("Chiarire ")
+
+
+def _memory_ingestion_structured_payloads_with_clarification(action: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "highlights": {"logs": ["The source mentions a barbeque."]},
+            "planning_guidance": "Clarify before planning nodes.",
+        },
+        {
+            "summary": "Need clarification before node planning.",
+            "steps": [
+                {
+                    "step_id": "node_step_0001",
+                    "phase": "nodes",
+                    "actions": [action],
+                }
+            ],
+            "node_plan_packet": {"summary": "Clarification required."},
+        },
+    ]
