@@ -52,6 +52,9 @@ from my_digital_brain.agentic.enums import (
     ContradictionSeverity,
     MaintenanceSuggestionType,
     MemoryPlanActionType,
+    PacketDetailProfile,
+    RefObjectKind,
+    RefResolutionStatus,
     NeutralMessageKind,
     ProfileMemoryCategory,
     ProfileMemoryStability,
@@ -90,6 +93,12 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticStateInvocation,
     AgenticStateRunResult,
     AgenticToolEvent,
+)
+from my_digital_brain.agentic.refs import (
+    RefContext,
+    RefEntry,
+    RefPacketBuilder,
+    build_ref_packet,
 )
 from my_digital_brain.agentic.query import (
     MemoryQueryFoundationResult,
@@ -186,6 +195,13 @@ __all__ = [
     "ReasoningStorageRecommendationContext",
     "ReasoningStorageRecommendationType",
     "ResolutionContext",
+    "PacketDetailProfile",
+    "RefObjectKind",
+    "RefResolutionStatus",
+    "RefContext",
+    "RefEntry",
+    "RefPacketBuilder",
+    "build_ref_packet",
     "ResponseRenderStyle",
     "SourceContext",
     "ToolCall",

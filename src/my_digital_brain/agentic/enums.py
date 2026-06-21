@@ -50,6 +50,30 @@ class MemoryPlanActionType(StrEnum):
     ASK_CLARIFICATION = "ask_clarification"
 
 
+class RefObjectKind(StrEnum):
+    NODE = "node"
+    MEMORY = "memory"
+    EDGE = "edge"
+    CONTEXT = "context"
+    MEDIA = "media"
+
+
+class RefResolutionStatus(StrEnum):
+    EXISTING = "existing"
+    PROPOSED = "proposed"
+    CREATED = "created"
+    RESOLVED = "resolved"
+    UPDATED = "updated"
+    AMBIGUOUS = "ambiguous"
+    MISSING = "missing"
+
+
+class PacketDetailProfile(StrEnum):
+    SHORT = "short"
+    MEDIUM = "medium"
+    LONG = "long"
+
+
 class ChannelModality(StrEnum):
     TEXT = "text"
     VOICE_TRANSCRIPT = "voice_transcript"

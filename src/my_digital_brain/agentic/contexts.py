@@ -24,6 +24,7 @@ from my_digital_brain.agentic.enums import (
     ToolResultStatus,
 )
 from my_digital_brain.agentic.messages import NeutralConversationMessage
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
 
 BACKEND_ONLY_KEYS = {
@@ -349,6 +350,8 @@ class AgenticToolPayload(AgenticModel):
     error_code: str | None = None
     retryable: bool | None = None
     validation_details: dict[str, Any] | None = None
+    ref_context_delta: dict[str, Any] | None = None
+    ref_packets: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MemoryPlanAction(AgenticModel):
@@ -380,6 +383,8 @@ class MemoryIngestionContext(AgenticModel):
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
+    ref_context: RefContext | None = None
+    ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -390,6 +395,12 @@ class MemoryIngestionContext(AgenticModel):
                 "current_time": self.current_time,
                 "timezone": self.timezone,
                 "prior_tool_outputs": self.prior_tool_outputs,
+                "ref_context": (
+                    self.ref_context.model_facing_packet()
+                    if self.ref_context is not None
+                    else None
+                ),
+                "ref_packets": self.ref_packets,
             },
         )
 
@@ -411,6 +422,8 @@ class MemoryCreationContext(AgenticModel):
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
+    ref_context: RefContext | None = None
+    ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -422,6 +435,12 @@ class MemoryCreationContext(AgenticModel):
                 "current_time": self.current_time,
                 "timezone": self.timezone,
                 "prior_tool_outputs": self.prior_tool_outputs,
+                "ref_context": (
+                    self.ref_context.model_facing_packet()
+                    if self.ref_context is not None
+                    else None
+                ),
+                "ref_packets": self.ref_packets,
             },
         )
 
