@@ -205,35 +205,30 @@ ingestion runtime promotion.
   fake conversation content or expose noisy internal traces to top-level model
   history.
 
-### Prompt Scaffolding Cleanup
+### Prompt Inventory And Cleanup
 
-Status: prompt registry and initial scaffolding exist, but several prompt
-templates are contract placeholders rather than active runtime entry points.
-Keep them for now, then revise once the reasoning-first ingestion and query/answer
-pipeline wiring is stabilized.
+Status: the active prompt inventory follows the frame-based agentic runtime.
+Memory ingestion prompts are code-managed constants mirrored to the file-backed
+`PromptRegistry` templates for compatibility.
 
-- Document and clean up the current prompt inventory:
-  - active runtime state prompts:
-    `conversation_entry`, `pending_process_review`, `memory_query`,
-    `correction_intake`, `contradiction_review`, `reasoning_checkpoint`, and
-    `planning_checkpoint`;
-  - scaffold/planned LP prompts:
-    `query_retrieval_planning`, `correction_proposal`,
-    `profile_memory_extraction`, `maintenance_review`, and
-    `clarification_classifier`;
-  - duplicated answer prompt surface:
-    `answer_generation` exists as a template, but current graph-context answer
-    generation is performed by `LLMGraphContextAnswerGenerator` with an inline
-    prompt.
-- Decide whether planned LP prompts should remain under `prompts/templates/`,
-  move to a clearly marked planned/scaffold namespace, or be removed until
-  actual invocation services exist.
-- Wire `LLMGraphContextAnswerGenerator` to the file-backed
-  `answer_generation` template if the answer-generation LP remains in scope,
-  then remove the inline prompt body.
-- Update architecture/dev-plan docs after cleanup so prompt files, state
-  configs, LP contracts, and real runtime invocation paths describe the same
-  system.
+- Active runtime state prompts:
+  `conversation_entry`, `memory_query`, `memory_ingestion`,
+  `memory_node_planning`, `memory_log_planning`, `memory_edge_planning`,
+  `memory_creation`, `graph_update`, `contradiction_review`,
+  `reasoning_checkpoint`, and `planning_checkpoint`.
+- Legacy or inert prompt surfaces:
+  `pending_process_review`, `correction_intake`, and `correction_proposal` are
+  not active production routing guidance. Remove their files when no tests or
+  compatibility docs reference them.
+- Planned/scaffold prompt surfaces still needing ownership review:
+  `query_retrieval_planning`, `profile_memory_extraction`,
+  `maintenance_review`, `clarification_classifier`, and `answer_generation`.
+- If `answer_generation` remains in scope, wire
+  `LLMGraphContextAnswerGenerator` to the file-backed template and remove the
+  inline prompt body.
+- Keep prompt files, state configs, contracts, and real runtime invocation paths
+  aligned. Do not add a second active prompt family when replacing a flow;
+  update the current prompt or delete the obsolete one.
 
 ### Ingestion Runtime Cleanup Audit
 
@@ -290,43 +285,37 @@ Status: planner-first runtime was removed in favor of the reasoning-first
 
 ### Final Assistant Message Ownership
 
-Status: implemented for normal completion paths.
+Status: implemented for frame-based normal completion paths.
 
-- User-visible final replies are owned by:
-  - `conversation_entry` for normal completed processes;
-  - `pending_process_review` when the conversation starts from an active pending
-    process;
-  - deterministic chat runtime handlers for optional developer/debug shortcuts
-    such as `/status` and `/cancel`.
-- `memory_query`, `correction_intake`, contradiction review, ingestion planning,
-  and backend subprocesses return compact process/tool outputs upward by
-  default instead of owning final public text.
+- User-visible final replies are owned by `conversation_entry` after child
+  frames return compact tool results.
+- `memory_query`, `memory_ingestion`, `memory_creation`, `graph_update`, and
+  contradiction review return compact process/tool outputs upward by default
+  instead of owning final public text.
 - After non-interrupting specialist completion, the runtime appends one compact
   tool-output summary to the owner context and reruns the owner state with tools
   disabled.
-- Deeper states may still produce user-visible clarification or confirmation
-  questions when the process cannot continue safely without user input. Those
-  are process interruptions, not completed top-level answers.
+- Deeper states may interrupt for clarification through AgenticFrame/tool-call
+  continuation; clarification UI is not a completed top-level answer.
 - Raw tool traces, graph payloads, UUID-heavy internals, and backend diagnostics
   remain hidden from user-visible responses.
 
 ### Tool Surface Ownership
 
-Status: implemented.
+Status: implemented for the frame-based runtime.
 
-- Keep explicit `/status` and `/cancel` as optional deterministic chat-runtime
-  developer/debug shortcuts, not normal user-facing product flows.
-- Normal users should cancel, skip, pause, resume, or ask status-like questions
-  through natural language handled by `pending_process_review`.
-- Keep `conversation_entry` model-visible tools limited to:
-  - `start_memory_ingestion`
-  - `query_memory_context`
-  - `propose_memory_correction`
-- Expose `cancel_pending_process` to `pending_process_review` only when a
-  pending process exists and the model infers explicit cancellation or skip.
-- Keep `get_conversation_status` as deterministic backend/chat behavior unless
-  a later design explicitly promotes it to a model-visible tool.
-- State configs, prompt text, and the tool registry have been aligned with this
+- `conversation_entry` model-visible tools are limited to:
+  - `query_memory`
+  - `ingest_memory`
+- `query_memory` starts a read-only child frame; it does not ask clarification.
+- `ingest_memory` starts the reasoning, planning, and action-frame ingestion
+  flow; source content comes from frame history, not a tool argument.
+- `update_memory_graph` is available to child states that need update behavior,
+  not as a top-level conversation-entry tool.
+- Pending-process tools, `start_memory_ingestion`, `query_memory_context`, and
+  correction-specific production tools are legacy/inert surfaces and must not be
+  reintroduced as active routing.
+- State configs, prompt text, and the tool registry must stay aligned with this
   ownership policy.
 
 ## Real Provider Smoke Tests

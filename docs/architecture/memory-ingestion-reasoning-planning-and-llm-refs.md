@@ -978,23 +978,34 @@ remove older collapsed-plan paths.
 
 Scope:
 
-- move production prompt templates into importable Python f-string-style string
-  constants or builder functions with typed placeholders;
-- require prompt sections for context, hard rules, guidelines, examples, and
-  output contracts;
-- add few-shot examples for reasoner, node planner, memory planner, edge
-  planner, and action execution states;
+- manage the production memory-ingestion prompt family as importable Python
+  constants/builders, mirrored into the file-backed `PromptRegistry` templates
+  for compatibility;
+- keep these active prompt ids aligned: `memory_ingestion`,
+  `memory_node_planning`, `memory_log_planning`, `memory_edge_planning`, and
+  `memory_creation`;
+- require every prompt surface to expose `# Identity`, `# Context`,
+  `# Hard Rules`, `# Guidelines`, `# Examples`, and `# Output Contract`;
+- keep stable instructions early and request-specific packets later;
+- ensure prompt placeholders label the packets they consume, including
+  `reasoning_inventory_packet`, `node_plan_packet`, `memory_plan_packet`, and
+  `ref_context_packet`;
+- tune behavior so the reasoner stays high-level, planners own refs/actions,
+  node planning resolves aliases/duplicates, memory planning splits dense
+  sources into compact logs/context records, edge planning uses refs only, and
+  action execution focuses on one current action with deterministic tools;
 - add prompt rendering tests for required sections, placeholders, hard rules,
-  and examples;
-- add UAT fixtures for dense social/episodic sources;
-- assert that long source messages produce multiple compact MemoryLogs and
-  useful durable edges;
-- assert that edge tools reject natural-language endpoints when a ref is
-  required;
-- remove or quarantine obsolete single-plan ingestion paths;
-- tune prompts to reduce over-creation of weak edges and durable object nodes;
-- keep logs readable by showing local refs in summaries and backend ids only in
-  diagnostics.
+  examples, and clean packets;
+- add qualitative UAT fixtures for dense social/episodic sources such as the
+  Republic Day barbeque/beach memory;
+- assert that dense source messages produce multiple compact MemoryLogs and
+  useful durable edges only where strongly justified;
+- assert that weak co-presence remains MemoryLog involvement and does not become
+  a durable edge;
+- remove or quarantine obsolete single-plan ingestion paths and prompt/test
+  expectations replaced by the three-phase flow;
+- keep logs readable by showing local refs and phase summaries by default, with
+  raw prompt/tool traces behind explicit debug flags.
 
 ## Non-Goals
 

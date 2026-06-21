@@ -673,6 +673,7 @@ Rules:
 ## Practical Development Rules
 
 - Treat schemas, tools, and prompts as one design surface.
+- Keep production prompts that affect memory state code-managed, registry-compatible, and covered by rendering/quality tests.
 - Keep model outputs structured when they affect memory state.
 - Let the AI Manager be dynamic, but keep graph writes validated.
 - Prefer context engineering over larger prompts.
