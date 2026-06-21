@@ -14,6 +14,13 @@ from my_digital_brain.agentic import (
     ChannelSessionMetadata,
     ConversationContext,
     GraphUpdateContext,
+    MemoryPlanAction,
+    MemoryPlanActionType,
+    MemoryPlanStep,
+    MemoryPlanningPhase,
+    NodeMemoryPlan,
+    NodePlanPacket,
+    PlannedRefPacket,
     NeutralConversationMessage,
     PlanningActionContext,
     PlanningPurposeGuidelines,
@@ -983,3 +990,95 @@ def test_contradiction_review_free_form_question_without_structured_intent_is_no
 
     assert result.status == "ok"
     assert result.metadata["contradiction_intent"] == "emit_verdict"
+
+
+
+def test_structured_state_repairs_validation_error_once() -> None:
+    provider = ScriptedToolCallingProvider(
+        steps=[],
+        structured_payloads=[
+            {
+                "summary": "Invalid slug ref shape.",
+                "steps": [
+                    {
+                        "step_id": "node_step_0001",
+                        "phase": "nodes",
+                        "actions": [
+                            {
+                                "action_id": "node_action_0001",
+                                "action_type": "create_node",
+                                "target_refs": ["node_new_lorenzo"],
+                            }
+                        ],
+                    }
+                ],
+                "node_plan_packet": {
+                    "planned_refs": [
+                        {
+                            "ref": "node new lorenzo",
+                            "object_kind": "node",
+                            "label": "Person",
+                            "name": "Lorenzo",
+                        }
+                    ],
+                    "summary": "Invalid because the ref contains spaces.",
+                },
+            },
+            {
+                "summary": "Valid repaired slug ref.",
+                "steps": [
+                    {
+                        "step_id": "node_step_0001",
+                        "phase": "nodes",
+                        "actions": [
+                            {
+                                "action_id": "node_action_0001",
+                                "action_type": "create_node",
+                                "target_refs": ["node_new_lorenzo"],
+                            }
+                        ],
+                    }
+                ],
+                "node_plan_packet": {
+                    "planned_refs": [
+                        {
+                            "ref": "node_new_lorenzo",
+                            "object_kind": "node",
+                            "label": "Person",
+                            "name": "Lorenzo",
+                        }
+                    ],
+                    "summary": "Repaired with a valid readable local ref.",
+                },
+            },
+        ],
+    )
+    runner = AgenticStateRunner(provider=provider)
+    result = runner.run_structured_state(
+        AgenticStateInvocation(
+            state_id=AgenticStateId.PLANNING_CHECKPOINT,
+            context_payload=PlanningTransformContext(
+                purpose=PlanningPurposeGuidelines(
+                    purpose_id="memory_ingestion_nodes_planning",
+                    goal="Plan nodes.",
+                    output_usage="NodeMemoryPlan",
+                ),
+                expected_output_schema="NodeMemoryPlan",
+                conversation=ConversationContext(
+                    current_message=NeutralConversationMessage.user("Remember Lorenzo at the beach."),
+                ),
+            ),
+            execution_context=AgenticToolExecutionContext(),
+            metadata={"prompt_id_override": "memory_node_planning"},
+        ),
+        output_schema=NodeMemoryPlan,
+    )
+
+    assert result.status == "ok"
+    assert result.structured_output is not None
+    assert result.structured_output["node_plan_packet"]["planned_refs"][0]["ref"] == "node_new_lorenzo"
+    assert len(provider.structured_calls) == 2
+    repair_messages = provider.structured_calls[1].messages
+    assert repair_messages[-1].role == "user"
+    assert "previous structured output did not validate" in repair_messages[-1].content
+    assert "node_new_lorenzo" in repair_messages[-1].content

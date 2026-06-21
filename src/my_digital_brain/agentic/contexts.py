@@ -30,8 +30,8 @@ from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
 
-_PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[0-9]{4}\b")
-_VISIBLE_REF_RE = re.compile(r"^(?:node|memory|edge|context|media)(?:_new)?_[0-9]{4}$")
+_PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64}\b")
+_VISIBLE_REF_RE = re.compile(r"^(?:(?:node|memory|edge|context|media)_[0-9]{4}|(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64})$")
 
 BACKEND_ONLY_KEYS = {
     "metadata",
@@ -490,7 +490,11 @@ class PlannedRefPacket(AgenticModel):
     @model_validator(mode="after")
     def _validate_ref(self) -> "PlannedRefPacket":
         if not _VISIBLE_REF_RE.match(self.ref):
-            raise ValueError("PlannedRefPacket.ref must be a known local ref.")
+            raise ValueError(
+                "PlannedRefPacket.ref must be a local ref like node_0001, "
+                "node_new_lorenzo, memory_new_beach_outing, or context_new_perception."
+            )
+        _validate_ref_kind_prefix(self.ref, self.object_kind)
         return self
 
 
@@ -503,6 +507,10 @@ class NodePlanPacket(AgenticModel):
 
     @model_validator(mode="after")
     def _validate_signal(self) -> "NodePlanPacket":
+        _validate_unique_refs(
+            [item.ref for item in [*self.planned_refs, *self.resolved_refs]],
+            "NodePlanPacket",
+        )
         if not (
             self.planned_refs
             or self.resolved_refs
@@ -524,9 +532,16 @@ class MemoryPlanPacket(AgenticModel):
 
     @model_validator(mode="after")
     def _validate_refs_and_signal(self) -> "MemoryPlanPacket":
-        for ref in [*self.host_refs, *self.involved_refs, *self.context_refs]:
+        packet_refs = [
+            *[item.ref for item in self.planned_refs],
+            *self.host_refs,
+            *self.involved_refs,
+            *self.context_refs,
+        ]
+        for ref in packet_refs:
             if not _VISIBLE_REF_RE.match(ref):
                 raise ValueError(f"MemoryPlanPacket contains an invalid local ref: {ref}")
+        _validate_unique_refs([item.ref for item in self.planned_refs], "MemoryPlanPacket")
         if not (
             self.planned_refs
             or self.host_refs
@@ -550,6 +565,9 @@ class MemoryPlanStep(AgenticModel):
         if not self.actions:
             raise ValueError("MemoryPlanStep requires at least one action.")
         phase = MemoryPlanningPhase(self.phase)
+        action_ids = [action.action_id for action in self.actions]
+        if len(action_ids) != len(set(action_ids)):
+            raise ValueError("MemoryPlanStep action_id values must be unique.")
         for action in self.actions:
             action_phase = action.metadata.get("phase") or phase.value
             action.metadata["phase"] = action_phase
@@ -874,6 +892,25 @@ class MaintenanceReviewResultContext(AgenticModel):
         return self
 
 
+
+
+def _validate_ref_kind_prefix(ref: str, object_kind: str) -> None:
+    normalized = str(object_kind or "").strip().lower()
+    aliases = {"memorylog": "memory", "memory_log": "memory", "relationship": "edge"}
+    kind = aliases.get(normalized, normalized)
+    if kind in {"node", "memory", "edge", "context", "media"} and not ref.startswith(f"{kind}_"):
+        raise ValueError(f"Ref {ref} does not match object kind {object_kind}.")
+
+
+def _validate_unique_refs(refs: list[str], owner: str) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for ref in refs:
+        if ref in seen and ref not in duplicates:
+            duplicates.append(ref)
+        seen.add(ref)
+    if duplicates:
+        raise ValueError(f"{owner} refs must be unique: {', '.join(duplicates)}")
 
 
 def _validate_steps_for_phase(

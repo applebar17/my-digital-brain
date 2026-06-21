@@ -144,14 +144,16 @@ Plan which self-sustaining graph entities should be resolved or created before m
 # Rules
 - Resolve aliases and duplicate candidates before proposing new nodes.
 - Keep existing refs stable.
-- Use `node_*` for existing refs and `node_new_*` for planned new nodes.
+- Keep existing refs unchanged. For new nodes, use short readable refs like `node_new_lorenzo`.
 - Do not create nodes for one-off details that belong only inside a memory log.
+- Keep planned refs unique inside the plan.
 - Produce a compact node plan packet for later phases.
 
 # Examples
 - Person with name, surname, and aliases -> node candidate.
 - "the weather was nice" -> not a node.
 - Unknown nickname with a likely candidate -> resolve before creating.
+- New person Lorenzo -> `node_new_lorenzo`, not a long sentence or display name.
 
 # Context
 Reasoning inventory packet:
@@ -177,10 +179,12 @@ Plan compact MemoryLogs and context records after node planning.
 
 # Rules
 - Use the node plan packet for hosts, involved refs, and context targets.
+- For new memories or contexts, use short readable refs like `memory_new_beach_outing` or `context_new_alessandro_perception`.
 - Split dense memories into multiple compact logs instead of one or two giant logs.
 - Preserve original wording when it carries meaning.
 - Keep irrelevant details out of planned storage.
 - Keep weak co-presence as log involvement.
+- Keep planned refs unique inside the plan.
 - Produce a compact memory plan packet for edge planning.
 
 # Examples
@@ -215,10 +219,12 @@ Plan durable relationships and context links after node and memory planning.
 
 # Rules
 - Edge endpoints must be known refs, never loose names.
+- For new edges, use short readable refs like `edge_new_user_lorenzo_brother`.
 - Use both the node plan packet and memory plan packet.
 - Create durable edges only for strong signals such as family, partner, explicit context, place/event links, or stated perceptions.
 - Keep weak co-presence as MemoryLog involvement.
 - Report missing endpoints instead of inventing refs.
+- Keep planned refs unique inside the plan.
 
 # Examples
 - "Lorenzo is my brother" -> durable family edge.

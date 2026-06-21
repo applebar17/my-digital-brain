@@ -492,9 +492,32 @@ def test_three_phase_memory_plan_contracts_and_packets_validate() -> None:
 
     assert node_plan.steps[0].execution_mode == PlanExecutionMode.PARALLEL.value
     assert node_plan.node_plan_packet.planned_refs[0].aliases == ["Marco from university"]
+    semantic_node = PlannedRefPacket(
+        ref="node_new_lorenzo",
+        object_kind="node",
+        label="Person",
+        name="Lorenzo",
+    )
+    semantic_memory = PlannedRefPacket(
+        ref="memory_new_beach_outing",
+        object_kind="memory",
+        label="MemoryLog",
+        summary="Beach outing.",
+    )
+
+    assert semantic_node.ref == "node_new_lorenzo"
+    assert semantic_memory.ref == "memory_new_beach_outing"
     assert memory_plan.memory_plan_packet.host_refs == ["node_new_0001"]
     assert edge_plan.steps[0].phase == MemoryPlanningPhase.EDGES.value
     assert "backend_id" not in str(node_plan.node_plan_packet.model_dump(mode="json"))
+
+    with pytest.raises(ValidationError, match="refs must be unique"):
+        NodePlanPacket(
+            planned_refs=[
+                PlannedRefPacket(ref="node_new_lorenzo", object_kind="node", label="Person"),
+                PlannedRefPacket(ref="node_new_lorenzo", object_kind="node", label="Person"),
+            ]
+        )
 
     with pytest.raises(ValidationError):
         EdgeMemoryPlan(

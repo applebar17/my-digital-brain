@@ -376,17 +376,65 @@ class AgenticStateRunner:
                     "validation_error_count": len(exc.errors()),
                 },
             )
-            return AgenticStateRunResult(
-                state_id=state_id,
-                assistant_text=f"{state_value} returned invalid structured output: {exc}",
-                status="error",
-                metadata={
-                    "provider": getattr(provider, "provider_name", "unknown"),
-                    "model": route.model,
-                    "route": route.model_dump(mode="json", exclude_none=True),
-                    "error": "invalid_structured_output",
-                },
-            )
+            try:
+                repair_message = ChatMessage(
+                    role="user",
+                    content=_structured_validation_repair_message(
+                        output_schema.__name__,
+                        exc,
+                    ),
+                )
+                LOGGER.info(
+                    "agentic.structured_state.validation_repair_retry",
+                    extra={
+                        "event": "agentic.structured_state.validation_repair_retry",
+                        "state_id": state_value,
+                        "prompt_id": prompt_id,
+                        "schema_id": output_schema.__name__,
+                        "model": route.model,
+                        "validation_error_count": len(exc.errors()),
+                    },
+                )
+                result = provider.generate_structured(  # type: ignore[attr-defined]
+                    StructuredGenerationRequest(
+                        schema=output_schema,
+                        system_prompt=prompt,
+                        messages=[*model_messages, repair_message],
+                        model=route.model,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        context=context,
+                        metadata={
+                            "route": route.model_dump(mode="json", exclude_none=True),
+                            "validation_repair_retry": True,
+                        },
+                    ),
+                )
+            except ValidationError as retry_exc:
+                LOGGER.exception(
+                    "agentic.structured_state.validation_repair_failed",
+                    extra={
+                        "event": "agentic.structured_state.validation_repair_failed",
+                        "state_id": state_value,
+                        "prompt_id": prompt_id,
+                        "schema_id": output_schema.__name__,
+                        "model": route.model,
+                        "error_type": retry_exc.__class__.__name__,
+                        "validation_error_count": len(retry_exc.errors()),
+                    },
+                )
+                return AgenticStateRunResult(
+                    state_id=state_id,
+                    assistant_text=f"{state_value} returned invalid structured output: {retry_exc}",
+                    status="error",
+                    metadata={
+                        "provider": getattr(provider, "provider_name", "unknown"),
+                        "model": route.model,
+                        "route": route.model_dump(mode="json", exclude_none=True),
+                        "error": "invalid_structured_output",
+                        "validation_repair_attempted": True,
+                    },
+                )
         parsed = result.parsed
         structured_output = parsed.model_dump(mode="json", exclude_none=True)
         assistant_text = _structured_summary(parsed)
@@ -593,3 +641,25 @@ class AgenticStateRunner:
             },
         )
 
+
+
+def _structured_validation_repair_message(schema_name: str, exc: ValidationError) -> str:
+    compact_errors: list[dict[str, Any]] = []
+    for error in exc.errors()[:12]:
+        compact_errors.append(
+            {
+                "path": ".".join(str(part) for part in error.get("loc", ())),
+                "message": error.get("msg"),
+                "type": error.get("type"),
+            }
+        )
+    return (
+        "Your previous structured output did not validate. Repair the same output for "
+        f"schema {schema_name}. Keep the same intent and content, but fix only schema, "
+        "field, enum, ref, uniqueness, and format issues. Existing refs must stay unchanged. "
+        "New refs may be short readable local refs such as node_new_lorenzo, "
+        "memory_new_beach_outing, context_new_alessandro_perception, or edge_new_user_lorenzo_brother. "
+        "Refs must use a valid prefix, lowercase ASCII letters/numbers/underscores, no spaces, "
+        "and be unique when defining planned objects. Validation errors:\n"
+        + json.dumps(compact_errors, ensure_ascii=True, indent=2)
+    )
