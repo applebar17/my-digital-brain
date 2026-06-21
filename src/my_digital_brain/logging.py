@@ -39,7 +39,6 @@ STANDARD_JSON_FIELDS = (
     "handoff_target",
     "conversation_id",
     "session_id",
-    "pending_process_id",
     "ingestion_id",
     "duration_ms",
     "latency_ms",

@@ -8,7 +8,6 @@ from typing import Any, Iterable
 from my_digital_brain.agentic.contexts import (
     ChannelSessionMetadata,
     ConversationContext,
-    PendingProcessContext,
     PlanningContext,
     ToolResultContext,
 )
@@ -68,8 +67,6 @@ class AgenticHistoryService:
         history_records: Iterable[Any] = (),
         current_time: datetime | None = None,
         timezone: str = "UTC",
-        pending_process: PendingProcessContext | None = None,
-        pending_processes: list[PendingProcessContext] | None = None,
         channel_metadata: ChannelSessionMetadata | None = None,
         compacted_summary: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -97,10 +94,6 @@ class AgenticHistoryService:
             compacted_summary=compacted_summary,
             current_time=current_time or _utc_now(),
             timezone=timezone,
-            pending_process=pending_process,
-            pending_processes=pending_processes or (
-                [pending_process] if pending_process is not None else []
-            ),
             channel_metadata=channel_metadata,
             metadata=metadata or {},
         )
@@ -111,8 +104,6 @@ class AgenticHistoryService:
         source_text: str,
         current_time: datetime | None = None,
         timezone: str = "UTC",
-        pending_process: PendingProcessContext | None = None,
-        pending_processes: list[PendingProcessContext] | None = None,
         history: list[NeutralConversationMessage] | None = None,
     ) -> ConversationContext:
         compacted_summary, compacted_history = self.compact_history(history or [])
@@ -124,10 +115,6 @@ class AgenticHistoryService:
             compacted_summary=compacted_summary,
             current_time=current_time or _utc_now(),
             timezone=timezone,
-            pending_process=pending_process,
-            pending_processes=pending_processes or (
-                [pending_process] if pending_process is not None else []
-            ),
         )
 
     def neutral_message_from_record(self, record: Any) -> NeutralConversationMessage | None:
@@ -141,7 +128,6 @@ class AgenticHistoryService:
             key: value
             for key, value in {
                 "channel_message_id": getattr(record, "channel_message_id", None),
-                "pending_process_id": getattr(record, "pending_process_id", None),
                 "source_ref": getattr(record, "source_ref", None),
             }.items()
             if value is not None

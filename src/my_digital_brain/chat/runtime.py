@@ -79,7 +79,6 @@ class ChatRuntime:
                 role=ConversationMessageRole.USER,
                 text=message.text,
                 media_refs=message.media_refs,
-                pending_process_id=None,
                 metadata={
                     "sender_id": message.sender_id,
                     "reply_to_message_id": message.reply_to_message_id,
@@ -122,7 +121,6 @@ class ChatRuntime:
                 session_id=session_id,
                 role=ConversationMessageRole.ASSISTANT,
                 text=self._assistant_history_text(response),
-                pending_process_id=None,
                 metadata={
                     "response_id": response.response_id,
                     "status": response.status,
@@ -233,14 +231,14 @@ class ChatRuntime:
             session_id=session.session_id,
             status=ChatResponseStatus.FAILED,
             primary_text=(
-                "Pending-process cancellation is no longer available. "
+                "Legacy process cancellation is no longer available. "
                 "Active clarification must be answered through its agentic frame."
             ),
             diagnostics=[
                 ChatDiagnostic(
                     level=ChatDiagnosticLevel.ERROR,
-                    code="pending_process_cancel_removed",
-                    message="Legacy pending-process cancellation is not part of the agentic runtime.",
+                    code="legacy_process_cancel_removed",
+                    message="Legacy process cancellation is not part of the agentic runtime.",
                     details={"reason": reason},
                 )
             ],

@@ -75,17 +75,6 @@ class ChannelContextProjection(AgenticModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class PendingProcessContext(AgenticModel):
-    process_id: str
-    kind: str
-    status: str
-    question: str | None = None
-    unresolved_targets: list[str] = Field(default_factory=list)
-    expires_at: datetime | None = None
-    compact_summary: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class ConversationContext(AgenticModel):
     context_id: str = Field(default_factory=new_uuid)
     current_message: NeutralConversationMessage
@@ -93,8 +82,6 @@ class ConversationContext(AgenticModel):
     compacted_summary: str | None = None
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
-    pending_process: PendingProcessContext | None = None
-    pending_processes: list[PendingProcessContext] = Field(default_factory=list)
     channel_metadata: ChannelSessionMetadata | None = None
     channel_projection: ChannelContextProjection | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -107,10 +94,6 @@ class ConversationContext(AgenticModel):
             exclude={"channel_metadata"},
             exclude_none=True,
         )
-        if not self.pending_process:
-            payload.pop("pending_process", None)
-        if not self.pending_processes:
-            payload.pop("pending_processes", None)
         return payload
 
 
@@ -861,7 +844,6 @@ class MaintenanceReviewContext(AgenticModel):
     trigger: str
     graph_context: GraphContextPackage | None = None
     target_refs: list[str] = Field(default_factory=list)
-    pending_processes: list[PendingProcessContext] = Field(default_factory=list)
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     metadata: dict[str, Any] = Field(default_factory=dict)

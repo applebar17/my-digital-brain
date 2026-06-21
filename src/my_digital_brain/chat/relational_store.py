@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import desc, select
 
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ConversationMessageRole,
     ConversationStatus,
-    PendingProcessStatus,
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
@@ -18,8 +15,6 @@ from my_digital_brain.chat.models import (
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionSummary,
-    PendingProcessContext,
-    PendingProcessRef,
     utc_now,
 )
 from my_digital_brain.chat.store import (
@@ -34,7 +29,6 @@ from my_digital_brain.storage.relational import RelationalSessionProvider
 from my_digital_brain.storage.relational_models import (
     ChatAgenticFrameRecord,
     ChatMessageRecord,
-    ChatPendingProcessContextRecord,
     ChatSessionRecord,
 )
 
@@ -71,7 +65,6 @@ class RelationalChatSessionStore:
             owner_id=owner_id,
             title=_clean_title(title),
             status=ConversationStatus.ACTIVE.value,
-            active_pending_process_id=None,
             active_agentic_frame_id=None,
             last_message_at=None,
             archived_at=None,
@@ -111,8 +104,7 @@ class RelationalChatSessionStore:
                 owner_id=owner_id,
                 title="New chat",
                 status=ConversationStatus.ACTIVE.value,
-                active_pending_process_id=None,
-                active_agentic_frame_id=None,
+                    active_agentic_frame_id=None,
                 last_message_at=None,
                 archived_at=None,
             )
@@ -180,7 +172,6 @@ class RelationalChatSessionStore:
             now = utc_now()
             record.status = ConversationStatus.ARCHIVED.value
             record.archived_at = now
-            record.active_pending_process_id = None
             record.active_agentic_frame_id = None
             record.updated_at = now
             db.flush()
@@ -207,7 +198,6 @@ class RelationalChatSessionStore:
                     for media in stored.media_refs
                 ],
                 source_ref=stored.source_ref,
-                pending_process_id=stored.pending_process_id,
             )
             db.add(record)
 
@@ -244,173 +234,8 @@ class RelationalChatSessionStore:
         return ConversationSessionDetail(
             session=self.get_session(session_id),
             messages=self.list_messages(session_id, limit=limit),
-            pending_process=self.get_active_pending_process_context(session_id),
-            pending_processes=self.list_pending_process_contexts(
-                session_id,
-                statuses={PendingProcessStatus.PENDING, PendingProcessStatus.PAUSED},
-                limit=5,
-            ),
             active_agentic_frame=self.get_active_agentic_frame(session_id),
         )
-
-    def save_pending_process_context(
-        self,
-        session_id: str,
-        context: PendingProcessContext,
-    ) -> PendingProcessContext:
-        with self.sessions.session() as db:
-            session = db.get(ChatSessionRecord, session_id)
-            if session is None:
-                raise ChatNotFoundError(f"Chat session not found: {session_id}")
-
-            process_id = context.process_ref.process_id
-            now = utc_now()
-            record = db.get(ChatPendingProcessContextRecord, process_id)
-            if record is None:
-                record = ChatPendingProcessContextRecord(
-                    id=process_id,
-                    created_at=context.created_at,
-                    updated_at=now,
-                    metadata_json=context.metadata,
-                    session_id=session_id,
-                    kind=str(context.process_ref.kind),
-                    status=str(context.process_ref.status),
-                    question=context.process_ref.question,
-                    expires_at=context.process_ref.expires_at,
-                    process_metadata_json=context.process_ref.metadata,
-                    context_json=context.context,
-                    conversation_history_refs_json=context.conversation_history_refs,
-                )
-                db.add(record)
-            else:
-                _apply_pending_context(record, context, updated_at=now)
-
-            if str(context.process_ref.status) == PendingProcessStatus.PENDING.value:
-                session.active_pending_process_id = process_id
-                session.updated_at = now
-            db.flush()
-            return _pending_from_record(record)
-
-    def get_pending_process_context(self, process_id: str) -> PendingProcessContext:
-        with self.sessions.session() as db:
-            record = db.get(ChatPendingProcessContextRecord, process_id)
-            if record is None:
-                raise ChatNotFoundError(f"Pending process not found: {process_id}")
-            return _pending_from_record(record)
-
-    def get_active_pending_process_context(
-        self,
-        session_id: str,
-    ) -> PendingProcessContext | None:
-        with self.sessions.session() as db:
-            session = db.get(ChatSessionRecord, session_id)
-            if session is None:
-                raise ChatNotFoundError(f"Chat session not found: {session_id}")
-            if session.active_pending_process_id is None:
-                return None
-            record = db.get(ChatPendingProcessContextRecord, session.active_pending_process_id)
-            return _pending_from_record(record) if record is not None else None
-
-    def list_pending_process_contexts(
-        self,
-        session_id: str,
-        *,
-        statuses: set[PendingProcessStatus | str] | None = None,
-        limit: int = 5,
-    ) -> list[PendingProcessContext]:
-        normalized_statuses = (
-            {str(getattr(status, "value", status)) for status in statuses}
-            if statuses is not None
-            else None
-        )
-        with self.sessions.session() as db:
-            if db.get(ChatSessionRecord, session_id) is None:
-                raise ChatNotFoundError(f"Chat session not found: {session_id}")
-            statement = select(ChatPendingProcessContextRecord).where(
-                ChatPendingProcessContextRecord.session_id == session_id,
-            )
-            if normalized_statuses is not None:
-                statement = statement.where(
-                    ChatPendingProcessContextRecord.status.in_(normalized_statuses),
-                )
-            statement = statement.order_by(desc(ChatPendingProcessContextRecord.updated_at)).limit(
-                max(0, limit),
-            )
-            return [_pending_from_record(record) for record in db.scalars(statement)]
-
-    def update_pending_process_status(
-        self,
-        session_id: str,
-        process_id: str,
-        status: PendingProcessStatus | str,
-        *,
-        metadata: dict | None = None,
-        context_updates: dict | None = None,
-        activate: bool = False,
-    ) -> PendingProcessContext:
-        normalized_status = PendingProcessStatus(status)
-        with self.sessions.session() as db:
-            session = db.get(ChatSessionRecord, session_id)
-            if session is None:
-                raise ChatNotFoundError(f"Chat session not found: {session_id}")
-            record = db.get(ChatPendingProcessContextRecord, process_id)
-            if record is None or record.session_id != session_id:
-                raise ChatNotFoundError(f"Pending process not found: {process_id}")
-
-            now = utc_now()
-            record.status = normalized_status.value
-            record.process_metadata_json = {
-                **(record.process_metadata_json or {}),
-                **(metadata or {}),
-            }
-            record.context_json = {**(record.context_json or {}), **(context_updates or {})}
-            record.updated_at = now
-
-            if activate:
-                session.active_pending_process_id = process_id
-            elif (
-                session.active_pending_process_id == process_id
-                and normalized_status != PendingProcessStatus.PENDING
-            ):
-                session.active_pending_process_id = None
-            session.updated_at = now
-            db.flush()
-            return _pending_from_record(record)
-
-    def clear_active_pending_process(self, session_id: str) -> ConversationSession:
-        with self.sessions.session() as db:
-            session = db.get(ChatSessionRecord, session_id)
-            if session is None:
-                raise ChatNotFoundError(f"Chat session not found: {session_id}")
-            session.active_pending_process_id = None
-            session.updated_at = utc_now()
-            db.flush()
-            return _session_from_record(session)
-
-    def expire_pending_processes(self, now: datetime | None = None) -> list[str]:
-        reference_time = now or utc_now()
-        with self.sessions.session() as db:
-            records = list(
-                db.scalars(
-                    select(ChatPendingProcessContextRecord).where(
-                        ChatPendingProcessContextRecord.expires_at.is_not(None),
-                        ChatPendingProcessContextRecord.expires_at <= reference_time,
-                        ChatPendingProcessContextRecord.status != PendingProcessStatus.EXPIRED.value,
-                    ),
-                ),
-            )
-            expired_ids = [record.id for record in records]
-            for record in records:
-                record.status = PendingProcessStatus.EXPIRED.value
-                record.updated_at = reference_time
-            for session in db.scalars(
-                select(ChatSessionRecord).where(
-                    ChatSessionRecord.active_pending_process_id.in_(expired_ids),
-                ),
-            ):
-                session.active_pending_process_id = None
-                session.updated_at = reference_time
-            return expired_ids
 
     def save_agentic_frame(self, session_id: str, frame: AgenticFrame) -> AgenticFrame:
         with self.sessions.session() as db:
@@ -537,11 +362,6 @@ class RelationalChatSessionStore:
             ),
             None,
         )
-        pending = (
-            db.get(ChatPendingProcessContextRecord, record.active_pending_process_id)
-            if record.active_pending_process_id
-            else None
-        )
         return ConversationSessionSummary(
             session_id=record.id,
             channel=record.channel,
@@ -549,9 +369,7 @@ class RelationalChatSessionStore:
             owner_id=record.owner_id,
             title=record.title,
             status=record.status,
-            active_pending_process_id=record.active_pending_process_id,
             active_agentic_frame_id=record.active_agentic_frame_id,
-            pending_process_status=pending.status if pending else None,
             last_message_preview=_preview_text(last_message.text if last_message else None),
             last_message_at=record.last_message_at,
             archived_at=record.archived_at,
@@ -585,7 +403,6 @@ def _session_from_record(record: ChatSessionRecord) -> ConversationSession:
         owner_id=record.owner_id,
         title=record.title,
         status=record.status,
-        active_pending_process_id=record.active_pending_process_id,
         active_agentic_frame_id=record.active_agentic_frame_id,
         last_message_at=record.last_message_at,
         archived_at=record.archived_at,
@@ -601,7 +418,6 @@ def _apply_session(record: ChatSessionRecord, session: ConversationSession) -> N
     record.owner_id = session.owner_id
     record.title = session.title
     record.status = str(session.status)
-    record.active_pending_process_id = session.active_pending_process_id
     record.active_agentic_frame_id = session.active_agentic_frame_id
     record.last_message_at = session.last_message_at
     record.archived_at = session.archived_at
@@ -617,45 +433,9 @@ def _message_from_record(record: ChatMessageRecord) -> ConversationMessage:
         text=record.text,
         media_refs=list(record.media_refs_json or []),
         source_ref=record.source_ref,
-        pending_process_id=record.pending_process_id,
         created_at=record.created_at,
         metadata=record.metadata_json or {},
     )
-
-
-def _pending_from_record(record: ChatPendingProcessContextRecord) -> PendingProcessContext:
-    return PendingProcessContext(
-        process_ref=PendingProcessRef(
-            process_id=record.id,
-            kind=record.kind,
-            status=record.status,
-            question=record.question,
-            expires_at=record.expires_at,
-            metadata=record.process_metadata_json or {},
-        ),
-        context=record.context_json or {},
-        conversation_history_refs=list(record.conversation_history_refs_json or []),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
-        metadata=record.metadata_json or {},
-    )
-
-
-def _apply_pending_context(
-    record: ChatPendingProcessContextRecord,
-    context: PendingProcessContext,
-    *,
-    updated_at: datetime,
-) -> None:
-    record.updated_at = updated_at
-    record.metadata_json = context.metadata
-    record.kind = str(context.process_ref.kind)
-    record.status = str(context.process_ref.status)
-    record.question = context.process_ref.question
-    record.expires_at = context.process_ref.expires_at
-    record.process_metadata_json = context.process_ref.metadata
-    record.context_json = context.context
-    record.conversation_history_refs_json = context.conversation_history_refs
 
 
 def _agentic_frame_from_record(record: ChatAgenticFrameRecord) -> AgenticFrame:

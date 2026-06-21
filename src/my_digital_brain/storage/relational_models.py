@@ -41,7 +41,6 @@ class ChatSessionRecord(TimestampMixin, Base):
     owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    active_pending_process_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     active_agentic_frame_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -56,20 +55,6 @@ class ChatMessageRecord(TimestampMixin, Base):
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     media_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    pending_process_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-
-
-class ChatPendingProcessContextRecord(TimestampMixin, Base):
-    __tablename__ = "chat_pending_process_contexts"
-
-    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    kind: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    question: Mapped[str | None] = mapped_column(Text, nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    process_metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    context_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    conversation_history_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class ChatAgenticFrameRecord(TimestampMixin, Base):

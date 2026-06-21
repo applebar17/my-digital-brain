@@ -23,23 +23,8 @@ class ChatResponseStatus(StrEnum):
     OK = "ok"
     ACCEPTED = "accepted"
     AWAITING_CLARIFICATION = "awaiting_clarification"
-    NEEDS_USER_INPUT = "needs_user_input"
     CANCELLED = "cancelled"
     FAILED = "failed"
-
-
-class PendingProcessKind(StrEnum):
-    MEMORY_INGESTION = "memory_ingestion"
-    MEMORY_QUERY = "memory_query"
-    MEMORY_UPDATE = "memory_update"
-
-
-class PendingProcessStatus(StrEnum):
-    PENDING = "pending"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    EXPIRED = "expired"
 
 
 class ChatDiagnosticLevel(StrEnum):

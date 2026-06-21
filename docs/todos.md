@@ -113,32 +113,19 @@ high-priority implementation follow-ups.
     provenance and owner scope, while only adding explicit owner edges when the
     relationship itself is semantically useful.
 
-### Pending Process State Application
+### Agentic Frame Continuation Cleanup
 
-Status: implemented as the baseline lifecycle foundation.
+Status: active continuation is AgenticFrame-based. Legacy pending-process
+storage, models, and routing have been removed from production code.
 
-- `PendingProcessStatus` supports `paused`.
-- Chat pending storage supports one active pending process per session and a
-  paused backlog with compact summaries.
-- `pause_pending_process` clears active state, preserves a backend-only
-  resumable snapshot, and keeps a compact model-facing pending summary.
-- `cancel_pending_process` clears active state, marks the process cancelled, and
-  marks the checkpoint non-resumable while preserving compact audit/chat
-  summary.
-- `resume_pending_process` accepts `pending_process_id` only. It uses the
-  current message and recent history from runtime context instead of a
-  `user_reply` argument.
-- Memory-ingestion resume re-enters the ingestion service path, refreshes graph
-  context, and reruns validation/resolution before write execution.
-- `pending_process_review` receives active pending summary plus up to five
-  paused summaries, without backend-only snapshots or noisy transport metadata.
-- Ambiguous process selection returns verbose tool errors so the model can ask
-  the user naturally.
-
-Remaining follow-up after real usage:
-
-- Decide whether a superseded active pending process should usually be paused or
-  cancelled when the user starts unrelated work.
+- Keep clarification continuation represented as an interrupted `AgenticFrame`
+  with one open provider tool call.
+- Resume by appending exactly one matching provider `tool` message to the saved
+  frame history.
+- Keep parent frames in `waiting_child` while child frames ask clarification.
+- Keep user-facing clarification UI separate from normal chat bubbles.
+- Do not reintroduce pending-process lifecycle concepts, review states, pause,
+  resume, or cancel tools.
 
 ### State-Aware History Builder
 

@@ -42,7 +42,7 @@ class DeterministicAgenticRouter:
         if self._is_cancel(lower_text):
             return self._assistant_route(
                 context,
-                "Pending-process cancellation is not part of the agentic runtime.",
+                "Legacy process cancellation is not part of the agentic runtime.",
                 reason="Cancellation is not model-visible in conversation entry.",
             )
         return self._assistant_route(

@@ -20,8 +20,6 @@ from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
-    PendingProcessKind,
-    PendingProcessStatus,
 )
 from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.models import (
@@ -30,8 +28,6 @@ from my_digital_brain.chat.models import (
     ClarificationPacket,
     ConversationMessage,
     IncomingChatMessage,
-    PendingProcessContext,
-    PendingProcessRef,
 )
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
@@ -211,17 +207,12 @@ def test_chat_response_uses_primary_text_with_structured_sidecars() -> None:
     response = ChatResponse(
         session_id="session-1",
         primary_text="Which Marco do you mean?",
-        pending_process=PendingProcessRef(
-            process_id="process-1",
-            kind=PendingProcessKind.MEMORY_INGESTION,
-            question="Which Marco do you mean?",
-        ),
     )
 
     dumped = response.model_dump(mode="json", exclude_none=True)
 
     assert dumped["primary_text"] == "Which Marco do you mean?"
-    assert dumped["pending_process"]["process_id"] == "process-1"
+    assert "pending_process" not in dumped
     assert "parts" not in dumped
 
 
@@ -263,114 +254,14 @@ def test_chat_runtime_requires_agentic_runtime() -> None:
         raise AssertionError("ChatRuntime should fail without an AgenticRuntime")
 
 
-def test_agentic_runtime_ignores_legacy_pending_context() -> None:
-    provider = ScriptedToolProvider([{"content": "Handled as a normal message."}])
+
+def test_chat_store_has_no_pending_process_api() -> None:
     store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel=ChatChannel.WEB,
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question="Which Marco do you mean?",
-            ),
-        ),
-    )
-    runtime = ChatRuntime(
-        store=store,
-        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
-    )
 
-    response = runtime.handle_message(
-        _message(text="This is a different memory.", message_id="m2"),
-    )
-    system_prompt = provider.calls[0]["request"].messages[0].content
+    assert not hasattr(store, "save_pending_process_context")
+    assert not hasattr(store, "get_active_pending_process_context")
+    assert not hasattr(store, "list_pending_process_contexts")
 
-    assert response.status == ChatResponseStatus.OK
-    assert "pending_process" not in system_prompt
-    assert store.get_active_pending_process_context(session.session_id) is not None
-
-def test_store_can_pause_pending_process_and_list_paused_backlog() -> None:
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel=ChatChannel.WEB,
-        external_conversation_id="web-conversation-1",
-        owner_id="owner-1",
-    )
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question="Which Marco?",
-            ),
-            context={
-                "summary": "Trying to store a memory about Marco.",
-                "source_text": "Yesterday I met Marco.",
-                "unresolved_targets": ["person: Marco"],
-            },
-        ),
-    )
-
-    paused = store.update_pending_process_status(
-        session.session_id,
-        "process-1",
-        PendingProcessStatus.PAUSED,
-        metadata={"pause_reason": "not now"},
-        context_updates={"resumable": True},
-    )
-
-    assert paused.process_ref.status == PendingProcessStatus.PAUSED
-    assert paused.context["source_text"] == "Yesterday I met Marco."
-    assert paused.context["resumable"] is True
-    assert store.get_active_pending_process_context(session.session_id) is None
-    backlog = store.list_pending_process_contexts(
-        session.session_id,
-        statuses={PendingProcessStatus.PAUSED},
-    )
-    assert [item.process_ref.process_id for item in backlog] == ["process-1"]
-
-
-def test_agentic_context_does_not_include_pending_process_overview() -> None:
-    provider = ScriptedToolProvider([{"content": "I can continue normally."}])
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel=ChatChannel.WEB,
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question="Which Marco?",
-            ),
-            context={
-                "summary": "Trying to store a memory about Marco in Milan.",
-                "candidate_graph_snapshot": {"raw": "hidden"},
-            },
-        ),
-    )
-    runtime = ChatRuntime(
-        store=store,
-        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
-    )
-
-    response = runtime.handle_message(_message(text="Marco from university"))
-    system_prompt = provider.calls[0]["request"].messages[0].content
-
-    assert response.metadata["visited_states"] == ["conversation_entry"]
-    assert "pending_processes" not in system_prompt
-    assert "Trying to store a memory" not in system_prompt
-    assert "candidate_graph_snapshot" not in system_prompt
 
 def test_debug_commands_are_normal_agentic_messages() -> None:
     provider = ScriptedToolProvider([
@@ -424,43 +315,15 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     assert detail.messages[-1].text == "I can help with that."
 
 
-def test_agentic_runtime_does_not_inject_pending_context_into_conversation_entry() -> None:
-    provider = ScriptedToolProvider([{"content": "Which Marco did you mean?"}])
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel=ChatChannel.WEB,
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    store.save_pending_process_context(
-        session.session_id,
-        PendingProcessContext(
-            process_ref=PendingProcessRef(
-                process_id="process-1",
-                kind=PendingProcessKind.MEMORY_INGESTION,
-                question="Which Marco do you mean?",
-            ),
-        ),
-    )
-    runtime = ChatRuntime(
-        store=store,
-        agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
-    )
 
-    response = runtime.handle_message(_message(text="I'm not sure", message_id="m2"))
-    system_prompt = provider.calls[0]["request"].messages[0].content
-
-    assert response.metadata["visited_states"] == ["conversation_entry"]
-    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
-    assert "pending_process" not in system_prompt
-
-def test_agentic_ingestion_runs_without_pending_process() -> None:
+def test_agentic_ingestion_runs_without_pending_process_surface() -> None:
     provider = ScriptedToolProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
             {"content": "Node action complete."},
             {"content": "Memory action complete."},
             {"content": "Edge action complete."},
+            {"content": "Saved it."},
         ],
         structured_payloads=_chat_memory_ingestion_structured_payloads(),
     )
@@ -470,35 +333,14 @@ def test_agentic_ingestion_runs_without_pending_process() -> None:
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
     )
 
-    response = runtime.handle_message(_message(text="Remember this memory."))
+    response = runtime.handle_message(_message(text="Remember Marco from university."))
     detail = store.get_session_detail(response.session_id)
 
     assert response.status == ChatResponseStatus.OK
-    assert response.pending_process is None
-    assert response.clarification_packet is None
-    assert detail.active_agentic_frame is None
-    assert detail.pending_process is None
-    assert detail.messages[-1].pending_process_id is None
-    assert response.metadata["agentic_status"] == "ok"
-    assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
-    assert [call.output_schema.__name__ for call in provider.structured_calls] == [
-        "MemoryIngestionReasoning",
-        "NodeMemoryPlan",
-        "MemoryLogMemoryPlan",
-        "EdgeMemoryPlan",
-    ]
-    assert provider.calls[1]["tool_names"] == [
-        "create_graph_node",
-        "create_memory_log",
-        "create_relationship_state",
-        "get_context_package",
-        "get_entity_detail",
-        "get_neighborhood_view",
-        "get_target_evidence",
-        "request_user_clarification",
-        "update_memory_graph",
-        "upsert_graph_relationship",
-    ]
+    assert "pending_process" not in response.model_dump(mode="json", exclude_none=True)
+    assert "pending_process" not in detail.model_dump(mode="json", exclude_none=True)
+    assert "pending_process_id" not in detail.messages[-1].model_dump(mode="json", exclude_none=True)
+
 
 def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
     provider = ScriptedToolProvider([{"content": "Resumed."}])
@@ -785,7 +627,7 @@ def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:
     assert authorized.json()["primary_text"] == "I can help with that."
 
 
-def test_chat_api_get_session_and_cancel_removed_pending_process_path() -> None:
+def test_chat_api_get_session_and_cancel_removed_legacy_process_path() -> None:
     provider = ScriptedToolProvider([{"content": "Normal response."}])
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
@@ -811,11 +653,11 @@ def test_chat_api_get_session_and_cancel_removed_pending_process_path() -> None:
     )
 
     assert session.status_code == 200
-    assert session.json()["pending_process"] is None
+    assert "pending_process" not in session.json()
     assert session.json()["active_agentic_frame"] is None
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == ChatResponseStatus.FAILED.value
-    assert cancelled.json()["diagnostics"][0]["code"] == "pending_process_cancel_removed"
+    assert cancelled.json()["diagnostics"][0]["code"] == "legacy_process_cancel_removed"
 
 def test_chat_api_create_list_update_and_post_to_selected_session() -> None:
     provider = ScriptedToolProvider([{"content": "Stored in selected chat."}])

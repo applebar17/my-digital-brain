@@ -35,7 +35,6 @@ class ToolResultStatus(StrEnum):
     RECOVERABLE_ERROR = "recoverable_error"
     BLOCKED = "blocked"
     INTERRUPTED = "interrupted"
-    NEEDS_USER_INPUT = "needs_user_input"
     PAUSED = "paused"
     CANCELLED = "cancelled"
     FAILED = "failed"

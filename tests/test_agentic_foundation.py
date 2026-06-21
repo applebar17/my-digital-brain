@@ -36,7 +36,6 @@ from my_digital_brain.agentic import (
     MemoryPlanAction,
     MemoryPlanActionType,
     NeutralConversationMessage,
-    PendingProcessContext,
     PlanningActionContext,
     PlanningPurposeGuidelines,
     PlanningTransformContext,
@@ -281,48 +280,18 @@ def test_deterministic_router_does_not_expose_control_tools_to_conversation_entr
     assert "tool surface" in status_route.assistant_message.content
     assert cancel_route.tool_call is None
     assert cancel_route.assistant_message is not None
-    assert "Pending-process cancellation" in cancel_route.assistant_message.content
+    assert "Pending-process" not in cancel_route.assistant_message.content
 
 
-def test_deterministic_router_keeps_pending_context_in_conversation_entry() -> None:
-    router = DeterministicAgenticRouter()
+
+def test_conversation_context_has_no_pending_process_fields() -> None:
     context = ConversationContext(
-        current_message=NeutralConversationMessage.user("I don't remember"),
-        pending_process=PendingProcessContext(
-            process_id="process-1",
-            kind="memory_ingestion",
-            status="pending",
-            question="Which place was it?",
-        ),
+        current_message=NeutralConversationMessage.user("I do not remember"),
     )
+    payload = context.model_facing_payload()
 
-    route = router.route(context)
-
-    assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.tool_call is None
-    assert route.assistant_message is not None
-    assert "Provider-backed conversation routing" in route.assistant_message.content
-
-
-def test_deterministic_router_does_not_infer_pending_resume_by_default() -> None:
-    router = DeterministicAgenticRouter()
-    context = ConversationContext(
-        current_message=NeutralConversationMessage.user("Marco from university"),
-        pending_process=PendingProcessContext(
-            process_id="process-1",
-            kind="memory_ingestion",
-            status="pending",
-            question="Which Marco?",
-        ),
-    )
-
-    route = router.route(context)
-
-    assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.tool_call is None
-    assert route.assistant_message is not None
-    assert "Provider-backed conversation routing" in route.assistant_message.content
-
+    assert "pending_process" not in payload
+    assert "pending_processes" not in payload
 
 
 def test_memory_ingestion_reasoning_contract_accepts_guidance_not_actions() -> None:

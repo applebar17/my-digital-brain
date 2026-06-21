@@ -140,7 +140,7 @@ def test_history_service_compacts_tool_events_for_planning_checkpoint_context() 
             AgenticToolEvent(
                 tool_name="request_user_clarification",
                 status="ok",
-                data={"pending_process": {"question": "Which Marco?"}},
+                data={"clarification_packet": {"question": "Which Marco?"}},
             ),
         ],
     )

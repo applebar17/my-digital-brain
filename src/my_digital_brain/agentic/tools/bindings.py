@@ -173,10 +173,8 @@ class AgenticToolBindings:
         desired_work: str | None = None,
         target_ids: list[str] | None = None,
         source_refs: list[str] | None = None,
-        pending_process_policy: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolResult:
-        del pending_process_policy
         resolved_source = (source_text or self._source_text_from_context()).strip()
         if not resolved_source:
             return _update_tool_error(

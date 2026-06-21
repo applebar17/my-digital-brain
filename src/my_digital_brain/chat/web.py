@@ -18,7 +18,6 @@ class WebChatMessageRequest(ChatModel):
     text: str | None = None
     media_refs: list[IncomingMediaRef] = Field(default_factory=list)
     reply_to_message_id: str | None = None
-    pending_process_id: str | None = None
     conversation_history_refs: list[str] = Field(default_factory=list)
     received_at: datetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -42,7 +41,6 @@ class WebChatAdapter:
             text=request.text,
             media_refs=request.media_refs,
             reply_to_message_id=request.reply_to_message_id,
-            pending_process_id=request.pending_process_id,
             conversation_history_refs=request.conversation_history_refs,
             received_at=request.received_at,
             metadata=request.metadata,

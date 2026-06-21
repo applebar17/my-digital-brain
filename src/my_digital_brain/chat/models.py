@@ -11,8 +11,6 @@ from my_digital_brain.chat.enums import (
     ChatResponseStatus,
     ConversationMessageRole,
     ConversationStatus,
-    PendingProcessKind,
-    PendingProcessStatus,
 )
 from my_digital_brain.core.ids import new_uuid
 
@@ -55,27 +53,8 @@ class IncomingChatMessage(ChatModel):
     text: str | None = None
     media_refs: list[IncomingMediaRef] = Field(default_factory=list)
     reply_to_message_id: str | None = None
-    pending_process_id: str | None = None
     conversation_history_refs: list[str] = Field(default_factory=list)
     received_at: datetime = Field(default_factory=utc_now)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class PendingProcessRef(ChatModel):
-    process_id: str
-    kind: PendingProcessKind
-    status: PendingProcessStatus = PendingProcessStatus.PENDING
-    question: str | None = None
-    expires_at: datetime | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class PendingProcessContext(ChatModel):
-    process_ref: PendingProcessRef
-    context: dict[str, Any] = Field(default_factory=dict)
-    conversation_history_refs: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -151,7 +130,6 @@ class ConversationSession(ChatModel):
     owner_id: str
     title: str = "New chat"
     status: ConversationStatus = ConversationStatus.ACTIVE
-    active_pending_process_id: str | None = None
     active_agentic_frame_id: str | None = None
     last_message_at: datetime | None = None
     archived_at: datetime | None = None
@@ -168,7 +146,6 @@ class ConversationMessage(ChatModel):
     text: str | None = None
     media_refs: list[IncomingMediaRef] = Field(default_factory=list)
     source_ref: str | None = None
-    pending_process_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -177,7 +154,6 @@ class ConversationHistoryItem(ChatModel):
     message_id: str
     role: ConversationMessageRole
     text: str | None = None
-    pending_process_id: str | None = None
     created_at: datetime
 
 
@@ -211,7 +187,6 @@ class ChatResponse(ChatModel):
     session_id: str
     status: ChatResponseStatus = ChatResponseStatus.OK
     primary_text: str
-    pending_process: PendingProcessRef | None = None
     clarification_packet: ClarificationPacket | None = None
     actions: list[ChatAction] = Field(default_factory=list)
     evidence: list[ChatEvidenceRef] = Field(default_factory=list)
@@ -223,8 +198,6 @@ class ChatResponse(ChatModel):
 class ConversationSessionDetail(ChatModel):
     session: ConversationSession
     messages: list[ConversationMessage] = Field(default_factory=list)
-    pending_process: PendingProcessContext | None = None
-    pending_processes: list[PendingProcessContext] = Field(default_factory=list)
     active_agentic_frame: AgenticFrame | None = None
 
 
@@ -235,9 +208,7 @@ class ConversationSessionSummary(ChatModel):
     owner_id: str
     title: str
     status: ConversationStatus
-    active_pending_process_id: str | None = None
     active_agentic_frame_id: str | None = None
-    pending_process_status: PendingProcessStatus | None = None
     last_message_preview: str | None = None
     last_message_at: datetime | None = None
     archived_at: datetime | None = None

@@ -15,7 +15,6 @@ from my_digital_brain.agentic import (
     ConversationContext,
     GraphUpdateContext,
     NeutralConversationMessage,
-    PendingProcessContext,
     PlanningActionContext,
     PlanningPurposeGuidelines,
     PlanningTransformContext,
@@ -438,20 +437,12 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
         "EdgeMemoryPlan",
     ]
 
-def test_pending_context_stays_in_conversation_entry() -> None:
-    provider = ScriptedToolCallingProvider(
-        [{"content": "Which Marco did you mean?"}]
-    )
-    runtime = AgenticRuntime(_runner(provider))
-    conversation = _conversation("I am not sure")
-    conversation.pending_process = PendingProcessContext(
-        process_id="process-1",
-        kind="memory_ingestion",
-        status="pending",
-        question="Which Marco?",
-    )
 
-    result = runtime.run(conversation, AgenticToolExecutionContext())
+def test_conversation_entry_has_no_pending_process_surface() -> None:
+    provider = ScriptedToolCallingProvider([{"content": "Handled normally."}])
+    runtime = AgenticRuntime(_runner(provider))
+
+    result = runtime.run(_conversation("I am not sure"), AgenticToolExecutionContext())
 
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
@@ -933,7 +924,7 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     assert "PlanningTransformResultContext" in structured_call.system_prompt
 
 
-def test_contradiction_review_question_becomes_pending_process_hint() -> None:
+def test_contradiction_review_question_becomes_clarification_intent() -> None:
     provider = ScriptedToolCallingProvider(
         [{"content": "Review support complete."}],
         structured_payloads=[
