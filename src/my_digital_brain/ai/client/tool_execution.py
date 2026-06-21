@@ -16,6 +16,7 @@ from my_digital_brain.debug import record_tool_execution
 
 
 NON_ERROR_TOOL_STATUSES = {"ok", "accepted", "interrupted"}
+_MAX_LOG_VALUE_CHARS = 2000
 
 
 class ToolCallInterruption(Exception):
@@ -253,6 +254,7 @@ class GenAIToolExecutionMixin:
             meta.update(result.meta)
         result.meta = meta
         is_expected_status = result.status in NON_ERROR_TOOL_STATUSES
+        error_fields = _tool_result_error_log_fields(result)
         log_event(
             self.logger,
             "tool.call.end" if is_expected_status else "tool.call.error",
@@ -265,6 +267,7 @@ class GenAIToolExecutionMixin:
             error_type=result.error.type if result.error else None,
             error_code=result.error.code if result.error else None,
             arg_keys=sorted(args.keys()),
+            **error_fields,
         )
         record_tool_execution(
             tool_name=fn_name,
@@ -480,3 +483,51 @@ class GenAIToolExecutionMixin:
                 }
             )
         return serialized
+
+
+def _tool_result_error_log_fields(result: ToolResult) -> dict[str, Any]:
+    if result.status in NON_ERROR_TOOL_STATUSES:
+        return {}
+
+    fields: dict[str, Any] = {}
+    if result.output:
+        fields["tool_output"] = _compact_log_value(result.output)
+
+    if result.error is not None:
+        fields.update(
+            {
+                "error_message": _compact_log_value(result.error.message),
+                "error_hint": _compact_log_value(result.error.hint),
+                "error_retryable": result.error.retryable,
+                "error_details": _compact_log_value(result.error.details),
+            }
+        )
+
+    data = result.data if isinstance(result.data, dict) else {}
+    if data:
+        fields.update(
+            {
+                "tool_diagnostics": _compact_log_value(data.get("diagnostics")),
+                "validation_details": _compact_log_value(data.get("validation_details")),
+                "suggested_next_action": _compact_log_value(data.get("suggested_next_action")),
+            }
+        )
+
+    return {key: value for key, value in fields.items() if value not in (None, "", [], {})}
+
+
+def _compact_log_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value[:_MAX_LOG_VALUE_CHARS]
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str)
+    except TypeError:
+        encoded = str(value)
+    if len(encoded) > _MAX_LOG_VALUE_CHARS:
+        encoded = f"{encoded[:_MAX_LOG_VALUE_CHARS]}..."
+    try:
+        return json.loads(encoded)
+    except json.JSONDecodeError:
+        return encoded
