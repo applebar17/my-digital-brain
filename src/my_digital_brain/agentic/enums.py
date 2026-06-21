@@ -41,6 +41,17 @@ class ToolResultStatus(StrEnum):
     FAILED = "failed"
 
 
+class MemoryPlanningPhase(StrEnum):
+    NODES = "nodes"
+    MEMORY_LOGS = "memory_logs"
+    EDGES = "edges"
+
+
+class PlanExecutionMode(StrEnum):
+    PARALLEL = "parallel"
+    SEQUENTIAL = "sequential"
+
+
 class MemoryPlanActionType(StrEnum):
     CREATE_MEMORY_LOG = "create_memory_log"
     CREATE_NODE = "create_node"

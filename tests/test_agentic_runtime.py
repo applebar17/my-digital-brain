@@ -160,6 +160,121 @@ def _tool_result_content(result: object) -> str:
     return json.dumps(result, default=str)
 
 
+def _memory_ingestion_structured_payloads(*, clarify: bool = False) -> list[dict[str, Any]]:
+    node_action = {
+        "action_id": "node_action_0001",
+        "action_type": "ask_clarification" if clarify else "create_node",
+        "target_refs": ["node_new_0001"],
+        "rationale": "Confirm Marco target." if clarify else "Create Marco as a person candidate.",
+        "payload": (
+            {
+                "questions": [
+                    {
+                        "question": "Which Marco should I use?",
+                        "options": [{"label": "Marco from university"}],
+                        "free_text_allowed": True,
+                        "required": True,
+                        "selection_mode": "single",
+                    }
+                ]
+            }
+            if clarify
+            else {"created_refs": ["node_new_0001"]}
+        ),
+    }
+    return [
+        {
+            "highlights": {
+                "nodes": {"persons": "Marco is the main person."},
+                "logs": ["The user clarified Marco was from university."],
+                "edges": {"relationships": "University context may matter."},
+            },
+            "possible_aliases": [
+                {"main_mention": "Marco", "aliases": ["Marco from university"]}
+            ],
+            "planning_guidance": "Plan nodes, then memories, then edges.",
+        },
+        {
+            "summary": "Plan Marco as a node.",
+            "steps": [
+                {
+                    "step_id": "node_step_0001",
+                    "phase": "nodes",
+                    "execution_mode": "sequential",
+                    "actions": [node_action],
+                }
+            ],
+            "node_plan_packet": {
+                "planned_refs": [
+                    {
+                        "ref": "node_new_0001",
+                        "object_kind": "node",
+                        "label": "Person",
+                        "name": "Marco",
+                        "aliases": ["Marco from university"],
+                    }
+                ],
+                "summary": "Marco is available as node_new_0001 for memory planning.",
+            },
+        },
+        {
+            "summary": "Plan one compact MemoryLog.",
+            "steps": [
+                {
+                    "step_id": "memory_step_0001",
+                    "phase": "memory_logs",
+                    "execution_mode": "parallel",
+                    "actions": [
+                        {
+                            "action_id": "memory_action_0001",
+                            "action_type": "create_memory_log",
+                            "target_refs": ["memory_new_0001", "node_new_0001"],
+                            "rationale": "Create one clarification memory.",
+                            "payload": {"created_refs": ["memory_new_0001"]},
+                        }
+                    ],
+                }
+            ],
+            "memory_plan_packet": {
+                "planned_refs": [
+                    {
+                        "ref": "memory_new_0001",
+                        "object_kind": "memory",
+                        "label": "MemoryLog",
+                        "summary": "Marco was from university, not work.",
+                    }
+                ],
+                "host_refs": ["node_new_0001"],
+                "involved_refs": ["node_new_0001"],
+                "summary": "memory_new_0001 can anchor edge planning.",
+            },
+        },
+        {
+            "summary": "Plan one ref-based edge.",
+            "steps": [
+                {
+                    "step_id": "edge_step_0001",
+                    "phase": "edges",
+                    "execution_mode": "sequential",
+                    "actions": [
+                        {
+                            "action_id": "edge_action_0001",
+                            "action_type": "create_relationship",
+                            "target_refs": ["node_new_0001"],
+                            "rationale": "Link the person to the university context.",
+                            "payload": {
+                                "from_ref": "node_new_0001",
+                                "to_ref": "node_0001",
+                                "created_refs": ["edge_new_0001"],
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    ]
+
+
 class FakeGraphService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
@@ -296,8 +411,11 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {"content": "Memory ingestion complete."},
-        ]
+            {"content": "Node action complete."},
+            {"content": "Memory action complete."},
+            {"content": "Edge action complete."},
+        ],
+        structured_payloads=_memory_ingestion_structured_payloads(),
     )
     runtime = AgenticRuntime(_runner(provider))
 
@@ -312,7 +430,13 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
     assert event.tool_name == "ingest_memory"
     assert event.status == "ok"
     assert event.data["child_state_id"] == AgenticStateId.MEMORY_INGESTION.value
-    assert event.data["summary"] == "Memory ingestion complete."
+    assert event.data["summary"] == "Memory ingestion planning completed through nodes, memory_logs, and edges."
+    assert [call.output_schema.__name__ for call in provider.structured_calls] == [
+        "MemoryIngestionReasoning",
+        "NodeMemoryPlan",
+        "MemoryLogMemoryPlan",
+        "EdgeMemoryPlan",
+    ]
 
 def test_pending_context_stays_in_conversation_entry() -> None:
     provider = ScriptedToolCallingProvider(
@@ -505,26 +629,10 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {
-                "content": "Need target detail.",
-                "tool": "request_user_clarification",
-                "arguments": {
-                    "reason": "Need to confirm target.",
-                    "target_refs": ["node-marco"],
-                    "questions": [
-                        {
-                            "question": "Which Marco should I use?",
-                            "options": [{"label": "Marco from university"}],
-                            "free_text_allowed": True,
-                            "required": True,
-                            "selection_mode": "single",
-                        }
-                    ],
-                },
-            },
             {"content": "Ingestion child resumed."},
             {"content": "Conversation parent resumed."},
-        ]
+        ],
+        structured_payloads=_memory_ingestion_structured_payloads(clarify=True),
     )
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
@@ -598,8 +706,11 @@ def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {"content": "Memory ingestion complete."},
-        ]
+            {"content": "Node action complete."},
+            {"content": "Memory action complete."},
+            {"content": "Edge action complete."},
+        ],
+        structured_payloads=_memory_ingestion_structured_payloads(),
     )
     runtime = AgenticRuntime(_runner(provider))
 

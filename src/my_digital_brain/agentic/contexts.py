@@ -16,6 +16,8 @@ from my_digital_brain.agentic.enums import (
     ContradictionSeverity,
     MaintenanceSuggestionType,
     MemoryPlanActionType,
+    MemoryPlanningPhase,
+    PlanExecutionMode,
     ProfileMemoryCategory,
     ProfileMemoryStability,
     ProfileMemoryVisibility,
@@ -29,6 +31,7 @@ from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
 
 _PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[0-9]{4}\b")
+_VISIBLE_REF_RE = re.compile(r"^(?:node|memory|edge|context|media)(?:_new)?_[0-9]{4}$")
 
 BACKEND_ONLY_KEYS = {
     "metadata",
@@ -489,6 +492,87 @@ class AgenticToolPayload(AgenticModel):
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PlannedRefPacket(AgenticModel):
+    ref: str
+    object_kind: str
+    label: str | None = None
+    type: str | None = None
+    name: str | None = None
+    summary: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    source_mentions: list[str] = Field(default_factory=list)
+    status: str | None = None
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_ref(self) -> "PlannedRefPacket":
+        if not _VISIBLE_REF_RE.match(self.ref):
+            raise ValueError("PlannedRefPacket.ref must be a known local ref.")
+        return self
+
+
+class NodePlanPacket(AgenticModel):
+    planned_refs: list[PlannedRefPacket] = Field(default_factory=list)
+    resolved_refs: list[PlannedRefPacket] = Field(default_factory=list)
+    duplicate_notes: list[str] = Field(default_factory=list)
+    ignored_mentions: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "NodePlanPacket":
+        if not (
+            self.planned_refs
+            or self.resolved_refs
+            or self.duplicate_notes
+            or self.ignored_mentions
+            or self.summary.strip()
+        ):
+            raise ValueError("NodePlanPacket requires at least one useful signal.")
+        return self
+
+
+class MemoryPlanPacket(AgenticModel):
+    planned_refs: list[PlannedRefPacket] = Field(default_factory=list)
+    host_refs: list[str] = Field(default_factory=list)
+    involved_refs: list[str] = Field(default_factory=list)
+    context_refs: list[str] = Field(default_factory=list)
+    weak_edge_notes: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+    @model_validator(mode="after")
+    def _validate_refs_and_signal(self) -> "MemoryPlanPacket":
+        for ref in [*self.host_refs, *self.involved_refs, *self.context_refs]:
+            if not _VISIBLE_REF_RE.match(ref):
+                raise ValueError(f"MemoryPlanPacket contains an invalid local ref: {ref}")
+        if not (
+            self.planned_refs
+            or self.host_refs
+            or self.involved_refs
+            or self.context_refs
+            or self.weak_edge_notes
+            or self.summary.strip()
+        ):
+            raise ValueError("MemoryPlanPacket requires at least one useful signal.")
+        return self
+
+
+class MemoryPlanStep(AgenticModel):
+    step_id: str
+    phase: MemoryPlanningPhase
+    execution_mode: PlanExecutionMode = PlanExecutionMode.SEQUENTIAL
+    actions: list["MemoryPlanAction"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_actions(self) -> "MemoryPlanStep":
+        if not self.actions:
+            raise ValueError("MemoryPlanStep requires at least one action.")
+        phase = MemoryPlanningPhase(self.phase)
+        for action in self.actions:
+            action_phase = action.metadata.get("phase") or phase.value
+            action.metadata["phase"] = action_phase
+        return self
+
+
 class MemoryPlanAction(AgenticModel):
     action_id: str = Field(default_factory=new_uuid)
     action_type: MemoryPlanActionType
@@ -503,12 +587,62 @@ class MemoryPlan(AgenticModel):
     plan_id: str = Field(default_factory=new_uuid)
     context_refs: list[str] = Field(default_factory=list)
     actions: list[MemoryPlanAction] = Field(default_factory=list)
+    steps: list[MemoryPlanStep] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_actions(self) -> "MemoryPlan":
-        if not self.actions:
-            raise ValueError("MemoryPlan requires at least one action.")
+        if not (self.actions or self.steps):
+            raise ValueError("MemoryPlan requires at least one action or step.")
+        return self
+
+
+
+
+class NodeMemoryPlan(AgenticModel):
+    summary: str
+    steps: list[MemoryPlanStep] = Field(default_factory=list)
+    node_plan_packet: NodePlanPacket
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_phase(self) -> "NodeMemoryPlan":
+        _validate_steps_for_phase(self.steps, MemoryPlanningPhase.NODES)
+        return self
+
+
+class MemoryLogMemoryPlan(AgenticModel):
+    summary: str
+    steps: list[MemoryPlanStep] = Field(default_factory=list)
+    memory_plan_packet: MemoryPlanPacket
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_phase(self) -> "MemoryLogMemoryPlan":
+        _validate_steps_for_phase(self.steps, MemoryPlanningPhase.MEMORY_LOGS)
+        return self
+
+
+class EdgeMemoryPlan(AgenticModel):
+    summary: str
+    steps: list[MemoryPlanStep] = Field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_phase_and_refs(self) -> "EdgeMemoryPlan":
+        _validate_steps_for_phase(self.steps, MemoryPlanningPhase.EDGES)
+        for step in self.steps:
+            for action in step.actions:
+                if action.action_type in {
+                    MemoryPlanActionType.CREATE_RELATIONSHIP,
+                    MemoryPlanActionType.CREATE_RELATIONSHIP_STATE,
+                }:
+                    for field_name in ("from_ref", "to_ref", "source_ref", "target_ref"):
+                        value = action.payload.get(field_name)
+                        if value is not None and not _VISIBLE_REF_RE.match(str(value)):
+                            raise ValueError(
+                                f"Edge action {action.action_id} field {field_name} must use a local ref."
+                            )
         return self
 
 
@@ -520,6 +654,11 @@ class MemoryIngestionContext(AgenticModel):
     prior_tool_outputs: list[ToolResultContext] = Field(default_factory=list)
     reasoning: MemoryIngestionReasoning | None = None
     reasoning_packets: list[dict[str, Any]] = Field(default_factory=list)
+    node_plan: NodeMemoryPlan | None = None
+    memory_plan: MemoryLogMemoryPlan | None = None
+    edge_plan: EdgeMemoryPlan | None = None
+    node_plan_packet: NodePlanPacket | None = None
+    memory_plan_packet: MemoryPlanPacket | None = None
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -534,6 +673,11 @@ class MemoryIngestionContext(AgenticModel):
                 "prior_tool_outputs": self.prior_tool_outputs,
                 "reasoning": self.reasoning,
                 "reasoning_packets": self.reasoning_packets,
+                "node_plan": self.node_plan,
+                "memory_plan": self.memory_plan,
+                "edge_plan": self.edge_plan,
+                "node_plan_packet": self.node_plan_packet,
+                "memory_plan_packet": self.memory_plan_packet,
                 "ref_context": (
                     self.ref_context.model_facing_packet()
                     if self.ref_context is not None
@@ -547,9 +691,11 @@ class MemoryIngestionContext(AgenticModel):
 class MemoryIngestionResultContext(AgenticModel):
     plan: MemoryPlan | None = None
     summary: str
+    phase_summaries: list[str] = Field(default_factory=list)
     created_refs: list[str] = Field(default_factory=list)
     updated_refs: list[str] = Field(default_factory=list)
     affected_graph_ids: list[str] = Field(default_factory=list)
+    ref_context_delta: dict[str, Any] | None = None
     diagnostics: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -745,6 +891,20 @@ class MaintenanceReviewResultContext(AgenticModel):
             raise ValueError("Maintenance review requires suggestions or no_action_reason.")
         return self
 
+
+
+
+def _validate_steps_for_phase(
+    steps: list[MemoryPlanStep],
+    phase: MemoryPlanningPhase,
+) -> None:
+    if not steps:
+        raise ValueError(f"{phase.value} plan requires at least one step.")
+    for step in steps:
+        if MemoryPlanningPhase(step.phase) != phase:
+            raise ValueError(
+                f"Plan step {step.step_id} has phase {step.phase}; expected {phase.value}."
+            )
 
 
 def _reject_proposed_refs(value: Any) -> None:

@@ -16,6 +16,15 @@ from my_digital_brain.agentic import (
     MemoryIngestionContext,
     IrrelevantDetailHint,
     EdgeReasoningHighlights,
+    PlannedRefPacket,
+    PlanExecutionMode,
+    NodePlanPacket,
+    NodeMemoryPlan,
+    MemoryPlanStep,
+    MemoryPlanPacket,
+    MemoryPlanningPhase,
+    MemoryLogMemoryPlan,
+    EdgeMemoryPlan,
     AliasReasoningHint,
     ChannelContextProjection,
     ChannelSessionMetadata,
@@ -438,6 +447,129 @@ def test_memory_ingestion_prompt_locks_reasoner_boundary() -> None:
     assert "Do not write" in template
     assert "Do not emit `node_new_*`" in template
     assert "MemoryIngestionReasoning" in template
+
+
+def test_three_phase_memory_plan_contracts_and_packets_validate() -> None:
+    node_action = MemoryPlanAction(
+        action_id="node_action_0001",
+        action_type=MemoryPlanActionType.CREATE_NODE,
+        target_refs=["node_new_0001"],
+    )
+    node_step = MemoryPlanStep(
+        step_id="node_step_0001",
+        phase=MemoryPlanningPhase.NODES,
+        execution_mode=PlanExecutionMode.PARALLEL,
+        actions=[node_action],
+    )
+    node_plan = NodeMemoryPlan(
+        summary="Plan one person node.",
+        steps=[node_step],
+        node_plan_packet=NodePlanPacket(
+            planned_refs=[
+                PlannedRefPacket(
+                    ref="node_new_0001",
+                    object_kind="node",
+                    label="Person",
+                    name="Marco",
+                    aliases=["Marco from university"],
+                )
+            ],
+            summary="Marco is planned for memory hosts.",
+        ),
+    )
+    memory_plan = MemoryLogMemoryPlan(
+        summary="Plan one compact memory.",
+        steps=[
+            MemoryPlanStep(
+                step_id="memory_step_0001",
+                phase="memory_logs",
+                execution_mode="sequential",
+                actions=[
+                    MemoryPlanAction(
+                        action_id="memory_action_0001",
+                        action_type="create_memory_log",
+                        target_refs=["memory_new_0001", "node_new_0001"],
+                    )
+                ],
+            )
+        ],
+        memory_plan_packet=MemoryPlanPacket(
+            planned_refs=[
+                PlannedRefPacket(
+                    ref="memory_new_0001",
+                    object_kind="memory",
+                    label="MemoryLog",
+                    summary="Marco was from university.",
+                )
+            ],
+            host_refs=["node_new_0001"],
+            involved_refs=["node_new_0001"],
+            weak_edge_notes=["Co-presence stays as involvement."],
+        ),
+    )
+    edge_plan = EdgeMemoryPlan(
+        summary="Plan one edge.",
+        steps=[
+            MemoryPlanStep(
+                step_id="edge_step_0001",
+                phase="edges",
+                actions=[
+                    MemoryPlanAction(
+                        action_id="edge_action_0001",
+                        action_type="create_relationship",
+                        payload={"from_ref": "node_new_0001", "to_ref": "node_0001"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    assert node_plan.steps[0].execution_mode == PlanExecutionMode.PARALLEL.value
+    assert node_plan.node_plan_packet.planned_refs[0].aliases == ["Marco from university"]
+    assert memory_plan.memory_plan_packet.host_refs == ["node_new_0001"]
+    assert edge_plan.steps[0].phase == MemoryPlanningPhase.EDGES.value
+    assert "backend_id" not in str(node_plan.node_plan_packet.model_dump(mode="json"))
+
+    with pytest.raises(ValidationError):
+        EdgeMemoryPlan(
+            summary="Invalid edge endpoint.",
+            steps=[
+                MemoryPlanStep(
+                    step_id="edge_step_0002",
+                    phase="edges",
+                    actions=[
+                        MemoryPlanAction(
+                            action_id="edge_action_0002",
+                            action_type="create_relationship",
+                            payload={"from_ref": "Marco", "to_ref": "node_0001"},
+                        )
+                    ],
+                )
+            ],
+        )
+
+
+def test_three_phase_planning_prompts_include_handoff_packets() -> None:
+    registry = PromptRegistry()
+    node = registry.load("memory_node_planning").template
+    memory = registry.load("memory_log_planning").template
+    edge = registry.load("memory_edge_planning").template
+
+    assert "Reasoning inventory packet" in node
+    assert "Current refs" in node
+    assert "Existing graph candidates" in node
+    assert "node_plan_packet" in node
+    assert "NodeMemoryPlan" in node
+
+    assert "Node plan packet" in memory
+    assert "Irrelevant details" in memory
+    assert "memory_plan_packet" in memory
+    assert "MemoryLogMemoryPlan" in memory
+
+    assert "Node plan packet" in edge
+    assert "Memory plan packet" in edge
+    assert "Edge endpoints must be known local refs" in edge
+    assert "EdgeMemoryPlan" in edge
 
 
 def test_ref_context_contracts_allocate_and_hide_backend_ids() -> None:

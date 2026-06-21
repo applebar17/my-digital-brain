@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 from my_digital_brain.api.routes import chat as chat_routes
 from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
 from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
-from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
+from my_digital_brain.ai.schemas import (
+    ChatRequest,
+    ChatResult,
+    ProviderCallMetadata,
+    StructuredGenerationRequest,
+    StructuredGenerationResult,
+)
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.chat.enums import (
     ChatChannel,
@@ -36,9 +42,16 @@ from my_digital_brain.config import Settings
 class ScriptedToolProvider:
     provider_name = "scripted"
 
-    def __init__(self, steps: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        steps: list[dict[str, object]],
+        *,
+        structured_payloads: list[dict[str, object]] | None = None,
+    ) -> None:
         self.steps = list(steps)
+        self.structured_payloads = list(structured_payloads or [])
         self.calls: list[dict[str, object]] = []
+        self.structured_calls: list[StructuredGenerationRequest] = []
 
     def generate_chat_with_tools(
         self,
@@ -96,6 +109,98 @@ class ScriptedToolProvider:
             content=str(step.get("content") or ""),
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
+
+    def generate_structured(
+        self,
+        request: StructuredGenerationRequest,
+    ) -> StructuredGenerationResult:
+        self.structured_calls.append(request)
+        payload = self.structured_payloads.pop(0)
+        parsed = request.output_schema.model_validate(payload)
+        return StructuredGenerationResult(
+            parsed=parsed,
+            metadata=ProviderCallMetadata.fake(model=request.model),
+        )
+
+
+def _chat_memory_ingestion_structured_payloads() -> list[dict[str, object]]:
+    return [
+        {
+            "highlights": {
+                "nodes": {"persons": "The memory mentions Marco."},
+                "logs": ["Remember this memory."],
+                "edges": {"other": "No durable edge required."},
+            },
+            "planning_guidance": "Plan one node, one memory, and one no-op edge action.",
+        },
+        {
+            "summary": "Plan one node.",
+            "steps": [
+                {
+                    "step_id": "node_step_0001",
+                    "phase": "nodes",
+                    "execution_mode": "sequential",
+                    "actions": [
+                        {
+                            "action_id": "node_action_0001",
+                            "action_type": "create_node",
+                            "target_refs": ["node_new_0001"],
+                            "payload": {"created_refs": ["node_new_0001"]},
+                        }
+                    ],
+                }
+            ],
+            "node_plan_packet": {
+                "planned_refs": [
+                    {"ref": "node_new_0001", "object_kind": "node", "label": "Person", "name": "Marco"}
+                ],
+                "summary": "node_new_0001 is available for memory planning.",
+            },
+        },
+        {
+            "summary": "Plan one memory.",
+            "steps": [
+                {
+                    "step_id": "memory_step_0001",
+                    "phase": "memory_logs",
+                    "execution_mode": "sequential",
+                    "actions": [
+                        {
+                            "action_id": "memory_action_0001",
+                            "action_type": "create_memory_log",
+                            "target_refs": ["memory_new_0001"],
+                            "payload": {"created_refs": ["memory_new_0001"]},
+                        }
+                    ],
+                }
+            ],
+            "memory_plan_packet": {
+                "planned_refs": [
+                    {"ref": "memory_new_0001", "object_kind": "memory", "label": "MemoryLog", "summary": "Remember this memory."}
+                ],
+                "host_refs": ["node_new_0001"],
+                "summary": "memory_new_0001 is available for edge planning.",
+            },
+        },
+        {
+            "summary": "No durable edge needed.",
+            "steps": [
+                {
+                    "step_id": "edge_step_0001",
+                    "phase": "edges",
+                    "execution_mode": "sequential",
+                    "actions": [
+                        {
+                            "action_id": "edge_action_0001",
+                            "action_type": "create_relationship",
+                            "target_refs": ["node_new_0001"],
+                            "payload": {"from_ref": "node_new_0001", "to_ref": "node_0001"},
+                        }
+                    ],
+                }
+            ],
+        },
+    ]
 
 
 def _json_arguments(arguments: object) -> str:
@@ -353,8 +458,11 @@ def test_agentic_ingestion_runs_without_pending_process() -> None:
     provider = ScriptedToolProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {"content": "Memory ingestion complete."},
-        ]
+            {"content": "Node action complete."},
+            {"content": "Memory action complete."},
+            {"content": "Edge action complete."},
+        ],
+        structured_payloads=_chat_memory_ingestion_structured_payloads(),
     )
     store = InMemoryChatSessionStore()
     runtime = ChatRuntime(
@@ -373,14 +481,23 @@ def test_agentic_ingestion_runs_without_pending_process() -> None:
     assert detail.messages[-1].pending_process_id is None
     assert response.metadata["agentic_status"] == "ok"
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
+    assert [call.output_schema.__name__ for call in provider.structured_calls] == [
+        "MemoryIngestionReasoning",
+        "NodeMemoryPlan",
+        "MemoryLogMemoryPlan",
+        "EdgeMemoryPlan",
+    ]
     assert provider.calls[1]["tool_names"] == [
+        "create_graph_node",
+        "create_memory_log",
+        "create_relationship_state",
         "get_context_package",
         "get_entity_detail",
         "get_neighborhood_view",
         "get_target_evidence",
         "request_user_clarification",
-        "run_memory_creation",
         "update_memory_graph",
+        "upsert_graph_relationship",
     ]
 
 def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
