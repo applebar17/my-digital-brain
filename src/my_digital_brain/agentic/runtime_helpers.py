@@ -57,10 +57,16 @@ def _memory_ingestion_clarification_result(
     frame_id = execution_context.frame_id or new_uuid()
     execution_context.frame_id = frame_id
     clarification_tool_call_id = f"clarification-{new_uuid()}"
-    questions = _user_facing_clarification_questions(
-        action.payload.get("questions") or [],
-        fallback=action.rationale,
-    )
+    questions = action.payload.get("questions") or []
+    if not questions:
+        questions = [
+            {
+                "question": "What detail should I clarify before continuing?",
+                "free_text_allowed": True,
+                "required": True,
+                "selection_mode": "single",
+            }
+        ]
     packet = build_clarification_packet(
         frame_id=frame_id,
         origin_state_id=AgenticStateId.MEMORY_INGESTION.value,
@@ -136,46 +142,6 @@ def _memory_ingestion_clarification_result(
     )
 
 
-
-def _user_facing_clarification_questions(
-    questions: list[dict[str, Any]],
-    *,
-    fallback: str | None = None,
-) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    for question in questions[:3]:
-        if not isinstance(question, dict):
-            continue
-        text = str(question.get("question") or "").strip()
-        if not text:
-            continue
-        question = dict(question)
-        question["question"] = _direct_user_question(text)
-        normalized.append(question)
-    if normalized:
-        return normalized
-    return [
-        {
-            "question": _direct_user_question(
-                fallback or "What should I clarify before continuing?"
-            ),
-            "free_text_allowed": True,
-            "required": True,
-            "selection_mode": "single",
-        }
-    ]
-
-
-def _direct_user_question(text: str) -> str:
-    cleaned = " ".join(str(text or "").split()).strip()
-    if not cleaned:
-        return "Can you clarify this detail?"
-    lowered = cleaned.lower()
-    if cleaned.endswith("?") and not lowered.startswith(("clarify", "chiarire")):
-        return cleaned
-    if lowered.startswith(("clarify ", "chiarire ")):
-        cleaned = cleaned.split(" ", 1)[1].strip() if " " in cleaned else cleaned
-    return f"Can you clarify this for me: {cleaned}?"
 
 
 def _collect_memory_plan_refs(plan: MemoryPlan, key: str) -> list[str]:

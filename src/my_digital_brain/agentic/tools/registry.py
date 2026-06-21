@@ -433,15 +433,15 @@ def _clarification_questions_property() -> dict:
     return {
         "type": "array",
         "description": (
-            "One to three short, direct user-facing clarification questions. Do not "
-            "include summaries, internal ids, schema labels, or process narration."
+            "One to three short questions written exactly as they should appear to the user. "
+            "Use the user's language. Ask the real missing detail directly; do not summarize why you are asking."
         ),
         "minItems": 1,
         "maxItems": 3,
         "items": {
             "type": "object",
             "properties": {
-                "question": string_property("Short direct user-facing question addressed to the user. Use a question the UI can render verbatim, for example: Can you tell me where the barbeque happened?"),
+                "question": string_property("Direct user-facing question rendered verbatim. Good: What is Alessia's full name? Good: Which beach or beach club did you go to that afternoon? Bad: Clarify the exact place to improve node quality."),
                 "options": {
                     "type": "array",
                     "description": "Concise suggested answers. Free text remains allowed.",

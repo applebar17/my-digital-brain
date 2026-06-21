@@ -1085,13 +1085,26 @@ def test_structured_state_repairs_validation_error_once() -> None:
 
 
 
-def test_memory_ingestion_clarification_rationale_becomes_user_facing_question() -> None:
+def test_memory_ingestion_clarification_renders_ai_questions_verbatim() -> None:
     action = {
         "action_id": "clarify_action_0001",
         "action_type": "ask_clarification",
-        "target_refs": ["node_new_barbeque"],
-        "rationale": "Chiarire il luogo esatto del barbeque e il contenuto del progetto personale per migliorare la qualit? dei nodi/riassunti (senza creare nodi inutili).",
-        "payload": {},
+        "target_refs": ["node_new_alessia", "node_new_beach"],
+        "rationale": "Clarify missing user-facing details.",
+        "payload": {
+            "questions": [
+                {
+                    "question": "What is Alessia's full name?",
+                    "free_text_allowed": True,
+                    "required": True,
+                },
+                {
+                    "question": "Which beach or beach club did you go to that afternoon?",
+                    "free_text_allowed": True,
+                    "required": True,
+                },
+            ]
+        },
     }
     provider = ScriptedToolCallingProvider(
         steps=[{"tool": "ingest_memory", "arguments": {}}, {"content": "Waiting for clarification."}],
@@ -1105,11 +1118,15 @@ def test_memory_ingestion_clarification_rationale_becomes_user_facing_question()
         AgenticToolExecutionContext(session_id="session-clarify-rationale"),
     )
 
-    packet = result.interruption["clarification_packet"]
-    question = packet["questions"][0]["question"]
-    assert question.startswith("Can you clarify this for me:")
-    assert question.endswith("?")
-    assert not question.startswith("Chiarire ")
+    questions = [
+        question["question"]
+        for question in result.interruption["clarification_packet"]["questions"]
+    ]
+    assert questions == [
+        "What is Alessia's full name?",
+        "Which beach or beach club did you go to that afternoon?",
+    ]
+    assert all(not question.startswith("Can you clarify") for question in questions)
 
 
 def _memory_ingestion_structured_payloads_with_clarification(action: dict[str, Any]) -> list[dict[str, Any]]:

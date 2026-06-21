@@ -16,6 +16,7 @@ Decide whether to answer directly, call `query_memory`, or call `ingest_memory`.
 - Call `query_memory` when the user asks what is already known or remembered.
 - Call `ingest_memory` when the user wants to store, remember, correct, or process memory information.
 - If a message mixes intents, follow the main intent.
+- Write user-facing replies in the user's language.
 
 # Examples
 - "hi" -> answer directly.
@@ -89,6 +90,7 @@ Answer the user's memory question using supplied retrieval context and read tool
 - Use timeline tools for order or periods, map tools for places, and evidence tools for conflicts.
 - If evidence is weak or ambiguous, say what is known and what is missing.
 - Do not ask clarification; answer with uncertainty when needed.
+- Write the final answer in the user's language.
 
 # Examples
 - "What happened with Alessandro?" -> inspect related context before answering.
@@ -116,6 +118,7 @@ Identify high-level node, memory-log, and edge signals. Planning creates refs an
 - Mark irrelevant details so later steps do not store noise.
 - Split dense episodes into several memory highlights.
 - Keep weak co-presence as involvement, not durable edges.
+- If clarification is useful, phrase it as the exact direct question for the user, not as an internal note. Use the user's language.
 
 # Examples
 - "Lorenzo is my brother" -> family edge signal.
@@ -148,6 +151,7 @@ Plan which self-sustaining graph entities should be resolved or created before m
 - Do not create nodes for one-off details that belong only inside a memory log.
 - Keep planned refs unique inside the plan.
 - Produce a compact node plan packet for later phases.
+- If planning a clarification, ask the missing detail directly in the user's language. Good: "What is Alessia's full name?" Bad: "Clarify the name to improve node quality."
 
 # Examples
 - Person with name, surname, and aliases -> node candidate.
@@ -186,6 +190,7 @@ Plan compact MemoryLogs and context records after node planning.
 - Keep weak co-presence as log involvement.
 - Keep planned refs unique inside the plan.
 - Produce a compact memory plan packet for edge planning.
+- If planning a clarification, ask the missing place/time/detail directly in the user's language. Good: "Which beach or beach club did you go to that afternoon?"
 
 # Examples
 - Barbeque, beach outing, card game, and evening mood -> separate logs.
@@ -268,7 +273,9 @@ Complete the current creation action by choosing deterministic tools and returni
 
 # Examples
 - Invalid relationship type -> retry with an allowed type.
-- Missing target person -> ask clarification.
+- Missing target person -> ask "What is Alessia's full name?"
+- Missing beach/place -> ask "Which beach or beach club did you go to that afternoon?"
+- Bad clarification: "Clarify the place to improve node quality."
 - Successful log write -> `memory_new_0001 created; vectors refreshed`.
 
 # Context
@@ -302,7 +309,8 @@ Apply a requested non-destructive graph update through read and write tools.
 
 # Examples
 - "Marco was from university, not work" -> resolve Marco, patch or add corrective context.
-- Ambiguous "Marco" with two candidates -> ask clarification.
+- Ambiguous "Marco" with two candidates -> ask "Which Marco do you mean?"
+- Bad clarification: "Disambiguate Marco to improve the graph."
 - Unsupported delete request -> report blocked.
 
 # Context
@@ -323,7 +331,7 @@ Judge whether a proposed memory conflicts with existing graph evidence.
 # Rules
 - Ground the decision in supplied evidence.
 - Separate contradiction from missing context or alias ambiguity.
-- Ask clarification only when the decision is blocked.
+- Ask clarification only when the decision is blocked. Write the question in the user's language.
 - Do not propose graph mutations; return the review decision and rationale.
 
 # Examples
