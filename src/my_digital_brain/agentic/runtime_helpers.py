@@ -44,7 +44,6 @@ def _memory_ingestion_error_result(
     )
 
 
-
 def _collect_memory_plan_refs(plan: MemoryPlan, key: str) -> list[str]:
     values: list[str] = []
     for step in plan.steps:
@@ -103,7 +102,9 @@ def _structured_summary(parsed: BaseModel) -> str:
         value = getattr(parsed, field_name, None)
         if isinstance(value, str) and value.strip():
             return value
-    return json.dumps(parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True)
+    return json.dumps(
+        parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True
+    )
 
 
 def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
@@ -128,15 +129,22 @@ def _chat_message_to_frame_dict(message: Any) -> dict[str, Any]:
             for key, value in payload.items()
             if key in {"role", "content", "name", "tool_calls", "tool_call_id"}
         }
-    return {"role": getattr(message, "role", "assistant"), "content": getattr(message, "content", "")}
+    return {
+        "role": getattr(message, "role", "assistant"),
+        "content": getattr(message, "content", ""),
+    }
 
 
-def _frame_context_payload(current_payload: Any, conversation: ConversationContext) -> dict[str, Any]:
+def _frame_context_payload(
+    current_payload: Any, conversation: ConversationContext
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "conversation": conversation.model_dump(mode="json", exclude_none=True),
     }
     if hasattr(current_payload, "model_dump"):
-        payload["current_payload"] = current_payload.model_dump(mode="json", exclude_none=True)
+        payload["current_payload"] = current_payload.model_dump(
+            mode="json", exclude_none=True
+        )
     elif isinstance(current_payload, dict):
         payload["current_payload"] = current_payload
     else:
@@ -162,12 +170,12 @@ def _system_prompt_with_runtime_context(
             f"- timezone: {timezone}"
         ),
     ]
-    if runtime_metadata:
-        sections.append(_system_json_section("Runtime metadata", runtime_metadata))
+    # if runtime_metadata:
+    #     sections.append(_system_json_section("Runtime metadata", runtime_metadata))
     if prompt_context not in (None, "", [], {}):
         sections.append(_system_json_section("Process context", prompt_context))
-    if expected_output:
-        sections.append(_system_json_section("Expected output", expected_output))
+    # if expected_output:
+    #     sections.append(_system_json_section("Expected output", expected_output))
     return "\n\n".join(section for section in sections if section).rstrip() + "\n"
 
 
