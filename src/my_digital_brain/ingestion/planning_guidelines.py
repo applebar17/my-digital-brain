@@ -58,6 +58,32 @@ def relationship_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
     )
 
 
+def memory_log_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
+    return PlanningPurposeGuidelines(
+        purpose_id="memory_log_ingestion_planning",
+        goal=(
+            "Plan compact MemoryLog records after entity extraction and resolution, "
+            "before durable relationship planning."
+        ),
+        focus_areas=[
+            "episodic memory",
+            "host refs",
+            "involved refs",
+            "temporal hints",
+            "provenance",
+        ],
+        instructions=[
+            "Plan MemoryLogs only; do not plan durable relationships or graph writes.",
+            "Use MEMORY_LOG_* local_refs and keep them stable through extraction.",
+            "Use only resolved entity local refs or graph aliases as hosts and involved refs.",
+            "Split dense source text into compact logs instead of one oversized record.",
+            "Preserve original wording when it carries user meaning.",
+            "Keep weak co-presence as memory-log involvement, not as a durable edge.",
+        ],
+        output_usage="MemoryLogIngestionPlanDraft",
+    )
+
+
 def missing_entity_planning_guidelines() -> PlanningPurposeGuidelines:
     return PlanningPurposeGuidelines(
         purpose_id="missing_entity_planning",

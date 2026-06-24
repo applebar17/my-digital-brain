@@ -17,9 +17,11 @@ from my_digital_brain.ingestion.contracts.planning import (
     ClarificationRequest,
     ExtractionPlan,
 )
+from my_digital_brain.ingestion.contracts.memory_logs import MemoryLog
 from my_digital_brain.ingestion.contracts.refined_drafts import (
     EntityIngestionPlanDraft,
     IngestionReasoningCheckpointDraft,
+    MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
 )
 from my_digital_brain.ingestion.contracts.resolution import ResolvedEntityMap
@@ -57,6 +59,9 @@ class IngestionResult(IngestionModel):
     supplemental_entity_extraction_plans: list[ExtractionPlan] = Field(default_factory=list)
     supplemental_entity_candidates: list[CandidateEntity] = Field(default_factory=list)
     resolved_entity_map: ResolvedEntityMap | None = None
+    memory_log_plan: MemoryLogIngestionPlanDraft | None = None
+    memory_log_extraction_plan: ExtractionPlan | None = None
+    memory_logs: list[MemoryLog] = Field(default_factory=list)
     relationship_plan: RelationshipIngestionPlanDraft | None = None
     relationship_extraction_plan: ExtractionPlan | None = None
     relationship_candidates: list[CandidateOutput] = Field(default_factory=list)

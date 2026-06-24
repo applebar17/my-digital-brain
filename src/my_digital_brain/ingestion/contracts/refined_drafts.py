@@ -148,6 +148,94 @@ class EntityIngestionPlanDraft(IngestionModel):
         return self
 
 
+class PlannedMemoryLogRefDraft(IngestionModel):
+    local_ref: str = Field(
+        description=(
+            "Session-scoped memory-log ref for this planned log, such as "
+            "MEMORY_LOG_001. Reuse this exact ref in extraction and write planning."
+        ),
+    )
+    log_text_hint: str | None = Field(
+        default=None,
+        description="Compact human-readable memory text hint grounded in the source.",
+    )
+    host_refs: list[str] = Field(
+        default_factory=list,
+        description="Entity candidate refs or graph aliases whose timeline should host this log.",
+    )
+    involved_refs: list[str] = Field(
+        default_factory=list,
+        description="Additional entity candidate refs or graph aliases involved in the memory.",
+    )
+    relationship_context_refs: list[str] = Field(
+        default_factory=list,
+        description="Relationship context refs this memory may explain or update.",
+    )
+    evidence_text: str | None = Field(
+        default=None,
+        description="Source wording or compact context supporting this memory log.",
+    )
+    happened_at: str | None = Field(
+        default=None,
+        description="User-stated or normalized time hint when available.",
+    )
+    temporal_hint: str | None = Field(
+        default=None,
+        description="Loose temporal wording to preserve when exact time is not known.",
+    )
+    notes: str | None = Field(
+        default=None,
+        description="Short planner note for the later memory-log extraction step.",
+    )
+
+
+class MemoryLogIngestionActionDraft(IngestionModel):
+    goal: str = Field(description="Short shared goal for one or more planned memory logs.")
+    memory_logs: list[PlannedMemoryLogRefDraft] = Field(
+        default_factory=list,
+        min_length=1,
+        description="Planned memory-log targets prepared under this goal.",
+    )
+
+
+class MemoryLogIngestionPlanDraft(IngestionModel):
+    reason: str | None = Field(
+        default=None,
+        description="Concise reason for the selected memory-log plan.",
+    )
+    actions: list[MemoryLogIngestionActionDraft] = Field(
+        default_factory=list,
+        description="Simple memory-log actions to execute or hand off.",
+    )
+    clarification: ClarificationRequestDraft | None = Field(
+        default=None,
+        description="Blocking clarification required before memory-log extraction can continue.",
+    )
+    context_gaps: list[str] = Field(
+        default_factory=list,
+        description="Missing context, or a concise reason no memory logs are needed.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_has_next_step(self) -> "MemoryLogIngestionPlanDraft":
+        if not (self.actions or self.clarification or self.context_gaps):
+            raise ValueError(
+                "Memory-log ingestion plan requires actions, clarification, or context gaps."
+            )
+        refs = [
+            memory_log.local_ref
+            for action in self.actions
+            for memory_log in action.memory_logs
+            if memory_log.local_ref
+        ]
+        duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+        if duplicates:
+            raise ValueError(
+                "Memory-log planned local_refs must be unique: " + ", ".join(duplicates)
+            )
+        return self
+
+
 RelationshipStorageShape = Literal[
     "direct_relationship",
     "relationship_context",

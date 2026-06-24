@@ -464,6 +464,10 @@ def test_ingestion_service_rejects_empty_candidate_graph() -> None:
                 "context_gaps": ["No durable entity or relationship was identified."],
             },
             {"reason": "No entity action needed.", "context_gaps": ["No entity to store."]},
+            {
+                "reason": "No memory-log action needed.",
+                "context_gaps": ["No memory log action needed."],
+            },
             {"reason": "No relationship action needed.", "context_gaps": ["No relationship."]},
         ],
         resolution_service=ConservativeResolutionService(graph),
@@ -595,6 +599,10 @@ def _single_person_payloads(
             ],
         },
         {"candidates": [candidate]},
+        {
+            "reason": "No memory-log action is needed for this single-person fixture.",
+            "context_gaps": ["No memory log action needed."],
+        },
         {"reason": "No relationship action needed.", "context_gaps": ["No relationship."]},
     ]
 

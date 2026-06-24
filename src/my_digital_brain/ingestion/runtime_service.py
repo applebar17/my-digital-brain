@@ -34,12 +34,19 @@ from my_digital_brain.ingestion.contracts import (
     IngestionContextPackage,
     IngestionReasoningCheckpointDraft,
     IngestionResult,
+    MemoryLog,
+    MemoryLogDraftBatch,
+    MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
     SourceRecordRef,
     ValidationIssue,
 )
-from my_digital_brain.ingestion.enums import ExtractionExecutionMode, IngestionStatus
+from my_digital_brain.ingestion.enums import (
+    ExtractionExecutionMode,
+    ExtractionTaskType,
+    IngestionStatus,
+)
 from my_digital_brain.ingestion.graph_context_pack import (
     WholeSourceGraphContextPackBuilder,
 )
@@ -49,8 +56,12 @@ from my_digital_brain.ingestion.ontology import (
 )
 from my_digital_brain.ingestion.planning_contexts import (
     build_entity_planning_context,
+    build_memory_log_extraction_context,
+    build_memory_log_packet,
+    build_memory_log_planning_context,
     build_missing_entity_planning_context,
     build_relationship_planning_context,
+    build_resolved_entity_packet,
 )
 from my_digital_brain.ingestion.protocols import (
     FocusedExtractor,
@@ -68,6 +79,7 @@ from my_digital_brain.ingestion.refined_resolution import (
     DeterministicResolvedEntityMapBuilder,
 )
 from my_digital_brain.ingestion.validation import IngestionValidator
+from my_digital_brain.ingestion.enrichment import enrich_memory_log_batch
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
 logger = logging.getLogger(__name__)
@@ -199,34 +211,75 @@ class IngestionService:
             candidate_graph.candidate_entities,
             graph_context_pack,
         )
+        memory_result = self._prepare_memory_logs(
+            source=source,
+            graph_context_pack=graph_context_pack,
+            graph_context_views={
+                "reasoning": reasoning_view,
+                "entity_planning": entity_view,
+            },
+            reasoning=reasoning,
+            entity_plan=entity_plan,
+            entity_extraction_plan=entity_extraction_plan,
+            entity_candidates=entity_candidates,
+            entity_candidate_graph=candidate_graph,
+            resolved_entity_map=resolved_entity_map,
+        )
+        if isinstance(memory_result, IngestionResult):
+            return memory_result
+        (
+            memory_log_plan,
+            memory_log_extraction_plan,
+            memory_logs,
+            entity_packet,
+            memory_log_packet,
+            graph_context_views,
+        ) = memory_result
         relationship_view = self.context_renderer.render(
             graph_context_pack,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
         )
+        graph_context_views["relationship_planning"] = relationship_view
         relationship_plan = self._plan_relationships(
             source,
             reasoning,
             relationship_view,
             resolved_entity_map,
+            entity_packet,
+            memory_log_packet,
         )
         if isinstance(relationship_plan, IngestionResult):
-            return relationship_plan
+            return self._finish(relationship_plan.model_copy(
+                update={
+                    "graph_context_pack": graph_context_pack,
+                    "graph_context_views": graph_context_views,
+                    "reasoning": reasoning,
+                    "entity_plan": entity_plan,
+                    "entity_extraction_plan": entity_extraction_plan,
+                    "entity_candidates": entity_candidates,
+                    "entity_candidate_graph": candidate_graph,
+                    "resolved_entity_map": resolved_entity_map,
+                    "memory_log_plan": memory_log_plan,
+                    "memory_log_extraction_plan": memory_log_extraction_plan,
+                    "memory_logs": memory_logs,
+                },
+                deep=True,
+            ))
         if relationship_plan.clarification is not None:
             return self._finish(IngestionResult(
                 source_id=source.source_id,
                 status=IngestionStatus.NEEDS_CLARIFICATION,
                 graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                    "relationship_planning": relationship_view,
-                },
+                graph_context_views=graph_context_views,
                 reasoning=reasoning,
                 entity_plan=entity_plan,
                 entity_extraction_plan=entity_extraction_plan,
                 entity_candidates=entity_candidates,
                 entity_candidate_graph=candidate_graph,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 clarification=_clarification_from_draft(
                     relationship_plan.clarification
@@ -237,18 +290,180 @@ class IngestionService:
         return self._complete_relationship_candidate_preparation(
             source=source,
             graph_context_pack=graph_context_pack,
-            graph_context_views={
-                "reasoning": reasoning_view,
-                "entity_planning": entity_view,
-                "relationship_planning": relationship_view,
-            },
+            graph_context_views=graph_context_views,
             reasoning=reasoning,
             entity_plan=entity_plan,
             entity_extraction_plan=entity_extraction_plan,
             entity_candidates=entity_candidates,
             entity_candidate_graph=candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            memory_log_plan=memory_log_plan,
+            memory_log_extraction_plan=memory_log_extraction_plan,
+            memory_logs=memory_logs,
+            entity_packet=entity_packet,
+            memory_log_packet=memory_log_packet,
             relationship_plan=relationship_plan,
+        )
+
+    def _prepare_memory_logs(
+        self,
+        *,
+        source: SourceRecordRef,
+        graph_context_pack: GraphContextPack,
+        graph_context_views: dict[str, Any],
+        reasoning: IngestionReasoningCheckpointDraft,
+        entity_plan: EntityIngestionPlanDraft | None,
+        entity_extraction_plan: ExtractionPlan,
+        entity_candidates: Sequence[CandidateEntity],
+        entity_candidate_graph: CandidateMemoryGraph,
+        resolved_entity_map: ResolvedEntityMap,
+    ) -> (
+        tuple[
+            MemoryLogIngestionPlanDraft,
+            ExtractionPlan,
+            list[MemoryLog],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            dict[str, Any],
+        ]
+        | IngestionResult
+    ):
+        entity_packet = build_resolved_entity_packet(
+            list(entity_candidate_graph.candidate_entities),
+            resolved_entity_map,
+        )
+        memory_log_view = self.context_renderer.render(
+            graph_context_pack,
+            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
+        )
+        graph_context_views = {**graph_context_views, "memory_log_planning": memory_log_view}
+        memory_log_plan = self._plan_memory_logs(
+            source,
+            reasoning,
+            memory_log_view,
+            resolved_entity_map,
+            entity_packet,
+        )
+        if isinstance(memory_log_plan, IngestionResult):
+            return self._finish(memory_log_plan.model_copy(
+                update={
+                    "graph_context_pack": graph_context_pack,
+                    "graph_context_views": graph_context_views,
+                    "reasoning": reasoning,
+                    "entity_plan": entity_plan,
+                    "entity_extraction_plan": entity_extraction_plan,
+                    "entity_candidates": list(entity_candidates),
+                    "entity_candidate_graph": entity_candidate_graph,
+                    "resolved_entity_map": resolved_entity_map,
+                },
+                deep=True,
+            ))
+        if memory_log_plan.clarification is not None:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                graph_context_pack=graph_context_pack,
+                graph_context_views=graph_context_views,
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                clarification=_clarification_from_draft(memory_log_plan.clarification),
+                metadata={"ingestion_stage": "memory_log_planning_clarification"},
+            ))
+
+        memory_log_extraction_plan = _memory_log_extraction_plan(
+            source,
+            graph_context_pack,
+            memory_log_plan,
+        )
+        memory_logs, extraction_issues, clarification = self._extract_memory_logs(
+            source,
+            graph_context_pack,
+            memory_log_view,
+            reasoning,
+            resolved_entity_map,
+            entity_packet,
+            memory_log_plan,
+            memory_log_extraction_plan,
+        )
+        if clarification is not None:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                graph_context_pack=graph_context_pack,
+                graph_context_views=graph_context_views,
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
+                clarification=clarification,
+                metadata={"ingestion_stage": "memory_log_extraction_clarification"},
+            ))
+        if extraction_issues:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.VALIDATION_FAILED,
+                graph_context_pack=graph_context_pack,
+                graph_context_views=graph_context_views,
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
+                validation_errors=extraction_issues,
+                metadata={"ingestion_stage": "memory_log_candidate_preparation"},
+            ))
+
+        candidate_graph = self._assemble_final_candidate_graph(
+            source,
+            graph_context_pack,
+            entity_extraction_plan,
+            [memory_log_extraction_plan],
+            None,
+            [*entity_candidates, *memory_logs],
+        )
+        validation = self.validator.validate_candidate_graph(candidate_graph)
+        if not validation.is_valid:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.VALIDATION_FAILED,
+                graph_context_pack=graph_context_pack,
+                graph_context_views=graph_context_views,
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
+                candidate_graph=candidate_graph,
+                validation_errors=validation.issues,
+                metadata={"ingestion_stage": "memory_log_validation"},
+            ))
+
+        memory_log_packet = build_memory_log_packet(memory_logs)
+        return (
+            memory_log_plan,
+            memory_log_extraction_plan,
+            memory_logs,
+            entity_packet,
+            memory_log_packet,
+            graph_context_views,
         )
 
     def _complete_relationship_candidate_preparation(
@@ -263,6 +478,11 @@ class IngestionService:
         entity_candidates: Sequence[CandidateEntity],
         entity_candidate_graph: CandidateMemoryGraph,
         resolved_entity_map: ResolvedEntityMap,
+        memory_log_plan: MemoryLogIngestionPlanDraft,
+        memory_log_extraction_plan: ExtractionPlan,
+        memory_logs: list[MemoryLog],
+        entity_packet: list[dict[str, Any]],
+        memory_log_packet: list[dict[str, Any]],
         relationship_plan: RelationshipIngestionPlanDraft,
     ) -> IngestionResult:
         supplemental_plans: list[EntityIngestionPlanDraft] = []
@@ -281,6 +501,9 @@ class IngestionService:
                 entity_candidates=list(entity_candidates),
                 entity_candidate_graph=entity_candidate_graph,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
             )
             if isinstance(missing_result, IngestionResult):
@@ -302,9 +525,32 @@ class IngestionService:
                 reasoning,
                 relationship_view,
                 resolved_entity_map,
+                build_resolved_entity_packet(
+                    [*list(entity_candidates), *supplemental_candidates],
+                    resolved_entity_map,
+                ),
+                memory_log_packet,
             )
             if isinstance(relationship_plan, IngestionResult):
-                return relationship_plan
+                return self._finish(relationship_plan.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": graph_context_views,
+                        "reasoning": reasoning,
+                        "entity_plan": entity_plan,
+                        "entity_extraction_plan": entity_extraction_plan,
+                        "entity_candidates": list(entity_candidates),
+                        "entity_candidate_graph": entity_candidate_graph,
+                        "supplemental_entity_plans": supplemental_plans,
+                        "supplemental_entity_extraction_plans": supplemental_extraction_plans,
+                        "supplemental_entity_candidates": supplemental_candidates,
+                        "resolved_entity_map": resolved_entity_map,
+                        "memory_log_plan": memory_log_plan,
+                        "memory_log_extraction_plan": memory_log_extraction_plan,
+                        "memory_logs": memory_logs,
+                    },
+                    deep=True,
+                ))
 
         all_entity_candidates = [*entity_candidates, *supplemental_candidates]
         if relationship_plan.clarification is not None:
@@ -322,6 +568,9 @@ class IngestionService:
                 supplemental_entity_extraction_plans=supplemental_extraction_plans,
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 clarification=_clarification_from_draft(
                     relationship_plan.clarification
@@ -333,9 +582,9 @@ class IngestionService:
                 source,
                 graph_context_pack,
                 entity_extraction_plan,
-                supplemental_extraction_plans,
+                [*supplemental_extraction_plans, memory_log_extraction_plan],
                 None,
-                all_entity_candidates,
+                [*all_entity_candidates, *memory_logs],
             )
             return self._finish(IngestionResult(
                 source_id=source.source_id,
@@ -351,6 +600,9 @@ class IngestionService:
                 supplemental_entity_extraction_plans=supplemental_extraction_plans,
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 candidate_graph=candidate_graph,
                 metadata={"ingestion_stage": "relationship_missing_entity_blocked"},
@@ -377,6 +629,9 @@ class IngestionService:
                 supplemental_entity_extraction_plans=supplemental_extraction_plans,
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 relationship_extraction_plan=plan_build.extraction_plan,
                 validation_errors=plan_build.validation_issues,
@@ -406,6 +661,9 @@ class IngestionService:
                 supplemental_entity_extraction_plans=supplemental_extraction_plans,
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 relationship_extraction_plan=plan_build.extraction_plan,
                 relationship_candidates=relationship_candidates,
@@ -417,9 +675,9 @@ class IngestionService:
             source,
             graph_context_pack,
             entity_extraction_plan,
-            supplemental_extraction_plans,
+            [*supplemental_extraction_plans, memory_log_extraction_plan],
             plan_build.extraction_plan,
-            [*all_entity_candidates, *relationship_candidates],
+            [*all_entity_candidates, *memory_logs, *relationship_candidates],
         )
         validation = self.validator.validate_candidate_graph(candidate_graph)
         if not validation.is_valid:
@@ -437,6 +695,9 @@ class IngestionService:
                 supplemental_entity_extraction_plans=supplemental_extraction_plans,
                 supplemental_entity_candidates=supplemental_candidates,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 relationship_extraction_plan=plan_build.extraction_plan,
                 relationship_candidates=relationship_candidates,
@@ -458,6 +719,9 @@ class IngestionService:
             supplemental_entity_extraction_plans=supplemental_extraction_plans,
             supplemental_entity_candidates=supplemental_candidates,
             resolved_entity_map=resolved_entity_map,
+            memory_log_plan=memory_log_plan,
+            memory_log_extraction_plan=memory_log_extraction_plan,
+            memory_logs=memory_logs,
             relationship_plan=relationship_plan,
             relationship_extraction_plan=plan_build.extraction_plan,
             relationship_candidates=relationship_candidates,
@@ -479,6 +743,9 @@ class IngestionService:
         supplemental_entity_extraction_plans: list[ExtractionPlan],
         supplemental_entity_candidates: list[CandidateEntity],
         resolved_entity_map: ResolvedEntityMap,
+        memory_log_plan: MemoryLogIngestionPlanDraft,
+        memory_log_extraction_plan: ExtractionPlan,
+        memory_logs: list[MemoryLog],
         relationship_plan: RelationshipIngestionPlanDraft,
         relationship_extraction_plan: ExtractionPlan,
         relationship_candidates: list[CandidateOutput],
@@ -496,6 +763,9 @@ class IngestionService:
             "supplemental_entity_extraction_plans": supplemental_entity_extraction_plans,
             "supplemental_entity_candidates": supplemental_entity_candidates,
             "resolved_entity_map": resolved_entity_map,
+            "memory_log_plan": memory_log_plan,
+            "memory_log_extraction_plan": memory_log_extraction_plan,
+            "memory_logs": memory_logs,
             "relationship_plan": relationship_plan,
             "relationship_extraction_plan": relationship_extraction_plan,
             "relationship_candidates": relationship_candidates,
@@ -731,6 +1001,9 @@ class IngestionService:
         entity_candidates: list[CandidateEntity],
         entity_candidate_graph: CandidateMemoryGraph,
         resolved_entity_map: ResolvedEntityMap,
+        memory_log_plan: MemoryLogIngestionPlanDraft,
+        memory_log_extraction_plan: ExtractionPlan,
+        memory_logs: list[MemoryLog],
         relationship_plan: RelationshipIngestionPlanDraft,
     ) -> (
         tuple[
@@ -776,6 +1049,9 @@ class IngestionService:
                     supplemental_entity_extraction_plans=supplemental_extraction_plans,
                     supplemental_entity_candidates=supplemental_candidates,
                     resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
                     relationship_plan=relationship_plan,
                     clarification=_clarification_from_draft(missing_plan.clarification),
                     metadata={"ingestion_stage": "missing_entity_planning_clarification"},
@@ -812,6 +1088,9 @@ class IngestionService:
                     supplemental_entity_extraction_plans=supplemental_extraction_plans,
                     supplemental_entity_candidates=supplemental_candidates,
                     resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
                     relationship_plan=relationship_plan,
                     validation_errors=extraction_issues,
                     metadata={"ingestion_stage": "missing_entity_candidate_preparation"},
@@ -840,6 +1119,9 @@ class IngestionService:
                         *candidates,
                     ],
                     resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
                     relationship_plan=relationship_plan,
                     validation_errors=validation.issues,
                     metadata={"ingestion_stage": "missing_entity_validation"},
@@ -925,32 +1207,70 @@ class IngestionService:
             entity_candidate_graph.candidate_entities,
             graph_context_pack,
         )
+        memory_result = self._prepare_memory_logs(
+            source=source,
+            graph_context_pack=graph_context_pack,
+            graph_context_views={"reasoning": reasoning_view},
+            reasoning=reasoning,
+            entity_plan=None,
+            entity_extraction_plan=entity_extraction_plan,
+            entity_candidates=list(entity_candidates),
+            entity_candidate_graph=entity_candidate_graph,
+            resolved_entity_map=resolved_entity_map,
+        )
+        if isinstance(memory_result, IngestionResult):
+            return memory_result
+        (
+            memory_log_plan,
+            memory_log_extraction_plan,
+            memory_logs,
+            entity_packet,
+            memory_log_packet,
+            graph_context_views,
+        ) = memory_result
         relationship_view = self.context_renderer.render(
             graph_context_pack,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
         )
+        graph_context_views["relationship_planning"] = relationship_view
         relationship_plan = self._plan_relationships(
             source,
             reasoning,
             relationship_view,
             resolved_entity_map,
+            entity_packet,
+            memory_log_packet,
         )
         if isinstance(relationship_plan, IngestionResult):
-            return relationship_plan
+            return self._finish(relationship_plan.model_copy(
+                update={
+                    "graph_context_pack": graph_context_pack,
+                    "graph_context_views": graph_context_views,
+                    "reasoning": reasoning,
+                    "entity_extraction_plan": entity_extraction_plan,
+                    "entity_candidates": list(entity_candidates),
+                    "entity_candidate_graph": entity_candidate_graph,
+                    "resolved_entity_map": resolved_entity_map,
+                    "memory_log_plan": memory_log_plan,
+                    "memory_log_extraction_plan": memory_log_extraction_plan,
+                    "memory_logs": memory_logs,
+                },
+                deep=True,
+            ))
         if relationship_plan.clarification is not None:
             return self._finish(IngestionResult(
                 source_id=source.source_id,
                 status=IngestionStatus.NEEDS_CLARIFICATION,
                 graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "relationship_planning": relationship_view,
-                },
+                graph_context_views=graph_context_views,
                 reasoning=reasoning,
                 entity_extraction_plan=entity_extraction_plan,
                 entity_candidates=list(entity_candidates),
                 entity_candidate_graph=entity_candidate_graph,
                 resolved_entity_map=resolved_entity_map,
+                memory_log_plan=memory_log_plan,
+                memory_log_extraction_plan=memory_log_extraction_plan,
+                memory_logs=memory_logs,
                 relationship_plan=relationship_plan,
                 clarification=_clarification_from_draft(
                     relationship_plan.clarification
@@ -960,16 +1280,18 @@ class IngestionService:
         return self._complete_relationship_candidate_preparation(
             source=source,
             graph_context_pack=graph_context_pack,
-            graph_context_views={
-                "reasoning": reasoning_view,
-                "relationship_planning": relationship_view,
-            },
+            graph_context_views=graph_context_views,
             reasoning=reasoning,
             entity_plan=None,
             entity_extraction_plan=entity_extraction_plan,
             entity_candidates=list(entity_candidates),
             entity_candidate_graph=entity_candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            memory_log_plan=memory_log_plan,
+            memory_log_extraction_plan=memory_log_extraction_plan,
+            memory_logs=memory_logs,
+            entity_packet=entity_packet,
+            memory_log_packet=memory_log_packet,
             relationship_plan=relationship_plan,
         )
 
@@ -1052,12 +1374,16 @@ class IngestionService:
         reasoning: IngestionReasoningCheckpointDraft,
         graph_context_view,
         resolved_entity_map,
+        entity_packet: list[dict[str, Any]] | None = None,
+        memory_log_packet: list[dict[str, Any]] | None = None,
     ) -> RelationshipIngestionPlanDraft | IngestionResult:
         context = build_relationship_planning_context(
             source_text=source.raw_text or source.content_ref or "",
             graph_context_view=graph_context_view,
             reasoning=reasoning,
             resolved_entity_map=resolved_entity_map,
+            entity_packet=entity_packet,
+            memory_log_packet=memory_log_packet,
             timezone=_timezone(source),
         )
         result = self.planning_service.plan(
@@ -1065,6 +1391,14 @@ class IngestionService:
             self._execution_context(source),
             output_schema=RelationshipIngestionPlanDraft,
         )
+        clarification = _clarification_from_agentic_result(result)
+        if clarification is not None:
+            return IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                clarification=clarification,
+                metadata={"ingestion_stage": "relationship_planning_clarification"},
+            )
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -1072,6 +1406,43 @@ class IngestionService:
                 result.assistant_text or "Relationship planning failed.",
             )
         return RelationshipIngestionPlanDraft.model_validate(result.structured_output)
+
+    def _plan_memory_logs(
+        self,
+        source: SourceRecordRef,
+        reasoning: IngestionReasoningCheckpointDraft,
+        graph_context_view,
+        resolved_entity_map: ResolvedEntityMap,
+        entity_packet: list[dict[str, Any]],
+    ) -> MemoryLogIngestionPlanDraft | IngestionResult:
+        context = build_memory_log_planning_context(
+            source_text=source.raw_text or source.content_ref or "",
+            graph_context_view=graph_context_view,
+            reasoning=reasoning,
+            resolved_entity_map=resolved_entity_map,
+            entity_packet=entity_packet,
+            timezone=_timezone(source),
+        )
+        result = self.planning_service.plan(
+            context,
+            self._execution_context(source),
+            output_schema=MemoryLogIngestionPlanDraft,
+        )
+        clarification = _clarification_from_agentic_result(result)
+        if clarification is not None:
+            return IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                clarification=clarification,
+                metadata={"ingestion_stage": "memory_log_planning_clarification"},
+            )
+        if result.status != "ok" or result.structured_output is None:
+            return _structured_step_failure(
+                source,
+                "memory_log_planning",
+                result.assistant_text or "Memory-log planning failed.",
+            )
+        return MemoryLogIngestionPlanDraft.model_validate(result.structured_output)
 
     def _plan_missing_entity(
         self,
@@ -1101,6 +1472,94 @@ class IngestionService:
                 result.assistant_text or "Missing-entity planning failed.",
             )
         return EntityIngestionPlanDraft.model_validate(result.structured_output)
+
+    def _extract_memory_logs(
+        self,
+        source: SourceRecordRef,
+        graph_context_pack: GraphContextPack,
+        graph_context_view,
+        reasoning: IngestionReasoningCheckpointDraft,
+        resolved_entity_map: ResolvedEntityMap,
+        entity_packet: list[dict[str, Any]],
+        memory_log_plan: MemoryLogIngestionPlanDraft,
+        extraction_plan: ExtractionPlan,
+    ) -> tuple[list[MemoryLog], list[ValidationIssue], ClarificationRequest | None]:
+        memory_logs: list[MemoryLog] = []
+        issues: list[ValidationIssue] = []
+        action_by_ref: dict[str, tuple[int, Any, Any, int]] = {}
+        for action_index, action in enumerate(memory_log_plan.actions, start=1):
+            for memory_log_index, planned_memory_log in enumerate(
+                action.memory_logs,
+                start=1,
+            ):
+                action_by_ref[planned_memory_log.local_ref] = (
+                    action_index,
+                    action,
+                    planned_memory_log,
+                    memory_log_index,
+                )
+
+        for index, task in enumerate(extraction_plan.tasks):
+            planned = action_by_ref.get(task.target_ref or "")
+            if planned is None:
+                issues.append(
+                    ValidationIssue(
+                        field_path=f"memory_log_extraction_plan.tasks[{index}]",
+                        message="Memory-log extraction task is missing its planned target.",
+                        code="missing_memory_log_planned_target",
+                        details={"task_id": task.task_id, "target_ref": task.target_ref},
+                    ),
+                )
+                continue
+            _, action, planned_memory_log, memory_log_index = planned
+            context = build_memory_log_extraction_context(
+                source_text=source.raw_text or source.content_ref or "",
+                graph_context_view=graph_context_view,
+                reasoning=reasoning,
+                resolved_entity_map=resolved_entity_map,
+                entity_packet=entity_packet,
+                memory_log_plan=memory_log_plan,
+                planning_action=action,
+                planned_memory_log=planned_memory_log,
+                memory_log_index=memory_log_index,
+                timezone=_timezone(source),
+            )
+            result = self.planning_service.plan(
+                context,
+                self._execution_context(source),
+                output_schema=MemoryLogDraftBatch,
+            )
+            clarification = _clarification_from_agentic_result(result)
+            if clarification is not None:
+                return memory_logs, issues, clarification
+            if result.status != "ok" or result.structured_output is None:
+                issues.append(
+                    ValidationIssue(
+                        field_path=f"memory_log_extraction_plan.tasks[{index}]",
+                        message=result.assistant_text or "Memory-log extraction failed.",
+                        code="memory_log_extraction_failed",
+                        details={"task_id": task.task_id, "target_ref": task.target_ref},
+                    ),
+                )
+                continue
+            draft_batch = MemoryLogDraftBatch.model_validate(result.structured_output)
+            extracted = enrich_memory_log_batch(draft_batch, source, task)
+            if len(extracted) != 1:
+                issues.append(
+                    ValidationIssue(
+                        field_path=f"memory_log_extraction_plan.tasks[{index}]",
+                        message="Memory-log extraction must return exactly one MemoryLog draft.",
+                        code="unexpected_memory_log_candidate_count",
+                        details={
+                            "task_id": task.task_id,
+                            "target_ref": task.target_ref,
+                            "count": len(extracted),
+                        },
+                    ),
+                )
+                continue
+            memory_logs.extend(extracted)
+        return memory_logs, issues, None
 
     def _extract_entities(
         self,
@@ -1310,6 +1769,61 @@ def _entity_extraction_plan(
     )
 
 
+def _memory_log_extraction_plan(
+    source: SourceRecordRef,
+    graph_context_pack: GraphContextPack,
+    memory_log_plan: MemoryLogIngestionPlanDraft,
+) -> ExtractionPlan:
+    tasks: list[ExtractionTask] = []
+    for action_index, action in enumerate(memory_log_plan.actions, start=1):
+        action_payload = action.model_dump(mode="json", exclude_none=True)
+        for memory_log_index, memory_log in enumerate(action.memory_logs, start=1):
+            tasks.append(
+                ExtractionTask(
+                    task_type=ExtractionTaskType.MEMORY_LOG,
+                    target_ref=memory_log.local_ref,
+                    evidence_text=memory_log.evidence_text,
+                    source_refs=[source.source_id],
+                    expected_output=(
+                        "Extract exactly one MemoryLog draft using task.target_ref "
+                        "as the MemoryLog local_ref."
+                    ),
+                    required_context_refs=[
+                        *list(memory_log.host_refs),
+                        *list(memory_log.involved_refs),
+                        *list(memory_log.relationship_context_refs),
+                    ],
+                    notes=memory_log.notes or action.goal,
+                    metadata={
+                        "schema_layer": "reasoning_first_memory_log_extraction",
+                        "memory_log_action_goal": action.goal,
+                        "memory_log_action_index": action_index,
+                        "planned_memory_log_index": memory_log_index,
+                        "planned_memory_log": memory_log.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        ),
+                        "memory_log_planning_action": action_payload,
+                        "allowed_local_refs": [memory_log.local_ref],
+                    },
+                ),
+            )
+    return ExtractionPlan(
+        source_id=source.source_id,
+        context_package_id=graph_context_pack.context_pack_id,
+        execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
+        reason=memory_log_plan.reason,
+        tasks=tasks,
+        clarification=(
+            _clarification_from_draft(memory_log_plan.clarification)
+            if memory_log_plan.clarification is not None
+            else None
+        ),
+        context_gaps=list(memory_log_plan.context_gaps),
+        metadata={"schema_layer": "reasoning_first_memory_log_extraction_plan"},
+    )
+
+
 def _predefined_entity_extraction_plan(
     source: SourceRecordRef,
     graph_context_pack: GraphContextPack,
@@ -1397,6 +1911,41 @@ def _clarification_from_draft(
         options=draft.options,
         blocking=draft.blocking,
         metadata={"schema_layer": "reasoning_first_ingestion"},
+    )
+
+
+def _clarification_from_agentic_result(result) -> ClarificationRequest | None:
+    if getattr(result, "status", None) != "interrupted":
+        return None
+    interruption = result.metadata.get("interruption", {}) if result.metadata else {}
+    packet = interruption.get("clarification_packet") or {}
+    questions = packet.get("questions") or []
+    first_question = questions[0] if questions else {}
+    option_labels = [
+        str(option.get("label") or "").strip()
+        for option in first_question.get("options", [])
+        if str(option.get("label") or "").strip()
+    ]
+    doubt = (
+        str(first_question.get("question") or "").strip()
+        or result.assistant_text
+        or "Clarification is required before ingestion can continue."
+    )
+    reason = (
+        str(packet.get("reason") or "").strip()
+        or str(interruption.get("reason") or "").strip()
+        or "The agentic ingestion step requested clarification."
+    )
+    return ClarificationRequest(
+        doubt=doubt,
+        reason=reason,
+        target_refs=list(packet.get("target_refs") or interruption.get("target_refs") or []),
+        options="; ".join(option_labels) if option_labels else None,
+        blocking=True,
+        metadata={
+            "schema_layer": "reasoning_first_ingestion",
+            "agentic_interruption": interruption,
+        },
     )
 
 

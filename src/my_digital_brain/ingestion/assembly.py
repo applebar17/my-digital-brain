@@ -15,6 +15,7 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationshipContext,
     EvidenceRef,
     ExtractionPlan,
+    MemoryLog,
     SourceRecordRef,
 )
 
@@ -35,6 +36,7 @@ class CandidateMemoryGraphAssembler:
         perceptions: list[CandidatePerception] = []
         relationship_contexts: list[CandidateRelationshipContext] = []
         metadata_patches: list[CandidateMetadataPatch] = []
+        memory_logs: list[MemoryLog] = []
 
         local_ref_map: dict[str, str] = {}
         evidence_refs: dict[tuple[str, str | None, str | None], EvidenceRef] = {}
@@ -44,7 +46,7 @@ class CandidateMemoryGraphAssembler:
         for candidate in candidates:
             candidate_id = _candidate_id(candidate)
             local_ref_map[candidate.local_ref] = candidate_id
-            ambiguity_flags.extend(candidate.ambiguity_flags)
+            ambiguity_flags.extend(getattr(candidate, "ambiguity_flags", []))
 
             if isinstance(candidate, CandidateEntity):
                 entities.append(candidate)
@@ -59,6 +61,8 @@ class CandidateMemoryGraphAssembler:
                 relationship_contexts.append(candidate)
             elif isinstance(candidate, CandidateMetadataPatch):
                 metadata_patches.append(candidate)
+            elif isinstance(candidate, MemoryLog):
+                memory_logs.append(candidate)
 
             for evidence_ref in candidate.evidence_refs:
                 key = (
@@ -77,6 +81,7 @@ class CandidateMemoryGraphAssembler:
             candidate_perceptions=perceptions,
             candidate_relationship_contexts=relationship_contexts,
             candidate_metadata_patches=metadata_patches,
+            memory_logs=memory_logs,
             local_ref_map=local_ref_map,
             evidence_refs=list(evidence_refs.values()),
             ambiguity_flags=sorted(set(ambiguity_flags)),
@@ -92,6 +97,7 @@ def _candidate_id(candidate: CandidateOutput) -> str:
         "candidate_perception_id",
         "candidate_relationship_context_id",
         "patch_id",
+        "memory_log_id",
     ):
         value = getattr(candidate, field_name, None)
         if isinstance(value, str):
@@ -179,6 +185,23 @@ def _copy_with_rewritten_refs(
         )
     if isinstance(candidate, CandidateMetadataPatch):
         return candidate.model_copy(update={"target_ref": rewrite(candidate.target_ref)})
+    if isinstance(candidate, MemoryLog):
+        return candidate.model_copy(
+            update={
+                "primary_host_target_id": rewrite(candidate.primary_host_target_id)
+                if candidate.primary_host_target_id
+                else None,
+                "host_target_ids": [rewrite(ref) for ref in candidate.host_target_ids],
+                "involved_target_ids": [
+                    rewrite(ref) for ref in candidate.involved_target_ids
+                ],
+                "links": [
+                    link.model_copy(update={"target_id": rewrite(link.target_id)})
+                    for link in candidate.links
+                ],
+            },
+            deep=True,
+        )
     return candidate
 
 

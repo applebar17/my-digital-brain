@@ -126,6 +126,10 @@ def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_re
                 ],
             },
             {
+                "reason": "No episodic memory log is needed for this alias-only source.",
+                "context_gaps": ["No memory log action needed."],
+            },
+            {
                 "reason": "No relationship action is needed from this source.",
                 "context_gaps": ["No relationship action needed."],
             },
@@ -151,7 +155,8 @@ def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_re
     assert provider.requests[0].output_schema.__name__ == "IngestionReasoningCheckpointDraft"
     assert provider.requests[1].output_schema.__name__ == "EntityIngestionPlanDraft"
     assert provider.requests[2].output_schema.__name__ == "CandidateEntityDraftBatch"
-    assert provider.requests[3].output_schema.__name__ == "RelationshipIngestionPlanDraft"
+    assert provider.requests[3].output_schema.__name__ == "MemoryLogIngestionPlanDraft"
+    assert provider.requests[4].output_schema.__name__ == "RelationshipIngestionPlanDraft"
 
 
 def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entity_ref() -> None:
@@ -185,6 +190,42 @@ def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entit
                         "entity_type": "Person",
                         "display_name": "Lorenzo",
                     },
+                ],
+            },
+            {
+                "reason": "The source has an episodic update about Lorenzo.",
+                "actions": [
+                    {
+                        "goal": "Store the Lorenzo living detail as a compact memory.",
+                        "memory_logs": [
+                            {
+                                "local_ref": "MEMORY_LOG_001",
+                                "log_text_hint": "Lorenzo lives in Milan.",
+                                "host_refs": ["CANDIDATE_PERSON_001"],
+                                "evidence_text": "my brother Lorenzo lives in Milan",
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "candidates": [
+                    {
+                        "local_ref": "MEMORY_LOG_MODEL_001",
+                        "log_text": "Lorenzo lives in Milan.",
+                        "log_kind": "event_detail",
+                        "host_refs": [
+                            {
+                                "target_ref": "CANDIDATE_PERSON_001",
+                                "primary": True,
+                            }
+                        ],
+                        "evidence": [
+                            {
+                                "evidence_text": "my brother Lorenzo lives in Milan",
+                            }
+                        ],
+                    }
                 ],
             },
             {
@@ -232,8 +273,15 @@ def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entit
     )
     assert result.relationship_extraction_plan is not None
     assert result.relationship_extraction_plan.tasks[0].task_type == "relationship"
+    assert result.memory_log_plan is not None
+    assert len(result.memory_logs) == 1
+    assert result.memory_logs[0].local_ref == "MEMORY_LOG_001"
+    assert result.memory_logs[0].metadata["model_output_local_ref"] == (
+        "MEMORY_LOG_MODEL_001"
+    )
     assert len(result.relationship_candidates) == 1
     assert result.candidate_graph is not None
+    assert len(result.candidate_graph.memory_logs) == 1
     assert len(result.candidate_graph.candidate_relationships) == 1
 
 
@@ -247,6 +295,10 @@ def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_can
             {
                 "reason": "No named entity endpoint was explicit enough.",
                 "context_gaps": ["No named brother endpoint was found."],
+            },
+            {
+                "reason": "No memory log is planned until the missing endpoint is resolved.",
+                "context_gaps": ["Missing relationship endpoint blocks useful memory hosting."],
             },
             {
                 "reason": "The brother relationship is blocked by a missing endpoint.",
@@ -335,7 +387,7 @@ def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_can
     assert result.relationship_plan is not None
     assert result.relationship_plan.missing_entities == []
     assert len(result.relationship_candidates) == 1
-    assert len(provider.requests) == 7
+    assert len(provider.requests) == 8
 
 
 def test_reasoning_first_runtime_keeps_low_salience_details_out_of_entity_candidates() -> None:
@@ -350,6 +402,10 @@ def test_reasoning_first_runtime_keeps_low_salience_details_out_of_entity_candid
             {
                 "reason": "No durable entity should be planned for the food list.",
                 "context_gaps": ["Food details can remain contextual."],
+            },
+            {
+                "reason": "The food detail is too low-salience for a MemoryLog.",
+                "context_gaps": ["No memory log action needed."],
             },
             {
                 "reason": "No relationship action is required.",
@@ -380,6 +436,10 @@ def test_reasoning_first_runtime_rejects_relationship_actions_with_unknown_endpo
                 "context_gaps": ["No resolved entity endpoint."],
             },
             {
+                "reason": "No memory log action is useful without a resolved host.",
+                "context_gaps": ["No memory log action needed."],
+            },
+            {
                 "reason": "This plan incorrectly uses a raw endpoint.",
                 "actions": [
                     {
@@ -403,7 +463,7 @@ def test_reasoning_first_runtime_rejects_relationship_actions_with_unknown_endpo
     assert result.status == IngestionStatus.VALIDATION_FAILED
     assert result.relationship_candidates == []
     assert result.validation_errors[0].code == "unknown_relationship_endpoint"
-    assert len(provider.requests) == 3
+    assert len(provider.requests) == 4
 
 
 def test_reasoning_first_entity_resolver_rejected_entries_are_not_relationship_usable() -> None:

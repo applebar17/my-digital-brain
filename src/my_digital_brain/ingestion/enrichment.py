@@ -13,6 +13,8 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationshipContext,
     EvidenceRef,
     ExtractionTask,
+    MemoryLog,
+    MemoryLogLink,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.contracts.drafts import (
@@ -32,6 +34,10 @@ from my_digital_brain.ingestion.contracts.drafts import (
     CandidateRelationshipDraftBatch,
     EvidenceSpanDraft,
     PropertyDraft,
+)
+from my_digital_brain.ingestion.contracts.memory_logs import (
+    MemoryLogDraft,
+    MemoryLogDraftBatch,
 )
 from my_digital_brain.ingestion.normalization import (
     canonical_node_label,
@@ -69,6 +75,14 @@ def enrich_candidate_batch(
             for candidate in draft_batch.candidates
         ]
     raise TypeError(f"Unsupported candidate draft batch: {type(draft_batch).__name__}")
+
+
+def enrich_memory_log_batch(
+    draft_batch: MemoryLogDraftBatch,
+    source: SourceRecordRef,
+    task: ExtractionTask,
+) -> list[MemoryLog]:
+    return [_enrich_memory_log(candidate, source, task) for candidate in draft_batch.candidates]
 
 
 def property_suggestions_to_dict(
@@ -207,6 +221,74 @@ def _enrich_metadata_patch(
     )
 
 
+def _enrich_memory_log(
+    draft: MemoryLogDraft,
+    source: SourceRecordRef,
+    task: ExtractionTask,
+) -> MemoryLog:
+    local_ref = task.target_ref or draft.local_ref
+    metadata: dict[str, Any] = {
+        "schema_layer": "backend_enriched",
+        "task_id": task.task_id,
+        "task_type": str(task.task_type),
+    }
+    if task.target_ref and draft.local_ref != task.target_ref:
+        metadata["model_output_local_ref"] = draft.local_ref
+        metadata["local_ref_enforced_from_task"] = task.target_ref
+    if draft.ambiguity_flags:
+        metadata["ambiguity_flags"] = list(draft.ambiguity_flags)
+    if draft.requires_confirmation:
+        metadata["requires_confirmation"] = True
+
+    links: list[MemoryLogLink] = []
+    host_target_ids = [link.target_ref for link in draft.host_refs]
+    involved_target_ids = [link.target_ref for link in draft.involved_refs]
+    primary_host = _primary_host_ref(draft)
+    for item in draft.host_refs:
+        links.append(
+            MemoryLogLink(
+                target_id=item.target_ref,
+                relationship_type="HAS_MEMORY_LOG",
+                role=item.role,
+                primary=item.primary,
+            ),
+        )
+    for item in draft.involved_refs:
+        links.append(
+            MemoryLogLink(
+                target_id=item.target_ref,
+                relationship_type="INVOLVES",
+                role=item.role,
+            ),
+        )
+    for ref in draft.relationship_context_refs:
+        links.append(
+            MemoryLogLink(
+                target_id=ref,
+                relationship_type="UPDATES_RELATIONSHIP",
+            ),
+        )
+    return MemoryLog(
+        local_ref=local_ref,
+        log_text=draft.log_text,
+        log_kind=draft.log_kind,
+        primary_host_target_id=primary_host,
+        host_target_ids=host_target_ids,
+        involved_target_ids=involved_target_ids,
+        links=links,
+        media_refs=[item.media_ref for item in draft.media_refs],
+        source_kind=draft.source_kind,
+        source_refs=[source.source_id],
+        evidence_refs=_evidence_refs(draft.evidence, source),
+        original_user_words=draft.original_user_words,
+        temporal_scope=draft.temporal_scope,
+        happened_at=draft.happened_at,
+        confidence=draft.confidence,
+        importance=draft.importance,
+        metadata=metadata,
+    )
+
+
 def _base_candidate_payload(
     draft: CandidateBaseDraft,
     source: SourceRecordRef,
@@ -229,6 +311,15 @@ def _base_candidate_payload(
         "requires_confirmation": draft.requires_confirmation,
         "metadata": metadata,
     }
+
+
+def _primary_host_ref(draft: MemoryLogDraft) -> str | None:
+    primary_hosts = [link.target_ref for link in draft.host_refs if link.primary]
+    if primary_hosts:
+        return primary_hosts[0]
+    if len(draft.host_refs) == 1:
+        return draft.host_refs[0].target_ref
+    return None
 
 
 def _evidence_refs(

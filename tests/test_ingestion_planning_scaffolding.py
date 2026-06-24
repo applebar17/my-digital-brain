@@ -3,6 +3,8 @@ from __future__ import annotations
 from my_digital_brain.ingestion import (
     GraphContextPackRendererService,
     build_entity_planning_context,
+    build_memory_log_planning_context,
+    build_resolved_entity_packet,
     build_missing_entity_planning_context,
     build_relationship_planning_context,
     entity_ingestion_planning_guidelines,
@@ -19,6 +21,7 @@ from my_digital_brain.ingestion.contracts import (
     GraphContextRelationshipSnippetItem,
     GraphContextRenderPurpose,
     IngestionReasoningCheckpointDraft,
+    CandidateEntity,
     MissingEntityRequiredDraft,
     ResolvedEntityMap,
     ResolvedEntityMapEntry,
@@ -96,6 +99,39 @@ def test_entity_and_relationship_planning_context_builders_are_llm_friendly() ->
         "CANDIDATE_PERSON_001": "NODE_000001",
     }
     assert resolved_view["entries"][1]["relationship_ref"] is None
+
+
+def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
+    renderer = GraphContextPackRendererService()
+    pack = _context_pack()
+    resolved_map = _resolved_entity_map()
+    entity_packet = build_resolved_entity_packet(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Matteo Mercoldi",
+            ),
+        ],
+        resolved_map,
+    )
+
+    context = build_memory_log_planning_context(
+        source_text="Merc came to the barbeque.",
+        graph_context_view=renderer.render(pack, GraphContextRenderPurpose.MEMORY_LOG_PLANNING),
+        reasoning=_reasoning(),
+        resolved_entity_map=resolved_map,
+        entity_packet=entity_packet,
+        timezone="Europe/Rome",
+    )
+
+    assert context.purpose.purpose_id == "memory_log_ingestion_planning"
+    assert context.expected_output_schema == "MemoryLogIngestionPlanDraft"
+    assert context.input_context["planning_scope"] == "memory_logs_only"
+    assert context.input_context["entity_packet"][0]["local_ref"] == (
+        "CANDIDATE_PERSON_001"
+    )
+    assert any("MEMORY_LOG_*" in rule for rule in context.input_context["rules"])
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:

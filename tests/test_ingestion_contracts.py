@@ -37,6 +37,8 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLog,
     MemoryLogDraft,
     MemoryLogImportance,
+    MemoryLogIngestionActionDraft,
+    MemoryLogIngestionPlanDraft,
     MemoryLogKind,
     MemoryLogLink,
     MemoryLogLinkDraft,
@@ -46,6 +48,7 @@ from my_digital_brain.ingestion.contracts import (
     MultiScopeVectorConfig,
     NodeUpdatePlanDraft,
     PlannedEntityRefDraft,
+    PlannedMemoryLogRefDraft,
     RelationshipIngestionActionDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
@@ -493,6 +496,55 @@ def test_relationship_plan_accepts_simple_actions_and_missing_entity_blockers() 
     )
 
     assert plan.actions[0].relationship_intent == "The candidate is the user's brother."
+
+
+def test_memory_log_plan_accepts_grouped_targets_and_rejects_duplicate_refs() -> None:
+    plan = MemoryLogIngestionPlanDraft(
+        reason="The source contains two episodic memory details.",
+        actions=[
+            MemoryLogIngestionActionDraft(
+                goal="Store compact memories from the source.",
+                memory_logs=[
+                    PlannedMemoryLogRefDraft(
+                        local_ref="MEMORY_LOG_001",
+                        log_text_hint="Lorenzo organized a Republic Day barbeque.",
+                        host_refs=["CANDIDATE_PERSON_001"],
+                        involved_refs=["CANDIDATE_PERSON_002"],
+                        evidence_text="Lorenzo organized a barbeque.",
+                    ),
+                    PlannedMemoryLogRefDraft(
+                        local_ref="MEMORY_LOG_002",
+                        log_text_hint="Gianluca's group was also present.",
+                        host_refs=["CANDIDATE_PERSON_002"],
+                        evidence_text="the group of Gianluca was there.",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    assert plan.actions[0].memory_logs[0].local_ref == "MEMORY_LOG_001"
+    assert plan.actions[0].memory_logs[1].host_refs == ["CANDIDATE_PERSON_002"]
+
+    with pytest.raises(ValidationError, match="local_refs must be unique"):
+        MemoryLogIngestionPlanDraft(
+            reason="Duplicate refs should be rejected.",
+            actions=[
+                MemoryLogIngestionActionDraft(
+                    goal="Store duplicate refs.",
+                    memory_logs=[
+                        PlannedMemoryLogRefDraft(
+                            local_ref="MEMORY_LOG_001",
+                            host_refs=["CANDIDATE_PERSON_001"],
+                        ),
+                        PlannedMemoryLogRefDraft(
+                            local_ref="MEMORY_LOG_001",
+                            host_refs=["CANDIDATE_PERSON_002"],
+                        ),
+                    ],
+                ),
+            ],
+        )
 
 
 def test_resolved_entity_map_marks_relationship_usable_refs() -> None:

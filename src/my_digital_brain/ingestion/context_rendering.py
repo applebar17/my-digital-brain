@@ -37,12 +37,16 @@ class GraphContextPackRendererService:
             GraphContextRenderPurpose.REASONING,
             GraphContextRenderPurpose.ENTITY_PLANNING,
             GraphContextRenderPurpose.MISSING_ENTITY_PLANNING,
+            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
             GraphContextRenderPurpose.ENTITY_EXTRACTION,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
             GraphContextRenderPurpose.RELATIONSHIP_EXTRACTION,
         }
         include_relationships = purpose in {
             GraphContextRenderPurpose.REASONING,
+            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
             GraphContextRenderPurpose.RELATIONSHIP_EXTRACTION,
         }
@@ -54,13 +58,19 @@ class GraphContextPackRendererService:
         }
         include_relationship_snippets = purpose in {
             GraphContextRenderPurpose.REASONING,
+            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
             GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
             GraphContextRenderPurpose.MISSING_ENTITY_PLANNING,
             GraphContextRenderPurpose.RELATIONSHIP_EXTRACTION,
         }
 
         notes = list(pack.notes[: self.max_notes])
-        if purpose == GraphContextRenderPurpose.REASONING:
+        if purpose in {
+            GraphContextRenderPurpose.REASONING,
+            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
+        }:
             notes.extend(_memory_note(item) for item in pack.memories[: self.max_memories_as_notes])
 
         return GraphContextPackView(

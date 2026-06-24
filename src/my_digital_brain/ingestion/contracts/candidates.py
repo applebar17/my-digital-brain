@@ -128,6 +128,7 @@ CandidateOutput: TypeAlias = (
     | CandidatePerception
     | CandidateRelationshipContext
     | CandidateMetadataPatch
+    | MemoryLog
 )
 
 

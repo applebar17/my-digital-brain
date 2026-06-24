@@ -40,6 +40,7 @@ class ExtractionTaskType(StrEnum):
     RELATIONSHIP_STATE = "relationship_state"
     PERCEPTION = "perception"
     METADATA_PATCH = "metadata_patch"
+    MEMORY_LOG = "memory_log"
     LINK = "link"
 
 

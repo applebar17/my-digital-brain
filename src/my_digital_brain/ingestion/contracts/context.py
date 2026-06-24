@@ -13,6 +13,8 @@ class GraphContextRenderPurpose(StrEnum):
     REASONING = "reasoning"
     ENTITY_PLANNING = "entity_planning"
     RELATIONSHIP_PLANNING = "relationship_planning"
+    MEMORY_LOG_PLANNING = "memory_log_planning"
+    MEMORY_LOG_EXTRACTION = "memory_log_extraction"
     MISSING_ENTITY_PLANNING = "missing_entity_planning"
     ENTITY_EXTRACTION = "entity_extraction"
     RELATIONSHIP_EXTRACTION = "relationship_extraction"
