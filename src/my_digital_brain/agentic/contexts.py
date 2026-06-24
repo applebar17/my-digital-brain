@@ -162,6 +162,22 @@ class ReasoningCheckpointContext(AgenticModel):
             },
         )
 
+    def system_prompt_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "purpose": _reasoning_prompt_purpose(
+                    self.purpose,
+                    self.input_context,
+                ),
+                "task_context": _reasoning_prompt_task_context(
+                    self.input_context,
+                    graph_context=self.graph_context,
+                    current_time=self.current_time,
+                    timezone=self.timezone,
+                ),
+            },
+        )
+
 
 class ReasoningInsightContext(AgenticModel):
     insight_type: ReasoningInsightKind
@@ -972,3 +988,46 @@ def _compact_prompt_payload(value: Any) -> Any:
             if item not in (None, "", [], {})
         ]
     return value
+
+
+def _reasoning_prompt_purpose(
+    purpose: ReasoningPurposeGuidelines,
+    input_context: dict[str, Any],
+) -> dict[str, Any]:
+    instructions = list(purpose.instructions)
+    rules = input_context.get("rules")
+    if isinstance(rules, list):
+        instructions.extend(str(rule) for rule in rules if rule)
+    return {
+        key: value
+        for key, value in {
+            "goal": purpose.goal,
+            "focus_areas": list(purpose.focus_areas),
+            "instructions": list(dict.fromkeys(instructions)),
+        }.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _reasoning_prompt_task_context(
+    input_context: dict[str, Any],
+    *,
+    graph_context: GraphContextPackage | None,
+    current_time: datetime,
+    timezone: str,
+) -> dict[str, Any]:
+    return _compact_prompt_payload(
+        {
+            "planning_scope": input_context.get("planning_scope"),
+            "graph_context_view": input_context.get("graph_context_view"),
+            "graph_context": graph_context,
+            "entity_packet": input_context.get("entity_packet"),
+            "memory_log_packet": input_context.get("memory_log_packet"),
+            "current_action": input_context.get("current_action"),
+            "current_target": input_context.get("current_target"),
+            "time": {
+                "current_time": current_time,
+                "timezone": timezone,
+            },
+        },
+    )

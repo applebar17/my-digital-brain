@@ -3,6 +3,7 @@ from __future__ import annotations
 from my_digital_brain.ingestion import (
     GraphContextPackRendererService,
     build_entity_planning_context,
+    build_memory_log_extraction_context,
     build_memory_log_planning_context,
     build_resolved_entity_packet,
     build_missing_entity_planning_context,
@@ -22,7 +23,10 @@ from my_digital_brain.ingestion.contracts import (
     GraphContextRenderPurpose,
     IngestionReasoningCheckpointDraft,
     CandidateEntity,
+    MemoryLogIngestionActionDraft,
+    MemoryLogIngestionPlanDraft,
     MissingEntityRequiredDraft,
+    PlannedMemoryLogRefDraft,
     ResolvedEntityMap,
     ResolvedEntityMapEntry,
     ResolvedEntityStatus,
@@ -104,7 +108,15 @@ def test_entity_and_relationship_planning_context_builders_are_llm_friendly() ->
     ]
     assert "source_text" not in relationship_prompt_context
     assert "resolved_entity_map_view" not in relationship_prompt_context
+    assert "rules" not in relationship_prompt_context
     assert relationship_prompt_context["planning_scope"] == "relationships_only"
+    relationship_prompt_purpose = relationship_context.system_prompt_payload()[
+        "purpose"
+    ]
+    assert any(
+        "relationship-usable refs" in instruction
+        for instruction in relationship_prompt_purpose["instructions"]
+    )
 
 
 def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
@@ -141,11 +153,65 @@ def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
     prompt_context = context.system_prompt_payload()["task_context"]
     assert "source_text" not in prompt_context
     assert "resolved_entity_map_view" not in prompt_context
+    assert "rules" not in prompt_context
     assert prompt_context["entity_packet"][0]["local_ref"] == "CANDIDATE_PERSON_001"
+    prompt_purpose = context.system_prompt_payload()["purpose"]
     assert all(
         "resolved_entity_map_view" not in rule
-        for rule in prompt_context["rules"]
+        for rule in prompt_purpose["instructions"]
     )
+
+
+def test_memory_log_extraction_prompt_carries_current_action_not_whole_plan() -> None:
+    renderer = GraphContextPackRendererService()
+    resolved_map = _resolved_entity_map()
+    entity_packet = build_resolved_entity_packet(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Matteo Mercoldi",
+            ),
+        ],
+        resolved_map,
+    )
+    planned_memory_log = PlannedMemoryLogRefDraft(
+        local_ref="MEMORY_LOG_001",
+        log_text_hint="Merc came to the barbeque.",
+        host_refs=["CANDIDATE_PERSON_001"],
+        evidence_text="Merc came to the barbeque.",
+    )
+    action = MemoryLogIngestionActionDraft(
+        goal="Create one memory log for Merc at the barbeque.",
+        memory_logs=[planned_memory_log],
+    )
+    plan = MemoryLogIngestionPlanDraft(actions=[action])
+
+    context = build_memory_log_extraction_context(
+        source_text="Merc came to the barbeque.",
+        graph_context_view=renderer.render(
+            _context_pack(),
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
+        ),
+        reasoning=_reasoning(),
+        resolved_entity_map=resolved_map,
+        entity_packet=entity_packet,
+        memory_log_plan=plan,
+        planning_action=action,
+        planned_memory_log=planned_memory_log,
+        memory_log_index=1,
+        timezone="Europe/Rome",
+    )
+
+    prompt_context = context.system_prompt_payload()["task_context"]
+    assert "memory_log_plan" not in prompt_context
+    assert "planning_action" not in prompt_context
+    assert "planned_memory_log" not in prompt_context
+    assert prompt_context["current_action"]["goal"] == (
+        "Create one memory log for Merc at the barbeque."
+    )
+    assert prompt_context["current_target"]["local_ref"] == "MEMORY_LOG_001"
+    assert prompt_context["expected_local_ref"] == "MEMORY_LOG_001"
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:
