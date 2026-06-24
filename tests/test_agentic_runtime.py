@@ -863,12 +863,13 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "reasoning_checkpoint"
     assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
-    assert "Runtime context:" in structured_call.system_prompt
-    assert "timezone: Europe/Rome" in structured_call.system_prompt
+    assert "Runtime context:" not in structured_call.system_prompt
+    assert "timezone: Europe/Rome" not in structured_call.system_prompt
     assert structured_call.input_message is None
     assert structured_call.messages[-1].role == "user"
     assert structured_call.messages[-1].content == "Alessia is my girlfriend."
-    assert "Process context:" in structured_call.system_prompt
+    assert "Process context:" not in structured_call.system_prompt
+    assert "# Context" in structured_call.system_prompt
     assert "checkpoint_id" not in structured_call.system_prompt
     assert "source_text" not in structured_call.system_prompt
     assert "owner relationship" in structured_call.system_prompt
@@ -927,16 +928,17 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     structured_call = provider.structured_calls[0]
     assert structured_call.context.purpose == "planning_checkpoint"
     assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
-    assert "Runtime context:" in structured_call.system_prompt
-    assert "timezone: Europe/Rome" in structured_call.system_prompt
+    assert "Runtime context:" not in structured_call.system_prompt
+    assert "timezone: Europe/Rome" not in structured_call.system_prompt
     assert structured_call.input_message is None
     assert len(structured_call.messages) == 1
     assert structured_call.messages[0].role == "user"
     assert structured_call.messages[0].content == "Merc is Matteo Mercoldi."
-    assert "Process context:" in structured_call.system_prompt
+    assert "Process context:" not in structured_call.system_prompt
+    assert "# Context" in structured_call.system_prompt
     assert "planning_id" not in structured_call.system_prompt
     assert "source_text" not in structured_call.system_prompt
-    assert "PlanningTransformResultContext" in structured_call.system_prompt
+    assert "PlanningTransformResultContext" not in structured_call.system_prompt
 
 
 def test_contradiction_review_question_becomes_clarification_intent() -> None:

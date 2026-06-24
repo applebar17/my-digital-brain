@@ -119,7 +119,7 @@ def build_memory_log_planning_context(
         "rules": [
             "Plan compact MemoryLog records only.",
             "Create MEMORY_LOG_* local_refs and keep them stable through extraction.",
-            "Use only refs from entity_packet, resolved_entity_map_view, or graph_context_view.",
+            "Use only refs from entity_packet or graph_context_view.",
             "Every planned MemoryLog needs at least one host_ref.",
             "Use involved_refs for weak co-presence instead of planning durable edges.",
             "Do not plan relationship candidates in this step.",

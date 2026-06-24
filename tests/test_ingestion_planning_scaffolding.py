@@ -99,6 +99,12 @@ def test_entity_and_relationship_planning_context_builders_are_llm_friendly() ->
         "CANDIDATE_PERSON_001": "NODE_000001",
     }
     assert resolved_view["entries"][1]["relationship_ref"] is None
+    relationship_prompt_context = relationship_context.system_prompt_payload()[
+        "task_context"
+    ]
+    assert "source_text" not in relationship_prompt_context
+    assert "resolved_entity_map_view" not in relationship_prompt_context
+    assert relationship_prompt_context["planning_scope"] == "relationships_only"
 
 
 def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
@@ -132,6 +138,14 @@ def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
         "CANDIDATE_PERSON_001"
     )
     assert any("MEMORY_LOG_*" in rule for rule in context.input_context["rules"])
+    prompt_context = context.system_prompt_payload()["task_context"]
+    assert "source_text" not in prompt_context
+    assert "resolved_entity_map_view" not in prompt_context
+    assert prompt_context["entity_packet"][0]["local_ref"] == "CANDIDATE_PERSON_001"
+    assert all(
+        "resolved_entity_map_view" not in rule
+        for rule in prompt_context["rules"]
+    )
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:

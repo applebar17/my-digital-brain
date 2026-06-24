@@ -197,7 +197,11 @@ class AgenticHistoryService:
     ) -> Any:
         """Return process context for system-prompt sections, not chat messages."""
 
-        projected = self.model_payload_for_state(state_id, payload)
+        if hasattr(payload, "system_prompt_payload"):
+            projected = payload.system_prompt_payload()
+            projected = self._drop_backend_only_keys(projected)
+        else:
+            projected = self.model_payload_for_state(state_id, payload)
         return self._drop_prompt_context_message_keys(projected)
 
     def model_messages_for_state(

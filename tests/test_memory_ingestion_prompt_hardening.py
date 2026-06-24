@@ -42,10 +42,13 @@ PROMPT_VARIABLES = {
     "current_action": "Create memory_new_0001 for the barbeque episode.",
     "action_packet": "Action packet:\n- target_refs: memory_new_0001, node_0001, node_new_0001",
     "validation_error_examples": "Recoverable error example: invalid relationship type -> retry with allowed type.",
+    "purpose": '{"purpose_id": "test", "goal": "Exercise prompt rendering."}',
+    "task_context": '{"planning_scope": "test"}',
+    "reasoning_notes": '{"summary": "Compact reasoning."}',
 }
 
 
-def test_active_prompt_constants_match_file_backed_registry() -> None:
+def test_active_prompt_constants_match_default_registry() -> None:
     registry = PromptRegistry()
 
     for prompt_id, template in ACTIVE_PROMPT_TEMPLATES.items():

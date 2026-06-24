@@ -1,8 +1,8 @@
 """Code-managed active agentic prompt templates.
 
-The file-backed PromptRegistry mirrors these constants for compatibility.
-Keep these prompts lean: process scope, decision-relevant definitions, behavior,
-examples, and visible context labels only.
+The default PromptRegistry loads these constants directly. Keep prompts lean:
+process scope, decision-relevant definitions, behavior, examples, and explicit
+runtime placeholders only.
 """
 
 CONVERSATION_ENTRY_SYSTEM_TEMPLATE = """# Role
@@ -48,7 +48,11 @@ Turn the supplied process context into structured reasoning notes for the next s
 - Two possible Marcos in context -> ambiguity to carry forward.
 
 # Context
-Runtime appends purpose guidelines, process context, messages, tools, and expected output.
+Purpose:
+{purpose}
+
+Task context:
+{task_context}
 """
 
 PLANNING_CHECKPOINT_SYSTEM_TEMPLATE = """# Role
@@ -76,7 +80,14 @@ Convert caller goals, reasoning notes, and context into ordered process actions.
 - If an edge endpoint is unknown, plan resolution before edge work.
 
 # Context
-Runtime appends caller goals, reasoning notes, context packets, tools, and expected output.
+Purpose:
+{purpose}
+
+Task context:
+{task_context}
+
+Reasoning notes:
+{reasoning_notes}
 """
 
 MEMORY_QUERY_SYSTEM_TEMPLATE = """# Role

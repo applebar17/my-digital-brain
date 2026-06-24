@@ -16,6 +16,14 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticStateRunResult,
 )
 from my_digital_brain.debug import AIFlowTraceSection
+from my_digital_brain.prompts.registry import render_prompt_template
+
+
+_RUNTIME_PROMPT_PLACEHOLDERS = (
+    "purpose",
+    "task_context",
+    "reasoning_notes",
+)
 
 
 def _contradiction_runtime_status(state_result: AgenticStateRunResult) -> str:
@@ -162,13 +170,49 @@ def _system_prompt_with_runtime_context(
 ) -> str:
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
     timezone = _find_prompt_value(payload, "timezone") or "UTC"
+    runtime_context = (
+        "Runtime context:\n"
+        f"- current_time: {current_time}\n"
+        f"- timezone: {timezone}"
+    )
+    if _uses_runtime_placeholders(prompt):
+        prompt_context_payload = (
+            prompt_context
+            if isinstance(prompt_context, dict)
+            else {"value": prompt_context}
+            if prompt_context not in (None, "", [], {})
+            else {}
+        )
+        expected_output_payload: dict[str, Any] = {}
+        schema = prompt_context_payload.get("expected_output_schema")
+        if schema not in (None, "", [], {}):
+            expected_output_payload["schema"] = schema
+        if expected_output:
+            expected_output_payload.update(expected_output)
+        return (
+            render_prompt_template(
+                prompt.rstrip(),
+                {
+                    "runtime_context": runtime_context,
+                    "purpose": _prompt_json_block(
+                        prompt_context_payload.get("purpose"),
+                    ),
+                    "task_context": _prompt_json_block(
+                        prompt_context_payload.get("task_context")
+                        or prompt_context_payload.get("input_context"),
+                    ),
+                    "reasoning_notes": _prompt_json_block(
+                        prompt_context_payload.get("reasoning_notes")
+                        or prompt_context_payload.get("reasoning_artifact"),
+                    ),
+                    "expected_output": _prompt_json_block(expected_output_payload),
+                },
+            ).rstrip()
+            + "\n"
+        )
     sections = [
         prompt.rstrip(),
-        (
-            "Runtime context:\n"
-            f"- current_time: {current_time}\n"
-            f"- timezone: {timezone}"
-        ),
+        runtime_context,
     ]
     # if runtime_metadata:
     #     sections.append(_system_json_section("Runtime metadata", runtime_metadata))
@@ -177,6 +221,23 @@ def _system_prompt_with_runtime_context(
     # if expected_output:
     #     sections.append(_system_json_section("Expected output", expected_output))
     return "\n\n".join(section for section in sections if section).rstrip() + "\n"
+
+
+def _uses_runtime_placeholders(prompt: str) -> bool:
+    return any(
+        f"{{{placeholder}}}" in prompt or f"{{{{ {placeholder} }}}}" in prompt
+        for placeholder in _RUNTIME_PROMPT_PLACEHOLDERS
+    )
+
+
+def _prompt_json_block(payload: Any) -> str:
+    if payload in (None, "", [], {}):
+        return "(none)"
+    return (
+        "```json\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n"
+        "```"
+    )
 
 
 def _system_json_section(title: str, payload: Any) -> str:

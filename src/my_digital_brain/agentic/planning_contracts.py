@@ -94,6 +94,19 @@ class PlanningTransformContext(AgenticModel):
             },
         )
 
+    def system_prompt_payload(self) -> dict[str, Any]:
+        """Return the intentionally small packet formatted into system prompts."""
+
+        return _compact_prompt_payload(
+            {
+                "purpose": self.purpose,
+                "task_context": _prompt_task_context(self.input_context),
+                "reasoning_notes": _prompt_reasoning_notes(self.reasoning_artifact),
+                "prior_tool_outputs": self.prior_tool_outputs,
+                "expected_output_schema": self.expected_output_schema,
+            },
+        )
+
 
 class PlanningActionContext(AgenticModel):
     """Default lightweight action shape for generic planning use."""
@@ -186,3 +199,50 @@ def _compact_prompt_payload(value: Any) -> Any:
             if item not in (None, "", [], {})
         ]
     return value
+
+
+_PROMPT_TASK_CONTEXT_KEYS = {
+    "planning_scope",
+    "rules",
+    "graph_context_view",
+    "entity_packet",
+    "memory_log_packet",
+    "memory_log_plan",
+    "planning_action",
+    "planned_memory_log",
+    "expected_local_ref",
+    "memory_log_index",
+    "missing_entity_required",
+}
+
+
+def _prompt_task_context(input_context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: _compact_prompt_payload(value)
+        for key, value in input_context.items()
+        if key in _PROMPT_TASK_CONTEXT_KEYS
+        and value not in (None, "", [], {})
+    }
+
+
+_PROMPT_REASONING_KEYS = {
+    "summary",
+    "entity_notes",
+    "alias_notes",
+    "relationship_notes",
+    "duplicate_notes",
+    "node_vs_detail_notes",
+    "user_owner_notes",
+    "context_gaps",
+    "clarification_candidates",
+}
+
+
+def _prompt_reasoning_notes(reasoning_artifact: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(reasoning_artifact, dict):
+        return reasoning_artifact
+    return {
+        key: _compact_prompt_payload(value)
+        for key, value in reasoning_artifact.items()
+        if key in _PROMPT_REASONING_KEYS and value not in (None, "", [], {})
+    }
