@@ -52,6 +52,7 @@ class CapturedStructuredCall:
     model: str | None
     system_prompt: str
     messages: list[dict[str, Any]]
+    input_message: Any | None = None
     output: Any | None = None
     error: dict[str, Any] | None = None
 
@@ -76,6 +77,7 @@ class TraceStructuredProvider:
                 else dict(message)
                 for message in request.messages
             ],
+            input_message=request.input_message,
         )
         self.structured_calls.append(call)
         try:
@@ -331,6 +333,8 @@ def _append_structured_calls(
         lines.append(f"Model: {call.model or 'default route'}")
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
+        if call.input_message is not None:
+            _append_json_block(lines, "Input Message", call.input_message)
         _append_json_block(lines, "Messages", call.messages)
         if call.error is not None:
             _append_json_block(lines, "Error / Diagnostics", call.error)

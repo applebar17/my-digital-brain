@@ -61,19 +61,34 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
         ],
     )
     extractor = EntityExtractor(provider)
-    task = ExtractionTask(task_type=ExtractionTaskType.PERSON, source_refs=["source-1"])
+    task = ExtractionTask(
+        task_type=ExtractionTaskType.PERSON,
+        target_ref="CANDIDATE_PERSON_042",
+        source_refs=["source-1"],
+    )
 
     candidates = extractor.extract(_source(), task, IngestionContextPackage(source_id="source-1"))
 
     assert extractor.supports(task) is True
     assert isinstance(candidates[0], CandidateEntity)
     assert candidates[0].source_refs == ["source-1"]
+    assert candidates[0].local_ref == "CANDIDATE_PERSON_042"
+    assert candidates[0].metadata["model_output_local_ref"] == "CANDIDATE_PERSON_001"
+    assert candidates[0].metadata["local_ref_enforced_from_task"] == (
+        "CANDIDATE_PERSON_042"
+    )
     assert candidates[0].evidence_refs[0].source_id == "source-1"
     assert candidates[0].evidence_refs[0].evidence_text == "Marco"
     assert candidates[0].typed_properties == {"nickname": "Marco"}
     assert not PerceptionExtractor(provider).supports(task)
     assert provider.requests[0].output_schema is CandidateEntityDraftBatch
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
+    assert provider.requests[0].input_message is None
+    assert provider.requests[0].messages
+    assert provider.requests[0].messages[-1].role == "user"
+    assert "Ingest this planning target/action" in (
+        provider.requests[0].messages[-1].content or ""
+    )
 
 
 def test_focused_extractors_reject_freeform_labels_and_relationship_types() -> None:

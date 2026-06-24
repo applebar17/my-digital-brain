@@ -36,6 +36,8 @@ def build_entity_planning_context(
         "graph_context_view": _dump(graph_context_view),
         "rules": [
             "Plan entity preparation only.",
+            "Create candidate local_refs in the current CANDIDATE_* naming style.",
+            "Each planned entity target must keep its local_ref through extraction and later planning.",
             "Aliases are hints, not identity or automatic node fields.",
             "Do not plan relationship candidates.",
         ],
@@ -68,6 +70,7 @@ def build_relationship_planning_context(
         "resolved_entity_map_view": _resolved_entity_map_view(resolved_entity_map),
         "rules": [
             "Plan relationships only against relationship-usable refs.",
+            "Create candidate local_refs for relationship outputs in the current CANDIDATE_* naming style.",
             "Emit missing entity requirements instead of inventing endpoints.",
             "Do not plan new entity creation in this step.",
         ],
@@ -101,6 +104,7 @@ def build_missing_entity_planning_context(
         "missing_entity_required": _dump(missing_entity),
         "rules": [
             "Plan only the missing endpoint.",
+            "Create exactly the candidate local_ref needed for the missing endpoint.",
             "Keep relationship resume guidance available for the later relationship pass.",
             "Do not plan unrelated entities or complete the relationship here.",
         ],

@@ -26,7 +26,7 @@ from my_digital_brain.ingestion.ontology import ontology_prompt_payload
 class RelationshipExtractionPlanBuildResult:
     extraction_plan: ExtractionPlan
     validation_issues: list[ValidationIssue]
-    blocked_action_refs: list[str]
+    blocked_relationship_refs: list[str]
 
 
 def build_relationship_extraction_plan(
@@ -37,17 +37,13 @@ def build_relationship_extraction_plan(
 ) -> RelationshipExtractionPlanBuildResult:
     tasks: list[ExtractionTask] = []
     issues: list[ValidationIssue] = []
-    skipped_deferred: list[str] = []
-    blocked_action_refs: list[str] = []
+    blocked_relationship_refs: list[str] = []
     graph_aliases = _known_graph_aliases(graph_context_pack)
     missing_refs = {item.missing_ref for item in relationship_plan.missing_entities}
 
     for index, action in enumerate(relationship_plan.actions, start=1):
-        if action.storage_shape == "defer":
-            skipped_deferred.append(action.action_ref)
-            continue
         if _action_depends_on_missing_ref(action.depends_on, missing_refs):
-            blocked_action_refs.append(action.action_ref)
+            blocked_relationship_refs.append(action.local_ref)
             continue
 
         from_ref, from_issue = _relationship_endpoint_ref(
@@ -66,12 +62,12 @@ def build_relationship_extraction_plan(
         )
         if from_issue is not None:
             if from_issue.code == "blocked_by_missing_entity":
-                blocked_action_refs.append(action.action_ref)
+                blocked_relationship_refs.append(action.local_ref)
             else:
                 issues.append(from_issue)
         if to_issue is not None:
             if to_issue.code == "blocked_by_missing_entity":
-                blocked_action_refs.append(action.action_ref)
+                blocked_relationship_refs.append(action.local_ref)
             else:
                 issues.append(to_issue)
         if from_ref is None or to_ref is None:
@@ -92,7 +88,7 @@ def build_relationship_extraction_plan(
         tasks.append(
             ExtractionTask(
                 task_type=task_type,
-                target_ref=action.action_ref,
+                target_ref=action.local_ref,
                 evidence_text=action.evidence_text,
                 source_refs=[source.source_id],
                 expected_output=_expected_output_for_task(task_type),
@@ -100,7 +96,7 @@ def build_relationship_extraction_plan(
                 notes=action.notes or action.relationship_intent or action.goal,
                 metadata={
                     "schema_layer": "refined_relationship_extraction",
-                    "relationship_action_ref": action.action_ref,
+                    "relationship_local_ref": action.local_ref,
                     "relationship_action_goal": action.goal,
                     "relationship_action_index": index,
                     "relationship_intent": action.relationship_intent,
@@ -126,13 +122,12 @@ def build_relationship_extraction_plan(
             context_gaps=list(relationship_plan.context_gaps),
             metadata={
                 "schema_layer": "refined_relationship_extraction_plan",
-                "blocked_action_refs": sorted(set(blocked_action_refs)),
-                "skipped_deferred_actions": skipped_deferred,
+                "blocked_relationship_refs": sorted(set(blocked_relationship_refs)),
                 "missing_entity_refs": sorted(missing_refs),
             },
         ),
         validation_issues=issues,
-        blocked_action_refs=sorted(set(blocked_action_refs)),
+        blocked_relationship_refs=sorted(set(blocked_relationship_refs)),
     )
 
 
@@ -256,7 +251,7 @@ def _action_depends_on_missing_ref(depends_on: list[str], missing_refs: set[str]
 
 
 def _looks_like_planner_ref(ref: str) -> bool:
-    return ref.startswith(("ENTITY_ACTION_", "REL_ACTION_", "ACTION_"))
+    return "_ACTION_" in ref or ref.startswith("ACTION_")
 
 
 def _normalize_candidate_refs(

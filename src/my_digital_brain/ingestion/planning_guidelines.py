@@ -16,6 +16,7 @@ def entity_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
         ],
         instructions=[
             "Produce entity actions only; do not plan relationships or graph writes.",
+            "Assign stable candidate local_refs to every planned entity target.",
             "Treat aliases as extraction and resolution hints, not identity.",
             "Use graph context duplicate hints before planning a new entity action.",
             "Keep low-salience details as context unless durable memory value is clear.",
@@ -42,6 +43,7 @@ def relationship_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
         ],
         instructions=[
             "Plan relationships only between refs usable from the resolved entity map or provided graph aliases.",
+            "Assign a stable candidate local_ref to every planned relationship output.",
             "Use RELATIONSHIP_WITH plus relationship detail for social wording such as brother or roommate.",
             "Emit MissingEntityRequiredDraft guidance when an endpoint is missing.",
             "Do not freely create new entities during relationship planning.",
@@ -68,6 +70,7 @@ def missing_entity_planning_guidelines() -> PlanningPurposeGuidelines:
         ],
         instructions=[
             "Plan only the missing endpoint described by MissingEntityRequiredDraft.",
+            "Assign a stable candidate local_ref for the missing entity target.",
             "Preserve relationship resume guidance for the later relationship pass.",
             "Use aliases and duplicate hints as resolution context, not identity.",
             "Do not plan unrelated entities or relationships.",

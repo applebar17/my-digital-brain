@@ -196,7 +196,8 @@ class IngestionService:
             ))
 
         resolved_entity_map = self.entity_resolver.resolve(
-            entity_candidates, graph_context_pack
+            candidate_graph.candidate_entities,
+            graph_context_pack,
         )
         relationship_view = self.context_renderer.render(
             graph_context_pack,
@@ -845,8 +846,16 @@ class IngestionService:
                 ))
             supplemental_candidates.extend(candidates)
 
-        updated_resolved_map = self.entity_resolver.resolve(
+        combined_entity_graph = self._assemble_final_candidate_graph(
+            source,
+            graph_context_pack,
+            entity_extraction_plan,
+            supplemental_extraction_plans,
+            None,
             [*entity_candidates, *supplemental_candidates],
+        )
+        updated_resolved_map = self.entity_resolver.resolve(
+            combined_entity_graph.candidate_entities,
             graph_context_pack,
         )
         return (
@@ -913,7 +922,7 @@ class IngestionService:
             ))
 
         resolved_entity_map = self.entity_resolver.resolve(
-            entity_candidates,
+            entity_candidate_graph.candidate_entities,
             graph_context_pack,
         )
         relationship_view = self.context_renderer.render(
@@ -1246,30 +1255,42 @@ def _entity_extraction_plan(
 ) -> ExtractionPlan:
     tasks: list[ExtractionTask] = []
     issues: list[str] = []
-    for index, action in enumerate(entity_plan.actions, start=1):
-        if action.suggested_entity_type is None:
-            issues.append(action.action_ref)
-            continue
-        task_type = task_type_for_entity_type(action.suggested_entity_type)
-        tasks.append(
-            ExtractionTask(
-                task_type=task_type,
-                evidence_text=action.evidence_text,
-                source_refs=[source.source_id],
-                expected_output="Extract entity candidates only.",
-                required_context_refs=list(action.context_refs),
-                notes=action.notes or action.goal,
-                metadata={
-                    "schema_layer": "reasoning_first_entity_extraction",
-                    "entity_action_ref": action.action_ref,
-                    "entity_action_goal": action.goal,
-                    "entity_action_index": index,
-                    "suggested_entity_type": str(action.suggested_entity_type),
-                    "aliases": list(action.aliases),
-                    "ontology": ontology_prompt_payload(),
-                },
-            ),
-        )
+    for action_index, action in enumerate(entity_plan.actions, start=1):
+        action_payload = action.model_dump(mode="json", exclude_none=True)
+        for entity_index, entity in enumerate(action.entities, start=1):
+            if entity.suggested_entity_type is None:
+                issues.append(entity.local_ref)
+                continue
+            task_type = task_type_for_entity_type(entity.suggested_entity_type)
+            tasks.append(
+                ExtractionTask(
+                    task_type=task_type,
+                    target_ref=entity.local_ref,
+                    evidence_text=entity.evidence_text,
+                    source_refs=[source.source_id],
+                    expected_output=(
+                        "Extract exactly one entity candidate using task.target_ref "
+                        "as the candidate local_ref."
+                    ),
+                    required_context_refs=list(entity.context_refs),
+                    notes=entity.notes or action.goal,
+                    metadata={
+                        "schema_layer": "reasoning_first_entity_extraction",
+                        "entity_action_goal": action.goal,
+                        "entity_action_index": action_index,
+                        "planned_entity_index": entity_index,
+                        "planned_entity": entity.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        ),
+                        "planning_action": action_payload,
+                        "suggested_entity_type": str(entity.suggested_entity_type),
+                        "aliases": list(entity.aliases),
+                        "allowed_local_refs": [entity.local_ref],
+                        "ontology": ontology_prompt_payload(),
+                    },
+                ),
+            )
     return ExtractionPlan(
         source_id=source.source_id,
         context_package_id=graph_context_pack.context_pack_id,

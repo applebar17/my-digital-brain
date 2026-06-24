@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from typing import Any
 
+from my_digital_brain.ai.schemas import ChatMessage
 from my_digital_brain.ingestion.contracts import (
     ExtractionTask,
     IngestionContextPackage,
@@ -36,15 +38,52 @@ class IngestionPromptBuilder:
     """Build compact, low-noise inputs for structured ingestion model calls."""
 
     extractor_system_prompt = (
-        "Execute only the focused extraction task. Return structured candidates of the "
-        "requested type only. This is a low-freedom backend-facing step: use only enum "
-        "values allowed by the schema and only refs or aliases supplied in the task/context. "
-        "Preserve evidence, original user words, affective meaning, missing fields, "
-        "ambiguity flags, and source-grounded subtype details. Represent extra fields as "
-        "typed property_suggestions. Do not guess when information is missing. For social "
-        "relationships, use RELATIONSHIP_WITH plus relationship_kind and preserve wording "
-        "such as brother or girlfriend in relationship_detail."
+        "# Role\n"
+        "You're a focused ingestion extractor.\n\n"
+        "# Task\n"
+        "Convert the supplied planning target into structured candidate drafts.\n\n"
+        "# Definitions\n"
+        "- Planning target: the current ref-carrying entity, relationship, claim, "
+        "perception, or metadata target prepared by an earlier planning step.\n"
+        "- Local ref: the session-scoped model-facing identifier supplied in the "
+        "planning target. It must remain stable across this ingestion session.\n\n"
+        "# Rules\n"
+        "- Return candidates of the requested schema only.\n"
+        "- Use only enum values allowed by the schema and refs or aliases supplied "
+        "in the task/context.\n"
+        "- Use the supplied task.target_ref exactly as local_ref when it is present.\n"
+        "- Preserve evidence, original user words, affective meaning, missing fields, "
+        "ambiguity flags, and source-grounded subtype details.\n"
+        "- Represent extra fields as typed property_suggestions.\n"
+        "- Do not guess when information is missing.\n"
+        "- For social relationships, use RELATIONSHIP_WITH plus relationship_kind "
+        "and preserve wording such as brother or girlfriend in relationship_detail.\n\n"
+        "# Context\n"
+        "Runtime appends relevant history, clarification answers, the current "
+        "planning target, allowed refs, graph context, ontology, and expected output."
     )
+
+    def extraction_messages(
+        self,
+        source: SourceRecordRef,
+        task: ExtractionTask,
+        context: IngestionContextPackage,
+    ) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
+        messages.extend(self.history_messages(source))
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=(
+                    "Ingest this planning target/action. Use the supplied refs exactly; "
+                    "do not invent replacement refs.\n\n"
+                    "```json\n"
+                    f"{json.dumps(self.extraction_input(source, task, context), ensure_ascii=False, indent=2)}\n"
+                    "```"
+                ),
+            ),
+        )
+        return messages
 
     def extraction_input(
         self,
@@ -58,6 +97,40 @@ class IngestionPromptBuilder:
             "compact_graph_context": self.context_payload(context),
             "ontology": ontology_prompt_payload(),
         }
+
+    def history_messages(self, source: SourceRecordRef) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
+        raw_history = source.metadata.get("model_facing_history")
+        if isinstance(raw_history, list):
+            for item in raw_history:
+                if not isinstance(item, dict):
+                    continue
+                role = str(item.get("role") or "").strip()
+                content = item.get("content")
+                if role in {"user", "assistant", "developer", "tool"} and content:
+                    messages.append(ChatMessage(role=role, content=str(content)))
+        clarifications = source.metadata.get("uat_terminal_clarifications")
+        if isinstance(clarifications, list):
+            for item in clarifications:
+                if not isinstance(item, dict):
+                    continue
+                question = str(item.get("question") or "").strip()
+                answer = str(item.get("answer") or "").strip()
+                if question:
+                    messages.append(
+                        ChatMessage(
+                            role="assistant",
+                            content=f"Clarification requested: {question}",
+                        ),
+                    )
+                if answer:
+                    messages.append(
+                        ChatMessage(
+                            role="user",
+                            content=f"Clarification answer: {answer}",
+                        ),
+                    )
+        return messages
 
     def source_payload(self, source: SourceRecordRef) -> dict[str, Any]:
         payload = source.model_dump(mode="json", exclude_none=True)
@@ -110,7 +183,7 @@ class IngestionPromptBuilder:
             "candidate_ref_catalog",
             "previous_action_summaries",
             "allowed_graph_aliases",
-            "relationship_action_ref",
+            "relationship_local_ref",
             "relationship_action_goal",
             "relationship_action_index",
             "relationship_intent",
@@ -120,6 +193,14 @@ class IngestionPromptBuilder:
             "resolved_from_ref",
             "resolved_to_ref",
             "relationship_depends_on",
+            "entity_action_goal",
+            "entity_action_index",
+            "planned_entity_index",
+            "planned_entity",
+            "planning_action",
+            "suggested_entity_type",
+            "aliases",
+            "allowed_local_refs",
             "ontology",
         }
         return {

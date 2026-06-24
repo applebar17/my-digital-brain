@@ -74,7 +74,7 @@ class FocusedLLMExtractor:
                     self.prompt_builder.extractor_system_prompt,
                     source,
                 ),
-                input_message=self.prompt_builder.extraction_input(source, task, context),
+                messages=self.prompt_builder.extraction_messages(source, task, context),
                 model=self.model or (route.model if route else None),
                 context=request_context,
                 metadata={"route": route.model_dump(mode="json")} if route else {},

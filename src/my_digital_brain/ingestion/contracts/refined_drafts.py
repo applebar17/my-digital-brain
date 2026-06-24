@@ -64,12 +64,17 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
         return self
 
 
-class EntityIngestionActionDraft(IngestionModel):
-    action_ref: str = Field(description="Planner-scoped action handle such as ENTITY_ACTION_001.")
-    goal: str = Field(description="Short goal for the entity extraction or resolution action.")
+class PlannedEntityRefDraft(IngestionModel):
+    local_ref: str = Field(
+        description=(
+            "Session-scoped candidate ref for this planned entity, such as "
+            "CANDIDATE_PERSON_001. Reuse this exact ref in later extraction, "
+            "relationship, and write-planning steps."
+        ),
+    )
     mention_text: str | None = Field(
         default=None,
-        description="Source mention or normalized phrase this entity action concerns.",
+        description="Source mention or normalized phrase this planned entity concerns.",
     )
     suggested_entity_type: LLMEntityType | None = Field(
         default=None,
@@ -93,6 +98,15 @@ class EntityIngestionActionDraft(IngestionModel):
     notes: str | None = Field(
         default=None,
         description="Short planner note for the later entity extraction step.",
+    )
+
+
+class EntityIngestionActionDraft(IngestionModel):
+    goal: str = Field(description="Short shared goal for one or more planned entities.")
+    entities: list[PlannedEntityRefDraft] = Field(
+        default_factory=list,
+        min_length=1,
+        description="Planned entity targets prepared under this goal.",
     )
 
 
@@ -120,6 +134,17 @@ class EntityIngestionPlanDraft(IngestionModel):
             raise ValueError(
                 "Entity ingestion plan requires actions, clarification, or context gaps."
             )
+        refs = [
+            entity.local_ref
+            for action in self.actions
+            for entity in action.entities
+            if entity.local_ref
+        ]
+        duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+        if duplicates:
+            raise ValueError(
+                "Entity planned local_refs must be unique: " + ", ".join(duplicates)
+            )
         return self
 
 
@@ -129,7 +154,6 @@ RelationshipStorageShape = Literal[
     "perception",
     "claim",
     "metadata_note",
-    "defer",
 ]
 
 
@@ -149,7 +173,7 @@ class MissingEntityRequiredDraft(IngestionModel):
         description="Suggested entity type when the source supports it.",
     )
     needed_for_relationship_ref: str = Field(
-        description="Relationship action ref blocked by this missing entity.",
+        description="Relationship local_ref blocked by this missing entity.",
     )
     relationship_goal: str = Field(
         description="Relationship goal to resume after the missing entity is resolved.",
@@ -173,7 +197,13 @@ class MissingEntityRequiredDraft(IngestionModel):
 
 
 class RelationshipIngestionActionDraft(IngestionModel):
-    action_ref: str = Field(description="Planner-scoped action handle such as REL_ACTION_001.")
+    local_ref: str = Field(
+        description=(
+            "Session-scoped relationship candidate ref such as "
+            "CANDIDATE_RELATIONSHIP_001, CANDIDATE_RELATIONSHIP_CONTEXT_001, "
+            "CANDIDATE_CLAIM_001, or CANDIDATE_PERCEPTION_001."
+        ),
+    )
     goal: str = Field(description="Short goal for the relationship action.")
     from_ref: str | None = Field(
         default=None,
@@ -196,7 +226,7 @@ class RelationshipIngestionActionDraft(IngestionModel):
     )
     depends_on: list[str] = Field(
         default_factory=list,
-        description="Entity action refs or missing refs required before this action can run.",
+        description="Entity local refs or missing refs required before this action can run.",
     )
     notes: str | None = Field(
         default=None,
@@ -232,5 +262,12 @@ class RelationshipIngestionPlanDraft(IngestionModel):
             raise ValueError(
                 "Relationship ingestion plan requires actions, missing entities, "
                 "clarification, or context gaps."
+            )
+        refs = [action.local_ref for action in self.actions if action.local_ref]
+        duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
+        if duplicates:
+            raise ValueError(
+                "Relationship planned local_refs must be unique: "
+                + ", ".join(duplicates)
             )
         return self

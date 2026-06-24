@@ -212,17 +212,22 @@ def _base_candidate_payload(
     source: SourceRecordRef,
     task: ExtractionTask,
 ) -> dict[str, Any]:
+    local_ref = task.target_ref or draft.local_ref
+    metadata = {
+        "schema_layer": "backend_enriched",
+        "task_id": task.task_id,
+        "task_type": str(task.task_type),
+    }
+    if task.target_ref and draft.local_ref != task.target_ref:
+        metadata["model_output_local_ref"] = draft.local_ref
+        metadata["local_ref_enforced_from_task"] = task.target_ref
     return {
-        "local_ref": draft.local_ref,
+        "local_ref": local_ref,
         "evidence_refs": _evidence_refs(draft.evidence, source),
         "source_refs": [source.source_id],
         "ambiguity_flags": list(draft.ambiguity_flags),
         "requires_confirmation": draft.requires_confirmation,
-        "metadata": {
-            "schema_layer": "backend_enriched",
-            "task_id": task.task_id,
-            "task_type": str(task.task_type),
-        },
+        "metadata": metadata,
     }
 
 

@@ -45,6 +45,7 @@ from my_digital_brain.ingestion.contracts import (
     MultiScopeRetrievalResult,
     MultiScopeVectorConfig,
     NodeUpdatePlanDraft,
+    PlannedEntityRefDraft,
     RelationshipIngestionActionDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
@@ -413,12 +414,16 @@ def test_lightweight_ingestion_reasoning_and_plan_drafts_validate_signal() -> No
         reason="The source names a person with an alias.",
         actions=[
             EntityIngestionActionDraft(
-                action_ref="ENTITY_ACTION_001",
                 goal="Extract Matteo Mercoldi as a person candidate.",
-                mention_text="Matteo Mercoldi",
-                suggested_entity_type="Person",
-                aliases=["Merc"],
-                evidence_text="Merc is Matteo Mercoldi.",
+                entities=[
+                    PlannedEntityRefDraft(
+                        local_ref="CANDIDATE_PERSON_001",
+                        mention_text="Matteo Mercoldi",
+                        suggested_entity_type="Person",
+                        aliases=["Merc"],
+                        evidence_text="Merc is Matteo Mercoldi.",
+                    ),
+                ],
             ),
         ],
     )
@@ -427,7 +432,7 @@ def test_lightweight_ingestion_reasoning_and_plan_drafts_validate_signal() -> No
         reason="The relationship endpoint has not been resolved yet.",
         mention_text="mio fratello",
         suggested_entity_type="Person",
-        needed_for_relationship_ref="REL_ACTION_001",
+        needed_for_relationship_ref="CANDIDATE_RELATIONSHIP_001",
         relationship_goal="Represent the brother relationship.",
         relationship_endpoint_role="to",
         evidence_text="mio fratello vive a Milano",
@@ -440,8 +445,28 @@ def test_lightweight_ingestion_reasoning_and_plan_drafts_validate_signal() -> No
     )
 
     assert reasoning.alias_notes == ["Merc is an alias hint for Matteo Mercoldi."]
-    assert entity_plan.actions[0].aliases == ["Merc"]
+    assert entity_plan.actions[0].entities[0].aliases == ["Merc"]
     assert relationship_plan.missing_entities[0].missing_ref == "MISSING_ENTITY_001"
+
+    with pytest.raises(ValidationError, match="local_refs must be unique"):
+        EntityIngestionPlanDraft(
+            reason="Duplicate refs should be rejected.",
+            actions=[
+                EntityIngestionActionDraft(
+                    goal="Extract two people.",
+                    entities=[
+                        PlannedEntityRefDraft(
+                            local_ref="CANDIDATE_PERSON_001",
+                            mention_text="Matteo",
+                        ),
+                        PlannedEntityRefDraft(
+                            local_ref="CANDIDATE_PERSON_001",
+                            mention_text="Marco",
+                        ),
+                    ],
+                ),
+            ],
+        )
 
     with pytest.raises(ValidationError, match="at least one note"):
         IngestionReasoningCheckpointDraft(summary="Only a summary.")
@@ -456,7 +481,7 @@ def test_relationship_plan_accepts_simple_actions_and_missing_entity_blockers() 
         reason="Resolved refs allow a direct relationship action.",
         actions=[
             RelationshipIngestionActionDraft(
-                action_ref="REL_ACTION_001",
+                local_ref="CANDIDATE_RELATIONSHIP_001",
                 goal="Connect the user with the brother entity.",
                 from_ref="graph:user",
                 to_ref="CANDIDATE_PERSON_001",

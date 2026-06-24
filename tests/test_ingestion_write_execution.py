@@ -582,11 +582,15 @@ def _single_person_payloads(
             "reason": f"{display_name} is a person endpoint.",
             "actions": [
                 {
-                    "action_ref": "ENTITY_ACTION_001",
                     "goal": f"Extract {display_name} as a person.",
-                    "mention_text": display_name,
-                    "suggested_entity_type": "Person",
-                    "evidence_text": display_name,
+                    "entities": [
+                        {
+                            "local_ref": "CANDIDATE_PERSON_001",
+                            "mention_text": display_name,
+                            "suggested_entity_type": "Person",
+                            "evidence_text": display_name,
+                        },
+                    ],
                 }
             ],
         },

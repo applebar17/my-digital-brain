@@ -105,12 +105,14 @@ def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:
         reason="The brother endpoint was not resolved.",
         mention_text="mio fratello",
         suggested_entity_type="Person",
-        needed_for_relationship_ref="REL_ACTION_001",
+        needed_for_relationship_ref="CANDIDATE_RELATIONSHIP_001",
         relationship_goal="Store the user's brother relationship.",
         relationship_endpoint_role="to",
         evidence_text="mio fratello",
         entity_planning_guidance="Plan one person endpoint.",
-        relationship_resume_guidance="Resume REL_ACTION_001 after resolution.",
+        relationship_resume_guidance=(
+            "Resume CANDIDATE_RELATIONSHIP_001 after resolution."
+        ),
     )
 
     context = build_missing_entity_planning_context(
@@ -131,7 +133,10 @@ def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:
     assert context.input_context["missing_entity_required"]["missing_ref"] == (
         "MISSING_ENTITY_001"
     )
-    assert "Do not plan unrelated entities" in context.input_context["rules"][2]
+    assert any(
+        "Do not plan unrelated entities" in rule
+        for rule in context.input_context["rules"]
+    )
 
 
 def _context_pack() -> GraphContextPack:

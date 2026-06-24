@@ -102,12 +102,16 @@ def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_re
                 "reason": "The source names Matteo and his alias.",
                 "actions": [
                     {
-                        "action_ref": "ENTITY_ACTION_001",
                         "goal": "Extract Matteo Mercoldi as one person candidate.",
-                        "mention_text": "Matteo Mercoldi",
-                        "suggested_entity_type": "Person",
-                        "aliases": ["Merc"],
-                        "evidence_text": "Merc is Matteo Mercoldi.",
+                        "entities": [
+                            {
+                                "local_ref": "CANDIDATE_PERSON_001",
+                                "mention_text": "Matteo Mercoldi",
+                                "suggested_entity_type": "Person",
+                                "aliases": ["Merc"],
+                                "evidence_text": "Merc is Matteo Mercoldi.",
+                            },
+                        ],
                     },
                 ],
             },
@@ -162,11 +166,15 @@ def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entit
                 "reason": "Lorenzo is a named person endpoint.",
                 "actions": [
                     {
-                        "action_ref": "ENTITY_ACTION_001",
                         "goal": "Extract Lorenzo as a person candidate.",
-                        "mention_text": "Lorenzo",
-                        "suggested_entity_type": "Person",
-                        "evidence_text": "my brother Lorenzo",
+                        "entities": [
+                            {
+                                "local_ref": "CANDIDATE_PERSON_001",
+                                "mention_text": "Lorenzo",
+                                "suggested_entity_type": "Person",
+                                "evidence_text": "my brother Lorenzo",
+                            },
+                        ],
                     },
                 ],
             },
@@ -183,7 +191,7 @@ def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entit
                 "reason": "The resolved entity map provides Lorenzo as a staged ref.",
                 "actions": [
                     {
-                        "action_ref": "REL_ACTION_001",
+                        "local_ref": "CANDIDATE_RELATIONSHIP_001",
                         "goal": "Plan the user-to-Lorenzo brother relationship.",
                         "from_ref": "OWNER",
                         "to_ref": "CANDIDATE_PERSON_001",
@@ -248,12 +256,14 @@ def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_can
                         "reason": "The brother endpoint is required.",
                         "mention_text": "my brother",
                         "suggested_entity_type": "Person",
-                        "needed_for_relationship_ref": "REL_ACTION_001",
+                        "needed_for_relationship_ref": "CANDIDATE_RELATIONSHIP_001",
                         "relationship_goal": "Represent the user's brother relationship.",
                         "relationship_endpoint_role": "to",
                         "evidence_text": "my brother",
                         "entity_planning_guidance": "Plan one person endpoint for the brother.",
-                        "relationship_resume_guidance": "Resume REL_ACTION_001 after resolution.",
+                        "relationship_resume_guidance": (
+                            "Resume CANDIDATE_RELATIONSHIP_001 after resolution."
+                        ),
                     },
                 ],
             },
@@ -261,11 +271,15 @@ def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_can
                 "reason": "The missing brother endpoint must be prepared first.",
                 "actions": [
                     {
-                        "action_ref": "ENTITY_ACTION_MISSING_001",
                         "goal": "Extract the user's brother as a person endpoint.",
-                        "mention_text": "my brother",
-                        "suggested_entity_type": "Person",
-                        "evidence_text": "my brother",
+                        "entities": [
+                            {
+                                "local_ref": "CANDIDATE_PERSON_001",
+                                "mention_text": "my brother",
+                                "suggested_entity_type": "Person",
+                                "evidence_text": "my brother",
+                            },
+                        ],
                     },
                 ],
             },
@@ -282,7 +296,7 @@ def test_reasoning_first_runtime_resolves_missing_entity_before_relationship_can
                 "reason": "The supplemental entity map now has the brother endpoint.",
                 "actions": [
                     {
-                        "action_ref": "REL_ACTION_001",
+                        "local_ref": "CANDIDATE_RELATIONSHIP_001",
                         "goal": "Represent the user's brother relationship.",
                         "from_ref": "OWNER",
                         "to_ref": "CANDIDATE_PERSON_001",
@@ -369,7 +383,7 @@ def test_reasoning_first_runtime_rejects_relationship_actions_with_unknown_endpo
                 "reason": "This plan incorrectly uses a raw endpoint.",
                 "actions": [
                     {
-                        "action_ref": "REL_ACTION_001",
+                        "local_ref": "CANDIDATE_RELATIONSHIP_001",
                         "goal": "Represent a brother relationship.",
                         "from_ref": "OWNER",
                         "to_ref": "Lorenzo",
