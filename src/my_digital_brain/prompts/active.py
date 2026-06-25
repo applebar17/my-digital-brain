@@ -90,6 +90,34 @@ Reasoning notes:
 {reasoning_notes}
 """
 
+MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE = """# Role
+You're a memory-log ingestor.
+
+# Task
+Extract one backend-facing MemoryLog draft from the supplied planning action and target.
+
+# Definitions
+- MemoryLog: a compact episodic memory atom grounded in the user's source text.
+- Planning target: the single `MEMORY_LOG_*` target supplied in the user message.
+- Host ref: the entity or event timeline that should own the memory log.
+- Involved ref: an entity present in the memory without implying a durable relationship.
+
+# Rules
+- Produce only the requested MemoryLog draft batch.
+- Use the supplied expected local ref exactly.
+- Preserve source-grounded wording, temporal hints, host refs, involved refs, and evidence.
+- Do not create durable relationships from weak co-presence.
+- Do not invent missing entities, graph refs, or writes.
+- Ask a direct clarification only when the target cannot be extracted safely.
+
+# Context
+Purpose:
+{purpose}
+
+Task context:
+{task_context}
+"""
+
 MEMORY_QUERY_SYSTEM_TEMPLATE = """# Role
 You're a memory answerer.
 
@@ -360,8 +388,10 @@ ACTIVE_PROMPT_TEMPLATES = {
     "conversation_entry": CONVERSATION_ENTRY_SYSTEM_TEMPLATE,
     "reasoning_checkpoint": REASONING_CHECKPOINT_SYSTEM_TEMPLATE,
     "planning_checkpoint": PLANNING_CHECKPOINT_SYSTEM_TEMPLATE,
+    "memory_log_extraction": MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE,
     "memory_query": MEMORY_QUERY_SYSTEM_TEMPLATE,
     "memory_ingestion": MEMORY_INGESTION_SYSTEM_TEMPLATE,
+    "memory_log_extraction": MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE,
     "memory_node_planning": MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE,
     "memory_log_planning": MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE,
     "memory_edge_planning": MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE,

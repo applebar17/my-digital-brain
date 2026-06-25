@@ -212,6 +212,10 @@ def test_memory_log_extraction_prompt_carries_current_action_not_whole_plan() ->
     )
     assert prompt_context["current_target"]["local_ref"] == "MEMORY_LOG_001"
     assert prompt_context["expected_local_ref"] == "MEMORY_LOG_001"
+    assert "reasoning_notes" not in context.system_prompt_payload()
+    assert "model_user_message" in context.input_context
+    assert "planning_action" in context.input_context["model_user_message"]
+    assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:

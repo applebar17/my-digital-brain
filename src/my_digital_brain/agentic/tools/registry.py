@@ -92,7 +92,10 @@ def _default_definitions() -> list[AgenticToolDefinition]:
     graph_update_states = [AgenticStateId.GRAPH_UPDATE]
     contradiction_states = [AgenticStateId.CONTRADICTION_REVIEW]
     reasoning_states = [AgenticStateId.REASONING_CHECKPOINT]
-    planning_states = [AgenticStateId.PLANNING_CHECKPOINT]
+    planning_states = [
+        AgenticStateId.PLANNING_CHECKPOINT,
+        AgenticStateId.MEMORY_LOG_EXTRACTION,
+    ]
 
     return [
         _definition(
@@ -165,6 +168,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 AgenticStateId.CONTRADICTION_REVIEW,
                 AgenticStateId.REASONING_CHECKPOINT,
                 AgenticStateId.PLANNING_CHECKPOINT,
+                AgenticStateId.MEMORY_LOG_EXTRACTION,
             ],
             properties={
                 "reason": string_property(

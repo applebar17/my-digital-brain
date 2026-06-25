@@ -42,3 +42,33 @@ class AgenticPlanningService:
             ),
             output_schema=output_schema,
         )
+
+
+@dataclass(slots=True)
+class AgenticMemoryLogExtractionService:
+    """Structured agentic entry point for refined MemoryLog extraction."""
+
+    state_runner: AgenticStateRunner
+
+    def extract(
+        self,
+        context: PlanningTransformContext,
+        execution_context: AgenticToolExecutionContext | None = None,
+        *,
+        output_schema: type[BaseModel],
+    ) -> AgenticStateRunResult:
+        execution_context = execution_context or AgenticToolExecutionContext()
+        context = context.model_copy(update={"expected_output_schema": output_schema.__name__})
+        return self.state_runner.run_structured_state(
+            AgenticStateInvocation(
+                state_id=AgenticStateId.MEMORY_LOG_EXTRACTION,
+                context_payload=context,
+                execution_context=execution_context,
+                metadata={
+                    "structured_output": True,
+                    "output_schema": output_schema.__name__,
+                    "purpose_id": context.purpose.purpose_id,
+                },
+            ),
+            output_schema=output_schema,
+        )

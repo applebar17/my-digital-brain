@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from my_digital_brain.agentic import (
+    AgenticMemoryLogExtractionService,
     AgenticRuntime,
     AgenticPlanningService,
     AgenticReasoningService,
@@ -30,6 +31,7 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
+from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 from my_digital_brain.ai.schemas import (
     ChatMessage,
     ChatRequest,
@@ -939,6 +941,66 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     assert "planning_id" not in structured_call.system_prompt
     assert "source_text" not in structured_call.system_prompt
     assert "PlanningTransformResultContext" not in structured_call.system_prompt
+
+
+def test_memory_log_extraction_service_runs_dedicated_state() -> None:
+    provider = ScriptedToolCallingProvider(
+        [],
+        structured_payloads=[
+            {
+                "candidates": [
+                    {
+                        "local_ref": "MEMORY_LOG_001",
+                        "log_text": "Merc came to the barbeque.",
+                        "host_refs": [
+                            {
+                                "target_ref": "CANDIDATE_PERSON_001",
+                                "primary": True,
+                            }
+                        ],
+                        "evidence": [
+                            {"evidence_text": "Merc came to the barbeque."},
+                        ],
+                    }
+                ]
+            }
+        ],
+    )
+    service = AgenticMemoryLogExtractionService(_runner(provider))
+    context = PlanningTransformContext(
+        purpose=PlanningPurposeGuidelines(
+            purpose_id="memory_log_ingestion_extraction",
+            goal="Extract a backend-facing MemoryLog draft from one planned target.",
+        ),
+        input_context={
+            "planning_scope": "memory_log_extraction",
+            "model_user_message": (
+                "Ingest this memory-log planning action.\n\n"
+                "```json\n"
+                '{"expected_local_ref":"MEMORY_LOG_001"}\n'
+                "```"
+            ),
+            "planning_action": {
+                "goal": "Create one log.",
+                "memory_logs": [{"local_ref": "MEMORY_LOG_001"}],
+            },
+            "planned_memory_log": {"local_ref": "MEMORY_LOG_001"},
+            "expected_local_ref": "MEMORY_LOG_001",
+        },
+        timezone="Europe/Rome",
+    )
+
+    result = service.extract(context, output_schema=MemoryLogDraftBatch)
+
+    assert result.status == "ok"
+    assert result.state_id == AgenticStateId.MEMORY_LOG_EXTRACTION.value
+    structured_call = provider.structured_calls[0]
+    assert structured_call.context.purpose == "memory_log_extraction"
+    assert structured_call.output_schema.__name__ == "MemoryLogDraftBatch"
+    assert "memory-log ingestor" in structured_call.system_prompt
+    assert "planning_checkpoint" not in structured_call.system_prompt
+    assert structured_call.messages[-1].role == "user"
+    assert "expected_local_ref" in structured_call.messages[-1].content
 
 
 def test_contradiction_review_question_becomes_clarification_intent() -> None:

@@ -92,6 +92,32 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             max_tool_calls=2,
             model_task="planning_checkpoint",
         ),
+        AgenticStateId.MEMORY_LOG_EXTRACTION: AgenticStateConfig(
+            state_id=AgenticStateId.MEMORY_LOG_EXTRACTION,
+            purpose=(
+                "Extract one backend-facing MemoryLog draft from a planned "
+                "memory-log target without mutating storage."
+            ),
+            prompt_id="memory_log_extraction",
+            required_context_type="PlanningTransformContext",
+            produced_context_type="MemoryLogDraftBatch",
+            allowed_tools=[
+                "get_context_package",
+                "get_entity_detail",
+                "get_neighborhood_view",
+                "get_target_evidence",
+                "request_user_clarification",
+            ],
+            forbidden_tools=[
+                "execute_graph_write_plan",
+                "ingest_memory",
+                "update_memory_graph",
+                "raw_graph_query",
+                "focused_extraction",
+            ],
+            max_tool_calls=2,
+            model_task="memory_log_extraction",
+        ),
         AgenticStateId.MEMORY_QUERY: AgenticStateConfig(
             state_id=AgenticStateId.MEMORY_QUERY,
             purpose="Retrieve memory graph context and produce a grounded answer.",

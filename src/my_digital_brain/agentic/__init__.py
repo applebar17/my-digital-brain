@@ -91,7 +91,10 @@ from my_digital_brain.agentic.planning_contracts import (
     PlanningTransformContext,
     PlanningTransformResultContext,
 )
-from my_digital_brain.agentic.planning import AgenticPlanningService
+from my_digital_brain.agentic.planning import (
+    AgenticMemoryLogExtractionService,
+    AgenticPlanningService,
+)
 from my_digital_brain.agentic.history import (
     AgenticHistoryService,
     HistoryProjectionPolicy,
@@ -139,6 +142,7 @@ __all__ = [
     "AgenticRoute",
     "AgenticRunResult",
     "AgenticHistoryService",
+    "AgenticMemoryLogExtractionService",
     "AgenticPlanningService",
     "AgenticReasoningService",
     "AgenticStateConfig",

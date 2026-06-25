@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from my_digital_brain.agentic import (
+    AgenticMemoryLogExtractionService,
     AgenticPlanningService,
     AgenticReasoningService,
     AgenticToolExecutionContext,
@@ -92,6 +93,7 @@ class IngestionService:
     reasoning_service: AgenticReasoningService
     planning_service: AgenticPlanningService
     graph_context_builder: WholeSourceGraphContextPackBuilder
+    memory_log_extraction_service: AgenticMemoryLogExtractionService | None = None
     entity_extractors: Sequence[FocusedExtractor] = field(default_factory=list)
     relationship_extractors: Sequence[FocusedExtractor] = field(default_factory=list)
     context_renderer: GraphContextPackRendererService = field(
@@ -1524,7 +1526,11 @@ class IngestionService:
                 memory_log_index=memory_log_index,
                 timezone=_timezone(source),
             )
-            result = self.planning_service.plan(
+            extraction_service = (
+                self.memory_log_extraction_service
+                or AgenticMemoryLogExtractionService(self.planning_service.state_runner)
+            )
+            result = extraction_service.extract(
                 context,
                 self._execution_context(source),
                 output_schema=MemoryLogDraftBatch,

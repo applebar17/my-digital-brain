@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Any
 
 from pydantic import BaseModel
@@ -162,6 +163,12 @@ def build_memory_log_extraction_context(
         "planned_memory_log": planned_memory_log.model_dump(mode="json", exclude_none=True),
         "expected_local_ref": planned_memory_log.local_ref,
         "memory_log_index": memory_log_index,
+        "model_user_message": _memory_log_extraction_user_message(
+            planning_action=planning_action,
+            planned_memory_log=planned_memory_log,
+            memory_log_index=memory_log_index,
+            source_text=source_text,
+        ),
         "rules": [
             "Extract exactly one MemoryLog draft for the planned memory-log target.",
             "Use expected_local_ref exactly as the MemoryLog local_ref.",
@@ -179,7 +186,7 @@ def build_memory_log_extraction_context(
             },
         ),
         input_context=payload,
-        reasoning=reasoning,
+        reasoning=None,
         conversation=conversation,
         current_time=current_time,
         timezone=timezone,
@@ -282,7 +289,7 @@ def _planning_context(
     *,
     purpose,
     input_context: dict[str, Any],
-    reasoning: IngestionReasoningCheckpointDraft,
+    reasoning: IngestionReasoningCheckpointDraft | None,
     conversation: ConversationContext | None,
     current_time: datetime | None,
     timezone: str,
@@ -299,6 +306,32 @@ def _planning_context(
     if current_time is not None:
         values["current_time"] = current_time
     return PlanningTransformContext(**values)
+
+
+def _memory_log_extraction_user_message(
+    *,
+    planning_action: MemoryLogIngestionActionDraft,
+    planned_memory_log: PlannedMemoryLogRefDraft,
+    memory_log_index: int,
+    source_text: str,
+) -> str:
+    payload = {
+        "instruction": (
+            "Ingest this memory-log planning action. Return exactly one "
+            "MemoryLog draft using expected_local_ref as local_ref."
+        ),
+        "planning_action": planning_action.model_dump(mode="json", exclude_none=True),
+        "current_target": planned_memory_log.model_dump(mode="json", exclude_none=True),
+        "expected_local_ref": planned_memory_log.local_ref,
+        "target_index": memory_log_index,
+        "source_text": source_text,
+    }
+    return (
+        "Ingest this memory-log planning action.\n\n"
+        "```json\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+        "```"
+    )
 
 
 def _resolved_entity_map_view(resolved_entity_map: ResolvedEntityMap) -> dict[str, Any]:

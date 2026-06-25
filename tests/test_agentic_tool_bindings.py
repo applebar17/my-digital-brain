@@ -219,6 +219,7 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
 
     reasoning = configs[AgenticStateId.REASONING_CHECKPOINT]
     generic_planning = configs[AgenticStateId.PLANNING_CHECKPOINT]
+    memory_log_extraction = configs[AgenticStateId.MEMORY_LOG_EXTRACTION]
     assert reasoning.allowed_tools == [
         "get_context_package",
         "get_entity_detail",
@@ -239,6 +240,10 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
     ]
     assert "ordered process actions" in PromptRegistry().load(
         "planning_checkpoint",
+    ).template
+    assert memory_log_extraction.allowed_tools == generic_planning.allowed_tools
+    assert "memory-log ingestor" in PromptRegistry().load(
+        "memory_log_extraction",
     ).template
 
 

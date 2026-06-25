@@ -441,7 +441,14 @@ class AgenticHistoryService:
         if hasattr(payload, "model_dump"):
             payload = payload.model_dump(mode="json", exclude_none=True)
         if isinstance(payload, dict):
-            for key in ("source_text", "raw_text", "text", "question", "correction_text"):
+            for key in (
+                "model_user_message",
+                "source_text",
+                "raw_text",
+                "text",
+                "question",
+                "correction_text",
+            ):
                 value = payload.get(key)
                 if isinstance(value, str) and value.strip():
                     return value

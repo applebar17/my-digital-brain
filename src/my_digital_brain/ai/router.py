@@ -20,6 +20,7 @@ SMART_MODEL_TASKS = {
     "ingestion_relationship_context_extraction",
     "memory_question_answer",
     "memory_query",
+    "memory_log_extraction",
     "planning_checkpoint",
 }
 REASONING_MODEL_TASKS = {"contradiction_review", "reasoning_checkpoint"}

@@ -219,6 +219,13 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert "get_context_package" in planning.allowed_tools
     assert "request_user_clarification" in planning.allowed_tools
     assert "focused_extraction" in planning.forbidden_tools
+    memory_log_extraction = configs[AgenticStateId.MEMORY_LOG_EXTRACTION]
+    assert memory_log_extraction.prompt_id == "memory_log_extraction"
+    assert memory_log_extraction.model_task == "memory_log_extraction"
+    assert memory_log_extraction.required_context_type == "PlanningTransformContext"
+    assert memory_log_extraction.produced_context_type == "MemoryLogDraftBatch"
+    assert "request_user_clarification" in memory_log_extraction.allowed_tools
+    assert "execute_graph_write_plan" in memory_log_extraction.forbidden_tools
 
 
 def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path: Path) -> None:
@@ -232,6 +239,9 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
     ).template
     assert "ordered process actions" in default_registry.load(
         "planning_checkpoint",
+    ).template
+    assert "memory-log ingestor" in default_registry.load(
+        "memory_log_extraction",
     ).template
     assert "memory reasoner" in default_registry.load("memory_ingestion").template
     assert "memory action executor" in default_registry.load("memory_creation").template

@@ -14,6 +14,7 @@ class AgenticStateId(StrEnum):
     CONVERSATION_ENTRY = "conversation_entry"
     REASONING_CHECKPOINT = "reasoning_checkpoint"
     PLANNING_CHECKPOINT = "planning_checkpoint"
+    MEMORY_LOG_EXTRACTION = "memory_log_extraction"
     CONTRADICTION_REVIEW = "contradiction_review"
     MEMORY_QUERY = "memory_query"
     MEMORY_INGESTION = "memory_ingestion"
