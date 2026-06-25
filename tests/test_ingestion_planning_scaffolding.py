@@ -215,6 +215,7 @@ def test_memory_log_extraction_prompt_keeps_current_action_in_user_message() -> 
     assert "model_user_message" in context.input_context
     assert "planning_action" in context.input_context["model_user_message"]
     assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
+    assert "source_text" not in context.input_context["model_user_message"]
 
 
 def test_memory_log_extraction_batch_prompt_keeps_targets_in_user_message() -> None:
@@ -269,6 +270,7 @@ def test_memory_log_extraction_batch_prompt_keeps_targets_in_user_message() -> N
     assert "expected_local_refs" not in prompt_context
     assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
     assert "MEMORY_LOG_002" in context.input_context["model_user_message"]
+    assert "source_text" not in context.input_context["model_user_message"]
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:

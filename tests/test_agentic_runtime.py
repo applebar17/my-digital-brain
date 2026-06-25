@@ -974,6 +974,7 @@ def test_memory_log_extraction_service_runs_dedicated_state() -> None:
         ),
         input_context={
             "planning_scope": "memory_log_extraction",
+            "source_text": "Merc came to the barbeque.",
             "model_user_message": (
                 "Ingest this memory-log planning action.\n\n"
                 "```json\n"
@@ -999,8 +1000,12 @@ def test_memory_log_extraction_service_runs_dedicated_state() -> None:
     assert structured_call.output_schema.__name__ == "MemoryLogDraftBatch"
     assert "memory-log ingestor" in structured_call.system_prompt
     assert "planning_checkpoint" not in structured_call.system_prompt
+    assert len(structured_call.messages) == 2
+    assert structured_call.messages[0].role == "user"
+    assert structured_call.messages[0].content == "Merc came to the barbeque."
     assert structured_call.messages[-1].role == "user"
     assert "expected_local_ref" in structured_call.messages[-1].content
+    assert "source_text" not in structured_call.messages[-1].content
 
 
 def test_contradiction_review_question_becomes_clarification_intent() -> None:

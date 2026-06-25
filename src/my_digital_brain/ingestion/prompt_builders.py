@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import json
 from typing import Any
 
+from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.ai.schemas import ChatMessage
 from my_digital_brain.ingestion.contracts import (
     ExtractionTask,
@@ -65,27 +66,25 @@ class IngestionPromptBuilder:
         "planning target, allowed refs, graph context, ontology, and expected output."
     )
 
+    def __init__(self, history_service: AgenticHistoryService | None = None) -> None:
+        self.history_service = history_service or AgenticHistoryService()
+
     def extraction_messages(
         self,
         source: SourceRecordRef,
         task: ExtractionTask,
         context: IngestionContextPackage,
     ) -> list[ChatMessage]:
-        messages: list[ChatMessage] = []
-        messages.extend(self.history_messages(source))
-        messages.append(
-            ChatMessage(
-                role="user",
-                content=(
-                    "Ingest this planning target/action. Use the supplied refs exactly; "
-                    "do not invent replacement refs.\n\n"
-                    "```json\n"
-                    f"{json.dumps(self.extraction_input(source, task, context), ensure_ascii=False, indent=2)}\n"
-                    "```"
-                ),
+        return self.history_service.ingestion_messages_for_source(
+            source,
+            appended_user_message=(
+                "Ingest this planning target/action. Use the supplied refs exactly; "
+                "do not invent replacement refs.\n\n"
+                "```json\n"
+                f"{json.dumps(self.extraction_input(source, task, context), ensure_ascii=False, indent=2)}\n"
+                "```"
             ),
         )
-        return messages
 
     def extraction_input(
         self,
@@ -94,7 +93,6 @@ class IngestionPromptBuilder:
         context: IngestionContextPackage,
     ) -> dict[str, Any]:
         return {
-            "source": self.source_payload(source),
             "task": self.task_payload(task),
             "compact_graph_context": self.context_payload(context),
             "ontology": ontology_prompt_payload(),
@@ -106,22 +104,17 @@ class IngestionPromptBuilder:
         tasks: list[ExtractionTask],
         context: IngestionContextPackage,
     ) -> list[ChatMessage]:
-        messages: list[ChatMessage] = []
-        messages.extend(self.history_messages(source))
-        messages.append(
-            ChatMessage(
-                role="user",
-                content=(
-                    "Ingest these planning targets/actions as one draft batch. "
-                    "Use each supplied task.target_ref exactly for its matching "
-                    "candidate local_ref; do not invent replacement refs.\n\n"
-                    "```json\n"
-                    f"{json.dumps(self.extraction_batch_input(source, tasks, context), ensure_ascii=False, indent=2)}\n"
-                    "```"
-                ),
+        return self.history_service.ingestion_messages_for_source(
+            source,
+            appended_user_message=(
+                "Ingest these planning targets/actions as one draft batch. "
+                "Use each supplied task.target_ref exactly for its matching "
+                "candidate local_ref; do not invent replacement refs.\n\n"
+                "```json\n"
+                f"{json.dumps(self.extraction_batch_input(source, tasks, context), ensure_ascii=False, indent=2)}\n"
+                "```"
             ),
         )
-        return messages
 
     def extraction_batch_input(
         self,
@@ -130,7 +123,6 @@ class IngestionPromptBuilder:
         context: IngestionContextPackage,
     ) -> dict[str, Any]:
         return {
-            "source": self.source_payload(source),
             "tasks": [self.task_payload(task) for task in tasks],
             "allowed_local_refs": [
                 task.target_ref for task in tasks if task.target_ref
@@ -138,40 +130,6 @@ class IngestionPromptBuilder:
             "compact_graph_context": self.context_payload(context),
             "ontology": ontology_prompt_payload(),
         }
-
-    def history_messages(self, source: SourceRecordRef) -> list[ChatMessage]:
-        messages: list[ChatMessage] = []
-        raw_history = source.metadata.get("model_facing_history")
-        if isinstance(raw_history, list):
-            for item in raw_history:
-                if not isinstance(item, dict):
-                    continue
-                role = str(item.get("role") or "").strip()
-                content = item.get("content")
-                if role in {"user", "assistant", "developer", "tool"} and content:
-                    messages.append(ChatMessage(role=role, content=str(content)))
-        clarifications = source.metadata.get("uat_terminal_clarifications")
-        if isinstance(clarifications, list):
-            for item in clarifications:
-                if not isinstance(item, dict):
-                    continue
-                question = str(item.get("question") or "").strip()
-                answer = str(item.get("answer") or "").strip()
-                if question:
-                    messages.append(
-                        ChatMessage(
-                            role="assistant",
-                            content=f"Clarification requested: {question}",
-                        ),
-                    )
-                if answer:
-                    messages.append(
-                        ChatMessage(
-                            role="user",
-                            content=f"Clarification answer: {answer}",
-                        ),
-                    )
-        return messages
 
     def source_payload(self, source: SourceRecordRef) -> dict[str, Any]:
         payload = source.model_dump(mode="json", exclude_none=True)

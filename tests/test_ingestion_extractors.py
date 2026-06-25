@@ -67,7 +67,8 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
         source_refs=["source-1"],
     )
 
-    candidates = extractor.extract(_source(), task, IngestionContextPackage(source_id="source-1"))
+    source = _source()
+    candidates = extractor.extract(source, task, IngestionContextPackage(source_id="source-1"))
 
     assert extractor.supports(task) is True
     assert isinstance(candidates[0], CandidateEntity)
@@ -84,11 +85,14 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     assert provider.requests[0].output_schema is CandidateEntityDraftBatch
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
     assert provider.requests[0].input_message is None
-    assert provider.requests[0].messages
+    assert len(provider.requests[0].messages) == 2
+    assert provider.requests[0].messages[0].role == "user"
+    assert provider.requests[0].messages[0].content == source.raw_text
     assert provider.requests[0].messages[-1].role == "user"
     assert "Ingest this planning target/action" in (
         provider.requests[0].messages[-1].content or ""
     )
+    assert "raw_text" not in (provider.requests[0].messages[-1].content or "")
 
 
 def test_focused_entity_extractor_batches_planned_targets() -> None:
@@ -137,10 +141,12 @@ def test_focused_entity_extractor_batches_planned_targets() -> None:
     ]
     assert candidates[0].metadata["model_output_local_ref"] == "MODEL_PERSON_001"
     assert provider.requests[0].context.metadata["batch_size"] == 2
+    assert provider.requests[0].messages[0].content == _source().raw_text
     final_message = provider.requests[0].messages[-1].content or ""
     assert "Ingest these planning targets/actions" in final_message
     assert "CANDIDATE_PERSON_001" in final_message
     assert "CANDIDATE_PERSON_002" in final_message
+    assert "raw_text" not in final_message
 
 
 def test_focused_extractors_reject_freeform_labels_and_relationship_types() -> None:
@@ -200,7 +206,7 @@ def test_focused_relationship_extractor_preserves_social_kind_and_detail() -> No
     assert provider.requests[0].context.purpose == INGESTION_RELATIONSHIP_EXTRACTION_TASK
 
 
-def test_prompt_builder_excludes_noisy_source_metadata() -> None:
+def test_prompt_builder_excludes_source_text_from_ingestion_payload() -> None:
     source = _source(metadata={"debug": "noisy", "provider_payload": {"nested": True}})
 
     payload = IngestionPromptBuilder().extraction_input(
@@ -209,8 +215,58 @@ def test_prompt_builder_excludes_noisy_source_metadata() -> None:
         IngestionContextPackage(source_id="source-1"),
     )
 
-    assert "metadata" not in payload["source"]
-    assert payload["source"]["raw_text"] == source.raw_text
+    assert "source" not in payload
+    assert "raw_text" not in str(payload)
+
+
+def test_focused_extractor_keeps_clarifications_before_ingestion_instruction() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "candidates": [
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                    },
+                ],
+            },
+        ],
+    )
+    source = _source(
+        metadata={
+            "uat_terminal_clarifications": [
+                {"question": "Which Marco?", "answer": "Marco from Milan."}
+            ],
+        },
+    )
+
+    EntityExtractor(provider).extract(
+        source,
+        ExtractionTask(
+            task_type=ExtractionTaskType.PERSON,
+            target_ref="CANDIDATE_PERSON_001",
+            source_refs=["source-1"],
+        ),
+        IngestionContextPackage(source_id="source-1"),
+    )
+
+    assert [message.role for message in provider.requests[0].messages] == [
+        "user",
+        "assistant",
+        "user",
+        "user",
+    ]
+    assert provider.requests[0].messages[0].content == source.raw_text
+    assert "Clarification requested: Which Marco?" == (
+        provider.requests[0].messages[1].content
+    )
+    assert provider.requests[0].messages[2].content == (
+        "Clarification answer: Marco from Milan."
+    )
+    assert "Ingest this planning target/action" in (
+        provider.requests[0].messages[3].content or ""
+    )
 
 
 class QueuedStructuredProvider:

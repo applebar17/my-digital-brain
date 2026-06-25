@@ -34,6 +34,7 @@ PROMPT_CONTEXT_EXCLUDED_KEYS = {
     "conversation",
     "current_message",
     "history",
+    "model_user_message",
     "raw_text",
     "source_text",
 }
@@ -214,13 +215,42 @@ class AgenticHistoryService:
         """Render role-preserved conversation messages for a model call."""
 
         state = AgenticStateId(state_id)
+        transient_messages = self.transient_user_messages_from_payload(payload)
         conversation = self._conversation_for_messages(state, payload)
         if conversation is not None:
-            return self._chat_messages_from_conversation(conversation)
+            return [
+                *self._chat_messages_from_conversation(conversation),
+                *transient_messages,
+            ]
         source_text = self._source_text_from_payload(payload) or current_text
+        messages: list[ChatMessage] = []
         if source_text and source_text.strip():
-            return [ChatMessage(role="user", content=source_text.strip())]
-        return []
+            messages.append(ChatMessage(role="user", content=source_text.strip()))
+        messages.extend(transient_messages)
+        return messages
+
+    def ingestion_messages_for_source(
+        self,
+        source: Any,
+        *,
+        appended_user_message: str | None = None,
+    ) -> list[ChatMessage]:
+        """Render source-backed ingestion messages plus a transient user message."""
+
+        messages = self._messages_from_source_metadata(source)
+        if not self._source_has_model_facing_user_history(source):
+            source_text = self._source_text_from_source(source)
+            if source_text:
+                messages.insert(0, ChatMessage(role="user", content=source_text))
+        if appended_user_message and appended_user_message.strip():
+            messages.append(ChatMessage(role="user", content=appended_user_message.strip()))
+        return messages
+
+    def transient_user_messages_from_payload(self, payload: Any) -> list[ChatMessage]:
+        message = self._transient_user_message_from_payload(payload)
+        if message is None:
+            return []
+        return [ChatMessage(role="user", content=message)]
 
     def tool_result_contexts_from_events(
         self,
@@ -442,7 +472,6 @@ class AgenticHistoryService:
             payload = payload.model_dump(mode="json", exclude_none=True)
         if isinstance(payload, dict):
             for key in (
-                "model_user_message",
                 "source_text",
                 "raw_text",
                 "text",
@@ -461,6 +490,82 @@ class AgenticHistoryService:
                 found = self._source_text_from_payload(item)
                 if found:
                     return found
+        return None
+
+    def _transient_user_message_from_payload(self, payload: Any) -> str | None:
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(mode="json", exclude_none=True)
+        if isinstance(payload, dict):
+            value = payload.get("model_user_message")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            for item in payload.values():
+                found = self._transient_user_message_from_payload(item)
+                if found:
+                    return found
+        if isinstance(payload, list):
+            for item in payload:
+                found = self._transient_user_message_from_payload(item)
+                if found:
+                    return found
+        return None
+
+    def _messages_from_source_metadata(self, source: Any) -> list[ChatMessage]:
+        metadata = getattr(source, "metadata", None)
+        if not isinstance(metadata, dict):
+            metadata = {}
+        messages: list[ChatMessage] = []
+        raw_history = metadata.get("model_facing_history")
+        if isinstance(raw_history, list):
+            for item in raw_history:
+                if not isinstance(item, dict):
+                    continue
+                role = str(item.get("role") or "").strip()
+                content = item.get("content")
+                if role in {"user", "assistant", "developer", "tool"} and content:
+                    messages.append(ChatMessage(role=role, content=str(content)))
+        clarifications = metadata.get("uat_terminal_clarifications")
+        if isinstance(clarifications, list):
+            for item in clarifications:
+                if not isinstance(item, dict):
+                    continue
+                question = str(item.get("question") or "").strip()
+                answer = str(item.get("answer") or "").strip()
+                if question:
+                    messages.append(
+                        ChatMessage(
+                            role="assistant",
+                            content=f"Clarification requested: {question}",
+                        ),
+                    )
+                if answer:
+                    messages.append(
+                        ChatMessage(
+                            role="user",
+                            content=f"Clarification answer: {answer}",
+                        ),
+                    )
+        return messages
+
+    def _source_has_model_facing_user_history(self, source: Any) -> bool:
+        metadata = getattr(source, "metadata", None)
+        if not isinstance(metadata, dict):
+            return False
+        raw_history = metadata.get("model_facing_history")
+        if not isinstance(raw_history, list):
+            return False
+        return any(
+            isinstance(item, dict)
+            and str(item.get("role") or "").strip() == "user"
+            and bool(item.get("content"))
+            for item in raw_history
+        )
+
+    def _source_text_from_source(self, source: Any) -> str | None:
+        for key in ("raw_text", "content_ref"):
+            value = getattr(source, key, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
         return None
 
     def _compact_tool_data(self, data: dict[str, Any]) -> dict[str, Any]:

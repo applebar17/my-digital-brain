@@ -167,7 +167,6 @@ def build_memory_log_extraction_context(
             planning_action=planning_action,
             planned_memory_log=planned_memory_log,
             memory_log_index=memory_log_index,
-            source_text=source_text,
         ),
         "rules": [
             "Extract exactly one MemoryLog draft for the planned memory-log target.",
@@ -226,7 +225,6 @@ def build_memory_log_extraction_batch_context(
         ],
         "model_user_message": _memory_log_extraction_batch_user_message(
             current_targets=current_targets,
-            source_text=source_text,
         ),
         "rules": [
             "Extract exactly one MemoryLog draft for each planned memory-log target.",
@@ -372,7 +370,6 @@ def _memory_log_extraction_user_message(
     planning_action: MemoryLogIngestionActionDraft,
     planned_memory_log: PlannedMemoryLogRefDraft,
     memory_log_index: int,
-    source_text: str,
 ) -> str:
     payload = {
         "instruction": (
@@ -383,7 +380,6 @@ def _memory_log_extraction_user_message(
         "current_target": planned_memory_log.model_dump(mode="json", exclude_none=True),
         "expected_local_ref": planned_memory_log.local_ref,
         "target_index": memory_log_index,
-        "source_text": source_text,
     }
     return (
         "Ingest this memory-log planning action.\n\n"
@@ -396,7 +392,6 @@ def _memory_log_extraction_user_message(
 def _memory_log_extraction_batch_user_message(
     *,
     current_targets: list[dict[str, Any]],
-    source_text: str,
 ) -> str:
     payload = {
         "instruction": (
@@ -407,7 +402,6 @@ def _memory_log_extraction_batch_user_message(
         "expected_local_refs": [
             target["expected_local_ref"] for target in current_targets
         ],
-        "source_text": source_text,
     }
     return (
         "Ingest these memory-log planning targets.\n\n"

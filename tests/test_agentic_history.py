@@ -10,6 +10,8 @@ from my_digital_brain.agentic import (
     ConversationContext,
     HistoryProjectionPolicy,
     NeutralConversationMessage,
+    PlanningPurposeGuidelines,
+    PlanningTransformContext,
 )
 from my_digital_brain.agentic.contexts import PlanningContext, SourceContext
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult
@@ -118,6 +120,58 @@ def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> N
     assert "history" not in prompt_context
     assert "current_message" not in prompt_context
     assert "channel_metadata" not in prompt_context
+
+
+def test_history_service_appends_model_user_message_after_source_text() -> None:
+    service = AgenticHistoryService()
+    context = PlanningTransformContext(
+        purpose=PlanningPurposeGuidelines(goal="Extract a memory log."),
+        input_context={
+            "source_text": "Merc came to the barbeque.",
+            "model_user_message": "Ingest MEMORY_LOG_001.",
+        },
+    )
+
+    messages = service.model_messages_for_state(
+        AgenticStateId.MEMORY_LOG_EXTRACTION,
+        context,
+    )
+    prompt_context = service.model_prompt_context_for_state(
+        AgenticStateId.MEMORY_LOG_EXTRACTION,
+        context,
+    )
+
+    assert [message.role for message in messages] == ["user", "user"]
+    assert messages[0].content == "Merc came to the barbeque."
+    assert messages[1].content == "Ingest MEMORY_LOG_001."
+    assert "source_text" not in str(prompt_context)
+    assert "model_user_message" not in str(prompt_context)
+
+
+def test_history_service_appends_transient_message_without_mutating_conversation() -> None:
+    service = AgenticHistoryService()
+    conversation = ConversationContext(
+        current_message=NeutralConversationMessage.user("Original user message."),
+        history=[NeutralConversationMessage.assistant("Previous answer.")],
+    )
+    context = PlanningTransformContext(
+        purpose=PlanningPurposeGuidelines(goal="Extract a memory log."),
+        input_context={"model_user_message": "Ingest MEMORY_LOG_001."},
+        conversation=conversation,
+    )
+
+    messages = service.model_messages_for_state(
+        AgenticStateId.MEMORY_LOG_EXTRACTION,
+        context,
+    )
+
+    assert [message.content for message in messages] == [
+        "Previous answer.",
+        "Original user message.",
+        "Ingest MEMORY_LOG_001.",
+    ]
+    assert conversation.current_message.content == "Original user message."
+    assert [message.content for message in conversation.history] == ["Previous answer."]
 
 
 def test_history_service_compacts_tool_events_for_planning_checkpoint_context() -> None:
