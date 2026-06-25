@@ -242,6 +242,8 @@ def _prompt_task_context(
             "timezone": timezone,
         },
     }
+    if input_context.get("planning_scope") == "memory_log_extraction":
+        return _compact_prompt_payload(packet)
     current_action = input_context.get("planning_action")
     if current_action not in (None, "", [], {}):
         packet["current_action"] = _prompt_current_action(current_action)

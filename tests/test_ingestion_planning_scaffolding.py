@@ -163,7 +163,7 @@ def test_memory_log_planning_context_carries_resolved_entity_packet() -> None:
     )
 
 
-def test_memory_log_extraction_prompt_carries_current_action_not_whole_plan() -> None:
+def test_memory_log_extraction_prompt_keeps_current_action_in_user_message() -> None:
     renderer = GraphContextPackRendererService()
     resolved_map = _resolved_entity_map()
     entity_packet = build_resolved_entity_packet(
@@ -208,18 +208,16 @@ def test_memory_log_extraction_prompt_carries_current_action_not_whole_plan() ->
     assert "memory_log_plan" not in prompt_context
     assert "planning_action" not in prompt_context
     assert "planned_memory_log" not in prompt_context
-    assert prompt_context["current_action"]["goal"] == (
-        "Create one memory log for Merc at the barbeque."
-    )
-    assert prompt_context["current_target"]["local_ref"] == "MEMORY_LOG_001"
-    assert prompt_context["expected_local_ref"] == "MEMORY_LOG_001"
+    assert "current_action" not in prompt_context
+    assert "current_target" not in prompt_context
+    assert "expected_local_ref" not in prompt_context
     assert "reasoning_notes" not in context.system_prompt_payload()
     assert "model_user_message" in context.input_context
     assert "planning_action" in context.input_context["model_user_message"]
     assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
 
 
-def test_memory_log_extraction_batch_prompt_carries_current_targets() -> None:
+def test_memory_log_extraction_batch_prompt_keeps_targets_in_user_message() -> None:
     renderer = GraphContextPackRendererService()
     resolved_map = _resolved_entity_map()
     entity_packet = build_resolved_entity_packet(
@@ -267,14 +265,8 @@ def test_memory_log_extraction_batch_prompt_carries_current_targets() -> None:
     prompt_context = context.system_prompt_payload()["task_context"]
     assert "memory_log_plan" not in prompt_context
     assert "reasoning_notes" not in context.system_prompt_payload()
-    assert [target["expected_local_ref"] for target in prompt_context["current_targets"]] == [
-        "MEMORY_LOG_001",
-        "MEMORY_LOG_002",
-    ]
-    assert prompt_context["expected_local_refs"] == [
-        "MEMORY_LOG_001",
-        "MEMORY_LOG_002",
-    ]
+    assert "current_targets" not in prompt_context
+    assert "expected_local_refs" not in prompt_context
     assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
     assert "MEMORY_LOG_002" in context.input_context["model_user_message"]
 
