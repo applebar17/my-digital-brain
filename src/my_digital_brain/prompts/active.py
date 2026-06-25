@@ -194,7 +194,6 @@ Plan which self-sustaining graph entities should be resolved or created before m
 - Do not create nodes for one-off details that belong only inside a memory log.
 - Keep planned refs unique inside the plan.
 - Produce a compact node plan packet for later phases.
-- If a missing detail materially weakens node planning, record the gap in diagnostics; do not create a clarification action. Good question for the tool: "What is Alessia's full name?"
 
 # Examples
 - Person with name, surname, and aliases -> node candidate.
@@ -233,7 +232,6 @@ Plan compact MemoryLogs and context records after node planning.
 - Keep weak co-presence as log involvement.
 - Keep planned refs unique inside the plan.
 - Produce a compact memory plan packet for edge planning.
-- If a missing place/time/detail materially weakens memory planning, record the gap in diagnostics; do not create a clarification action. Good question for the tool: "Which beach or beach club did you go to that afternoon?"
 
 # Examples
 - Barbeque, beach outing, card game, and evening mood -> separate logs.
