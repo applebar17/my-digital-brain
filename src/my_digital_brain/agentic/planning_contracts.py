@@ -251,9 +251,15 @@ def _prompt_task_context(
     )
     if current_target not in (None, "", [], {}):
         packet["current_target"] = current_target
+    current_targets = input_context.get("current_targets")
+    if current_targets not in (None, "", [], {}):
+        packet["current_targets"] = current_targets
     expected_local_ref = input_context.get("expected_local_ref")
     if expected_local_ref not in (None, "", [], {}):
         packet["expected_local_ref"] = expected_local_ref
+    expected_local_refs = input_context.get("expected_local_refs")
+    if expected_local_refs not in (None, "", [], {}):
+        packet["expected_local_refs"] = expected_local_refs
     memory_log_index = input_context.get("memory_log_index")
     if memory_log_index not in (None, "", [], {}):
         packet["target_index"] = memory_log_index

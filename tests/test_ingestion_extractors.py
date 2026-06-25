@@ -91,6 +91,58 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     )
 
 
+def test_focused_entity_extractor_batches_planned_targets() -> None:
+    provider = QueuedStructuredProvider(
+        [
+            {
+                "candidates": [
+                    {
+                        "local_ref": "MODEL_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Marco",
+                    },
+                    {
+                        "local_ref": "CANDIDATE_PERSON_002",
+                        "entity_type": "Person",
+                        "display_name": "Luca",
+                    },
+                ],
+            },
+        ],
+    )
+    extractor = EntityExtractor(provider)
+    tasks = [
+        ExtractionTask(
+            task_type=ExtractionTaskType.PERSON,
+            target_ref="CANDIDATE_PERSON_001",
+            source_refs=["source-1"],
+        ),
+        ExtractionTask(
+            task_type=ExtractionTaskType.PERSON,
+            target_ref="CANDIDATE_PERSON_002",
+            source_refs=["source-1"],
+        ),
+    ]
+
+    candidates = extractor.extract_batch(
+        _source(),
+        tasks,
+        IngestionContextPackage(source_id="source-1"),
+    )
+
+    assert len(provider.requests) == 1
+    assert [candidate.local_ref for candidate in candidates] == [
+        "CANDIDATE_PERSON_001",
+        "CANDIDATE_PERSON_002",
+    ]
+    assert candidates[0].metadata["model_output_local_ref"] == "MODEL_PERSON_001"
+    assert provider.requests[0].context.metadata["batch_size"] == 2
+    final_message = provider.requests[0].messages[-1].content or ""
+    assert "Ingest these planning targets/actions" in final_message
+    assert "CANDIDATE_PERSON_001" in final_message
+    assert "CANDIDATE_PERSON_002" in final_message
+
+
 def test_focused_extractors_reject_freeform_labels_and_relationship_types() -> None:
     with pytest.raises(ValidationError, match="GameEvent"):
         CandidateEntityDraftBatch.model_validate(

@@ -77,12 +77,64 @@ def enrich_candidate_batch(
     raise TypeError(f"Unsupported candidate draft batch: {type(draft_batch).__name__}")
 
 
+def enrich_candidate_batch_with_tasks(
+    draft_batch: Any,
+    source: SourceRecordRef,
+    tasks: Sequence[ExtractionTask],
+) -> list[CandidateOutput]:
+    candidates = _draft_candidates(draft_batch)
+    task_matches = _match_tasks_for_drafts(candidates, tasks)
+    if isinstance(draft_batch, CandidateEntityDraftBatch):
+        return [
+            _enrich_entity(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    if isinstance(draft_batch, CandidateRelationshipDraftBatch):
+        return [
+            _enrich_relationship(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    if isinstance(draft_batch, CandidateClaimDraftBatch):
+        return [
+            _enrich_claim(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    if isinstance(draft_batch, CandidatePerceptionDraftBatch):
+        return [
+            _enrich_perception(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    if isinstance(draft_batch, CandidateRelationshipContextDraftBatch):
+        return [
+            _enrich_relationship_context(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    if isinstance(draft_batch, CandidateMetadataPatchDraftBatch):
+        return [
+            _enrich_metadata_patch(candidate, source, task)
+            for candidate, task in zip(candidates, task_matches, strict=False)
+        ]
+    raise TypeError(f"Unsupported candidate draft batch: {type(draft_batch).__name__}")
+
+
 def enrich_memory_log_batch(
     draft_batch: MemoryLogDraftBatch,
     source: SourceRecordRef,
     task: ExtractionTask,
 ) -> list[MemoryLog]:
     return [_enrich_memory_log(candidate, source, task) for candidate in draft_batch.candidates]
+
+
+def enrich_memory_log_batch_with_tasks(
+    draft_batch: MemoryLogDraftBatch,
+    source: SourceRecordRef,
+    tasks: Sequence[ExtractionTask],
+) -> list[MemoryLog]:
+    task_matches = _match_tasks_for_drafts(draft_batch.candidates, tasks)
+    return [
+        _enrich_memory_log(candidate, source, task)
+        for candidate, task in zip(draft_batch.candidates, task_matches, strict=False)
+    ]
 
 
 def property_suggestions_to_dict(
@@ -311,6 +363,40 @@ def _base_candidate_payload(
         "requires_confirmation": draft.requires_confirmation,
         "metadata": metadata,
     }
+
+
+def _draft_candidates(draft_batch: Any) -> list[CandidateBaseDraft]:
+    candidates = getattr(draft_batch, "candidates", None)
+    if not isinstance(candidates, list):
+        raise TypeError(f"Unsupported candidate draft batch: {type(draft_batch).__name__}")
+    return candidates
+
+
+def _match_tasks_for_drafts(
+    drafts: Sequence[Any],
+    tasks: Sequence[ExtractionTask],
+) -> list[ExtractionTask]:
+    if not tasks:
+        raise ValueError("Cannot enrich draft batch without extraction tasks.")
+    unused = list(tasks)
+    matches: list[ExtractionTask] = []
+    for draft in drafts:
+        draft_ref = getattr(draft, "local_ref", None)
+        matched_index = next(
+            (
+                index
+                for index, task in enumerate(unused)
+                if task.target_ref and task.target_ref == draft_ref
+            ),
+            None,
+        )
+        if matched_index is None:
+            matched_index = 0 if unused else None
+        if matched_index is None:
+            matches.append(tasks[-1])
+        else:
+            matches.append(unused.pop(matched_index))
+    return matches
 
 
 def _primary_host_ref(draft: MemoryLogDraft) -> str | None:

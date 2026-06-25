@@ -194,6 +194,65 @@ def build_memory_log_extraction_context(
     )
 
 
+def build_memory_log_extraction_batch_context(
+    *,
+    source_text: str,
+    graph_context_view: GraphContextPackView,
+    resolved_entity_map: ResolvedEntityMap,
+    entity_packet: list[dict[str, Any]],
+    planned_items: list[tuple[MemoryLogIngestionActionDraft, PlannedMemoryLogRefDraft, int]],
+    conversation: ConversationContext | None = None,
+    current_time: datetime | None = None,
+    timezone: str = "UTC",
+) -> PlanningTransformContext:
+    current_targets = [
+        {
+            "action_goal": action.goal,
+            "target_index": memory_log_index,
+            "expected_local_ref": planned_memory_log.local_ref,
+            "target": planned_memory_log.model_dump(mode="json", exclude_none=True),
+        }
+        for action, planned_memory_log, memory_log_index in planned_items
+    ]
+    payload: dict[str, Any] = {
+        "planning_scope": "memory_log_extraction",
+        "source_text": source_text,
+        "graph_context_view": _dump(graph_context_view),
+        "resolved_entity_map_view": _resolved_entity_map_view(resolved_entity_map),
+        "entity_packet": entity_packet,
+        "current_targets": current_targets,
+        "expected_local_refs": [
+            target["expected_local_ref"] for target in current_targets
+        ],
+        "model_user_message": _memory_log_extraction_batch_user_message(
+            current_targets=current_targets,
+            source_text=source_text,
+        ),
+        "rules": [
+            "Extract exactly one MemoryLog draft for each planned memory-log target.",
+            "Use each expected_local_ref exactly as its MemoryLog local_ref.",
+            "Use host_refs and involved_refs from each planning target unless source context disproves them.",
+            "Preserve provenance, evidence, original user wording, and temporal hints.",
+            "Do not create relationship candidates or graph writes in this step.",
+        ],
+    }
+    return _planning_context(
+        purpose=memory_log_ingestion_planning_guidelines().model_copy(
+            update={
+                "purpose_id": "memory_log_ingestion_extraction",
+                "goal": "Extract backend-facing MemoryLog drafts from planned memory-log targets.",
+                "output_usage": MemoryLogDraftBatch.__name__,
+            },
+        ),
+        input_context=payload,
+        reasoning=None,
+        conversation=conversation,
+        current_time=current_time,
+        timezone=timezone,
+        expected_output_schema=MemoryLogDraftBatch.__name__,
+    )
+
+
 def build_missing_entity_planning_context(
     *,
     source_text: str,
@@ -328,6 +387,30 @@ def _memory_log_extraction_user_message(
     }
     return (
         "Ingest this memory-log planning action.\n\n"
+        "```json\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+        "```"
+    )
+
+
+def _memory_log_extraction_batch_user_message(
+    *,
+    current_targets: list[dict[str, Any]],
+    source_text: str,
+) -> str:
+    payload = {
+        "instruction": (
+            "Ingest these memory-log planning targets. Return exactly one "
+            "MemoryLog draft per target using each expected_local_ref as local_ref."
+        ),
+        "targets": current_targets,
+        "expected_local_refs": [
+            target["expected_local_ref"] for target in current_targets
+        ],
+        "source_text": source_text,
+    }
+    return (
+        "Ingest these memory-log planning targets.\n\n"
         "```json\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "```"

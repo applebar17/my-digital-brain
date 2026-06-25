@@ -29,6 +29,15 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import IngestionStatus, SourceChannel, SourceType
 from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
+from my_digital_brain.ingestion.runtime_service import _batch_sequence
+
+
+def test_extraction_draft_batches_fold_trailing_singleton() -> None:
+    batches = _batch_sequence(list(range(19)), 3)
+
+    assert [len(batch) for batch in batches] == [3, 3, 3, 3, 3, 4]
+    assert [item for batch in batches for item in batch] == list(range(19))
+    assert [len(batch) for batch in _batch_sequence(list(range(21)), 99)] == [10, 10, 1]
 
 
 def test_whole_source_graph_context_pack_builder_compacts_hybrid_search_result() -> None:

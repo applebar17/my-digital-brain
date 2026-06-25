@@ -57,7 +57,7 @@ from my_digital_brain.ingestion.ontology import (
 )
 from my_digital_brain.ingestion.planning_contexts import (
     build_entity_planning_context,
-    build_memory_log_extraction_context,
+    build_memory_log_extraction_batch_context,
     build_memory_log_packet,
     build_memory_log_planning_context,
     build_missing_entity_planning_context,
@@ -80,10 +80,12 @@ from my_digital_brain.ingestion.refined_resolution import (
     DeterministicResolvedEntityMapBuilder,
 )
 from my_digital_brain.ingestion.validation import IngestionValidator
-from my_digital_brain.ingestion.enrichment import enrich_memory_log_batch
+from my_digital_brain.ingestion.enrichment import enrich_memory_log_batch_with_tasks
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
 logger = logging.getLogger(__name__)
+DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE = 3
+MAX_EXTRACTION_DRAFT_BATCH_SIZE = 10
 
 
 @dataclass(slots=True)
@@ -113,6 +115,7 @@ class IngestionService:
     execute_write_plan: bool = False
     process_store: IngestionProcessStore | None = None
     execution_context_factory: ExecutionContextFactory | None = None
+    extraction_draft_batch_size: int = DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE
 
     @traceable(name="Ingestion Process Source", run_type="chain")
     def process_source(self, source: SourceRecordRef) -> IngestionResult:
@@ -1501,6 +1504,9 @@ class IngestionService:
                     memory_log_index,
                 )
 
+        pending: list[
+            tuple[int, ExtractionTask, Any, Any, int]
+        ] = []
         for index, task in enumerate(extraction_plan.tasks):
             planned = action_by_ref.get(task.target_ref or "")
             if planned is None:
@@ -1514,21 +1520,29 @@ class IngestionService:
                 )
                 continue
             _, action, planned_memory_log, memory_log_index = planned
-            context = build_memory_log_extraction_context(
+            pending.append((index, task, action, planned_memory_log, memory_log_index))
+
+        extraction_service = (
+            self.memory_log_extraction_service
+            or AgenticMemoryLogExtractionService(self.planning_service.state_runner)
+        )
+        for batch in _batch_sequence(
+            pending,
+            self.extraction_draft_batch_size,
+        ):
+            first_index = batch[0][0]
+            tasks = [item[1] for item in batch]
+            planned_items = [
+                (item[2], item[3], item[4])
+                for item in batch
+            ]
+            context = build_memory_log_extraction_batch_context(
                 source_text=source.raw_text or source.content_ref or "",
                 graph_context_view=graph_context_view,
-                reasoning=reasoning,
                 resolved_entity_map=resolved_entity_map,
                 entity_packet=entity_packet,
-                memory_log_plan=memory_log_plan,
-                planning_action=action,
-                planned_memory_log=planned_memory_log,
-                memory_log_index=memory_log_index,
+                planned_items=planned_items,
                 timezone=_timezone(source),
-            )
-            extraction_service = (
-                self.memory_log_extraction_service
-                or AgenticMemoryLogExtractionService(self.planning_service.state_runner)
             )
             result = extraction_service.extract(
                 context,
@@ -1541,24 +1555,31 @@ class IngestionService:
             if result.status != "ok" or result.structured_output is None:
                 issues.append(
                     ValidationIssue(
-                        field_path=f"memory_log_extraction_plan.tasks[{index}]",
+                        field_path=f"memory_log_extraction_plan.tasks[{first_index}]",
                         message=result.assistant_text or "Memory-log extraction failed.",
                         code="memory_log_extraction_failed",
-                        details={"task_id": task.task_id, "target_ref": task.target_ref},
+                        details={
+                            "task_ids": [task.task_id for task in tasks],
+                            "target_refs": [task.target_ref for task in tasks],
+                        },
                     ),
                 )
                 continue
             draft_batch = MemoryLogDraftBatch.model_validate(result.structured_output)
-            extracted = enrich_memory_log_batch(draft_batch, source, task)
-            if len(extracted) != 1:
+            extracted = enrich_memory_log_batch_with_tasks(draft_batch, source, tasks)
+            if len(extracted) != len(tasks):
                 issues.append(
                     ValidationIssue(
-                        field_path=f"memory_log_extraction_plan.tasks[{index}]",
-                        message="Memory-log extraction must return exactly one MemoryLog draft.",
+                        field_path=f"memory_log_extraction_plan.tasks[{first_index}]",
+                        message=(
+                            "Memory-log extraction must return exactly one MemoryLog "
+                            "draft per planned target."
+                        ),
                         code="unexpected_memory_log_candidate_count",
                         details={
-                            "task_id": task.task_id,
-                            "target_ref": task.target_ref,
+                            "task_ids": [task.task_id for task in tasks],
+                            "target_refs": [task.target_ref for task in tasks],
+                            "expected_count": len(tasks),
                             "count": len(extracted),
                         },
                     ),
@@ -1576,6 +1597,7 @@ class IngestionService:
         candidates: list[CandidateEntity] = []
         issues: list[ValidationIssue] = []
         context = _legacy_context_package(source, graph_context_pack)
+        pending: list[tuple[int, ExtractionTask, FocusedExtractor]] = []
         for index, task in enumerate(extraction_plan.tasks):
             extractor = self._find_entity_extractor(task)
             if extractor is None:
@@ -1593,18 +1615,26 @@ class IngestionService:
                     ),
                 )
                 continue
-            extracted = list(extractor.extract(source, task, context))
+            pending.append((index, task, extractor))
+        for batch in _batch_extraction_items(
+            pending,
+            self.extraction_draft_batch_size,
+        ):
+            first_index = batch[0][0]
+            extractor = batch[0][2]
+            tasks = [item[1] for item in batch]
+            extracted = _extract_with_optional_batch(extractor, source, tasks, context)
             for candidate in extracted:
                 if isinstance(candidate, CandidateEntity):
                     candidates.append(candidate)
                 else:
                     issues.append(
                         ValidationIssue(
-                            field_path=f"entity_extraction_plan.tasks[{index}]",
+                            field_path=f"entity_extraction_plan.tasks[{first_index}]",
                             message="Entity extraction returned a non-entity candidate.",
                             code="unexpected_ingestion_entity_candidate_type",
                             details={
-                                "task_id": task.task_id,
+                                "task_ids": [task.task_id for task in tasks],
                                 "candidate_type": type(candidate).__name__,
                             },
                         ),
@@ -1621,6 +1651,7 @@ class IngestionService:
         candidates: list[CandidateOutput] = []
         issues: list[ValidationIssue] = []
         context = _legacy_context_package(source, graph_context_pack)
+        pending: list[tuple[int, ExtractionTask, FocusedExtractor]] = []
         for index, task in enumerate(extraction_plan.tasks):
             extractor = self._find_relationship_extractor(task)
             if extractor is None:
@@ -1639,19 +1670,27 @@ class IngestionService:
                     ),
                 )
                 continue
+            pending.append((index, task, extractor))
+        for batch in _batch_extraction_items(
+            pending,
+            self.extraction_draft_batch_size,
+        ):
+            first_index = batch[0][0]
+            extractor = batch[0][2]
+            tasks = [item[1] for item in batch]
             extracted = normalize_relationship_candidate_refs(
-                list(extractor.extract(source, task, context)),
+                _extract_with_optional_batch(extractor, source, tasks, context),
                 resolved_entity_map,
             )
             for candidate in extracted:
                 if isinstance(candidate, CandidateEntity):
                     issues.append(
                         ValidationIssue(
-                            field_path=f"relationship_extraction_plan.tasks[{index}]",
+                            field_path=f"relationship_extraction_plan.tasks[{first_index}]",
                             message="Relationship extraction returned an entity candidate.",
                             code="unexpected_ingestion_relationship_candidate_type",
                             details={
-                                "task_id": task.task_id,
+                                "task_ids": [task.task_id for task in tasks],
                                 "candidate_type": type(candidate).__name__,
                             },
                         ),
@@ -1903,6 +1942,65 @@ def _legacy_context_package(
             "retrieval_strategy": graph_context_pack.retrieval_strategy,
         },
     )
+
+
+def _batch_extraction_items(
+    items: Sequence[tuple[int, ExtractionTask, FocusedExtractor]],
+    batch_size: int,
+) -> list[list[tuple[int, ExtractionTask, FocusedExtractor]]]:
+    batches: list[list[tuple[int, ExtractionTask, FocusedExtractor]]] = []
+    current: list[tuple[int, ExtractionTask, FocusedExtractor]] = []
+    current_extractor: FocusedExtractor | None = None
+    for item in items:
+        extractor = item[2]
+        if current and extractor is not current_extractor:
+            batches.extend(_batch_sequence(current, batch_size))
+            current = []
+        current.append(item)
+        current_extractor = extractor
+    if current:
+        batches.extend(_batch_sequence(current, batch_size))
+    return batches
+
+
+def _extract_with_optional_batch(
+    extractor: FocusedExtractor,
+    source: SourceRecordRef,
+    tasks: Sequence[ExtractionTask],
+    context: IngestionContextPackage,
+) -> Sequence[CandidateOutput]:
+    if not tasks:
+        return []
+    extract_batch = getattr(extractor, "extract_batch", None)
+    if callable(extract_batch) and len(tasks) > 1:
+        return extract_batch(source, tasks, context)
+    candidates: list[CandidateOutput] = []
+    for task in tasks:
+        candidates.extend(extractor.extract(source, task, context))
+    return candidates
+
+
+def _batch_sequence(items: Sequence[Any], batch_size: int) -> list[list[Any]]:
+    normalized_size = _normalized_extraction_batch_size(batch_size)
+    batches = [
+        list(items[index : index + normalized_size])
+        for index in range(0, len(items), normalized_size)
+    ]
+    if (
+        len(batches) > 1
+        and len(batches[-1]) == 1
+        and len(batches[-2]) < MAX_EXTRACTION_DRAFT_BATCH_SIZE
+    ):
+        batches[-2].extend(batches.pop())
+    return batches
+
+
+def _normalized_extraction_batch_size(value: int) -> int:
+    try:
+        batch_size = int(value)
+    except (TypeError, ValueError):
+        batch_size = DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE
+    return max(1, min(batch_size, MAX_EXTRACTION_DRAFT_BATCH_SIZE))
 
 
 def _clarification_from_draft(

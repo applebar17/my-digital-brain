@@ -4,6 +4,7 @@ from my_digital_brain.ingestion import (
     GraphContextPackRendererService,
     build_entity_planning_context,
     build_memory_log_extraction_context,
+    build_memory_log_extraction_batch_context,
     build_memory_log_planning_context,
     build_resolved_entity_packet,
     build_missing_entity_planning_context,
@@ -216,6 +217,66 @@ def test_memory_log_extraction_prompt_carries_current_action_not_whole_plan() ->
     assert "model_user_message" in context.input_context
     assert "planning_action" in context.input_context["model_user_message"]
     assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
+
+
+def test_memory_log_extraction_batch_prompt_carries_current_targets() -> None:
+    renderer = GraphContextPackRendererService()
+    resolved_map = _resolved_entity_map()
+    entity_packet = build_resolved_entity_packet(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Matteo Mercoldi",
+            ),
+        ],
+        resolved_map,
+    )
+    first_memory_log = PlannedMemoryLogRefDraft(
+        local_ref="MEMORY_LOG_001",
+        log_text_hint="Merc came to the barbeque.",
+        host_refs=["CANDIDATE_PERSON_001"],
+        evidence_text="Merc came to the barbeque.",
+    )
+    second_memory_log = PlannedMemoryLogRefDraft(
+        local_ref="MEMORY_LOG_002",
+        log_text_hint="Merc brought drinks.",
+        host_refs=["CANDIDATE_PERSON_001"],
+        evidence_text="Merc brought drinks.",
+    )
+    action = MemoryLogIngestionActionDraft(
+        goal="Create compact memory logs for Merc at the barbeque.",
+        memory_logs=[first_memory_log, second_memory_log],
+    )
+
+    context = build_memory_log_extraction_batch_context(
+        source_text="Merc came to the barbeque and brought drinks.",
+        graph_context_view=renderer.render(
+            _context_pack(),
+            GraphContextRenderPurpose.MEMORY_LOG_EXTRACTION,
+        ),
+        resolved_entity_map=resolved_map,
+        entity_packet=entity_packet,
+        planned_items=[
+            (action, first_memory_log, 1),
+            (action, second_memory_log, 2),
+        ],
+        timezone="Europe/Rome",
+    )
+
+    prompt_context = context.system_prompt_payload()["task_context"]
+    assert "memory_log_plan" not in prompt_context
+    assert "reasoning_notes" not in context.system_prompt_payload()
+    assert [target["expected_local_ref"] for target in prompt_context["current_targets"]] == [
+        "MEMORY_LOG_001",
+        "MEMORY_LOG_002",
+    ]
+    assert prompt_context["expected_local_refs"] == [
+        "MEMORY_LOG_001",
+        "MEMORY_LOG_002",
+    ]
+    assert "MEMORY_LOG_001" in context.input_context["model_user_message"]
+    assert "MEMORY_LOG_002" in context.input_context["model_user_message"]
 
 
 def test_missing_entity_planning_context_carries_resume_guidance_only() -> None:

@@ -49,6 +49,8 @@ class IngestionPromptBuilder:
         "planning target. It must remain stable across this ingestion session.\n\n"
         "# Rules\n"
         "- Return candidates of the requested schema only.\n"
+        "- When multiple planning targets are supplied, return one candidate per "
+        "target unless the target is explicitly impossible.\n"
         "- Use only enum values allowed by the schema and refs or aliases supplied "
         "in the task/context.\n"
         "- Use the supplied task.target_ref exactly as local_ref when it is present.\n"
@@ -94,6 +96,45 @@ class IngestionPromptBuilder:
         return {
             "source": self.source_payload(source),
             "task": self.task_payload(task),
+            "compact_graph_context": self.context_payload(context),
+            "ontology": ontology_prompt_payload(),
+        }
+
+    def extraction_batch_messages(
+        self,
+        source: SourceRecordRef,
+        tasks: list[ExtractionTask],
+        context: IngestionContextPackage,
+    ) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
+        messages.extend(self.history_messages(source))
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=(
+                    "Ingest these planning targets/actions as one draft batch. "
+                    "Use each supplied task.target_ref exactly for its matching "
+                    "candidate local_ref; do not invent replacement refs.\n\n"
+                    "```json\n"
+                    f"{json.dumps(self.extraction_batch_input(source, tasks, context), ensure_ascii=False, indent=2)}\n"
+                    "```"
+                ),
+            ),
+        )
+        return messages
+
+    def extraction_batch_input(
+        self,
+        source: SourceRecordRef,
+        tasks: list[ExtractionTask],
+        context: IngestionContextPackage,
+    ) -> dict[str, Any]:
+        return {
+            "source": self.source_payload(source),
+            "tasks": [self.task_payload(task) for task in tasks],
+            "allowed_local_refs": [
+                task.target_ref for task in tasks if task.target_ref
+            ],
             "compact_graph_context": self.context_payload(context),
             "ontology": ontology_prompt_payload(),
         }
