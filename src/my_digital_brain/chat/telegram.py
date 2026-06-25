@@ -11,6 +11,7 @@ from my_digital_brain.chat.exceptions import ChatValidationError
 from my_digital_brain.chat.models import (
     ChatModel,
     ChatResponse,
+    ClarificationPacket,
     IncomingChatMessage,
     IncomingMediaRef,
 )
@@ -22,6 +23,20 @@ class TelegramSendMessage(ChatModel):
     text: str
     reply_to_message_id: int | None = None
     disable_web_page_preview: bool = True
+    reply_markup: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TelegramClarificationCallback(ChatModel):
+    callback_query_id: str
+    chat_id: str
+    sender_id: str
+    owner_id: str
+    message_id: str
+    frame_id: str
+    question_id: str
+    option_id: str
+    received_at: datetime
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -76,10 +91,26 @@ class TelegramWebhookAdapter:
         chat_id: str,
         reply_to_message_id: int | None = None,
     ) -> TelegramSendMessage:
+        reply_markup = None
+        text = response.primary_text
+        if response.clarification_packet is not None:
+            progress = response.metadata.get("clarification_progress")
+            current_question_id = (
+                progress.get("current_question_id") if isinstance(progress, dict) else None
+            )
+            text = self.render_clarification_text(
+                response.clarification_packet,
+                current_question_id=current_question_id,
+            )
+            reply_markup = self.render_clarification_reply_markup(
+                response.clarification_packet,
+                current_question_id=current_question_id,
+            )
         return TelegramSendMessage(
             chat_id=chat_id,
-            text=response.primary_text,
+            text=text,
             reply_to_message_id=reply_to_message_id,
+            reply_markup=reply_markup,
             metadata={
                 "response_id": response.response_id,
                 "session_id": response.session_id,
@@ -87,9 +118,119 @@ class TelegramWebhookAdapter:
             },
         )
 
+    def normalize_callback_query(
+        self,
+        update: Mapping[str, Any],
+    ) -> TelegramClarificationCallback:
+        callback = self._as_mapping(update.get("callback_query"), field_name="callback_query")
+        sender = self._as_mapping(callback.get("from"), field_name="callback_query.from")
+        sender_id = str(self._required(sender, "id", "callback_query.from.id"))
+        if self.allowed_user_ids and sender_id not in self.allowed_user_ids:
+            raise ChatValidationError(f"Telegram sender is not allowed: {sender_id}")
+
+        message = self._as_mapping(callback.get("message"), field_name="callback_query.message")
+        chat = self._as_mapping(message.get("chat"), field_name="callback_query.message.chat")
+        chat_id = str(self._required(chat, "id", "callback_query.message.chat.id"))
+        message_id = str(
+            self._required(
+                message,
+                "message_id",
+                "callback_query.message.message_id",
+            ),
+        )
+        frame_id, question_id, option_id = self._parse_callback_data(
+            str(self._required(callback, "data", "callback_query.data")),
+        )
+        return TelegramClarificationCallback(
+            callback_query_id=str(
+                self._required(callback, "id", "callback_query.id"),
+            ),
+            chat_id=chat_id,
+            sender_id=sender_id,
+            owner_id=sender_id,
+            message_id=str(callback.get("id") or message_id),
+            frame_id=frame_id,
+            question_id=question_id,
+            option_id=option_id,
+            received_at=self._received_at(message),
+            metadata={
+                "telegram_update_id": update.get("update_id"),
+                "telegram_message_id": message_id,
+                "telegram_chat_type": chat.get("type"),
+            },
+        )
+
+    def is_callback_query(self, update: Mapping[str, Any]) -> bool:
+        return isinstance(update.get("callback_query"), Mapping)
+
+    def render_clarification_text(
+        self,
+        packet: ClarificationPacket,
+        *,
+        current_question_id: str | None = None,
+    ) -> str:
+        question = self._current_packet_question(packet, current_question_id)
+        lines = [question.question]
+        if question.options:
+            lines.append("")
+            lines.append("Suggested answers:")
+            lines.extend(f"- {option.label}" for option in question.options)
+        if question.free_text_allowed:
+            lines.append("")
+            lines.append("You can reply with your own answer.")
+        return "\n".join(lines).strip()
+
+    def render_clarification_reply_markup(
+        self,
+        packet: ClarificationPacket,
+        *,
+        current_question_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        question = self._current_packet_question(packet, current_question_id)
+        if not question.options:
+            return None
+        return {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": option.label,
+                        "callback_data": self._callback_data(
+                            packet.frame_id,
+                            question.question_id,
+                            option.option_id,
+                        ),
+                    }
+                ]
+                for option in question.options
+            ]
+        }
+
     def _extract_message(self, update: Mapping[str, Any]) -> Mapping[str, Any]:
         message = update.get("message") or update.get("edited_message")
         return self._as_mapping(message, field_name="message")
+
+    def _current_packet_question(
+        self,
+        packet: ClarificationPacket,
+        current_question_id: str | None = None,
+    ):
+        if current_question_id:
+            for question in packet.questions:
+                if question.question_id == current_question_id:
+                    return question
+        return packet.questions[0]
+
+    def _callback_data(self, frame_id: str, question_id: str, option_id: str) -> str:
+        return f"clarify:{frame_id}:{question_id}:{option_id}"
+
+    def _parse_callback_data(self, value: str) -> tuple[str, str, str]:
+        parts = value.split(":", 3)
+        if len(parts) != 4 or parts[0] != "clarify":
+            raise ChatValidationError("Telegram callback data is not a clarification answer.")
+        _, frame_id, question_id, option_id = parts
+        if not frame_id or not question_id or not option_id:
+            raise ChatValidationError("Telegram clarification callback data is incomplete.")
+        return frame_id, question_id, option_id
 
     def _text_from_message(self, message: Mapping[str, Any]) -> str | None:
         value = message.get("text") or message.get("caption")

@@ -33,6 +33,7 @@ from my_digital_brain.chat.models import (
     ConversationSession,
     ConversationSessionList,
     ConversationSessionDetail,
+    ClarificationAnswer,
     ClarificationAnswerPacket,
     IncomingChatMessage,
 )
@@ -404,6 +405,57 @@ class ChatRuntime:
         )
         return response
 
+
+    def active_clarification_frame_for_message(
+        self,
+        message: IncomingChatMessage,
+    ):
+        session = self._resolve_session(message)
+        frame = self.store.get_active_agentic_frame(session.session_id)
+        if frame is None or frame.clarification_packet is None:
+            return session, None
+        return session, frame
+
+    def answer_active_clarification(
+        self,
+        message: IncomingChatMessage,
+        *,
+        selected_option_id: str | None = None,
+        free_text: str | None = None,
+        expected_frame_id: str | None = None,
+        expected_question_id: str | None = None,
+    ) -> ChatResponse:
+        session, frame = self.active_clarification_frame_for_message(message)
+        if frame is None or frame.clarification_packet is None:
+            raise ChatValidationError("There is no active clarification for this chat.")
+        if expected_frame_id is not None and frame.frame_id != expected_frame_id:
+            raise ChatValidationError("Telegram clarification answer targeted a different frame.")
+        packet = frame.clarification_packet
+        question = _current_clarification_question(
+            packet,
+            frame.metadata.get("clarification_progress"),
+        )
+        if expected_question_id is not None and question.question_id != expected_question_id:
+            raise ChatValidationError("Telegram clarification answer targeted a different question.")
+        answer = ClarificationAnswer(
+            question_id=question.question_id,
+            selected_option_ids=[selected_option_id] if selected_option_id else [],
+            free_text=(free_text or None),
+        )
+        answer_packet = ClarificationAnswerPacket(
+            packet_id=packet.packet_id,
+            frame_id=frame.frame_id,
+            tool_call_id=packet.tool_call_id or "",
+            answers=[answer],
+        )
+        return self.answer_clarification(
+            session.session_id,
+            owner_id=session.owner_id,
+            sender_id=message.sender_id,
+            message_id=message.message_id,
+            answer_packet=answer_packet,
+        )
+
     def _resolve_session(self, message: IncomingChatMessage) -> ConversationSession:
         if message.session_id:
             session = self.store.get_session(message.session_id)
@@ -497,3 +549,18 @@ class ChatRuntime:
         if explicit_refs:
             return list(explicit_refs)
         return [message.message_id for message in self.store.list_messages(session_id, limit=20)]
+
+
+def _current_clarification_question(packet, progress: dict | None):
+    answered = set()
+    if isinstance(progress, dict):
+        answered = set(progress.get("answered_question_ids") or [])
+        current_question_id = progress.get("current_question_id")
+        if current_question_id:
+            for question in packet.questions:
+                if question.question_id == current_question_id:
+                    return question
+    for question in packet.questions:
+        if question.question_id not in answered:
+            return question
+    return packet.questions[-1]
