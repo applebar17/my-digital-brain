@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import Field
 
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.ingestion.contracts.base import IngestionModel
 from my_digital_brain.ingestion.contracts.candidates import (
     CandidateEntity,
@@ -41,6 +42,7 @@ class IngestionContextPackage(IngestionModel):
     relationships: list[dict[str, Any]] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    owner_snapshot: OwnerSnapshot | None = Field(default=None)
 
 
 class IngestionResult(IngestionModel):

@@ -17,6 +17,7 @@ from my_digital_brain.agentic.runtime_models import (
 )
 from my_digital_brain.debug import AIFlowTraceSection
 from my_digital_brain.prompts.registry import render_prompt_template
+from my_digital_brain.core.owner_context import owner_prompt_block
 
 
 _RUNTIME_PROMPT_PLACEHOLDERS = (
@@ -168,6 +169,8 @@ def _system_prompt_with_runtime_context(
     runtime_metadata: dict[str, Any] | None = None,
     expected_output: dict[str, Any] | None = None,
 ) -> str:
+    owner_snapshot = _find_owner_snapshot(payload) or _find_owner_snapshot(prompt_context)
+    owner_section = owner_prompt_block(owner_snapshot) if owner_snapshot else ""
     if _uses_runtime_placeholders(prompt):
         prompt_context_payload = (
             prompt_context
@@ -193,7 +196,7 @@ def _system_prompt_with_runtime_context(
                     ),
                 },
             ).rstrip()
-            + "\n"
+            + ("\n\n" + owner_section + "\n" if owner_section else "\n")
         )
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
     timezone = _find_prompt_value(payload, "timezone") or "UTC"
@@ -206,6 +209,8 @@ def _system_prompt_with_runtime_context(
         prompt.rstrip(),
         runtime_context,
     ]
+    if owner_section:
+        sections.append(owner_section)
     # if runtime_metadata:
     #     sections.append(_system_json_section("Runtime metadata", runtime_metadata))
     if prompt_context not in (None, "", [], {}):
@@ -213,6 +218,30 @@ def _system_prompt_with_runtime_context(
     # if expected_output:
     #     sections.append(_system_json_section("Expected output", expected_output))
     return "\n\n".join(section for section in sections if section).rstrip() + "\n"
+
+
+def _find_owner_snapshot(value: Any) -> Any | None:
+    if value is None:
+        return None
+    if hasattr(value, "owner_snapshot"):
+        snapshot = getattr(value, "owner_snapshot")
+        if snapshot is not None:
+            return snapshot
+    if hasattr(value, "model_dump"):
+        return _find_owner_snapshot(value.model_dump(mode="python", exclude_none=True))
+    if isinstance(value, dict):
+        if value.get("owner_snapshot") is not None:
+            return value["owner_snapshot"]
+        for item in value.values():
+            found = _find_owner_snapshot(item)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_owner_snapshot(item)
+            if found is not None:
+                return found
+    return None
 
 
 def _uses_runtime_placeholders(prompt: str) -> bool:

@@ -14,6 +14,7 @@ from my_digital_brain.prompts.active import (
     MEMORY_PROMPT_TEMPLATES,
     MEMORY_QUERY_SYSTEM_TEMPLATE,
     PLANNING_CHECKPOINT_SYSTEM_TEMPLATE,
+    PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE,
     REASONING_CHECKPOINT_SYSTEM_TEMPLATE,
 )
 from my_digital_brain.prompts.models import PromptTemplate
@@ -34,6 +35,7 @@ __all__ = [
     "MEMORY_QUERY_SYSTEM_TEMPLATE",
     "PLANNING_CHECKPOINT_SYSTEM_TEMPLATE",
     "PromptNotFoundError",
+    "PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE",
     "PromptRegistry",
     "PromptTemplate",
     "REASONING_CHECKPOINT_SYSTEM_TEMPLATE",

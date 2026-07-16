@@ -18,6 +18,7 @@ from my_digital_brain.agentic.contexts import (
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 
 GRAPH_UPDATE_CREATABLE_LABELS = {
@@ -62,6 +63,7 @@ class AgenticToolExecutionContext:
     channel: str = "web"
     conversation_id: str | None = None
     owner_id: str | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     sender_id: str | None = None
     message_id: str | None = None
     current_text: str | None = None
@@ -969,7 +971,15 @@ def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPack
         aliases=aliases,
         candidate_matches=candidate_matches,
         metadata={"source": "scoped_retrieval"},
+        owner_snapshot=_owner_snapshot_from_retrieval(retrieval),
     )
+
+
+def _owner_snapshot_from_retrieval(retrieval: dict[str, Any]) -> OwnerSnapshot | None:
+    raw = retrieval.get("owner_snapshot")
+    if isinstance(raw, dict):
+        return OwnerSnapshot.model_validate(raw)
+    return None
 
 
 

@@ -12,6 +12,7 @@ from my_digital_brain.ingestion.contracts import (
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.ontology import ontology_prompt_payload
+from my_digital_brain.core.owner_context import owner_prompt_block
 
 INGESTION_ENTITY_EXTRACTION_TASK = "ingestion_entity_extraction"
 INGESTION_RELATIONSHIP_EXTRACTION_TASK = "ingestion_relationship_extraction"
@@ -19,6 +20,7 @@ INGESTION_CLAIM_EXTRACTION_TASK = "ingestion_claim_extraction"
 INGESTION_PERCEPTION_EXTRACTION_TASK = "ingestion_perception_extraction"
 INGESTION_RELATIONSHIP_CONTEXT_EXTRACTION_TASK = "ingestion_relationship_context_extraction"
 INGESTION_METADATA_PATCH_EXTRACTION_TASK = "ingestion_metadata_patch_extraction"
+INGESTION_PROFILE_MEMORY_EXTRACTION_TASK = "ingestion_profile_memory_extraction"
 
 
 def system_prompt_with_runtime_context(
@@ -61,6 +63,8 @@ class IngestionPromptBuilder:
         "- Do not guess when information is missing.\n"
         "- For social relationships, use RELATIONSHIP_WITH plus relationship_kind "
         "and preserve wording such as brother or girlfriend in relationship_detail.\n\n"
+        "- Apply the owner interaction contract supplied in the context.\n\n"
+        "- Durable self-statements are profile proposals; temporary moods remain episodic.\n\n"
         "# Context\n"
         "Runtime appends relevant history, clarification answers, the current "
         "planning target, allowed refs, graph context, ontology, and expected output."
@@ -95,6 +99,7 @@ class IngestionPromptBuilder:
         return {
             "task": self.task_payload(task),
             "compact_graph_context": self.context_payload(context),
+            "owner_context": owner_prompt_block(context.owner_snapshot),
             "ontology": ontology_prompt_payload(),
         }
 
@@ -128,6 +133,7 @@ class IngestionPromptBuilder:
                 task.target_ref for task in tasks if task.target_ref
             ],
             "compact_graph_context": self.context_payload(context),
+            "owner_context": owner_prompt_block(context.owner_snapshot),
             "ontology": ontology_prompt_payload(),
         }
 
@@ -165,6 +171,9 @@ class IngestionPromptBuilder:
                 "relationships": list(context.relationships),
                 "notes": list(context.notes),
                 "metadata": metadata,
+                "owner_snapshot": context.owner_snapshot.model_dump(mode="json", exclude_none=True)
+                if context.owner_snapshot is not None
+                else None,
             }.items()
             if value not in ({}, [], None)
         }

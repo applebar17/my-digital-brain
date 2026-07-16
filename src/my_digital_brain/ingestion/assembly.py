@@ -11,6 +11,7 @@ from my_digital_brain.ingestion.contracts import (
     CandidateMetadataPatch,
     CandidateOutput,
     CandidatePerception,
+    CandidateProfileMemory,
     CandidateRelationship,
     CandidateRelationshipContext,
     EvidenceRef,
@@ -36,6 +37,7 @@ class CandidateMemoryGraphAssembler:
         perceptions: list[CandidatePerception] = []
         relationship_contexts: list[CandidateRelationshipContext] = []
         metadata_patches: list[CandidateMetadataPatch] = []
+        profile_memories: list[CandidateProfileMemory] = []
         memory_logs: list[MemoryLog] = []
 
         local_ref_map: dict[str, str] = {}
@@ -61,6 +63,8 @@ class CandidateMemoryGraphAssembler:
                 relationship_contexts.append(candidate)
             elif isinstance(candidate, CandidateMetadataPatch):
                 metadata_patches.append(candidate)
+            elif isinstance(candidate, CandidateProfileMemory):
+                profile_memories.append(candidate)
             elif isinstance(candidate, MemoryLog):
                 memory_logs.append(candidate)
 
@@ -81,6 +85,7 @@ class CandidateMemoryGraphAssembler:
             candidate_perceptions=perceptions,
             candidate_relationship_contexts=relationship_contexts,
             candidate_metadata_patches=metadata_patches,
+            candidate_profile_memories=profile_memories,
             memory_logs=memory_logs,
             local_ref_map=local_ref_map,
             evidence_refs=list(evidence_refs.values()),
@@ -97,6 +102,7 @@ def _candidate_id(candidate: CandidateOutput) -> str:
         "candidate_perception_id",
         "candidate_relationship_context_id",
         "patch_id",
+        "candidate_id",
         "memory_log_id",
     ):
         value = getattr(candidate, field_name, None)

@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 from my_digital_brain.agentic.base import AgenticModel, utc_now
 from my_digital_brain.agentic.contexts import ConversationContext, ToolResultContext
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 
 class PlanningPurposeGuidelines(AgenticModel):
@@ -79,6 +80,7 @@ class PlanningTransformContext(AgenticModel):
             "Callers may still request dedicated output models."
         ),
     )
+    owner_snapshot: OwnerSnapshot | None = None
 
     def model_facing_payload(self) -> dict[str, Any]:
         return _compact_prompt_payload(
@@ -91,6 +93,7 @@ class PlanningTransformContext(AgenticModel):
                 "timezone": self.timezone,
                 "prior_tool_outputs": self.prior_tool_outputs,
                 "expected_output_schema": self.expected_output_schema,
+                "owner_snapshot": self.owner_snapshot,
             },
         )
 
@@ -110,6 +113,7 @@ class PlanningTransformContext(AgenticModel):
                     self.reasoning_artifact,
                     scope=scope,
                 ),
+                "owner_snapshot": self.owner_snapshot,
             },
         )
 

@@ -1941,6 +1941,7 @@ def _legacy_context_package(
             "graph_context_pack_id": graph_context_pack.context_pack_id,
             "retrieval_strategy": graph_context_pack.retrieval_strategy,
         },
+        owner_snapshot=graph_context_pack.owner_snapshot,
     )
 
 

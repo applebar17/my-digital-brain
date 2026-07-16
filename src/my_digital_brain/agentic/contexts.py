@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -29,6 +29,7 @@ from my_digital_brain.agentic.enums import (
 from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 _PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64}\b")
 _VISIBLE_REF_RE = re.compile(r"^(?:(?:node|memory|edge|context|media)_[0-9]{4}|(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64})$")
@@ -124,6 +125,7 @@ class GraphContextPackage(AgenticModel):
     relationship_contexts: list[dict[str, Any]] = Field(default_factory=list)
     evidence_summaries: list[dict[str, Any]] = Field(default_factory=list)
     known_ambiguities: list[str] = Field(default_factory=list)
+    owner_snapshot: OwnerSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -142,6 +144,7 @@ class ReasoningCheckpointContext(AgenticModel):
     input_context: dict[str, Any] = Field(default_factory=dict)
     conversation: ConversationContext | None = None
     graph_context: GraphContextPackage | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     prior_tool_outputs: list["ToolResultContext"] = Field(default_factory=list)
@@ -155,6 +158,7 @@ class ReasoningCheckpointContext(AgenticModel):
                 "input_context": self.input_context,
                 "conversation": self.conversation,
                 "graph_context": self.graph_context,
+                "owner_snapshot": self.owner_snapshot,
                 "current_time": self.current_time,
                 "timezone": self.timezone,
                 "prior_tool_outputs": self.prior_tool_outputs,
@@ -317,6 +321,7 @@ class QueryRetrievalPlanningContext(AgenticModel):
     place_hints: list[str] = Field(default_factory=list)
     seed_aliases: dict[str, str] = Field(default_factory=dict)
     desired_view: str | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -680,6 +685,7 @@ class MemoryIngestionContext(AgenticModel):
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     resolved_clarifications: list[dict[str, Any]] = Field(default_factory=list)
+    owner_snapshot: OwnerSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -704,6 +710,7 @@ class MemoryIngestionContext(AgenticModel):
                 ),
                 "ref_packets": self.ref_packets,
                 "resolved_clarifications": self.resolved_clarifications,
+                "owner_snapshot": self.owner_snapshot,
             },
         )
 
@@ -730,6 +737,7 @@ class MemoryCreationContext(AgenticModel):
     ref_context: RefContext | None = None
     ref_packets: list[dict[str, Any]] = Field(default_factory=list)
     resolved_clarifications: list[dict[str, Any]] = Field(default_factory=list)
+    owner_snapshot: OwnerSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_facing_payload(self) -> dict[str, Any]:
@@ -748,6 +756,7 @@ class MemoryCreationContext(AgenticModel):
                 ),
                 "ref_packets": self.ref_packets,
                 "resolved_clarifications": self.resolved_clarifications,
+                "owner_snapshot": self.owner_snapshot,
             },
         )
 
@@ -769,6 +778,7 @@ class GraphUpdateContext(AgenticModel):
     target_ids: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
     graph_context: GraphContextPackage | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -779,6 +789,7 @@ class ContradictionReviewContext(AgenticModel):
     proposed_write_ref: str | None = None
     proposed_write: dict[str, Any] = Field(default_factory=dict)
     graph_context: GraphContextPackage | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     affected_entity_refs: list[str] = Field(default_factory=list)
     affected_relationship_refs: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
@@ -846,6 +857,7 @@ class ProfileExtractionContext(AgenticModel):
     source: SourceContext
     conversation: ConversationContext | None = None
     owner_person_id: str | None = None
+    owner_snapshot: OwnerSnapshot | None = None
     current_profile_summary: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
     current_time: datetime = Field(default_factory=utc_now)
@@ -855,6 +867,7 @@ class ProfileExtractionContext(AgenticModel):
 
 class ProfileMemoryCandidateContext(AgenticModel):
     candidate_id: str = Field(default_factory=new_uuid)
+    owner_ref: Literal["OWNER"] = "OWNER"
     profile_key: str
     category: ProfileMemoryCategory
     value: str
@@ -866,7 +879,22 @@ class ProfileMemoryCandidateContext(AgenticModel):
     visibility: ProfileMemoryVisibility = ProfileMemoryVisibility.HIDDEN
     requires_confirmation: bool = False
     reason: str
+    assertion_mode: Literal["explicit", "inferred"] = "explicit"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_owner_profile_provenance(self) -> "ProfileMemoryCandidateContext":
+        if not self.original_user_words or not self.original_user_words.strip():
+            raise ValueError("Owner profile proposals require original_user_words.")
+        if not self.source_refs:
+            raise ValueError("Owner profile proposals require source_refs.")
+        if self.assertion_mode == "inferred":
+            self.requires_confirmation = True
+            if self.stability == ProfileMemoryStability.USER_CONFIRMED:
+                raise ValueError("Inferred owner traits cannot be user-confirmed.")
+        if self.stability == ProfileMemoryStability.TEMPORARY:
+            raise ValueError("Temporary observations do not belong in stable profile memory.")
+        return self
 
 
 class ProfileExtractionResultContext(AgenticModel):

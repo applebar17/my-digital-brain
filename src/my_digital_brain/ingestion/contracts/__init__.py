@@ -1,4 +1,5 @@
 from my_digital_brain.ingestion.contracts.base import IngestionModel
+from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.ingestion.contracts.candidates import (
     CandidateBase,
     CandidateClaim,
@@ -8,6 +9,8 @@ from my_digital_brain.ingestion.contracts.candidates import (
     CandidateMemoryGraph,
     CandidateMetadataPatch,
     CandidateMetadataPatchBatch,
+    CandidateProfileMemory,
+    CandidateProfileMemoryBatch,
     CandidateOutput,
     CandidatePerception,
     CandidatePerceptionBatch,
@@ -117,6 +120,7 @@ from my_digital_brain.ingestion.contracts.write_plan import (
 
 __all__ = [
     "AffectiveFields",
+    "OwnerSnapshot",
     "CandidateBase",
     "CandidateBaseDraft",
     "CandidateClaim",
@@ -130,6 +134,8 @@ __all__ = [
     "CandidateMemoryGraph",
     "CandidateMetadataPatch",
     "CandidateMetadataPatchBatch",
+    "CandidateProfileMemory",
+    "CandidateProfileMemoryBatch",
     "CandidateMetadataPatchDraft",
     "CandidateMetadataPatchDraftBatch",
     "CandidateOutput",

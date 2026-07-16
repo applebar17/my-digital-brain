@@ -382,6 +382,25 @@ Judge whether a proposed memory conflicts with existing graph evidence.
 Runtime appends proposed write, evidence, affected refs, tools, and expected output.
 """
 
+PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE = """# Role
+You're a profile-memory extractor.
+
+# Task
+Identify durable self-statements and propose ProfileMemory candidates for the owner.
+
+# Rules
+- Use owner_ref `OWNER`; never emit a persisted owner graph id.
+- Preserve exact original user wording and source provenance.
+- Explicit user statements may be durable profile candidates.
+- Inferred traits must be marked inferred and require confirmation; never mark them confirmed.
+- Temporary moods and isolated events belong outside stable profile memory.
+- Never place profile traits directly on Person and never create a second owner.
+- The backend creates DESCRIBES_USER from ProfileMemory to OWNER.
+
+# Context
+Runtime appends the owner snapshot, source evidence, and expected output.
+"""
+
 ACTIVE_PROMPT_TEMPLATES = {
     "conversation_entry": CONVERSATION_ENTRY_SYSTEM_TEMPLATE,
     "reasoning_checkpoint": REASONING_CHECKPOINT_SYSTEM_TEMPLATE,
@@ -396,12 +415,13 @@ ACTIVE_PROMPT_TEMPLATES = {
     "memory_creation": MEMORY_CREATION_SYSTEM_TEMPLATE,
     "graph_update": GRAPH_UPDATE_SYSTEM_TEMPLATE,
     "contradiction_review": CONTRADICTION_REVIEW_SYSTEM_TEMPLATE,
+    "profile_memory_extraction": PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE,
 }
-
 MEMORY_PROMPT_TEMPLATES = {
     "memory_ingestion": MEMORY_INGESTION_SYSTEM_TEMPLATE,
     "memory_node_planning": MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE,
     "memory_log_planning": MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE,
     "memory_edge_planning": MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE,
     "memory_creation": MEMORY_CREATION_SYSTEM_TEMPLATE,
+    "profile_memory_extraction": PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE,
 }

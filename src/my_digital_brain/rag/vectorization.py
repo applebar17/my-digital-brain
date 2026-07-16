@@ -299,6 +299,7 @@ def _node_writes(write_plan: Any) -> list[GraphNodeWrite]:
         *write_plan.perceptions_to_create,
         *write_plan.relationship_contexts_to_create,
         *write_plan.memory_logs_to_create,
+        *write_plan.profile_memories_to_create,
     ]
 
 

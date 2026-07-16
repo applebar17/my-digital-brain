@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from my_digital_brain.graph.exceptions import GraphValidationError
+from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.graph.registry import validate_node_label, validate_relationship_type
 from my_digital_brain.ingestion.contracts import (
     CandidateBase,
@@ -33,6 +34,24 @@ class IngestionValidator:
                 f"candidate_entities[{index}]",
                 issues,
             )
+            self._validate_owner_entity(entity, f"candidate_entities[{index}]", issues)
+
+        for index, profile in enumerate(candidate_graph.candidate_profile_memories):
+            prefix = f"candidate_profile_memories[{index}]"
+            if profile.owner_ref != OWNER_ALIAS:
+                issues.append(_issue(
+                    f"{prefix}.owner_ref",
+                    "Owner profile proposals must use OWNER.",
+                    "invalid_owner_ref",
+                    {"owner_ref": profile.owner_ref},
+                ))
+            if profile.assertion_mode == "inferred" and not profile.requires_confirmation:
+                issues.append(_issue(
+                    f"{prefix}.requires_confirmation",
+                    "Inferred owner traits require confirmation.",
+                    "inferred_owner_trait_not_confirmed",
+                ))
+            self._validate_evidence(profile, prefix, issues)
 
         for index, relationship in enumerate(candidate_graph.candidate_relationships):
             prefix = f"candidate_relationships[{index}]"
@@ -91,6 +110,21 @@ class IngestionValidator:
                 issues,
             )
             self._validate_evidence(patch, prefix, issues)
+            if patch.target_ref == OWNER_ALIAS and patch.path in {
+                "is_owner",
+                "personality",
+                "preference",
+                "goal",
+                "work_style",
+                "profile_key",
+                "stability",
+                "visibility",
+            }:
+                issues.append(_issue(
+                    f"{prefix}.path",
+                    "LLM proposals cannot patch owner identity or place profile data on Person.",
+                    "owner_profile_patch_forbidden",
+                ))
 
         return ValidationResult.from_issues(issues)
 
@@ -103,6 +137,7 @@ class IngestionValidator:
             *write_plan.perceptions_to_create,
             *write_plan.relationship_contexts_to_create,
             *write_plan.memory_logs_to_create,
+            *write_plan.profile_memories_to_create,
         ]
         local_refs = {write.local_ref for write in node_writes}
         local_refs.update((write_plan.metadata or {}).get("local_ref_resolution", {}))
@@ -111,16 +146,31 @@ class IngestionValidator:
 
         for index, write in enumerate(node_writes):
             self._validate_label(write.label, f"node_writes[{index}]", issues)
+            self._validate_owner_properties(write, f"node_writes[{index}]", issues)
 
         relationship_writes = [
             *write_plan.relationships_to_create,
             *write_plan.relationships_to_update,
         ]
+        owner_alias_map = (write_plan.metadata or {}).get("alias_map", {})
         for index, write in enumerate(relationship_writes):
             prefix = f"relationship_writes[{index}]"
             self._validate_relationship_type(write.relationship_type, prefix, issues)
             self._validate_write_endpoint(write.from_ref, f"{prefix}.from_ref", local_refs, issues)
             self._validate_write_endpoint(write.to_ref, f"{prefix}.to_ref", local_refs, issues)
+            if write.relationship_type == "DESCRIBES_USER" and write.to_ref != OWNER_ALIAS:
+                issues.append(_issue(
+                    f"{prefix}.to_ref",
+                    "DESCRIBES_USER must target OWNER.",
+                    "profile_relationship_owner_required",
+                    {"to_ref": write.to_ref},
+                ))
+            if OWNER_ALIAS in {write.from_ref, write.to_ref} and OWNER_ALIAS not in owner_alias_map:
+                issues.append(_issue(
+                    f"relationship_writes[{index}]",
+                    "Owner relationships require a backend OWNER alias mapping.",
+                    "missing_owner_alias_mapping",
+                ))
 
         return ValidationResult.from_issues(issues)
 
@@ -141,6 +191,54 @@ class IngestionValidator:
                     {"label": label},
                 ),
             )
+
+    def _validate_owner_entity(self, entity: Any, field_path: str, issues: list[ValidationIssue]) -> None:
+        if entity.local_ref == OWNER_ALIAS:
+            issues.append(_issue(
+                f"{field_path}.local_ref",
+                "OWNER is an existing node and cannot be created as a Person candidate.",
+                "owner_duplicate_candidate",
+            ))
+        if entity.entity_type == "Person" and entity.typed_properties.get("is_owner") is True:
+            issues.append(_issue(
+                f"{field_path}.typed_properties.is_owner",
+                "LLM graph proposals cannot create an owner Person.",
+                "owner_creation_forbidden",
+            ))
+        if entity.entity_type != "Person" and "is_owner" in entity.typed_properties:
+            issues.append(_issue(
+                f"{field_path}.typed_properties.is_owner",
+                "is_owner is valid only on Person candidates.",
+                "invalid_owner_property",
+            ))
+
+    def _validate_owner_properties(
+        self,
+        write: GraphNodeWrite,
+        field_path: str,
+        issues: list[ValidationIssue],
+    ) -> None:
+        if write.label == "Person" and write.properties.get("is_owner") is True:
+            issues.append(_issue(
+                f"{field_path}.properties.is_owner",
+                "Normal graph writes cannot create an owner Person.",
+                "owner_creation_forbidden",
+            ))
+        if write.label != "Person" and "is_owner" in write.properties:
+            issues.append(_issue(
+                f"{field_path}.properties.is_owner",
+                "is_owner is valid only on Person nodes.",
+                "invalid_owner_property",
+            ))
+        if write.label == "Person" and any(
+            key in write.properties
+            for key in ("profile_key", "stability", "visibility", "personality", "preference", "goal")
+        ):
+            issues.append(_issue(
+                f"{field_path}.properties",
+                "Stable owner profile data must be stored as ProfileMemory.",
+                "profile_data_on_person_forbidden",
+            ))
 
     def _validate_relationship_type(
         self,
@@ -391,6 +489,7 @@ def _all_candidates(candidate_graph: CandidateMemoryGraph) -> list[CandidateBase
         *candidate_graph.candidate_perceptions,
         *candidate_graph.candidate_relationship_contexts,
         *candidate_graph.candidate_metadata_patches,
+        *candidate_graph.candidate_profile_memories,
     ]
 
 

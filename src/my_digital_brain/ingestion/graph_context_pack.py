@@ -14,6 +14,7 @@ from my_digital_brain.ingestion.contracts import (
     GraphContextRelationshipSnippetItem,
     SourceRecordRef,
 )
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 
 @dataclass(slots=True)
@@ -32,12 +33,14 @@ class WholeSourceGraphContextPackBuilder:
         self._aliases = {}
         self._counter = 0
         query = (source.raw_text or source.content_ref or "").strip()
+        owner_snapshot = self._owner_snapshot(source)
         if not query:
             return GraphContextPack(
                 source_id=source.source_id,
                 retrieval_strategy="whole_source_hybrid",
                 notes=["Source text was empty; graph context retrieval was skipped."],
                 alias_map=_owner_alias_map(source, self.owner_graph_node_id),
+                owner_snapshot=owner_snapshot,
             )
         if self.search_service is not None and hasattr(self.search_service, "search_hybrid"):
             return self._from_search_result(source, self.search_service.search_hybrid(
@@ -59,6 +62,7 @@ class WholeSourceGraphContextPackBuilder:
         source: SourceRecordRef,
         query: str,
     ) -> GraphContextPack:
+        owner_snapshot = self._owner_snapshot(source)
         nodes = self.graph_service.search_nodes(query=query, limit=self.limit)
         entities = [self._entity_from_node(_serialize(node)) for node in nodes]
         return GraphContextPack(
@@ -70,9 +74,11 @@ class WholeSourceGraphContextPackBuilder:
                 **_context_alias_map(self._aliases),
                 **_owner_alias_map(source, self.owner_graph_node_id),
             },
+            owner_snapshot=owner_snapshot,
         )
 
     def _from_search_result(self, source: SourceRecordRef, result: Any) -> GraphContextPack:
+        owner_snapshot = self._owner_snapshot(source)
         payload = _serialize(result)
         hits = list(payload.get("hits") or [])
         graph_view = dict(payload.get("graph_view") or {})
@@ -122,7 +128,22 @@ class WholeSourceGraphContextPackBuilder:
                 **_context_alias_map(self._aliases),
                 **_owner_alias_map(source, self.owner_graph_node_id),
             },
+            owner_snapshot=owner_snapshot,
         )
+
+    def _owner_snapshot(self, source: SourceRecordRef) -> OwnerSnapshot | None:
+        owner_id = self.owner_graph_node_id or _owner_alias_map(source).get("OWNER")
+        if not owner_id:
+            return None
+        if self.graph_service is not None and hasattr(self.graph_service, "get_node"):
+            try:
+                node = self.graph_service.get_node(owner_id)
+                properties = getattr(node, "properties", None)
+                if isinstance(properties, dict):
+                    return OwnerSnapshot.from_properties(properties)
+            except Exception:
+                pass
+        return OwnerSnapshot()
 
     def _entity_from_hit(self, hit: dict[str, Any]) -> GraphContextEntityItem | None:
         target = dict(hit.get("canonical_target") or hit.get("target") or {})

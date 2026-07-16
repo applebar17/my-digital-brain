@@ -204,6 +204,7 @@ class AgenticRuntime:
             channel=parent_execution_context.channel,
             conversation_id=parent_execution_context.conversation_id,
             owner_id=parent_execution_context.owner_id,
+            owner_snapshot=parent_execution_context.owner_snapshot,
             sender_id=parent_execution_context.sender_id,
             message_id=parent_execution_context.message_id,
             current_text=parent_execution_context.current_text,

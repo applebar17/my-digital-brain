@@ -39,6 +39,7 @@ from my_digital_brain.chat.models import (
 )
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
 from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 
 class ChatRuntime:
@@ -54,6 +55,7 @@ class ChatRuntime:
         history_service: AgenticHistoryService | None = None,
         debug_commands_enabled: bool = False,
         ai_flow_debug_enabled: bool = False,
+        owner_snapshot: OwnerSnapshot | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
         if agentic_runtime is None:
@@ -66,6 +68,7 @@ class ChatRuntime:
         self.history_service = history_service or AgenticHistoryService()
         self.debug_commands_enabled = debug_commands_enabled
         self.ai_flow_debug_enabled = ai_flow_debug_enabled
+        self.owner_snapshot = owner_snapshot
 
     @traceable(name="Chat Runtime Handle Message", run_type="chain")
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
@@ -358,6 +361,7 @@ class ChatRuntime:
             channel=str(session.channel),
             conversation_id=session.external_conversation_id,
             owner_id=owner_id,
+            owner_snapshot=self.owner_snapshot,
             sender_id=sender_id,
             message_id=message_id,
             current_text=answer_summary,
@@ -493,6 +497,7 @@ class ChatRuntime:
             channel=str(ChatChannel(message.channel)),
             conversation_id=message.conversation_id,
             owner_id=message.owner_id,
+            owner_snapshot=self.owner_snapshot,
             sender_id=message.sender_id,
             message_id=message.message_id,
             current_text=(message.text or "").strip(),

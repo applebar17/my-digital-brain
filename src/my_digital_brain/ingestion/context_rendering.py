@@ -76,6 +76,7 @@ class GraphContextPackRendererService:
         return GraphContextPackView(
             purpose=purpose,
             compact_summary=pack.compact_summary,
+            owner_snapshot=pack.owner_snapshot,
             aliases=[
                 _render_alias(item)
                 for item in pack.known_aliases[: self.max_aliases]

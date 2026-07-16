@@ -6,6 +6,7 @@ from typing import Protocol
 from pydantic import Field
 
 from my_digital_brain.core.ids import new_uuid
+from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.ingestion.contracts.base import IngestionModel
 
 
@@ -220,6 +221,10 @@ class GraphContextPack(IngestionModel):
             "from rendered LLM payloads."
         ),
     )
+    owner_snapshot: OwnerSnapshot | None = Field(
+        default=None,
+        description="Minimal model-facing identity snapshot for the canonical owner.",
+    )
 
 
 class GraphContextPackView(IngestionModel):
@@ -255,6 +260,10 @@ class GraphContextPackView(IngestionModel):
     notes: list[str] = Field(
         default_factory=list,
         description="Short task-relevant notes safe for an LLM payload.",
+    )
+    owner_snapshot: OwnerSnapshot | None = Field(
+        default=None,
+        description="Minimal owner identity context included for owner-capable tasks.",
     )
 
 

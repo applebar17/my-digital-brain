@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
@@ -121,6 +121,31 @@ class CandidateMetadataPatch(CandidateBase):
     reason: str | None = Field(default=None)
 
 
+class CandidateProfileMemory(CandidateBase):
+    """Proposed durable self-information; the backend owns its graph edge."""
+
+    profile_key: str
+    category: str
+    value: str
+    description: str = ""
+    owner_ref: Literal["OWNER"] = "OWNER"
+    original_user_words: str
+    stability: Literal["recurring", "stable", "user_confirmed"] = "stable"
+    visibility: Literal["hidden", "retrievable", "prompt_allowed"] = "hidden"
+    assertion_mode: Literal["explicit", "inferred"] = "explicit"
+    reason: str
+
+    @model_validator(mode="after")
+    def _validate_profile_memory(self) -> "CandidateProfileMemory":
+        if not self.original_user_words.strip():
+            raise ValueError("Profile memory requires original_user_words.")
+        if self.assertion_mode == "inferred":
+            self.requires_confirmation = True
+            if self.stability == "user_confirmed":
+                raise ValueError("Inferred profile memory cannot be user-confirmed.")
+        return self
+
+
 CandidateOutput: TypeAlias = (
     CandidateEntity
     | CandidateRelationship
@@ -128,6 +153,7 @@ CandidateOutput: TypeAlias = (
     | CandidatePerception
     | CandidateRelationshipContext
     | CandidateMetadataPatch
+    | CandidateProfileMemory
     | MemoryLog
 )
 
@@ -156,6 +182,10 @@ class CandidateMetadataPatchBatch(IngestionModel):
     candidates: list[CandidateMetadataPatch] = Field(default_factory=list)
 
 
+class CandidateProfileMemoryBatch(IngestionModel):
+    candidates: list[CandidateProfileMemory] = Field(default_factory=list)
+
+
 class CandidateMemoryGraph(IngestionModel):
     candidate_graph_id: str = Field(default_factory=new_uuid)
     source_id: str = Field(description="Source record used to create this candidate graph.")
@@ -175,6 +205,7 @@ class CandidateMemoryGraph(IngestionModel):
         ),
     )
     candidate_metadata_patches: list[CandidateMetadataPatch] = Field(default_factory=list)
+    candidate_profile_memories: list[CandidateProfileMemory] = Field(default_factory=list)
     local_ref_map: dict[str, str] = Field(
         default_factory=dict,
         description="Map from LLM-safe local refs to candidate ids.",

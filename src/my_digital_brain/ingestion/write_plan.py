@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from my_digital_brain.graph.constants import AFFECTIVE_FIELD_NAMES, NORMALIZED_NAME_LABELS
+from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.graph.models import node_model_for_label
 from my_digital_brain.graph.utils import normalize_text
 from my_digital_brain.ingestion.contracts import (
@@ -12,6 +13,7 @@ from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateMemoryGraph,
     CandidatePerception,
+    CandidateProfileMemory,
     CandidateRelationship,
     CandidateRelationshipContext,
     EvidenceRef,
@@ -43,6 +45,12 @@ class GraphWritePlanBuilder:
             raise IngestionValidationError(
                 "Cannot build graph write plan while resolution requires clarification."
             )
+        if candidate_graph.candidate_profile_memories and (
+            context is None or OWNER_ALIAS not in context.aliases
+        ):
+            raise IngestionValidationError(
+                "Profile memory writes require the backend OWNER alias mapping."
+            )
 
         decision_by_ref = {decision.candidate_ref: decision for decision in resolution.decisions}
         idempotency_keys: list[str] = []
@@ -52,6 +60,7 @@ class GraphWritePlanBuilder:
         perceptions_to_create: list[GraphNodeWrite] = []
         relationship_contexts_to_create: list[GraphNodeWrite] = []
         memory_logs_to_create: list[GraphNodeWrite] = []
+        profile_memories_to_create: list[GraphNodeWrite] = []
         planned_ref_ids = self._local_ref_resolution(resolution)
 
         for entity in candidate_graph.candidate_entities:
@@ -141,6 +150,22 @@ class GraphWritePlanBuilder:
                 relationships_to_create.append(relationship)
                 idempotency_keys.append(relationship.idempotency_key or "")
 
+        for profile in candidate_graph.candidate_profile_memories:
+            profile_write = self._profile_memory_write(candidate_graph.source_id, profile)
+            profile_memories_to_create.append(profile_write)
+            planned_ref_ids[profile.local_ref] = str(profile_write.properties["id"])
+            idempotency_keys.append(profile_write.idempotency_key or "")
+            relationship = self._relationship_write(
+                source_id=candidate_graph.source_id,
+                local_ref=f"{profile.local_ref}_DESCRIBES_USER",
+                relationship_type="DESCRIBES_USER",
+                from_ref=profile.local_ref,
+                to_ref="OWNER",
+                candidate=profile,
+            )
+            relationships_to_create.append(relationship)
+            idempotency_keys.append(relationship.idempotency_key or "")
+
         for relationship in candidate_graph.candidate_relationships:
             relationship_write = self._candidate_relationship_write(
                 candidate_graph.source_id,
@@ -158,6 +183,7 @@ class GraphWritePlanBuilder:
             perceptions_to_create=perceptions_to_create,
             relationship_contexts_to_create=relationship_contexts_to_create,
             memory_logs_to_create=memory_logs_to_create,
+            profile_memories_to_create=profile_memories_to_create,
             metadata_patches=list(candidate_graph.candidate_metadata_patches),
             evidence_links=list(candidate_graph.evidence_refs),
             idempotency_keys=sorted(key for key in set(idempotency_keys) if key),
@@ -167,6 +193,45 @@ class GraphWritePlanBuilder:
                 "alias_map": (context.aliases if context else {}),
                 "local_ref_resolution": self._local_ref_resolution(resolution),
             },
+        )
+
+    def _profile_memory_write(
+        self,
+        source_id: str,
+        candidate: CandidateProfileMemory,
+    ) -> GraphNodeWrite:
+        key = idempotency_key(
+            source_id,
+            "profile_memory",
+            candidate.local_ref,
+            candidate.profile_key,
+            candidate.value,
+        )
+        properties = _base_properties(source_id, candidate, key)
+        properties.update(
+            {
+                "profile_key": candidate.profile_key,
+                "category": candidate.category,
+                "value": candidate.value,
+                "stability": candidate.stability,
+                "visibility": candidate.visibility,
+                "description": candidate.description,
+                "metadata": {
+                    "original_user_words": candidate.original_user_words,
+                    "assertion_mode": candidate.assertion_mode,
+                    "reason": candidate.reason,
+                    "requires_confirmation": candidate.requires_confirmation,
+                    "owner_ref": "OWNER",
+                },
+            },
+        )
+        return GraphNodeWrite(
+            local_ref=candidate.local_ref,
+            label="ProfileMemory",
+            properties=_drop_empty(properties),
+            source_refs=_source_ids(candidate),
+            evidence_refs=candidate.evidence_refs,
+            idempotency_key=key,
         )
 
     def _entity_write(self, source_id: str, candidate: CandidateEntity) -> GraphNodeWrite:

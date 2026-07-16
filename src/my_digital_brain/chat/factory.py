@@ -12,12 +12,14 @@ from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import ChatSessionStore
 from my_digital_brain.config import Settings
+from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
 from my_digital_brain.ingestion.extractors import (
     ClaimExtractor,
     EntityExtractor,
     MetadataPatchExtractor,
     PerceptionExtractor,
+    ProfileMemoryExtractor,
     RelationshipContextExtractor,
     RelationshipExtractor,
 )
@@ -75,6 +77,7 @@ def build_chat_runtime(
         semantic_search_service=semantic_search_service,
         execute_write_plan=settings.ingestion_execute_write_plan,
     )
+    owner_snapshot = _owner_snapshot(graph_service, settings.owner_graph_node_id)
     return ChatRuntime(
         store=store,
         agentic_runtime=agentic_runtime,
@@ -85,7 +88,19 @@ def build_chat_runtime(
         history_service=history_service,
         debug_commands_enabled=settings.chat_debug_commands_enabled,
         ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
+        owner_snapshot=owner_snapshot,
     )
+
+
+def _owner_snapshot(graph_service: Any | None, owner_id: str) -> OwnerSnapshot | None:
+    if graph_service is None or not hasattr(graph_service, "get_node"):
+        return None
+    try:
+        node = graph_service.get_node(owner_id)
+        properties = getattr(node, "properties", None)
+        return OwnerSnapshot.from_properties(properties) if isinstance(properties, dict) else None
+    except Exception:
+        return None
 
 
 def build_ai_provider(settings: Settings):
@@ -154,6 +169,7 @@ def build_ingestion_service(
             RelationshipExtractor(provider, router=router),
             RelationshipContextExtractor(provider, router=router),
             MetadataPatchExtractor(provider, router=router),
+            ProfileMemoryExtractor(provider, router=router),
         ],
         execution_context_factory=planner_execution_context,
         resolution_service=ConservativeResolutionService(graph_service),

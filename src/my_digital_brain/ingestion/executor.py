@@ -73,6 +73,10 @@ class GraphWritePlanExecutor:
                 write_plan.memory_logs_to_create,
                 ref_map,
             )
+            created_profile_memories = self._execute_node_creates(
+                write_plan.profile_memories_to_create,
+                ref_map,
+            )
             patched_nodes = self._execute_metadata_patches(write_plan.metadata_patches, ref_map)
             relationships = self._execute_relationship_writes(
                 [
@@ -94,6 +98,7 @@ class GraphWritePlanExecutor:
                     "created_perceptions": len(created_perceptions),
                     "created_relationship_contexts": len(created_contexts),
                     "created_memory_logs": len(created_memory_logs),
+                    "created_profile_memories": len(created_profile_memories),
                     "metadata_patches": len(patched_nodes),
                     "relationships": len(relationships),
                     "ref_map": ref_map,
@@ -246,6 +251,7 @@ def _write_plan_has_mutations(write_plan: GraphWritePlan) -> bool:
             write_plan.perceptions_to_create,
             write_plan.relationship_contexts_to_create,
             write_plan.memory_logs_to_create,
+            write_plan.profile_memories_to_create,
             write_plan.metadata_patches,
         )
     )

@@ -19,6 +19,7 @@ def entity_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
             "Assign stable candidate local_refs to every planned entity target.",
             "Treat aliases as extraction and resolution hints, not identity.",
             "Use graph context duplicate hints before planning a new entity action.",
+            "Resolve self-references to the existing OWNER alias; never plan a Person for the owner.",
             "Keep low-salience details as context unless durable memory value is clear.",
             "Do not output backend ids, source ids, metadata dicts, or persistence fields.",
         ],
@@ -43,6 +44,7 @@ def relationship_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
         ],
         instructions=[
             "Plan relationships only between refs usable from the resolved entity map or provided graph aliases.",
+            "Map explicit first-person user references to OWNER and use OWNER as the relationship endpoint.",
             "Assign a stable candidate local_ref to every planned relationship output.",
             "Use RELATIONSHIP_WITH plus relationship detail for social wording such as brother or roommate.",
             "Emit MissingEntityRequiredDraft guidance when an endpoint is missing.",
@@ -76,6 +78,7 @@ def memory_log_ingestion_planning_guidelines() -> PlanningPurposeGuidelines:
             "Plan MemoryLogs only; do not plan durable relationships or graph writes.",
             "Use MEMORY_LOG_* local_refs and keep them stable through extraction.",
             "Use only resolved entity local refs or graph aliases as hosts and involved refs.",
+            "Use OWNER for the user when an episodic memory explicitly involves the user.",
             "Split dense source text into compact logs instead of one oversized record.",
             "Preserve original wording when it carries user meaning.",
             "Keep weak co-presence as memory-log involvement, not as a durable edge.",
