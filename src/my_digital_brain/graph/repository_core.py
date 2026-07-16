@@ -123,6 +123,17 @@ class GraphCoreRepository:
             return None
         return node_from_record(records[0])
 
+    def find_owner_nodes(self) -> list[dict[str, Any]]:
+        records = self.client.execute_read(
+            """
+            MATCH (n:Person)
+            WHERE n.is_owner = true
+            RETURN labels(n) AS labels, properties(n) AS properties
+            ORDER BY n.id
+            """,
+        )
+        return [node_from_record(record) for record in records]
+
     def get_relationship(self, relationship_id: str) -> dict[str, Any] | None:
         records = self.client.execute_read(
             """

@@ -143,6 +143,7 @@ def build_ingestion_service(
         graph_context_builder=WholeSourceGraphContextPackBuilder(
             search_service=semantic_search_service,
             graph_service=graph_service,
+            owner_graph_node_id=settings.owner_graph_node_id,
         ),
         entity_extractors=[
             EntityExtractor(provider, router=router),

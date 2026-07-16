@@ -26,13 +26,23 @@ class GraphWriteService(GraphServiceBase):
     def upsert_node(self, label: str, properties: dict[str, Any]) -> NodeSearchResult:
         label = validate_node_label(label)
         normalized_properties = self._normalize_node_properties(label, properties)
+        existing = self.repository.get_node(normalized_properties["id"])
+        if label == "Person":
+            if "is_owner" in properties and normalized_properties["is_owner"] is True:
+                raise GraphValidationError(
+                    "Normal graph writes cannot create or promote an owner Person node"
+                )
+            if existing and existing["properties"].get("is_owner") is True:
+                normalized_properties["is_owner"] = True
         normalized_properties = self._add_write_timestamps(normalized_properties, is_create=True)
         node = self.repository.upsert_node(label, normalized_properties)
         return NodeSearchResult.model_validate(node)
 
     def patch_node(self, node_id: str, properties: dict[str, Any]) -> NodeSearchResult:
         if IMMUTABLE_PATCH_FIELDS.intersection(properties):
-            raise GraphValidationError("Node patches cannot change id or created_at")
+            raise GraphValidationError(
+                "Node patches cannot change id or created_at or is_owner"
+            )
 
         existing = self.repository.get_node(node_id)
         if existing is None:

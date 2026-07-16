@@ -18,6 +18,7 @@ class GraphNodeModel(GraphRecordBase):
 class PersonNode(GraphNodeModel):
     label: ClassVar[str] = "Person"
 
+    is_owner: bool = False
     display_name: str | None = None
     normalized_name: str | None = None
     aliases: list[str] = Field(default_factory=list)

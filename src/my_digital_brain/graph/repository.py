@@ -34,6 +34,9 @@ class GraphRepository:
     def get_node(self, node_id: str) -> dict[str, Any] | None:
         return self.core.get_node(node_id)
 
+    def find_owner_nodes(self) -> list[dict[str, Any]]:
+        return self.core.find_owner_nodes()
+
     def get_relationship(self, relationship_id: str) -> dict[str, Any] | None:
         return self.core.get_relationship(relationship_id)
 

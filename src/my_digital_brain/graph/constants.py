@@ -11,7 +11,8 @@ NORMALIZED_NAME_LABELS = {
     "SocialCircle",
     "Topic",
 }
-IMMUTABLE_PATCH_FIELDS = {"id", "created_at"}
+IMMUTABLE_PATCH_FIELDS = {"id", "created_at", "is_owner"}
+OWNER_ALIAS = "OWNER"
 AFFECTIVE_FIELD_NAMES = {
     "emotional_summary",
     "emotional_valence",

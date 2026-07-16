@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
     neo4j_password: str = Field(default="change-me-neo4j", alias="NEO4J_PASSWORD")
     neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
+    owner_graph_node_id: str = Field(default="person:owner", alias="OWNER_GRAPH_NODE_ID")
+    owner_bootstrap_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        alias="OWNER_BOOTSTRAP_MAX_ATTEMPTS",
+    )
+    owner_bootstrap_retry_delay_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        alias="OWNER_BOOTSTRAP_RETRY_DELAY_SECONDS",
+    )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
         default="postgres",
