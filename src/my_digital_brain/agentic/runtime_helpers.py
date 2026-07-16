@@ -18,6 +18,7 @@ from my_digital_brain.agentic.runtime_models import (
 from my_digital_brain.debug import AIFlowTraceSection
 from my_digital_brain.prompts.registry import render_prompt_template
 from my_digital_brain.core.owner_context import owner_prompt_block
+from my_digital_brain.core.profile_context import owner_profile_prompt_block
 
 
 _RUNTIME_PROMPT_PLACEHOLDERS = (
@@ -171,6 +172,13 @@ def _system_prompt_with_runtime_context(
 ) -> str:
     owner_snapshot = _find_owner_snapshot(payload) or _find_owner_snapshot(prompt_context)
     owner_section = owner_prompt_block(owner_snapshot) if owner_snapshot else ""
+    profile_context = _find_profile_context(payload) or _find_profile_context(prompt_context)
+    profile_snapshot, profile_purpose = profile_context or (None, None)
+    profile_section = (
+        owner_profile_prompt_block(profile_snapshot, purpose=profile_purpose)
+        if profile_snapshot is not None and profile_purpose is not None
+        else ""
+    )
     if _uses_runtime_placeholders(prompt):
         prompt_context_payload = (
             prompt_context
@@ -196,7 +204,9 @@ def _system_prompt_with_runtime_context(
                     ),
                 },
             ).rstrip()
-            + ("\n\n" + owner_section + "\n" if owner_section else "\n")
+            + ("\n\n" + owner_section if owner_section else "")
+            + ("\n\n" + profile_section if profile_section else "")
+            + "\n"
         )
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
     timezone = _find_prompt_value(payload, "timezone") or "UTC"
@@ -211,6 +221,8 @@ def _system_prompt_with_runtime_context(
     ]
     if owner_section:
         sections.append(owner_section)
+    if profile_section:
+        sections.append(profile_section)
     # if runtime_metadata:
     #     sections.append(_system_json_section("Runtime metadata", runtime_metadata))
     if prompt_context not in (None, "", [], {}):
@@ -239,6 +251,33 @@ def _find_owner_snapshot(value: Any) -> Any | None:
     if isinstance(value, list):
         for item in value:
             found = _find_owner_snapshot(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _find_profile_context(value: Any) -> tuple[Any, str] | None:
+    if value is None:
+        return None
+    if hasattr(value, "approved_owner_profile") and hasattr(value, "profile_purpose"):
+        snapshot = getattr(value, "approved_owner_profile")
+        purpose = getattr(value, "profile_purpose")
+        if snapshot is not None and purpose in {"owner_profile", "profile_duplication"}:
+            return snapshot, str(purpose)
+    if hasattr(value, "model_dump"):
+        return _find_profile_context(value.model_dump(mode="python", exclude_none=True))
+    if isinstance(value, dict):
+        snapshot = value.get("approved_owner_profile")
+        purpose = value.get("profile_purpose")
+        if snapshot is not None and purpose in {"owner_profile", "profile_duplication"}:
+            return snapshot, str(purpose)
+        for item in value.values():
+            found = _find_profile_context(item)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_profile_context(item)
             if found is not None:
                 return found
     return None

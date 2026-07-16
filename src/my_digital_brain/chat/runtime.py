@@ -40,6 +40,7 @@ from my_digital_brain.chat.models import (
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
 from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.core.profile_context import OwnerProfileSnapshot
 
 
 class ChatRuntime:
@@ -56,6 +57,7 @@ class ChatRuntime:
         debug_commands_enabled: bool = False,
         ai_flow_debug_enabled: bool = False,
         owner_snapshot: OwnerSnapshot | None = None,
+        owner_profile_reader: object | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
         if agentic_runtime is None:
@@ -69,6 +71,12 @@ class ChatRuntime:
         self.debug_commands_enabled = debug_commands_enabled
         self.ai_flow_debug_enabled = ai_flow_debug_enabled
         self.owner_snapshot = owner_snapshot
+        self.owner_profile_reader = owner_profile_reader
+
+    def get_approved_owner_profile(self) -> OwnerProfileSnapshot:
+        if self.owner_profile_reader is None:
+            raise ChatValidationError("Owner profile retrieval is unavailable.")
+        return self.owner_profile_reader.get_approved_profile_for_prompt()
 
     @traceable(name="Chat Runtime Handle Message", run_type="chain")
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:

@@ -46,6 +46,7 @@ class GraphVectorizationService:
         collection: str = VECTOR_SCOPES_COLLECTION,
         vector_config: MultiScopeVectorConfig | None = None,
         vector_store_name: str = VECTOR_STORE_CHROMA,
+        owner_graph_node_id: str | None = None,
     ) -> None:
         self.graph_service = graph_service
         self.embedding_provider = embedding_provider
@@ -59,6 +60,7 @@ class GraphVectorizationService:
             scope.collection for scope in self.vector_config.scopes if scope.enabled
         }
         self.vector_store_name = vector_store_name
+        self.owner_graph_node_id = owner_graph_node_id
 
     @traceable(name="Graph RAG Vectorize Ingestion Result", run_type="chain")
     def vectorize_ingestion_result(self, result: IngestionResult) -> GraphVectorizationResult:
@@ -101,6 +103,12 @@ class GraphVectorizationService:
                 skipped_targets.append(target_id)
                 continue
             related_nodes = self._related_nodes(target_id)
+            if node.label == "ProfileMemory" and not _profile_is_indexable(
+                node, related_nodes, owner_graph_node_id=self.owner_graph_node_id
+            ):
+                archived_records += self._archive_existing_records(target_id)
+                skipped_targets.append(target_id)
+                continue
             document = self.text_builder.build_for_node(
                 node,
                 related_nodes=related_nodes,
@@ -324,6 +332,31 @@ def _dedupe(values: Iterable[str]) -> list[str]:
             seen.add(value)
             deduped.append(value)
     return deduped
+
+
+def _profile_is_indexable(
+    node: NodeSearchResult,
+    related_nodes: Iterable[NodeSearchResult],
+    *,
+    owner_graph_node_id: str | None,
+) -> bool:
+    properties = node.properties
+    metadata = properties.get("metadata") or {}
+    if (
+        properties.get("lifecycle_state", "active") != "active"
+        or properties.get("visibility") != "prompt_allowed"
+        or properties.get("stability") not in {"stable", "user_confirmed"}
+        or metadata.get("requires_confirmation") is True
+    ):
+        return False
+    if not owner_graph_node_id:
+        return False
+    return any(
+        str(related.properties.get("id")) == owner_graph_node_id
+        and related.label == "Person"
+        and related.properties.get("is_owner") is True
+        for related in related_nodes
+    )
 
 
 def _chroma_metadata(document: EmbeddingDocument) -> dict[str, str | int | float | bool]:

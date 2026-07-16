@@ -9,6 +9,10 @@ from my_digital_brain.agentic.base import AgenticModel, utc_now
 from my_digital_brain.agentic.contexts import ConversationContext, ToolResultContext
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.core.profile_context import (
+    OwnerProfilePurpose,
+    OwnerProfileSnapshot,
+)
 
 
 class PlanningPurposeGuidelines(AgenticModel):
@@ -81,6 +85,16 @@ class PlanningTransformContext(AgenticModel):
         ),
     )
     owner_snapshot: OwnerSnapshot | None = None
+    approved_owner_profile: OwnerProfileSnapshot | None = None
+    profile_purpose: OwnerProfilePurpose | None = None
+
+    @model_validator(mode="after")
+    def _validate_profile_scope(self) -> "PlanningTransformContext":
+        if (self.approved_owner_profile is None) != (self.profile_purpose is None):
+            raise ValueError(
+                "approved_owner_profile and profile_purpose must be supplied together"
+            )
+        return self
 
     def model_facing_payload(self) -> dict[str, Any]:
         return _compact_prompt_payload(
@@ -94,6 +108,14 @@ class PlanningTransformContext(AgenticModel):
                 "prior_tool_outputs": self.prior_tool_outputs,
                 "expected_output_schema": self.expected_output_schema,
                 "owner_snapshot": self.owner_snapshot,
+                **(
+                    {
+                        "profile_purpose": self.profile_purpose,
+                        "approved_owner_profile": self.approved_owner_profile,
+                    }
+                    if self.profile_purpose is not None
+                    else {}
+                ),
             },
         )
 
@@ -114,6 +136,14 @@ class PlanningTransformContext(AgenticModel):
                     scope=scope,
                 ),
                 "owner_snapshot": self.owner_snapshot,
+                **(
+                    {
+                        "profile_purpose": self.profile_purpose,
+                        "approved_owner_profile": self.approved_owner_profile,
+                    }
+                    if self.profile_purpose is not None
+                    else {}
+                ),
             },
         )
 

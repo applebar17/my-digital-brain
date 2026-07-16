@@ -183,6 +183,8 @@ class EmbeddingTextBuilder:
             _line("Category", properties.get("category")),
             _line("Stability", properties.get("stability")),
             _line("Visibility", properties.get("visibility")),
+            _line("Assertion", (properties.get("metadata") or {}).get("assertion_mode")),
+            _line("Original user wording", properties.get("original_user_words")),
         )
 
     def _build_memory_log(

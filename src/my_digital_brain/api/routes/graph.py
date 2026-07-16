@@ -108,6 +108,7 @@ def get_semantic_search_service() -> Generator[SemanticMemorySearchService]:
                 vector_store=ChromaVectorStore.from_settings(settings),
                 vector_record_store=VectorRecordStore(relational),
                 model_router=model_router,
+                owner_graph_node_id=settings.owner_graph_node_id,
             )
     finally:
         relational.dispose()

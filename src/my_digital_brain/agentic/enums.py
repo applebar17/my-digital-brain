@@ -20,6 +20,7 @@ class AgenticStateId(StrEnum):
     MEMORY_INGESTION = "memory_ingestion"
     MEMORY_CREATION = "memory_creation"
     GRAPH_UPDATE = "graph_update"
+    PROFILE_DUPLICATION = "profile_duplication"
 
 
 class NeutralMessageKind(StrEnum):

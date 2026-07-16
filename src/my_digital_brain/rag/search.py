@@ -92,6 +92,7 @@ class SemanticMemorySearchService:
         graph_focus_selector: SearchGraphFocusSelector | None = None,
         vector_config: MultiScopeVectorConfig | None = None,
         vector_store_name: str = VECTOR_STORE_CHROMA,
+        owner_graph_node_id: str | None = None,
     ) -> None:
         self.graph_service = graph_service
         self.embedding_provider = embedding_provider
@@ -102,6 +103,7 @@ class SemanticMemorySearchService:
         self.graph_focus_selector = graph_focus_selector or SearchGraphFocusSelector()
         self.vector_config = vector_config or default_v1_vector_scope_config()
         self.vector_store_name = vector_store_name
+        self.owner_graph_node_id = owner_graph_node_id
 
     @traceable(name="Graph RAG Scoped Semantic Search", run_type="retriever")
     def search_semantic(
@@ -370,6 +372,10 @@ class SemanticMemorySearchService:
             return None
         matched_canonical = self._canonical_for_node(matched, trace=trace)
         related = self._hydrate_related(record.related_target_ids, trace=trace)
+        if matched.label == "ProfileMemory" and not _profile_hit_allowed(
+            matched, related, owner_graph_node_id=self.owner_graph_node_id
+        ):
+            return None
         display = self._display_target_for_hit(record, matched, related, trace=trace)
         display_canonical = self._canonical_for_node(display, trace=trace) if display else None
         display_target = display_canonical or display or matched_canonical or matched
@@ -536,6 +542,12 @@ class SemanticMemorySearchService:
             return []
         hits: list[SemanticMemoryHit] = []
         for node in nodes:
+            if node.label == "ProfileMemory" and not _profile_hit_allowed(
+                node,
+                self._profile_related_nodes(node, trace=trace),
+                owner_graph_node_id=self.owner_graph_node_id,
+            ):
+                continue
             canonical = self._canonical_for_node(node, trace=trace)
             target = canonical or node
             target_id = str(target.properties["id"])
@@ -693,6 +705,27 @@ class SemanticMemorySearchService:
                 continue
             related.append(self._canonical_for_node(node, trace=trace) or node)
         return _dedupe_nodes(related)
+
+    def _profile_related_nodes(
+        self,
+        node: NodeSearchResult,
+        *,
+        trace: list[SemanticSearchTraceEvent],
+    ) -> list[NodeSearchResult]:
+        try:
+            relationships = self.graph_service.get_node_relationships(
+                str(node.properties.get("id", "")), limit=20
+            )
+        except Exception:
+            return []
+        ids = [
+            relationship.to_id
+            if relationship.from_id == node.properties.get("id")
+            else relationship.from_id
+            for relationship in relationships
+            if relationship.type == "DESCRIBES_USER"
+        ]
+        return self._hydrate_related(ids, trace=trace)
 
     def _expanded_neighborhood(
         self,
@@ -929,6 +962,31 @@ def _first_displayable_related(nodes: list[NodeSearchResult]) -> NodeSearchResul
         if node.label not in NON_DISPLAY_LABELS:
             return node
     return nodes[0] if nodes else None
+
+
+def _profile_hit_allowed(
+    node: NodeSearchResult,
+    related_nodes: Iterable[NodeSearchResult],
+    *,
+    owner_graph_node_id: str | None,
+) -> bool:
+    if not owner_graph_node_id:
+        return False
+    properties = node.properties
+    metadata = properties.get("metadata") or {}
+    if (
+        properties.get("lifecycle_state", "active") != "active"
+        or properties.get("visibility") != "prompt_allowed"
+        or properties.get("stability") not in {"stable", "user_confirmed"}
+        or metadata.get("requires_confirmation") is True
+    ):
+        return False
+    return any(
+        related.label == "Person"
+        and str(related.properties.get("id")) == owner_graph_node_id
+        and related.properties.get("is_owner") is True
+        for related in related_nodes
+    )
 
 
 def _text_value(value: Any) -> str | None:

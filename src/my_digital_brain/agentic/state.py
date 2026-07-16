@@ -245,4 +245,23 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             ],
             model_task="contradiction_review",
         ),
+        AgenticStateId.PROFILE_DUPLICATION: AgenticStateConfig(
+            state_id=AgenticStateId.PROFILE_DUPLICATION,
+            purpose="Evaluate or reproduce the owner's approved profile without graph writes.",
+            prompt_id="profile_duplication",
+            required_context_type="PlanningTransformContext",
+            produced_context_type="PlanningTransformResultContext",
+            allowed_tools=[],
+            forbidden_tools=[
+                "execute_graph_write_plan",
+                "ingest_memory",
+                "update_memory_graph",
+                "create_graph_node",
+                "patch_graph_node",
+                "upsert_graph_relationship",
+                "raw_graph_query",
+            ],
+            max_tool_calls=2,
+            model_task="profile_duplication",
+        ),
     }

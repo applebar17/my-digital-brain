@@ -13,6 +13,8 @@ from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import ChatSessionStore
 from my_digital_brain.config import Settings
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.graph.owner import OwnerNodeManager
+from my_digital_brain.graph.owner_profile import OwnerProfileReader
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
 from my_digital_brain.ingestion.extractors import (
     ClaimExtractor,
@@ -78,6 +80,14 @@ def build_chat_runtime(
         execute_write_plan=settings.ingestion_execute_write_plan,
     )
     owner_snapshot = _owner_snapshot(graph_service, settings.owner_graph_node_id)
+    owner_profile_reader = (
+        OwnerProfileReader(
+            graph_service=graph_service,
+            owner_manager=OwnerNodeManager(graph_service.repository, settings),
+        )
+        if graph_service is not None and hasattr(graph_service, "repository")
+        else None
+    )
     return ChatRuntime(
         store=store,
         agentic_runtime=agentic_runtime,
@@ -89,6 +99,7 @@ def build_chat_runtime(
         debug_commands_enabled=settings.chat_debug_commands_enabled,
         ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
         owner_snapshot=owner_snapshot,
+        owner_profile_reader=owner_profile_reader,
     )
 
 
@@ -125,6 +136,7 @@ def build_semantic_search_service(
             RelationalSessionProvider.from_settings(settings),
         ),
         model_router=router,
+        owner_graph_node_id=settings.owner_graph_node_id,
     )
 
 
@@ -183,6 +195,7 @@ def build_ingestion_service(
                 RelationalSessionProvider.from_settings(settings),
             ),
             model_router=router,
+            owner_graph_node_id=settings.owner_graph_node_id,
         ),
         execute_write_plan=execute_write_plan,
         process_store=InMemoryIngestionProcessStore(),

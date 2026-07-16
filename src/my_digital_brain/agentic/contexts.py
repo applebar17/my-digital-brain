@@ -30,6 +30,7 @@ from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.core.profile_context import OwnerProfilePurpose, OwnerProfileSnapshot
 
 _PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64}\b")
 _VISIBLE_REF_RE = re.compile(r"^(?:(?:node|memory|edge|context|media)_[0-9]{4}|(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64})$")
@@ -322,7 +323,17 @@ class QueryRetrievalPlanningContext(AgenticModel):
     seed_aliases: dict[str, str] = Field(default_factory=dict)
     desired_view: str | None = None
     owner_snapshot: OwnerSnapshot | None = None
+    approved_owner_profile: OwnerProfileSnapshot | None = None
+    profile_purpose: OwnerProfilePurpose | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_profile_scope(self) -> "QueryRetrievalPlanningContext":
+        if (self.approved_owner_profile is None) != (self.profile_purpose is None):
+            raise ValueError(
+                "approved_owner_profile and profile_purpose must be supplied together"
+            )
+        return self
 
 
 class QueryRetrievalPlan(AgenticModel):
