@@ -2931,6 +2931,68 @@ p {
   transform: scale(1.26);
 }
 
+/* Focused pyramid / fan view: the JS position tween is the sole driver of movement,
+   so the per-frame CSS position transitions are disabled here to keep edges glued to
+   their nodes. Only opacity and the seed's lift animate via CSS. */
+.memory-canvas.is-focus {
+  cursor: default;
+}
+
+.memory-canvas.is-focus .memory-node {
+  transition: opacity 300ms ease;
+}
+
+.memory-canvas.is-focus .memory-edge-line {
+  transition:
+    stroke 160ms ease,
+    stroke-opacity 160ms ease,
+    stroke-width 160ms ease;
+}
+
+.memory-canvas.is-focus .memory-edge-label {
+  transition: none;
+}
+
+.memory-node.is-seed .memory-node-shape {
+  transform: scale(1.34);
+}
+
+.memory-node.is-seed .memory-node-halo {
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 10px currentColor);
+}
+
+.memory-canvas.is-focus .memory-node.tier-2 {
+  opacity: 0.86;
+}
+
+.memory-canvas.is-focus .memory-node.tier-3 {
+  opacity: 0.7;
+}
+
+.memory-canvas.is-focus .memory-node.tier-loose {
+  opacity: 0.4;
+}
+
+.memory-canvas.is-focus .memory-edge.is-primary .memory-edge-line {
+  stroke-opacity: 0.82;
+  stroke-width: 1.8;
+}
+
+.memory-canvas.is-focus .memory-edge.is-muted .memory-edge-line {
+  stroke-opacity: 0.14;
+}
+
+.memory-canvas.is-focus .memory-edge.is-muted .memory-edge-label {
+  opacity: 0;
+}
+
+.memory-canvas-back {
+  min-width: auto;
+  padding: 0 var(--space-3);
+  font-weight: 700;
+}
+
 .memory-node-halo {
   fill: transparent;
   stroke-width: 1.2;

@@ -355,6 +355,7 @@ export function GraphView() {
             selectedNodeId={selectedNodeId}
             isLoading={isLoading}
             onSelectNode={(id) => void loadNodeContext(id)}
+            onClearSelection={handleCloseInspector}
           />
           <GraphTimelineDock timeline={timeline} mapView={mapView} />
         </div>
