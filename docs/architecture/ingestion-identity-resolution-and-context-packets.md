@@ -4,6 +4,29 @@
 
 Design agreed for implementation. This document captures the behavior discussed for resolving planned entities against existing graph nodes before extraction and write planning.
 
+## Locked Decisions
+
+- Use a generic identity-resolution service, initially enabled for identity-
+  rich labels such as `Person`, `Organization`, and `Place`.
+- Derive lookup fields and matching policy in backend code from the planned
+  candidate. The planner does not control graph-search policy.
+- Use deterministic normalized name, name-token, and alias matching to find
+  candidates. Fuzzy or semantic results are hints only.
+- Use one run-scoped reference registry. Existing ingestion-context nodes use
+  the canonical `NODE_000001`-style reference family; proposed entities use
+  `CANDIDATE_*`; the owner uses `OWNER`.
+- Resolution behavior is prompt-guided and LLM-decided. The backend classifies
+  evidence and enforces safety, but it does not deterministically choose the
+  final extractor action.
+- Candidate and context limits are configurable. Initial provisional values
+  are defined in the Wave 3 section and may be tuned during implementation.
+- Clarifications belong to the current session. Questions and answers are
+  normal history messages injected into later pipeline contexts.
+- Contracts will be extended for lookup packets, resolution proposals,
+  session clarification context, and run-scoped references.
+- The feature will be integrated directly into the relevant ingestion path;
+  no separate production rollout phase is planned.
+
 ## Purpose
 
 When a user mentions an entity, the ingestion pipeline must give the LLM enough bounded graph context to decide whether the entity is:
@@ -23,8 +46,8 @@ The planner proposes `Marco` as a Person candidate. The backend searches the gra
 
 ## Core Principles
 
-1. **Lookup is backend-owned.** The LLM requests identity lookup through structured proposal data. It never produces Cypher or an executable graph query.
-2. **Planning and identity resolution are separate.** The planner describes the entity and the fields useful for lookup. The backend performs lookup before extraction.
+1. **Lookup is backend-owned.** The backend creates a structured lookup request from the planned candidate. The LLM never produces Cypher or an executable graph query.
+2. **Planning and identity resolution are separate.** The planner describes the entity through normal candidate fields. The backend derives lookup fields and performs lookup before extraction.
 3. **Search is deterministic.** Name and alias lookup may return candidates using deterministic normalization and bounded matching. Semantic similarity is evidence only and cannot automatically bind an entity.
 4. **The extractor is autonomous within explicit boundaries.** It may select an existing candidate, request clarification, or keep the entity as new when the packet supports that decision.
 5. **Graph execution remains backend-owned.** An LLM decision is a proposal. The backend validates its references and converts it into an authorized write plan.
@@ -52,8 +75,9 @@ The existing broad whole-source retrieval remains useful for general reasoning. 
 ## Multi-Wave Implementation Plan
 
 The implementation is intentionally split into independent waves. Each wave
-must preserve the existing ingestion path unless the new identity-resolution
-behavior is explicitly enabled for that process.
+is a bounded implementation slice. The feature is intended to be integrated
+directly into the relevant ingestion path; the waves are sequencing and test
+boundaries, not a deferred rollout or parallel production implementation.
 
 ### Wave 0: Contract And Boundary Lock
 
@@ -68,7 +92,15 @@ fixtures. No production LLM behavior changes.
   - `EntityLookupResult`;
   - `EntityLookupContextPacket`;
   - `EntityResolutionProposal`;
-  - clarification state and response handoff.
+  - session-scoped clarification context and response handoff.
+- Extend the relevant planning, extraction, and process-context contracts to
+  carry:
+  - candidate lookup packets;
+  - run-scoped model references;
+  - resolution proposals and selected target references;
+  - clarification questions and user answers as conversation context.
+- Keep clarification context in the current session history. Do not add a new
+  graph taxonomy object or a separate persistent clarification record.
 - Define the allowed lookup statuses and resolution actions from this
   document.
 - Define the run-scoped reference registry contract:
@@ -96,8 +128,8 @@ fixtures. No production LLM behavior changes.
   without an explicit backend resolution.
 - `OWNER` cannot be replaced by a user-provided graph ID.
 
-**Exit criteria:** contracts and reference invariants are tested, and the
-existing ingestion behavior remains unchanged.
+**Exit criteria:** contracts and reference invariants are tested, and
+unrelated ingestion behavior remains unchanged.
 
 ### Wave 1: Canonical Reference Registry
 
@@ -137,15 +169,15 @@ can use the registry.
 ### Wave 2: Deterministic Identity Lookup
 
 **Scope:** backend lookup service and extraction-stage integration point. No
-new LLM decision behavior yet.
+new LLM decision behavior is introduced until the lookup packet is available.
 
 **Deliverables:**
 
 - Extract the reusable deterministic matching logic from
   `ConservativeResolutionService` into an owner- and graph-scoped identity
   lookup service.
-- Build lookup requests from planned entity fields rather than from raw LLM
-  queries.
+- Build lookup requests in backend code from planned entity fields rather than
+  from LLM-generated lookup metadata or raw LLM queries.
 - Implement label-constrained lookup for identity fields:
   - display name;
   - name;
@@ -157,8 +189,8 @@ new LLM decision behavior yet.
 - Keep fuzzy and semantic retrieval as non-binding hints.
 - Exclude the canonical owner from ordinary Person lookup. First-person
   references resolve directly to `OWNER`.
-- Cache or carry the lookup result forward so final resolution does not apply
-  a different search policy.
+- Carry the lookup result forward so final resolution does not apply a
+  different search policy.
 
 **Tests:**
 
@@ -188,7 +220,7 @@ until Wave 4.
   - place, organization, event, and temporal hints;
   - permitted source evidence.
 - Apply existing lifecycle, visibility, privacy, and owner-scope policies.
-- Cap the number of candidates, related objects, and text length.
+- Make candidate, related-object, and text limits configurable.
 - Mark exact, token, fuzzy, and semantic evidence explicitly.
 - Delimit original user wording and mark it as user data, not instructions.
 - Add purpose-specific rendering for planner and extractor contexts.
@@ -203,6 +235,22 @@ until Wave 4.
 - hidden or disallowed evidence is excluded;
 - the same candidate reference is preserved across all packets.
 
+**Initial configurable limits:**
+
+These are provisional implementation defaults and should remain configuration
+values so they can be tuned during implementation and UAT:
+
+| Setting | Initial value | Scope |
+| --- | ---: | --- |
+| `identity_lookup_max_candidates` | `5` | Maximum existing candidates per planned entity. |
+| `identity_context_max_relationships` | `3` | Relationship summaries per candidate. |
+| `identity_context_max_memory_logs` | `3` | Relevant MemoryLog summaries per candidate. |
+| `identity_context_max_summary_chars` | `500` | Maximum characters per context summary. |
+| `identity_context_max_total_chars` | `6000` | Maximum rendered candidate-packet size. |
+
+The final defaults should be confirmed against actual prompt sizes, provider
+limits, privacy review, and refined-ingestion UAT results.
+
 **Exit criteria:** the extractor can receive a safe, bounded overview of
 possible existing nodes without receiving direct database identity data.
 
@@ -213,8 +261,9 @@ of LLM-selected outcomes.
 
 **Deliverables:**
 
-- Teach the planner to describe lookup fields and candidate identity without
-  generating queries.
+- Keep the planner responsible for describing candidate identity through its
+  normal candidate fields. The backend derives lookup fields and policy from
+  those fields; the planner does not emit lookup instructions or queries.
 - Add the candidate packet to every extraction process that can create or
   reference graph nodes.
 - Teach the extractor the allowed outcomes:
@@ -223,12 +272,18 @@ of LLM-selected outcomes.
   - `REQUEST_CLARIFICATION`;
   - `IGNORE_OR_DEFER`.
 - Require existing-node attachment to reference only a supplied alias.
-- Require evidence-based reasoning for selecting one of several candidates.
-- Instruct the extractor that fuzzy matches are not confirmed facts.
+- Add scenario-specific prompting instructions for selecting one candidate,
+  creating a new node, deferring, or requesting clarification.
+- Instruct the extractor that fuzzy matches are not confirmed facts and that
+  it must use the available context to decide autonomously.
 - Prevent direct Person-property mutation as an implicit result of identity
   matching.
 - Add backend validation that rejects invented aliases, invalid labels,
   owner impersonation, and unsupported actions.
+
+The backend classifies lookup evidence and enforces safety constraints, but it
+does not deterministically choose the extractor's final action. The extractor
+uses the prompt instructions and the supplied context to make that decision.
 
 **Tests:**
 
@@ -250,16 +305,18 @@ update planning.
 
 **Deliverables:**
 
-- Persist compact clarification state containing:
-  - original candidate;
-  - candidate packet;
-  - proposed graph effects;
-  - question and evidence;
-  - owner and graph scope;
-  - expiration or retry metadata where applicable.
+- Keep clarification state in the current session as conversation history.
+  The history must retain and make available to later pipeline steps:
+  - the original candidate;
+  - the candidate packet;
+  - the proposed graph effects;
+  - the clarification question;
+  - the user's answer and supporting evidence;
+  - the owner and graph scope.
 - Render human-readable clarification questions without exposing internal
   references or persisted IDs.
-- Re-enter the pipeline with the original candidate and the user's answer.
+- Re-enter the pipeline with the original candidate, the user's answer, and
+  the shared session history injected into the relevant prompts.
 - Allow the extractor after clarification to:
   - create a new node;
   - attach to a supplied existing node;
@@ -290,7 +347,7 @@ unscoped mutation.
 ### Wave 6: Hardening, Evaluation, And UAT
 
 **Scope:** production hardening, observability, regression coverage, and
-interactive ingestion validation.
+interactive ingestion validation after direct integration.
 
 **Deliverables:**
 
@@ -316,10 +373,13 @@ interactive ingestion validation.
   new-node rate, rejected references, and lookup failures.
 - Confirm that generic graph retrieval and unrelated semantic retrieval are
   unchanged.
+- Remove temporary compatibility paths that would allow the old late-only
+  resolution behavior to bypass the new pre-extraction packet when the
+  feature's relevant ingestion process is active.
 
 **Exit criteria:** the interactive refined-ingestion trace demonstrates the
-full flow reliably, the regression suite passes, and the feature can be
-enabled without exposing hidden graph identifiers or allowing unsafe writes.
+full flow reliably, the regression suite passes, and direct integration does
+not expose hidden graph identifiers or allow unsafe writes.
 
 ### Implementation Order Summary
 
@@ -334,11 +394,15 @@ Wave 0  contracts and invariants
 ```
 
 Each wave should land with focused unit and integration tests before the next
-wave changes prompt behavior or write orchestration.
+wave changes prompt behavior or write orchestration. No separate production
+rollout phase is required for the current scope.
 
 ## Planner Output
 
-The planner must continue to produce a normal candidate entity, with lookup metadata added where appropriate. It must not produce a graph query.
+The planner must continue to produce a normal candidate entity. The backend
+derives lookup requests from the candidate fields. The planner must not
+produce lookup metadata that changes backend search policy and must not
+produce a graph query.
 
 Conceptual example:
 
@@ -347,12 +411,7 @@ Conceptual example:
   "local_ref": "CANDIDATE_PERSON_001",
   "entity_type": "Person",
   "display_name": "Marco",
-  "aliases": [],
-  "lookup": {
-    "fields": ["display_name", "name", "normalized_name", "aliases"],
-    "matching_policy": "deterministic_identity_candidates",
-    "max_candidates": 5
-  }
+  "aliases": []
 }
 ```
 
@@ -510,7 +569,8 @@ When clarification is required:
 
 1. The extractor returns a structured clarification request and does not create or bind the entity.
 2. The application presents a natural-language question using candidate summaries.
-3. The user's response is reintroduced with the original candidate, lookup packet, and clarification state.
+3. The question and the user's response become session history messages and
+   are reintroduced with the original candidate and lookup packet.
 4. The LLM chooses `CREATE_NEW`, `ATTACH_TO_EXISTING`, or another clarification request.
 5. The backend revalidates the selected reference and refreshes the relevant node state before producing a write plan.
 
