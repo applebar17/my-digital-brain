@@ -99,10 +99,6 @@ from my_digital_brain.agentic.history import (
     AgenticHistoryService,
     HistoryProjectionPolicy,
 )
-from my_digital_brain.agentic.router import (
-    AgenticRoute,
-    DeterministicAgenticRouter,
-)
 from my_digital_brain.agentic.runtime import (
     AgenticRuntime,
     AgenticStateRunner,
@@ -140,7 +136,6 @@ from my_digital_brain.core.owner_context import OwnerSnapshot
 
 __all__ = [
     "AgenticNodeKind",
-    "AgenticRoute",
     "AgenticRunResult",
     "AgenticHistoryService",
     "AgenticMemoryLogExtractionService",
@@ -171,7 +166,6 @@ __all__ = [
     "ContradictionResultIntent",
     "ContradictionReviewContext",
     "ContradictionSeverity",
-    "DeterministicAgenticRouter",
     "EdgeReasoningHighlights",
     "EvidenceSpan",
     "ExtractionTaskContext",

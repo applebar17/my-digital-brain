@@ -29,7 +29,6 @@ from my_digital_brain.agentic import (
     ChannelContextProjection,
     ChannelSessionMetadata,
     ConversationContext,
-    DeterministicAgenticRouter,
     MemoryCreationContext,
     AgenticToolPayload,
     MemoryPlan,
@@ -256,42 +255,6 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
         registry.render("example")
     with pytest.raises(PromptNotFoundError):
         registry.load("missing")
-
-
-def test_deterministic_router_does_not_infer_default_memory_action() -> None:
-    router = DeterministicAgenticRouter()
-    context = ConversationContext(
-        current_message=NeutralConversationMessage.user("Yesterday I met Marco."),
-    )
-
-    route = router.route(context)
-
-    assert route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert route.tool_call is None
-    assert route.assistant_message is not None
-    assert "Provider-backed conversation routing" in route.assistant_message.content
-
-
-def test_deterministic_router_does_not_expose_control_tools_to_conversation_entry() -> None:
-    router = DeterministicAgenticRouter()
-    status_context = ConversationContext(
-        current_message=NeutralConversationMessage.user("/status"),
-    )
-    cancel_context = ConversationContext(
-        current_message=NeutralConversationMessage.user("skip"),
-    )
-
-    status_route = router.route(status_context)
-    cancel_route = router.route(cancel_context)
-
-    assert status_route.entry_state == AgenticStateId.CONVERSATION_ENTRY.value
-    assert status_route.tool_call is None
-    assert status_route.assistant_message is not None
-    assert "tool surface" in status_route.assistant_message.content
-    assert cancel_route.tool_call is None
-    assert cancel_route.assistant_message is not None
-    assert "Pending-process" not in cancel_route.assistant_message.content
-
 
 
 def test_conversation_context_has_no_pending_process_fields() -> None:
