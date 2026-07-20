@@ -169,6 +169,10 @@ class IngestionPromptBuilder:
                 "aliases": {alias: alias for alias in context.aliases},
                 "entities": list(context.entities),
                 "relationships": list(context.relationships),
+                "identity_lookup_packets": [
+                    packet.model_dump(mode="json", exclude_none=True)
+                    for packet in context.identity_lookup_packets
+                ],
                 "notes": list(context.notes),
                 "metadata": metadata,
                 "owner_snapshot": context.owner_snapshot.model_dump(mode="json", exclude_none=True)

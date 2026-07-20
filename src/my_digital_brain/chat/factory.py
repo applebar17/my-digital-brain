@@ -26,6 +26,7 @@ from my_digital_brain.ingestion.extractors import (
     RelationshipExtractor,
 )
 from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
+from my_digital_brain.ingestion.identity_lookup import DeterministicIdentityLookupService
 from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
@@ -80,12 +81,17 @@ def build_chat_runtime(
         execute_write_plan=settings.ingestion_execute_write_plan,
     )
     owner_snapshot = _owner_snapshot(graph_service, settings.owner_graph_node_id)
+    owner_manager = (
+        OwnerNodeManager(graph_service.repository, settings)
+        if graph_service is not None and hasattr(graph_service, "repository")
+        else None
+    )
     owner_profile_reader = (
         OwnerProfileReader(
             graph_service=graph_service,
-            owner_manager=OwnerNodeManager(graph_service.repository, settings),
+            owner_manager=owner_manager,
         )
-        if graph_service is not None and hasattr(graph_service, "repository")
+        if owner_manager is not None
         else None
     )
     return ChatRuntime(
@@ -171,6 +177,12 @@ def build_ingestion_service(
             search_service=semantic_search_service,
             graph_service=graph_service,
             owner_graph_node_id=settings.owner_graph_node_id,
+        ),
+        identity_lookup_service=DeterministicIdentityLookupService(
+            graph_service=graph_service,
+            owner_manager=owner_manager,
+            owner_graph_node_id=settings.owner_graph_node_id,
+            max_candidates=settings.identity_lookup_max_candidates,
         ),
         entity_extractors=[
             EntityExtractor(provider, router=router),

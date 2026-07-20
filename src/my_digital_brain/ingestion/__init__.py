@@ -107,6 +107,13 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
+from my_digital_brain.ingestion.identity_lookup import (
+    DeterministicIdentityLookupService,
+    IdentityLookupError,
+    match_node_identity,
+    request_from_candidate,
+    request_from_planned_entity,
+)
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
@@ -266,6 +273,11 @@ __all__ = [
     "VectorScopeSearchRequest",
     "WholeSourceGraphContextPackBuilder",
     "RunReferenceRegistry",
+    "DeterministicIdentityLookupService",
+    "IdentityLookupError",
+    "match_node_identity",
+    "request_from_candidate",
+    "request_from_planned_entity",
     "default_v1_vector_scope_config",
     "build_entity_planning_context",
     "build_memory_log_packet",

@@ -8,6 +8,7 @@ from pydantic import Field
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.ingestion.contracts.base import IngestionModel
+from my_digital_brain.ingestion.contracts.identity_resolution import EntityLookupContextPacket
 
 
 class GraphContextRenderPurpose(StrEnum):
@@ -195,6 +196,13 @@ class GraphContextPack(IngestionModel):
     duplicate_hints: list[GraphContextDuplicateHintItem] = Field(default_factory=list)
     relationship_context_snippets: list[GraphContextRelationshipSnippetItem] = Field(
         default_factory=list,
+    )
+    identity_lookup_packets: list[EntityLookupContextPacket] = Field(
+        default_factory=list,
+        description=(
+            "Backend-built identity lookup packets carried into extraction. "
+            "They contain model references, never persisted graph IDs."
+        ),
     )
     notes: list[str] = Field(
         default_factory=list,

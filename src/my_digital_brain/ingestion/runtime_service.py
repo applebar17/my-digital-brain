@@ -38,6 +38,10 @@ from my_digital_brain.ingestion.enums import IngestionStatus
 from my_digital_brain.ingestion.graph_context_pack import (
     WholeSourceGraphContextPackBuilder,
 )
+from my_digital_brain.ingestion.identity_lookup import (
+    DeterministicIdentityLookupService,
+    IdentityLookupError,
+)
 from my_digital_brain.ingestion.planning_contexts import (
     build_memory_log_packet,
     build_resolved_entity_packet,
@@ -55,6 +59,7 @@ from my_digital_brain.ingestion.refined_resolution import (
     DeterministicResolvedEntityMapBuilder,
 )
 from my_digital_brain.ingestion.validation import IngestionValidator
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.runtime_helpers import (
     DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE,
     clarification_from_draft as _clarification_from_draft,
@@ -96,6 +101,7 @@ class IngestionService(
     entity_resolver: DeterministicResolvedEntityMapBuilder = field(
         default_factory=DeterministicResolvedEntityMapBuilder,
     )
+    identity_lookup_service: DeterministicIdentityLookupService | None = None
     assembler: CandidateMemoryGraphAssembler = field(
         default_factory=CandidateMemoryGraphAssembler
     )
@@ -153,6 +159,27 @@ class IngestionService(
                 entity_plan=entity_plan,
                 clarification=_clarification_from_draft(entity_plan.clarification),
                 metadata={"ingestion_stage": "entity_planning_clarification"},
+            ))
+
+        try:
+            self._attach_identity_lookup_packets(source, graph_context_pack, entity_plan)
+        except IdentityLookupError as exc:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.VALIDATION_FAILED,
+                graph_context_pack=graph_context_pack,
+                graph_context_views={
+                    "reasoning": reasoning_view,
+                    "entity_planning": entity_view,
+                },
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                validation_errors=[ValidationIssue(
+                    field_path="identity_lookup",
+                    message=str(exc),
+                    code="identity_lookup_failed",
+                )],
+                metadata={"ingestion_stage": "identity_lookup"},
             ))
 
         entity_extraction_plan = _entity_extraction_plan(
@@ -301,6 +328,31 @@ class IngestionService(
             memory_log_packet=memory_log_packet,
             relationship_plan=relationship_plan,
         )
+
+    def _attach_identity_lookup_packets(
+        self,
+        source: SourceRecordRef,
+        graph_context_pack: GraphContextPack,
+        entity_plan: EntityIngestionPlanDraft,
+    ) -> None:
+        if self.identity_lookup_service is None:
+            return
+        if not graph_context_pack.reference_registry_snapshot:
+            raise IdentityLookupError(
+                "Identity lookup requires a Wave 1 reference registry snapshot."
+            )
+        registry = RunReferenceRegistry.from_snapshot(
+            graph_context_pack.reference_registry_snapshot,
+        )
+        packets = self.identity_lookup_service.lookup_plan(entity_plan, registry=registry)
+        existing = {
+            packet.candidate_ref: packet
+            for packet in graph_context_pack.identity_lookup_packets
+        }
+        existing.update({packet.candidate_ref: packet for packet in packets})
+        graph_context_pack.identity_lookup_packets = list(existing.values())
+        graph_context_pack.alias_map = registry.backend_alias_map()
+        graph_context_pack.reference_registry_snapshot = registry.snapshot()
 
     def _prepare_memory_logs(
         self,
@@ -1052,6 +1104,34 @@ class IngestionService(
                     relationship_plan=relationship_plan,
                     clarification=_clarification_from_draft(missing_plan.clarification),
                     metadata={"ingestion_stage": "missing_entity_planning_clarification"},
+                ))
+            try:
+                self._attach_identity_lookup_packets(source, graph_context_pack, missing_plan)
+            except IdentityLookupError as exc:
+                return self._finish(IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=entity_candidates,
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    validation_errors=[ValidationIssue(
+                        field_path="identity_lookup",
+                        message=str(exc),
+                        code="identity_lookup_failed",
+                    )],
+                    metadata={"ingestion_stage": "missing_entity_identity_lookup"},
                 ))
             supplemental_plan = _entity_extraction_plan(
                 source,

@@ -14,6 +14,7 @@ from my_digital_brain.ingestion.contracts.candidates import (
     CandidateOutput,
 )
 from my_digital_brain.ingestion.contracts.context import GraphContextPack, GraphContextPackView
+from my_digital_brain.ingestion.contracts.identity_resolution import EntityLookupContextPacket
 from my_digital_brain.ingestion.contracts.planning import (
     ClarificationRequest,
     ExtractionPlan,
@@ -41,6 +42,10 @@ class IngestionContextPackage(IngestionModel):
     reference_registry_snapshot: dict[str, Any] = Field(
         default_factory=dict,
         description="Backend-only run reference registry snapshot.",
+    )
+    identity_lookup_packets: list[EntityLookupContextPacket] = Field(
+        default_factory=list,
+        description="Backend-built candidate lookup packets available to extraction.",
     )
     entities: list[dict[str, Any]] = Field(default_factory=list)
     relationships: list[dict[str, Any]] = Field(default_factory=list)

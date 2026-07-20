@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from my_digital_brain.graph.models import NodeSearchResult
-from my_digital_brain.graph.utils import normalize_text
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateMemoryGraph,
@@ -14,6 +13,10 @@ from my_digital_brain.ingestion.contracts import (
     ResolutionResult,
 )
 from my_digital_brain.ingestion.enums import ResolutionDecisionType
+from my_digital_brain.ingestion.identity_lookup import (
+    match_node_identity,
+    request_from_candidate,
+)
 
 
 class ConservativeResolutionService:
@@ -145,19 +148,10 @@ def _node_matches_candidate(
     candidate: CandidateEntity,
     search_text: str,
 ) -> bool:
-    normalized_targets = {normalize_text(search_text)}
-    normalized_targets.update(normalize_text(alias) for alias in candidate.aliases)
-    node_values = [
-        node.properties.get("display_name"),
-        node.properties.get("name"),
-        node.properties.get("title"),
-        node.properties.get("normalized_name"),
-        *node.properties.get("aliases", []),
-    ]
-    return any(
-        isinstance(value, str) and normalize_text(value) in normalized_targets
-        for value in node_values
-    )
+    request = request_from_candidate(candidate)
+    if request.display_name is None:
+        request = request.model_copy(update={"display_name": search_text})
+    return match_node_identity(node, request, include_tokens=False) is not None
 
 
 def _node_option(node: NodeSearchResult) -> str:

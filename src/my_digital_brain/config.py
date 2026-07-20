@@ -69,6 +69,12 @@ class Settings(BaseSettings):
         ge=0.0,
         alias="OWNER_BOOTSTRAP_RETRY_DELAY_SECONDS",
     )
+    identity_lookup_max_candidates: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        alias="IDENTITY_LOOKUP_MAX_CANDIDATES",
+    )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
         default="postgres",
