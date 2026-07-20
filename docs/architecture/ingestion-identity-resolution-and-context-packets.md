@@ -219,38 +219,182 @@ Wave 0 is complete when:
 
 ### Wave 1: Canonical Reference Registry
 
-**Scope:** unify the existing alias mechanisms before adding new lookup
-results to prompts.
+**Scope:** establish one backend-owned reference registry for the ingestion
+run. This wave makes the mapping between application identities and
+LLM-facing aliases explicit and reusable before lookup results are added to
+prompts.
 
-**Deliverables:**
+#### Locked Identity Model
 
-- Implement one run-scoped registry for existing hydrated nodes,
-  relationships, memories, context objects, and proposed candidates.
-- Reuse the current candidate references such as
-  `CANDIDATE_PERSON_001`.
-- Reconcile the current uppercase graph-context aliases such as
-  `NODE_000001` with the lowercase agentic reference conventions. The
-  application must expose one canonical format to each LLM process instead
-  of introducing a third alias scheme.
-- Ensure the same existing-node reference is reused across entity, memory,
-  relationship, and clarification packets within one run.
-- Keep the private alias-to-persisted-ID map available only to backend
-  validation and execution.
-- Remove persisted graph IDs from all model-facing renderers involved in this
-  feature.
+The persisted application ID is the source of truth. In normal operation this
+is a UUID, but the registry must accept the current graph's opaque internal
+IDs as well, including configured owner IDs and relationship identifiers. The
+internal ID is never a model-facing identity and is never emitted in a
+context packet.
 
-**Tests:**
+The backend creates an alias when an existing object is injected into an LLM
+context. The LLM does not allocate aliases and does not control the registry.
+The backend maintains both directions of the mapping:
 
-- alias allocation and deterministic reuse;
-- object-kind validation;
-- proposed versus existing reference status;
+```text
+model alias       -> internal application ID
+internal ID       -> model alias
+```
+
+The canonical graph-facing alias families are uppercase:
+
+```text
+OWNER
+NODE_000001
+REL_000001
+MEMORY_000001
+CONTEXT_000001
+MEDIA_000001
+CANDIDATE_PERSON_001
+```
+
+`OWNER` is reserved and is resolved only through the owner manager. Numeric
+aliases use fixed-width, six-digit counters for persisted graph objects. A
+candidate reference uses the candidate's model-facing kind and remains
+unbound until a backend resolution or creation operation supplies an internal
+ID.
+
+The distinction is important:
+
+```text
+OWNER              -> 7f...                    existing owner
+NODE_000001        -> 3a...                    existing Marco Bianchi
+NODE_000002        -> 91...                    existing Marco Verdi
+CANDIDATE_PERSON_001 -> no internal ID yet      planned Marco
+```
+
+After the extractor selects `NODE_000001`, the executor resolves that alias
+to the internal ID. If it selects `CREATE_NEW`, the backend creates the node,
+binds `CANDIDATE_PERSON_001` to the new internal ID, and may allocate a
+`NODE_000003` alias only when that node is later exposed as an existing object
+in the same run. The candidate reference is not silently rewritten in the
+LLM payload.
+
+#### Registry Contract
+
+Add one focused `RunReferenceRegistry` service/module below 500 lines. It is
+created for one graph and one ingestion run, and its public operations are:
+
+- register an existing object with its internal ID, object kind, label, and
+  optional display metadata, returning a stable uppercase alias;
+- register the canonical owner as `OWNER` through the owner manager;
+- register a proposed candidate with `CANDIDATE_*` status and no internal ID;
+- bind a proposed candidate to an internal ID after backend resolution or
+  graph creation;
+- resolve a supplied alias to an internal ID for validation and execution;
+- resolve an existing internal ID to its already allocated alias;
+- export a backend-only snapshot and a separate model-facing projection.
+
+Registration is first-seen deterministic within a run. Registering the same
+internal ID and object kind reuses the same alias across entity, memory,
+relationship, candidate, and clarification packets. Registering the same ID
+as incompatible kinds, allocating a reserved alias, or binding two different
+IDs to one alias is a validation error.
+
+Every registry entry records:
+
+- graph scope and run/session scope;
+- object kind and existing/proposed status;
+- model-facing alias;
+- internal ID for existing or bound entries, backend-only;
+- owner status where applicable.
+
+The registry rejects unknown, invented, stale, cross-run, and cross-graph
+references. `OWNER` cannot be registered as a normal node, rebound to a
+candidate, or resolved from an LLM-supplied internal ID. A candidate may be
+bound only by backend code after the resolution proposal has passed
+validation.
+
+#### Integration Changes
+
+- Generalize the existing low-level ID alias mapper so it can map opaque
+  internal strings in addition to UUIDs. Preserve its uppercase allocation
+  and reverse-lookup behavior rather than introducing a second generic mapper.
+- Replace the custom alias counter and raw-ID passthrough in the ingestion
+  graph-context pack builder with `RunReferenceRegistry`.
+- Make the graph-context package builder and ingestion context package use the
+  same registry instance or serialized registry snapshot for a run. The same
+  graph object must never receive one alias in broad context and another alias
+  in candidate or clarification context.
+- Migrate write-plan validation and execution to resolve references through
+  the registry. If `alias_map` remains in a compatibility contract during the
+  migration, it is a read-only projection derived from the registry and not a
+  second source of truth.
+- Carry the backend registry snapshot through the existing run/session state
+  used by clarification history. Do not introduce a new graph taxonomy node
+  or a separate clarification store.
+- Ensure all model-facing graph packets contain uppercase canonical aliases
+  and contain no persisted IDs, registry scope fields, or unrestricted graph
+  metadata.
+- Keep generic agent-local references outside ingestion isolated. They must
+  not leak into graph-facing ingestion packets or create a second alias for
+  an object already registered in this run. Any boundary conversion must be
+  explicit and one-way.
+
+Orchestration changes to large existing modules are limited to constructing,
+passing, or restoring the registry. Allocation, validation, serialization,
+and reference handling belong in focused feature modules.
+
+#### Registry Lifecycle
+
+1. Start an ingestion run with an empty registry scoped to the current graph
+   and run ID.
+2. Register the owner through the owner manager as `OWNER`.
+3. Register hydrated graph objects as they are rendered into context.
+4. Register planned entities as unbound `CANDIDATE_*` entries.
+5. Reuse the registry while lookup, extraction, clarification, planning, and
+   validation produce packets for the same run.
+6. Bind candidates only after backend validation and graph creation or
+   attachment.
+7. Persist only the resulting graph IDs and approved write data. The
+   model-facing aliases are run-scoped and are not written to the graph as
+   identity.
+
+#### Tests
+
+Add focused tests for:
+
+- uppercase alias allocation and fixed-width formatting;
+- stable alias reuse for the same internal ID;
+- reverse resolution from alias to internal ID;
+- UUID, owner, and composite/opaque internal ID handling;
+- reserved `OWNER` registration and owner-manager-only resolution;
+- existing versus proposed entries and candidate binding;
+- object-kind and alias-collision validation;
 - rejection of invented, stale, cross-run, and cross-graph references;
-- correct `OWNER` mapping;
-- consistent endpoint references in relationship packets.
+- registry snapshot round-trip across clarification/session boundaries;
+- persisted-ID exclusion from every model-facing projection;
+- consistent relationship endpoint aliases across all context packets;
+- graph-context builders delegating to the registry rather than allocating
+  aliases independently;
+- write-plan and executor resolution through the registry;
+- no lowercase graph aliases leaking from generic agentic contexts.
 
-**Exit criteria:** every graph object exposed to the LLM is represented by a
-single validated run-scoped reference, and all existing reference consumers
-can use the registry.
+Existing unrelated agentic reference tests may remain lowercase if those
+references are local to that protocol. Tests for graph-facing ingestion
+packets must use the canonical uppercase families above.
+
+#### Exit Criteria
+
+Wave 1 is complete when:
+
+- one backend registry is the source of truth for all graph-facing aliases in
+  an ingestion run;
+- internal IDs remain available only to backend validation and execution;
+- `OWNER` resolves only through the canonical owner manager;
+- existing objects, proposed candidates, and relationships have explicit
+  lifecycle/status semantics;
+- aliases are uppercase, stable within a run, and reused across packets;
+- the custom ingestion alias counter and independent alias allocation paths
+  are removed;
+- compatibility maps, if still present, are derived registry projections;
+- model-facing packets contain no persisted IDs or hidden backend metadata;
+- no unrelated repository-wide refactor or prompt behavior is introduced.
 
 ### Wave 2: Deterministic Identity Lookup
 
