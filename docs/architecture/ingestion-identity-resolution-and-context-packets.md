@@ -79,57 +79,143 @@ is a bounded implementation slice. The feature is intended to be integrated
 directly into the relevant ingestion path; the waves are sequencing and test
 boundaries, not a deferred rollout or parallel production implementation.
 
-### Wave 0: Contract And Boundary Lock
+### Wave 0: Feature Foundation And Local Code Quality
 
-**Scope:** backend contracts, invariants, reference semantics, and test
-fixtures. No production LLM behavior changes.
+**Scope:** define and test the identity-resolution contracts and integration
+boundaries without refactoring the repository wholesale or changing runtime
+LLM behavior.
 
-**Deliverables:**
+Repository-wide code-quality principles are documented in the technical
+principles. In this wave, the quality gate applies to new and edited feature
+code. Existing large or uncertain modules are not refactored unless the
+feature cannot be integrated safely without doing so.
 
-- Add typed contracts for:
-  - `EntityLookupRequest`;
-  - `EntityLookupCandidate`;
-  - `EntityLookupResult`;
-  - `EntityLookupContextPacket`;
-  - `EntityResolutionProposal`;
-  - session-scoped clarification context and response handoff.
-- Extend the relevant planning, extraction, and process-context contracts to
-  carry:
-  - candidate lookup packets;
-  - run-scoped model references;
-  - resolution proposals and selected target references;
-  - clarification questions and user answers as conversation context.
-- Keep clarification context in the current session history. Do not add a new
-  graph taxonomy object or a separate persistent clarification record.
-- Define the allowed lookup statuses and resolution actions from this
-  document.
-- Define the run-scoped reference registry contract:
-  - model-facing reference to persisted graph ID;
-  - persisted graph ID to model-facing reference;
-  - object kind and label validation;
-  - proposed versus existing status;
-  - graph/session ownership.
-- Preserve `OWNER` as a reserved reference that resolves only through the
-  canonical owner manager.
-- Establish packet-rendering rules that exclude persisted IDs and backend
-  metadata from LLM payloads.
-- Add representative fixtures for:
-  - no matching node;
-  - one matching node;
-  - several people sharing a first name;
-  - fuzzy-only results;
-  - owner and first-person references.
+#### Integration Boundary
 
-**Required invariants:**
+Identify the smallest existing integration points for:
 
-- The LLM cannot provide an executable graph query.
-- A model-facing reference is valid only if it exists in the current registry.
-- A proposed entity reference cannot be treated as an existing graph node
-  without an explicit backend resolution.
-- `OWNER` cannot be replaced by a user-provided graph ID.
+- planned candidate entities;
+- graph context rendering;
+- existing resolution;
+- extraction context construction;
+- clarification/session history;
+- final write-plan validation.
 
-**Exit criteria:** contracts and reference invariants are tested, and
-unrelated ingestion behavior remains unchanged.
+Keep orchestration changes limited to dependency wiring. Place new contract,
+lookup-packet, reference, and validation behavior in focused modules below
+500 lines, with approximately 450 lines as the preferred working target.
+
+#### Feature Contracts
+
+Add typed contracts for:
+
+- `EntityLookupRequest`;
+- `EntityLookupCandidate`;
+- `EntityLookupResult`;
+- `EntityLookupContextPacket`;
+- `EntityResolutionProposal`;
+- session-scoped clarification context;
+- run-scoped reference registry entries.
+
+The contracts must enforce:
+
+- lookup requests are derived by backend code from normal candidate fields;
+- planner output contains no graph query or LLM-controlled search policy;
+- lookup statuses distinguish no candidate, one candidate, multiple
+  candidates, and fuzzy-only candidates;
+- resolution actions are `CREATE_NEW`, `ATTACH_TO_EXISTING`,
+  `REQUEST_CLARIFICATION`, and `IGNORE_OR_DEFER`;
+- `target_ref` is required only for existing-node attachment;
+- clarification questions and answers remain normal session-history messages;
+- no new graph taxonomy object or separate clarification subsystem exists.
+
+#### Reference And Owner Invariants
+
+Define and test the reference mapping contract:
+
+```text
+model reference -> persisted graph ID
+persisted graph ID -> model reference
+```
+
+Use the agreed model-facing families:
+
+```text
+OWNER
+CANDIDATE_PERSON_001
+NODE_000001
+REL_000001
+MEMORY_000001
+```
+
+The full registry implementation belongs to Wave 1. Wave 0 locks the
+contract for:
+
+- existing versus proposed status;
+- object kind and label;
+- graph and session scope;
+- reference reuse within one run;
+- rejection of invented, stale, cross-run, and cross-graph references;
+- `OWNER` resolution only through the owner manager.
+
+Model-facing projections must exclude persisted graph IDs, unrestricted graph
+properties, and backend metadata.
+
+#### Prompt-Safety Boundary
+
+Wave 0 does not change production prompts. It defines the boundary later
+prompts must follow:
+
+- the LLM never generates Cypher;
+- the LLM never receives persisted graph IDs;
+- the LLM selects only references supplied in its context;
+- fuzzy results are never represented as confirmed identity;
+- owner references use `OWNER`;
+- backend validation remains mandatory after every LLM proposal.
+
+#### Local Code Quality
+
+For new or edited feature code:
+
+- keep modules below 500 lines;
+- use one primary responsibility per module;
+- avoid new compatibility wrappers, deprecated aliases, duplicate services,
+  and hidden fallbacks;
+- remove directly related dead code only when its obsolescence is clear;
+- do not perform broad unrelated cleanup;
+- do not grow an existing monolith when a focused module can own the feature.
+
+#### Tests And Fixtures
+
+Add focused tests for:
+
+- lookup request construction from candidate fields;
+- lookup status validation;
+- resolution action and target validation;
+- existing versus proposed references;
+- owner alias protection;
+- invalid and invented reference rejection;
+- session-history clarification context;
+- persisted-ID exclusion from model-facing payloads;
+- contract serialization and deserialization.
+
+Add boundary tests proving the current planner contract and unrelated
+ingestion behavior remain compatible. Existing resolution behavior must remain
+unchanged until Wave 2.
+
+#### Wave 0 Exit Criteria
+
+Wave 0 is complete when:
+
+- global technical principles document the repository-wide coding philosophy;
+- this feature document reflects the local cleanup boundary;
+- integration points are identified;
+- all feature contracts are exported and tested;
+- reference and owner invariants are covered;
+- new and edited feature modules remain below 500 lines;
+- no new legacy, deprecated, duplicate, or hidden fallback path is added;
+- uncertain unrelated legacy code remains untouched;
+- existing tests and refined-ingestion UAT checks pass.
 
 ### Wave 1: Canonical Reference Registry
 

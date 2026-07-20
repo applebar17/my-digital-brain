@@ -6,6 +6,30 @@ The graph database is the canonical memory store. Other stores may exist for fil
 
 The system may also maintain derived artifacts such as profile summaries, embedding indexes, search indexes, and cache files. These artifacts should be rebuildable from canonical stores.
 
+## Codebase Hygiene And Module Boundaries
+
+The repository should remain understandable as features are added. New code
+and code being edited must:
+
+- avoid introducing deprecated paths, duplicate implementations, or hidden
+  fallbacks;
+- use one clear responsibility per module;
+- keep new feature modules below 500 lines, with approximately 450 lines as a
+  preferred working target;
+- place substantial new behavior in focused modules instead of growing an
+  existing monolith;
+- keep contracts, orchestration, storage adapters, validation, rendering, and
+  tests separated by responsibility;
+- update tests and documentation whenever touched behavior or public
+  contracts change.
+
+Existing large or uncertain code is not automatically legacy and should not
+be refactored without a concrete reason. Refactoring is justified when it is
+needed for a clean boundary, safe feature integration, or removal of a
+confirmed obsolete path. Compatibility code is acceptable only when it
+protects a current external contract and has an identified owner, tests, and
+an explicit removal condition.
+
 ## Provenance First
 
 Every stored fact should be traceable to one or more sources:
