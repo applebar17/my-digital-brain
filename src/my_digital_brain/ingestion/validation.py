@@ -16,6 +16,7 @@ from my_digital_brain.ingestion.contracts import (
     ValidationIssue,
     ValidationResult,
 )
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 
 
 class IngestionValidator:
@@ -152,7 +153,20 @@ class IngestionValidator:
             *write_plan.relationships_to_create,
             *write_plan.relationships_to_update,
         ]
-        owner_alias_map = (write_plan.metadata or {}).get("alias_map", {})
+        metadata = write_plan.metadata or {}
+        owner_alias_map = metadata.get("alias_map", {})
+        registry_snapshot = metadata.get("reference_registry_snapshot") or {}
+        if registry_snapshot:
+            try:
+                owner_alias_map = RunReferenceRegistry.from_snapshot(
+                    registry_snapshot,
+                ).backend_alias_map()
+            except ValueError as exc:
+                issues.append(_issue(
+                    "metadata.reference_registry_snapshot",
+                    str(exc),
+                    "invalid_reference_registry_snapshot",
+                ))
         for index, write in enumerate(relationship_writes):
             prefix = f"relationship_writes[{index}]"
             self._validate_relationship_type(write.relationship_type, prefix, issues)

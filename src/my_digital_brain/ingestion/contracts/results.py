@@ -36,7 +36,11 @@ class IngestionContextPackage(IngestionModel):
     source_id: str
     aliases: dict[str, str] = Field(
         default_factory=dict,
-        description="LLM-facing aliases mapped to internal graph ids.",
+        description="Backend alias projection mapped to internal graph ids.",
+    )
+    reference_registry_snapshot: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Backend-only run reference registry snapshot.",
     )
     entities: list[dict[str, Any]] = Field(default_factory=list)
     relationships: list[dict[str, Any]] = Field(default_factory=list)
@@ -79,6 +83,7 @@ class IngestionSessionSnapshot(IngestionModel):
     source_id: str
     status: IngestionStatus
     pending_question: str | None = None
+    reference_registry_snapshot: dict[str, Any] = Field(default_factory=dict)
     candidate_graph_snapshot: dict[str, Any] = Field(default_factory=dict)
     write_plan_snapshot: dict[str, Any] = Field(default_factory=dict)
     expires_at: datetime | None = None

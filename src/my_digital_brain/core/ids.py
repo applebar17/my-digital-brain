@@ -20,7 +20,7 @@ class IdAliasMapper:
     id_to_alias: dict[str, str] = field(default_factory=dict)
 
     def alias_for(self, internal_id: str, prefix: str) -> str:
-        normalized_id = validate_uuid(internal_id)
+        normalized_id = _normalize_internal_id(internal_id)
         normalized_prefix = prefix.upper()
         existing = self.id_to_alias.get(normalized_id)
         if existing:
@@ -32,6 +32,21 @@ class IdAliasMapper:
         self.id_to_alias[normalized_id] = alias
         return alias
 
+    def register_alias(self, alias: str, internal_id: str) -> None:
+        """Restore a previously allocated alias without allocating a new one."""
+
+        normalized_id = _normalize_internal_id(internal_id)
+        normalized_alias = alias.upper()
+        if self.alias_to_id.get(normalized_alias) not in (None, normalized_id):
+            raise ValueError(f"Alias is already bound to another internal id: {alias}")
+        if self.id_to_alias.get(normalized_id) not in (None, normalized_alias):
+            raise ValueError(f"Internal id is already bound to another alias: {internal_id}")
+        self.alias_to_id[normalized_alias] = normalized_id
+        self.id_to_alias[normalized_id] = normalized_alias
+        prefix, _, number = normalized_alias.rpartition("_")
+        if number.isdigit():
+            self.counters[prefix] = max(self.counters[prefix], int(number))
+
     def resolve(self, alias: str) -> str:
         try:
             return self.alias_to_id[alias]
@@ -40,3 +55,10 @@ class IdAliasMapper:
 
     def export_context_map(self) -> dict[str, str]:
         return dict(self.alias_to_id)
+
+
+def _normalize_internal_id(value: str) -> str:
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError("Internal ids must not be empty.")
+    return normalized

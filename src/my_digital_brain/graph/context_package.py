@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from my_digital_brain.core.ids import IdAliasMapper
+from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.constants import CONTEXT_FACT_FIELDS
-from my_digital_brain.graph.exceptions import GraphValidationError
 from my_digital_brain.graph.models import (
     AffectiveContextResult,
     GraphContextPackage,
@@ -13,6 +12,8 @@ from my_digital_brain.graph.models import (
     TimelineResult,
 )
 from my_digital_brain.graph.projection import GraphProjection
+from my_digital_brain.ingestion.contracts.identity_resolution import ReferenceObjectKind
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 
 
 class GraphContextPackageBuilder:
@@ -32,12 +33,12 @@ class GraphContextPackageBuilder:
         canonical: NodeSearchResult,
         timeline_limit: int,
     ) -> GraphContextPackage:
-        mapper = IdAliasMapper()
-        target_summary = self.context_node_summary(target, mapper)
+        registry = RunReferenceRegistry(graph_scope="graph", run_scope=new_uuid())
+        target_summary = self.context_node_summary(target, registry)
 
         notes: list[str] = []
         if canonical.properties["id"] != target.properties["id"]:
-            canonical_alias = self.alias_for_node(canonical, mapper)
+            canonical_alias = self.alias_for_node(canonical, registry)
             notes.append(f"Node is merged into canonical alias {canonical_alias}.")
         for contradiction in contradictions:
             reason = contradiction.properties.get("reason") or "Unresolved contradiction."
@@ -47,33 +48,33 @@ class GraphContextPackageBuilder:
             target=target_summary,
             current_facts=self.context_current_facts(target),
             relationships=[
-                self.context_relationship_summary(relationship, mapper)
+                self.context_relationship_summary(relationship, registry)
                 for relationship in relationships
             ],
             relationship_contexts=[
-                self.context_node_summary(node, mapper)
+                self.context_node_summary(node, registry)
                 for node in affective.relationship_contexts
             ],
             perceptions=[
-                self.context_node_summary(node, mapper) for node in affective.perceptions
+                self.context_node_summary(node, registry) for node in affective.perceptions
             ],
             timeline=[
-                self.context_timeline_item(item, mapper)
+                self.context_timeline_item(item, registry)
                 for item in timeline.items[:timeline_limit]
             ],
-            evidence=[self.context_node_summary(node, mapper) for node in evidence],
+            evidence=[self.context_node_summary(node, registry) for node in evidence],
             notes=notes,
-            alias_map=mapper.export_context_map(),
+            alias_map=registry.backend_alias_map(),
         )
 
     def context_node_summary(
         self,
         node: NodeSearchResult,
-        mapper: IdAliasMapper,
+        registry: RunReferenceRegistry,
     ) -> dict[str, Any]:
         properties = node.properties
         summary = {
-            "alias": self.alias_for_node(node, mapper),
+            "alias": self.alias_for_node(node, registry),
             "label": node.label,
             "title": self.projection.display_title(node),
         }
@@ -102,13 +103,13 @@ class GraphContextPackageBuilder:
     def context_relationship_summary(
         self,
         relationship: RelationshipResult,
-        mapper: IdAliasMapper,
+        registry: RunReferenceRegistry,
     ) -> dict[str, Any]:
         properties = relationship.properties
-        from_alias = self.alias_for_endpoint(relationship.from_id, mapper)
-        to_alias = self.alias_for_endpoint(relationship.to_id, mapper)
+        from_alias = self.alias_for_endpoint(relationship.from_id, registry)
+        to_alias = self.alias_for_endpoint(relationship.to_id, registry)
         summary = {
-            "alias": self.alias_for_id(properties["id"], "REL", mapper),
+            "alias": self.alias_for_id(properties["id"], "REL", registry),
             "type": relationship.type,
             "from_alias": from_alias,
             "to_alias": to_alias,
@@ -142,7 +143,7 @@ class GraphContextPackageBuilder:
     def context_timeline_item(
         self,
         item: Any,
-        mapper: IdAliasMapper,
+        registry: RunReferenceRegistry,
     ) -> dict[str, Any]:
         if item.label == "Source":
             prefix = "SOURCE"
@@ -151,7 +152,7 @@ class GraphContextPackageBuilder:
         else:
             prefix = "NODE"
         summary = {
-            "alias": self.alias_for_id(item.id, prefix, mapper),
+            "alias": self.alias_for_id(item.id, prefix, registry),
             "label": item.label,
             "title": item.title,
             "time": item.time_value,
@@ -164,26 +165,48 @@ class GraphContextPackageBuilder:
             summary["source_ids"] = item.source_ids
         return summary
 
-    def alias_for_node(self, node: NodeSearchResult, mapper: IdAliasMapper) -> str:
+    def alias_for_node(self, node: NodeSearchResult, registry: RunReferenceRegistry) -> str:
         if node.label == "Source":
             prefix = "SOURCE"
         elif node.label == "Claim":
             prefix = "CLAIM"
         else:
             prefix = "NODE"
-        return self.alias_for_id(node.properties["id"], prefix, mapper)
+        return self.alias_for_id(node.properties["id"], prefix, registry, label=node.label)
 
-    def alias_for_endpoint(self, node_id: str, mapper: IdAliasMapper) -> str:
+    def alias_for_endpoint(self, node_id: str, registry: RunReferenceRegistry) -> str:
         node = self.repository.get_node(node_id)
         if node is None:
-            return self.alias_for_id(node_id, "NODE", mapper)
-        return self.alias_for_node(NodeSearchResult.model_validate(node), mapper)
+            return self.alias_for_id(node_id, "NODE", registry, label="Node")
+        return self.alias_for_node(NodeSearchResult.model_validate(node), registry)
 
-    def alias_for_id(self, internal_id: str, prefix: str, mapper: IdAliasMapper) -> str:
-        try:
-            return mapper.alias_for(internal_id, prefix)
-        except ValueError as exc:
-            raise GraphValidationError(
-                "Graph context packages require UUID internal ids; "
-                f"invalid id for {prefix}: {internal_id}"
-            ) from exc
+    def alias_for_id(
+        self,
+        internal_id: str,
+        prefix: str,
+        registry: RunReferenceRegistry,
+        *,
+        label: str = "Node",
+    ) -> str:
+        return registry.register_existing(
+            internal_id,
+            object_kind=_object_kind_for_prefix(prefix),
+            label=label,
+        )
+
+
+def _object_kind_for_prefix(prefix: str) -> ReferenceObjectKind:
+    normalized = prefix.upper()
+    if normalized == "REL":
+        return ReferenceObjectKind.EDGE
+    if normalized == "MEMORY":
+        return ReferenceObjectKind.MEMORY
+    if normalized == "CONTEXT":
+        return ReferenceObjectKind.CONTEXT
+    if normalized == "MEDIA":
+        return ReferenceObjectKind.MEDIA
+    if normalized == "SOURCE":
+        return ReferenceObjectKind.SOURCE
+    if normalized == "CLAIM":
+        return ReferenceObjectKind.CLAIM
+    return ReferenceObjectKind.NODE

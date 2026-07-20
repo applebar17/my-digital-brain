@@ -107,6 +107,7 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
     ClarificationStatus,
@@ -264,6 +265,7 @@ __all__ = [
     "VectorScopeName",
     "VectorScopeSearchRequest",
     "WholeSourceGraphContextPackBuilder",
+    "RunReferenceRegistry",
     "default_v1_vector_scope_config",
     "build_entity_planning_context",
     "build_memory_log_packet",

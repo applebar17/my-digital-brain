@@ -191,6 +191,9 @@ class GraphWritePlanBuilder:
             metadata={
                 "candidate_graph_id": candidate_graph.candidate_graph_id,
                 "alias_map": (context.aliases if context else {}),
+                "reference_registry_snapshot": (
+                    context.reference_registry_snapshot if context else {}
+                ),
                 "local_ref_resolution": self._local_ref_resolution(resolution),
             },
         )

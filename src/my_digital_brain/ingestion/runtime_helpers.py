@@ -181,6 +181,7 @@ def context_package_for_services(source: SourceRecordRef, graph_context_pack: Gr
     return IngestionContextPackage(
         source_id=source.source_id,
         aliases=dict(graph_context_pack.alias_map),
+        reference_registry_snapshot=dict(graph_context_pack.reference_registry_snapshot),
         entities=[entity.model_dump(mode="json", exclude_none=True) for entity in graph_context_pack.entities],
         relationships=[relationship.model_dump(mode="json", exclude_none=True) for relationship in graph_context_pack.relationships],
         notes=list(graph_context_pack.notes),

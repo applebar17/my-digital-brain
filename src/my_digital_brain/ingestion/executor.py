@@ -13,6 +13,7 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import GraphWritePlanStatus, IngestionStatus
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.validation import IngestionValidator
 
 
@@ -127,7 +128,11 @@ class GraphWritePlanExecutor:
 
     def _initial_ref_map(self, write_plan: GraphWritePlan) -> dict[str, str]:
         metadata = write_plan.metadata or {}
-        ref_map = dict(metadata.get("alias_map", {}))
+        snapshot = metadata.get("reference_registry_snapshot") or {}
+        if snapshot:
+            ref_map = RunReferenceRegistry.from_snapshot(snapshot).backend_alias_map()
+        else:
+            ref_map = dict(metadata.get("alias_map", {}))
         ref_map.update(metadata.get("local_ref_resolution", {}))
         return ref_map
 

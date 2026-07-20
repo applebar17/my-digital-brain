@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import Field
 
@@ -204,7 +204,15 @@ class GraphContextPack(IngestionModel):
         default_factory=dict,
         description=(
             "Backend alias-to-graph-id map retained for validation and write "
-            "execution. Renderers normally omit it from LLM payloads."
+            "execution. Derived from reference_registry_snapshot; renderers "
+            "normally omit it from LLM payloads."
+        ),
+    )
+    reference_registry_snapshot: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Backend-only run reference registry snapshot. Renderers must omit "
+            "this field from LLM payloads."
         ),
     )
     source_id: str | None = Field(

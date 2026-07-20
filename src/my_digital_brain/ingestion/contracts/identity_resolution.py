@@ -30,6 +30,9 @@ class ReferenceObjectKind(StrEnum):
     MEMORY = "memory"
     EDGE = "edge"
     CONTEXT = "context"
+    MEDIA = "media"
+    SOURCE = "source"
+    CLAIM = "claim"
 
 
 class ReferenceStatus(StrEnum):
@@ -49,7 +52,7 @@ _NODE_REF_RE = re.compile(r"^NODE_[0-9]{6}$")
 _EXISTING_REF_RE = re.compile(r"^(?:OWNER|NODE_[0-9]{6})$")
 _MODEL_REF_RE = re.compile(
     r"^(?:OWNER|CANDIDATE_[A-Z][A-Z0-9_]*_[0-9]{3,6}|"
-    r"(?:NODE|REL|MEMORY|CONTEXT)_[0-9]{6})$",
+    r"(?:NODE|REL|MEMORY|CONTEXT|MEDIA|SOURCE|CLAIM)_[0-9]{6})$",
 )
 
 
