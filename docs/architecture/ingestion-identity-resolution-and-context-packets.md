@@ -398,41 +398,83 @@ Wave 1 is complete when:
 
 ### Wave 2: Deterministic Identity Lookup
 
-**Scope:** backend lookup service and extraction-stage integration point. No
-new LLM decision behavior is introduced until the lookup packet is available.
+**Scope:** backend lookup service and extraction-stage integration point. Lookup
+runs after entity planning and before entity extraction. No new LLM decision
+behavior is introduced in this wave; the extractor only receives the bounded
+lookup packet as additional context.
 
 **Deliverables:**
 
-- Extract the reusable deterministic matching logic from
-  `ConservativeResolutionService` into an owner- and graph-scoped identity
-  lookup service.
-- Build lookup requests in backend code from planned entity fields rather than
-  from LLM-generated lookup metadata or raw LLM queries.
-- Implement label-constrained lookup for identity fields:
+- Add a focused deterministic identity lookup service that consumes
+  `PlannedEntityRefDraft` values and returns an
+  `EntityLookupContextPacket` for each typed planned entity.
+- Derive `EntityLookupRequest` in backend code from `mention_text`, aliases,
+  the suggested entity type, and typed identity fields when those fields exist.
+  The request must not contain an LLM-generated graph query or search policy.
+- Extract shared exact-identity matching helpers so the existing
+  `ConservativeResolutionService` and the new pre-extraction lookup do not
+  implement different normalization rules. Existing downstream resolution
+  remains exact-only until later waves change its behavior explicitly.
+- Implement label-constrained deterministic lookup for identity fields:
   - display name;
   - name;
   - normalized name;
   - aliases;
-  - deterministic name tokens for partial names.
+  - one-token partial names such as `Marco` matching `Marco Bianchi`.
+- Use the Wave 1 registry when candidates are returned. Existing candidates
+  receive `NODE_000001`-style references reused across later packets.
 - Classify results as `no_candidates`, `one_candidate`,
   `multiple_candidates`, or `fuzzy_candidates_only`.
-- Keep fuzzy and semantic retrieval as non-binding hints.
-- Exclude the canonical owner from ordinary Person lookup. First-person
-  references resolve directly to `OWNER`.
-- Carry the lookup result forward so final resolution does not apply a
-  different search policy.
+- Keep fuzzy retrieval optional and explicitly non-binding. It is used only
+  when a graph service exposes an explicit fuzzy lookup operation; broad text
+  search results are never relabeled as fuzzy identity matches.
+- Exclude the canonical owner from ordinary Person lookup. Direct first-person
+  interpretation belongs to the Wave 4 prompt boundary; Wave 2 only preserves
+  an already supplied `OWNER` reference.
+- Carry lookup packets into `IngestionContextPackage` and extraction prompt
+  payloads without exposing registry snapshots or persisted graph IDs.
+- Apply active-lifecycle filtering and fail the ingestion stage when the
+  backend lookup fails. A lookup failure must never silently become
+  `CREATE_NEW`.
+
+#### Deterministic Matching Rules
+
+- Normalize case and whitespace before comparison.
+- Exact display/name/normalized-name matches outrank exact alias matches.
+- Exact aliases on an existing node match a proposed display mention as an
+  alias match.
+- Token matching is restricted to name fields and is only used for a single
+  requested token. Descriptions, memory text, and arbitrary properties are
+  not identity fields.
+- Multiple graph nodes with the same matching name remain separate
+  candidates. No automatic deduplication or conflict resolution is performed.
+- Exact and token candidates take precedence over fuzzy candidates. Fuzzy
+  candidates are returned only when no deterministic candidate exists.
+
+#### Initial Configuration
+
+`identity_lookup_max_candidates` is configurable through
+`IDENTITY_LOOKUP_MAX_CANDIDATES` and defaults to `5`. The backend may query a
+larger bounded result window to avoid truncating deterministic matches before
+filtering, but the model-facing packet never contains more than this limit.
 
 **Tests:**
 
 - `Marco` returns all relevant Marco candidates;
 - full names and aliases match correctly;
+- planned entity fields produce the expected backend lookup request;
 - unrelated labels are excluded;
 - one, multiple, fuzzy-only, and empty results are classified correctly;
-- owner exclusion and first-person owner resolution;
+- owner exclusion and preservation of `OWNER` references;
+- lifecycle filtering and registry alias reuse;
+- lookup packets contain no persisted graph IDs;
 - backend failure does not silently trigger duplicate creation.
 
-**Exit criteria:** a planned entity can be looked up deterministically before
-extraction, with no LLM-generated Cypher and no graph mutation.
+**Exit criteria:** every typed planned entity reaches a deterministic,
+owner-filtered lookup before extraction in the production ingestion path; the
+result is registry-backed and bounded; lookup failures stop the stage rather
+than creating duplicates; no LLM-generated Cypher or graph mutation is
+introduced.
 
 ### Wave 3: Bounded Candidate Context Packets
 
