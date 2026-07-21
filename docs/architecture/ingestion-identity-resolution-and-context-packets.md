@@ -559,6 +559,9 @@ possible existing nodes without receiving direct database identity data.
 validation, reference compilation, and error feedback. The LLM makes the
 semantic choice. The backend only determines whether the proposal is
 structurally valid, safe to execute, and expressible as a graph write.
+Wave 4 does not require a second independent resolver model call: the
+resolution guidance may be appended to the existing agent prompt and use a
+separate structured proposal/tool contract.
 
 **Deliverables:**
 
@@ -583,8 +586,15 @@ structurally valid, safe to execute, and expressible as a graph write.
 - Allow the LLM to select a fuzzy candidate when the complete context
   supports that decision; ask for clarification when the context is not
   sufficient.
-- Require clarification proposals to include a human-readable question and
-  preserve the candidate and evidence references.
+- Make clarification an agent tool invocation rather than a free-form field
+  on a resolution proposal. The tool owns the user-facing question and keeps
+  the candidate and evidence references in session state.
+- Append the resolution guidance only when the backend lookup packet contains
+  one or more contextual matches. When there are no matches, keep the normal
+  candidate prompt free of an unnecessary match-resolution block.
+- Include a few behavioral examples in the match-resolution guidance. The
+  examples demonstrate context-sensitive reasoning and are not deterministic
+  rules or a scenario-to-action matrix.
 - Prevent direct Person-property mutation as an implicit result of identity
   matching.
 - Compile validated model-facing proposals into the existing backend
@@ -596,6 +606,20 @@ structurally valid, safe to execute, and expressible as a graph write.
 - Return verbose structured validation errors to the LLM-facing process. Do
   not silently convert invalid output into `CREATE_NEW`,
   `ATTACH_TO_EXISTING`, or any other fallback.
+
+When matches exist, the appended guidance should teach patterns such as:
+
+- attach when surrounding context identifies one supplied candidate;
+- ask the `ask_clarification` tool when the candidates remain
+  indistinguishable;
+- create a new node when the source explicitly distinguishes a new entity,
+  even if a similarly named node exists;
+- add a memory or relationship update when the source adds information about
+  an existing entity rather than redefining its identity;
+- use `OWNER` for first-person references and never create a second owner.
+
+These are behavioral examples for the LLM, not backend decisions. The LLM may
+choose a different valid action when the complete context supports it.
 
 The backend classifies lookup evidence and enforces structural and graph
 safety constraints. It does not choose a semantic outcome from the lookup
@@ -628,6 +652,10 @@ second identity search.
 **Scope:** user clarification lifecycle and handoff from extraction to graph
 update planning.
 
+The agent must have a phase-appropriate toolbox. These tools are typed action
+requests routed through backend validation and deterministic execution; they
+are not unrestricted graph access.
+
 **Deliverables:**
 
 - Keep clarification state in the current session as conversation history.
@@ -642,11 +670,17 @@ update planning.
   references or persisted IDs.
 - Re-enter the pipeline with the original candidate, the user's answer, and
   the shared session history injected into the relevant prompts.
-- Allow the extractor after clarification to:
-  - create a new node;
-  - attach to a supplied existing node;
-  - request another clarification;
-  - defer the entity.
+- Provide the relevant agent steps with tools for:
+  - `ask_clarification`;
+  - creating and updating nodes;
+  - creating and updating MemoryLogs or other memory records;
+  - creating and updating relationships or relationship contexts;
+  - deferring or ignoring an action when appropriate.
+- Scope tool availability by pipeline step. A planner may prepare candidate
+  actions, while an update-capable agent may request node, memory, or
+  relationship effects.
+- Keep tool requests proposal-shaped. The backend validates references,
+  ownership, protected fields, provenance, and graph scope before execution.
 - Define the update-agent handoff as a structured proposal, not a second
   independent identity lookup.
 - Revalidate the selected existing node immediately before write planning.
