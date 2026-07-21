@@ -478,9 +478,9 @@ introduced.
 
 ### Wave 3: Bounded Candidate Context Packets
 
-**Scope:** candidate hydration, redaction, packet rendering, and prompt
-context delivery. The extractor still follows the existing output behavior
-until Wave 4.
+**Scope:** candidate hydration, redaction, packet rendering, and focused
+extractor context delivery. The extractor still follows the existing output
+behavior until Wave 4.
 
 **Deliverables:**
 
@@ -491,12 +491,24 @@ until Wave 4.
   - relevant MemoryLog summaries;
   - place, organization, event, and temporal hints;
   - permitted source evidence.
+- Use deterministic one-hop graph context and directly connected MemoryLogs.
+  Semantic neighborhood expansion remains outside Wave 3.
 - Apply existing lifecycle, visibility, privacy, and owner-scope policies.
+  Archived, deleted, merged, hidden, and local-only records are excluded.
 - Make candidate, related-object, and text limits configurable.
-- Mark exact, token, fuzzy, and semantic evidence explicitly.
+- Preserve exact, token, and fuzzy evidence explicitly; semantic identity
+  evidence remains outside this wave.
 - Delimit original user wording and mark it as user data, not instructions.
-- Add purpose-specific rendering for planner and extractor contexts.
+- Render related nodes, relationships, and MemoryLogs through the shared run
+  registry. Only `OWNER` and generated model references are model-facing.
+- Deliver packets only to extractors whose target or required context refs
+  intersect the packet. Generic graph contexts remain unchanged.
 - Continue sending only the minimal owner snapshot in generic contexts.
+
+Wave 3 is read-only. It does not choose `CREATE_NEW`,
+`ATTACH_TO_EXISTING`, or clarification actions; those decisions belong to
+Wave 4. Fuzzy evidence remains explicitly non-binding and context hydration
+must not promote it to confirmed identity.
 
 **Tests:**
 
@@ -505,7 +517,11 @@ until Wave 4.
 - unrelated neighbors are omitted;
 - context limits are enforced;
 - hidden or disallowed evidence is excluded;
-- the same candidate reference is preserved across all packets.
+- the same candidate reference is preserved across all packets;
+- related nodes, relationships, and MemoryLogs reuse the run registry;
+- owner relationship endpoints render as `OWNER`;
+- extraction prompts receive only task-relevant packets;
+- original wording is delimited as user evidence.
 
 **Initial configurable limits:**
 
@@ -520,7 +536,8 @@ values so they can be tuned during implementation and UAT:
 | `identity_context_max_summary_chars` | `500` | Maximum characters per context summary. |
 | `identity_context_max_total_chars` | `6000` | Maximum rendered candidate-packet size. |
 
-The final defaults should be confirmed against actual prompt sizes, provider
+The settings are exposed as `IDENTITY_CONTEXT_*` environment variables. The
+final defaults should be confirmed against actual prompt sizes, provider
 limits, privacy review, and refined-ingestion UAT results.
 
 **Exit criteria:** the extractor can receive a safe, bounded overview of
