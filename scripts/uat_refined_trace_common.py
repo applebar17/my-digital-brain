@@ -364,6 +364,11 @@ def _append_result_summary(lines: list[str], result: IngestionResult) -> None:
     summary = {
         "status": str(result.status),
         "ingestion_stage": result.metadata.get("ingestion_stage"),
+        "pending_interaction": (
+            result.pending_interaction.model_dump(mode="json", exclude_none=True)
+            if result.pending_interaction is not None
+            else None
+        ),
         "entity_candidates": len(result.entity_candidates),
         "supplemental_entity_candidates": len(result.supplemental_entity_candidates),
         "relationship_candidates": len(result.relationship_candidates),

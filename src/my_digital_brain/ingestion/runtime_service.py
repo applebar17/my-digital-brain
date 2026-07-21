@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.agentic import (
     AgenticMemoryLogExtractionService,
     AgenticPlanningService,
@@ -50,6 +51,7 @@ from my_digital_brain.ingestion.protocols import (
     ResolutionProposalAgent,
 )
 from my_digital_brain.ingestion.resolution_proposals import ResolutionProposalValidationError
+from my_digital_brain.ingestion.pending import pending_from_session
 from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.runtime_helpers import (
@@ -150,18 +152,31 @@ class IngestionService(
         source: SourceRecordRef,
         graph_context_pack: GraphContextPack,
         candidate_graph: CandidateMemoryGraph,
-    ) -> tuple[ResolvedEntityMap, Any | None]:
+    ) -> tuple[ResolvedEntityMap, Any | None] | IngestionResult:
         if self.resolution_agent is None:
             raise ValueError(
                 "A structured resolution proposal agent is required for entity resolution."
             )
         context = _context_package_for_services(source, graph_context_pack)
-        resolved_map, result = self.resolution_agent.resolve_nodes(
+        resolution = self.resolution_agent.resolve_nodes(
             source_text=source.raw_text,
             context=context,
             candidate_graph=candidate_graph,
             packets=graph_context_pack.identity_lookup_packets,
         )
+        if isinstance(resolution, LLMSessionAwaitingTool):
+            return IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.PLANNED,
+                graph_context_pack=graph_context_pack,
+                entity_candidate_graph=candidate_graph,
+                pending_interaction=pending_from_session(
+                    resolution,
+                    stage="entity_resolution",
+                ),
+                metadata={"ingestion_stage": "entity_resolution"},
+            )
+        resolved_map, result = resolution
         log_event(
             logger,
             "ingestion.resolution.validation_decision",
@@ -326,11 +341,35 @@ class IngestionService(
             [*entity_candidates, *supplemental_candidates],
         )
         try:
-            updated_resolved_map, resolution = self._resolve_entity_candidates(
+            entity_resolution = self._resolve_entity_candidates(
                 source,
                 graph_context_pack,
                 combined_entity_graph,
             )
+            if isinstance(entity_resolution, IngestionResult):
+                return self._finish(
+                    entity_resolution.model_copy(
+                        update={
+                            "graph_context_pack": graph_context_pack,
+                            "graph_context_views": graph_context_views,
+                            "reasoning": reasoning,
+                            "entity_plan": entity_plan,
+                            "entity_extraction_plan": entity_extraction_plan,
+                            "entity_candidates": entity_candidates,
+                            "entity_candidate_graph": entity_candidate_graph,
+                            "supplemental_entity_plans": supplemental_plans,
+                            "supplemental_entity_extraction_plans": supplemental_extraction_plans,
+                            "supplemental_entity_candidates": supplemental_candidates,
+                            "resolved_entity_map": resolved_entity_map,
+                            "memory_log_plan": memory_log_plan,
+                            "memory_log_extraction_plan": memory_log_extraction_plan,
+                            "memory_logs": memory_logs,
+                            "relationship_plan": relationship_plan,
+                        },
+                        deep=True,
+                    )
+                )
+            updated_resolved_map, resolution = entity_resolution
         except (ResolutionProposalValidationError, ValueError) as exc:
             return self._finish(
                 IngestionResult(

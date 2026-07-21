@@ -112,6 +112,7 @@ from my_digital_brain.ingestion.contracts.results import (
     IngestionContextPackage,
     IngestionResult,
 )
+from my_digital_brain.ingestion.contracts.pending import IngestionPendingInteraction
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
 from my_digital_brain.ingestion.contracts.source import (
     EvidenceRef,
@@ -203,6 +204,7 @@ __all__ = [
     "GraphRelationshipWrite",
     "GraphWritePlan",
     "IngestionContextPackage",
+    "IngestionPendingInteraction",
     "IngestionModel",
     "IngestionReasoningCheckpointDraft",
     "IngestionResult",

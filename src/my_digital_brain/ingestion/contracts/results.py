@@ -27,6 +27,7 @@ from my_digital_brain.ingestion.contracts.refined_drafts import (
 from my_digital_brain.ingestion.contracts.resolution import ResolvedEntityMap
 from my_digital_brain.ingestion.contracts.validation import ValidationIssue
 from my_digital_brain.ingestion.contracts.write_plan import GraphWritePlan
+from my_digital_brain.ingestion.contracts.pending import IngestionPendingInteraction
 from my_digital_brain.ingestion.enums import IngestionStatus
 
 
@@ -76,5 +77,6 @@ class IngestionResult(IngestionModel):
     relationship_candidates: list[CandidateOutput] = Field(default_factory=list)
     candidate_graph: CandidateMemoryGraph | None = None
     write_plan: GraphWritePlan | None = None
+    pending_interaction: IngestionPendingInteraction | None = None
     validation_errors: list[ValidationIssue] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

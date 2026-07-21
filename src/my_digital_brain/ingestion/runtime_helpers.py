@@ -188,6 +188,9 @@ def context_package_for_services(source: SourceRecordRef, graph_context_pack: Gr
         metadata={
             "graph_context_pack_id": graph_context_pack.context_pack_id,
             "retrieval_strategy": graph_context_pack.retrieval_strategy,
+            "model_facing_history": list(
+                source.metadata.get("model_facing_history") or []
+            ),
         },
         owner_snapshot=graph_context_pack.owner_snapshot,
     )

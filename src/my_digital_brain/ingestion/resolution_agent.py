@@ -11,7 +11,11 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage
-from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
+from my_digital_brain.ai.session import (
+    LLMSessionAwaitingTool,
+    LLMSessionCompleted,
+    LLMSessionRequest,
+)
 from my_digital_brain.clarification import ClarificationService
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
@@ -64,7 +68,7 @@ class LLMResolutionProposalAgent:
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
-    ) -> list[ResolutionToolAction]:
+    ) -> list[ResolutionToolAction] | LLMSessionAwaitingTool:
         toolbox = build_resolution_toolbox(step)
         step_candidates = self._step_candidates(step, candidate_graph)
         log_event(
@@ -97,6 +101,9 @@ class LLMResolutionProposalAgent:
             batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
             input_payload = {
                 "source_text": source_text,
+                "clarification_history": list(
+                    context.metadata.get("model_facing_history") or []
+                ),
                 "owner_context": owner_prompt_block(context.owner_snapshot),
                 "candidate_actions": [
                     self._model_candidate_payload(candidate) for candidate in batch
@@ -131,8 +138,10 @@ class LLMResolutionProposalAgent:
                     context=request_context,
                 )
             )
+            if isinstance(result, LLMSessionAwaitingTool):
+                return result
             if not isinstance(result, LLMSessionCompleted):
-                raise ValueError(f"Resolution step '{step.value}' did not complete: {result}")
+                raise ValueError(f"Resolution step '{step.value}' failed: {result.kind}")
         if not actions:
             raise ValueError(
                 f"Resolution step '{step.value}' returned no action tool call. "
@@ -155,7 +164,7 @@ class LLMResolutionProposalAgent:
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
-    ) -> tuple[ResolvedEntityMap, ResolutionResult]:
+    ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         if not context.reference_registry_snapshot:
             raise ValueError("Node resolution requires the active reference registry snapshot.")
         registry = RunReferenceRegistry.from_snapshot(context.reference_registry_snapshot)
@@ -166,6 +175,8 @@ class LLMResolutionProposalAgent:
             candidate_graph=candidate_graph,
             packets=packets,
         )
+        if isinstance(actions, LLMSessionAwaitingTool):
+            return actions
         compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
         result = compiler.compile(
             actions,

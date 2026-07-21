@@ -140,9 +140,9 @@ def _answer_clarifications_from_terminal(
     trace_events: list[dict[str, Any]],
 ) -> tuple[Any, Any]:
     interactions = route["clarification_interactions"]
+    if result is None:
+        result = service.process_source(source)
     for attempt in range(1, max(0, max_clarifications) + 1):
-        if result is None:
-            result = service.process_source(source)
         pending_packet = _pending_clarification_packet(result)
         if pending_packet is None:
             return source, result
@@ -198,6 +198,10 @@ def _answer_clarifications_from_terminal(
 
 def _pending_clarification_packet(result: Any) -> ClarificationPacket | None:
     """Extract a pending packet when a channel-aware service exposes one."""
+    interaction = getattr(result, "pending_interaction", None)
+    packet = getattr(interaction, "clarification_packet", None)
+    if isinstance(packet, dict):
+        return ClarificationPacket.model_validate(packet)
     continuation = getattr(result, "continuation", None)
     for event in getattr(result, "tool_events", []):
         payload = getattr(getattr(event, "result", None), "data", None) or {}
@@ -371,6 +375,11 @@ def _result_summary(result: Any) -> dict[str, Any]:
     return {
         "status": str(result.status),
         "ingestion_stage": result.metadata.get("ingestion_stage"),
+        "pending_interaction": (
+            result.pending_interaction.model_dump(mode="json", exclude_none=True)
+            if result.pending_interaction is not None
+            else None
+        ),
         "entity_candidates": len(result.entity_candidates),
         "supplemental_entity_candidates": len(result.supplemental_entity_candidates),
         "relationship_candidates": len(result.relationship_candidates),

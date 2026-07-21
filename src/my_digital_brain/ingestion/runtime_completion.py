@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from my_digital_brain.ai.tracing import traceable
+from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.ingestion.contracts import (
@@ -28,6 +29,7 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import IngestionStatus
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
+from my_digital_brain.ingestion.pending import pending_from_session
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidationError,
@@ -148,6 +150,19 @@ class IngestionCompletionMixin:
                     candidate_graph=candidate_graph,
                     packets=context.identity_lookup_packets,
                 )
+                if isinstance(actions, LLMSessionAwaitingTool):
+                    return self._finish(
+                        IngestionResult(
+                            source_id=source.source_id,
+                            status=IngestionStatus.PLANNED,
+                            **checkpoint_fields,
+                            pending_interaction=pending_from_session(
+                                actions,
+                                stage=f"{step.value}_resolution",
+                            ),
+                            metadata={"ingestion_stage": f"{step.value}_resolution"},
+                        )
+                    )
                 resolution = compiler.merge_step_actions(
                     resolution,
                     actions,

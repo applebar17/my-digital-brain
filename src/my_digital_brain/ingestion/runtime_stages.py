@@ -38,7 +38,9 @@ from my_digital_brain.ingestion.planning_contexts import (
     build_relationship_planning_context,
 )
 from my_digital_brain.ingestion.protocols import FocusedExtractor
+from my_digital_brain.ingestion.pending import pending_from_agentic
 from my_digital_brain.ingestion.refined_relationships import normalize_relationship_candidate_refs
+from my_digital_brain.ingestion.enums import IngestionStatus
 from my_digital_brain.ingestion.runtime_helpers import (
     batch_extraction_items as _batch_extraction_items,
 )
@@ -101,7 +103,9 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=IngestionReasoningCheckpointDraft,
         )
-        _raise_if_interrupted(result)
+        pending = _pending_result(source, "reasoning", result)
+        if pending is not None:
+            return pending
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -127,7 +131,9 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=EntityIngestionPlanDraft,
         )
-        _raise_if_interrupted(result)
+        pending = _pending_result(source, "entity_planning", result)
+        if pending is not None:
+            return pending
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -159,7 +165,9 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=RelationshipIngestionPlanDraft,
         )
-        _raise_if_interrupted(result)
+        pending = _pending_result(source, "relationship_planning", result)
+        if pending is not None:
+            return pending
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -189,7 +197,9 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=MemoryLogIngestionPlanDraft,
         )
-        _raise_if_interrupted(result)
+        pending = _pending_result(source, "memory_log_planning", result)
+        if pending is not None:
+            return pending
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -219,7 +229,9 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=EntityIngestionPlanDraft,
         )
-        _raise_if_interrupted(result)
+        pending = _pending_result(source, "missing_entity_planning", result)
+        if pending is not None:
+            return pending
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -240,7 +252,7 @@ class IngestionExtractionMixin:
         entity_packet: list[dict[str, Any]],
         memory_log_plan: MemoryLogIngestionPlanDraft,
         extraction_plan: ExtractionPlan,
-    ) -> tuple[list[MemoryLog], list[ValidationIssue]]:
+    ) -> tuple[list[MemoryLog], list[ValidationIssue]] | IngestionResult:
         memory_logs: list[MemoryLog] = []
         issues: list[ValidationIssue] = []
         action_by_ref: dict[str, tuple[int, Any, Any, int]] = {}
@@ -296,7 +308,9 @@ class IngestionExtractionMixin:
                 self._execution_context(source),
                 output_schema=MemoryLogDraftBatch,
             )
-            _raise_if_interrupted(result)
+            pending_result = _pending_result(source, "memory_log_extraction", result)
+            if pending_result is not None:
+                return pending_result
             if result.status != "ok" or result.structured_output is None:
                 issues.append(
                     ValidationIssue(
@@ -493,10 +507,13 @@ class IngestionExtractionMixin:
         return context
 
 
-def _raise_if_interrupted(result: Any) -> None:
-    if getattr(result, "status", None) != "interrupted":
-        return
-    raise RuntimeError(
-        "The ingestion step is awaiting an external tool interaction: "
-        f"{getattr(result, 'assistant_text', None) or 'answer the pending tool request'}"
+def _pending_result(source: SourceRecordRef, stage: str, result: Any) -> IngestionResult | None:
+    pending = pending_from_agentic(result, stage=stage)
+    if pending is None:
+        return None
+    return IngestionResult(
+        source_id=source.source_id,
+        status=IngestionStatus.PLANNED,
+        pending_interaction=pending,
+        metadata={"ingestion_stage": stage},
     )

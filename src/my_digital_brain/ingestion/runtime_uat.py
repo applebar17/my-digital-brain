@@ -45,7 +45,15 @@ class IngestionUATMixin:
         )
         reasoning = self._reason(source, graph_context_pack, reasoning_view)
         if isinstance(reasoning, IngestionResult):
-            return reasoning
+            return self._finish(
+                reasoning.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": {"reasoning": reasoning_view},
+                    },
+                    deep=True,
+                )
+            )
 
         entity_extraction_plan = _predefined_entity_extraction_plan(
             source,
@@ -76,11 +84,26 @@ class IngestionUATMixin:
             ))
 
         try:
-            resolved_entity_map, resolution = self._resolve_entity_candidates(
+            entity_resolution = self._resolve_entity_candidates(
                 source,
                 graph_context_pack,
                 entity_candidate_graph,
             )
+            if isinstance(entity_resolution, IngestionResult):
+                return self._finish(
+                    entity_resolution.model_copy(
+                        update={
+                            "graph_context_pack": graph_context_pack,
+                            "graph_context_views": {"reasoning": reasoning_view},
+                            "reasoning": reasoning,
+                            "entity_extraction_plan": entity_extraction_plan,
+                            "entity_candidates": list(entity_candidates),
+                            "entity_candidate_graph": entity_candidate_graph,
+                        },
+                        deep=True,
+                    )
+                )
+            resolved_entity_map, resolution = entity_resolution
         except (ValueError, RuntimeError) as exc:
             return self._finish(IngestionResult(
                 source_id=source.source_id,

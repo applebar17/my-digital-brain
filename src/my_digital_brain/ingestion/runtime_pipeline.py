@@ -43,7 +43,15 @@ class IngestionPipelineMixin:
         )
         reasoning = self._reason(source, graph_context_pack, reasoning_view)
         if isinstance(reasoning, IngestionResult):
-            return reasoning
+            return self._finish(
+                reasoning.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": {"reasoning": reasoning_view},
+                    },
+                    deep=True,
+                )
+            )
 
         entity_view = self.context_renderer.render(
             graph_context_pack,
@@ -51,7 +59,19 @@ class IngestionPipelineMixin:
         )
         entity_plan = self._plan_entities(source, reasoning, entity_view)
         if isinstance(entity_plan, IngestionResult):
-            return entity_plan
+            return self._finish(
+                entity_plan.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": {
+                            "reasoning": reasoning_view,
+                            "entity_planning": entity_view,
+                        },
+                        "reasoning": reasoning,
+                    },
+                    deep=True,
+                )
+            )
         try:
             self._attach_identity_lookup_packets(source, graph_context_pack, entity_plan)
         except (IdentityLookupError, CandidateContextHydrationError) as exc:
@@ -123,11 +143,30 @@ class IngestionPipelineMixin:
             ))
 
         try:
-            resolved_entity_map, node_resolution = self._resolve_entity_candidates(
+            resolution = self._resolve_entity_candidates(
                 source,
                 graph_context_pack,
                 candidate_graph,
             )
+            if isinstance(resolution, IngestionResult):
+                return self._finish(
+                    resolution.model_copy(
+                        update={
+                            "graph_context_pack": graph_context_pack,
+                            "graph_context_views": {
+                                "reasoning": reasoning_view,
+                                "entity_planning": entity_view,
+                            },
+                            "reasoning": reasoning,
+                            "entity_plan": entity_plan,
+                            "entity_extraction_plan": entity_extraction_plan,
+                            "entity_candidates": entity_candidates,
+                            "entity_candidate_graph": candidate_graph,
+                        },
+                        deep=True,
+                    )
+                )
+            resolved_entity_map, node_resolution = resolution
         except (ResolutionProposalValidationError, ValueError) as exc:
             return self._finish(IngestionResult(
                 source_id=source.source_id,

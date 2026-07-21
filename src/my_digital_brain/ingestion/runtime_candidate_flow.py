@@ -88,7 +88,7 @@ class IngestionCandidateFlowMixin:
             graph_context_pack,
             memory_log_plan,
         )
-        memory_logs, extraction_issues = self._extract_memory_logs(
+        memory_extraction = self._extract_memory_logs(
             source,
             graph_context_pack,
             memory_log_view,
@@ -98,6 +98,25 @@ class IngestionCandidateFlowMixin:
             memory_log_plan,
             memory_log_extraction_plan,
         )
+        if isinstance(memory_extraction, IngestionResult):
+            return self._finish(
+                memory_extraction.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": graph_context_views,
+                        "reasoning": reasoning,
+                        "entity_plan": entity_plan,
+                        "entity_extraction_plan": entity_extraction_plan,
+                        "entity_candidates": list(entity_candidates),
+                        "entity_candidate_graph": entity_candidate_graph,
+                        "resolved_entity_map": resolved_entity_map,
+                        "memory_log_plan": memory_log_plan,
+                        "memory_log_extraction_plan": memory_log_extraction_plan,
+                    },
+                    deep=True,
+                )
+            )
+        memory_logs, extraction_issues = memory_extraction
         if extraction_issues:
             return self._finish(IngestionResult(
                 source_id=source.source_id,

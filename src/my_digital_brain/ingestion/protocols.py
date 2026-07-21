@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     CandidateOutput,
@@ -64,7 +65,7 @@ class ResolutionProposalAgent(Protocol):
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
-    ) -> tuple[ResolvedEntityMap, ResolutionResult]:
+    ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         """Collect and validate the complete node proposal set."""
 
     def propose(
@@ -75,7 +76,7 @@ class ResolutionProposalAgent(Protocol):
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
-    ) -> list[ResolutionToolAction]:
+    ) -> list[ResolutionToolAction] | LLMSessionAwaitingTool:
         """Collect proposal actions for one resolution step."""
 
 

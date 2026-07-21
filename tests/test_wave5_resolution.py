@@ -8,6 +8,7 @@ from my_digital_brain.ai.schemas import ChatMessage, ProviderCallMetadata
 from my_digital_brain.ai.session import (
     LLMCompletionRequest,
     LLMCompletionResult,
+    LLMSessionAwaitingTool,
     LLMSessionRequest,
     LLMSessionResult,
     LLMSessionRunner,
@@ -132,6 +133,60 @@ def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
 
     assert len(actions) == 11
     assert provider.calls == [(10, 10), (1, 1)]
+
+
+def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
+    class Provider:
+        provider_name = "fake"
+
+        def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+            return LLMSessionRunner(self).run(request)
+
+        def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+            return LLMCompletionResult(
+                assistant_message=ChatMessage(
+                    role="assistant",
+                    tool_calls=[
+                        {
+                            "id": "clarify-1",
+                            "type": "function",
+                            "function": {
+                                "name": "ask_clarification",
+                                "arguments": json.dumps(
+                                    {
+                                        "candidate_ref": "CANDIDATE_PERSON_001",
+                                        "question": "Qual è il cognome?",
+                                        "options": ["Non ricordo"],
+                                        "reason": "The identity is incomplete.",
+                                        "evidence_refs": ["CANDIDATE_PERSON_001"],
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                ),
+                metadata=ProviderCallMetadata.fake(model=request.model),
+            )
+
+    result = LLMResolutionProposalAgent(Provider()).propose(
+        step=ResolutionStep.NODE,
+        source_text="I met Amos.",
+        context=IngestionContextPackage(source_id="source-1"),
+        candidate_graph=CandidateMemoryGraph(
+            source_id="source-1",
+            candidate_entities=[
+                {
+                    "local_ref": "CANDIDATE_PERSON_001",
+                    "entity_type": "Person",
+                    "display_name": "Amos",
+                }
+            ],
+        ),
+    )
+
+    assert isinstance(result, LLMSessionAwaitingTool)
+    assert result.continuation.pending_tool_call.name == "ask_clarification"
+    assert result.continuation.pending_tool_call.call_id == "clarify-1"
 
 
 def test_missing_structured_node_decision_never_defaults_to_creation() -> None:
