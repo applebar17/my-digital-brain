@@ -11,10 +11,9 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
-from my_digital_brain.chat.models import ClarificationPacket
-from my_digital_brain.clarification import ClarificationInterrupted
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
+    CandidateMemoryGraph,
     CandidateOutput,
     EntityIngestionPlanDraft,
     ExtractionPlan,
@@ -38,16 +37,30 @@ from my_digital_brain.ingestion.planning_contexts import (
     build_missing_entity_planning_context,
     build_relationship_planning_context,
 )
+from my_digital_brain.ingestion.protocols import FocusedExtractor
 from my_digital_brain.ingestion.refined_relationships import normalize_relationship_candidate_refs
 from my_digital_brain.ingestion.runtime_helpers import (
     batch_extraction_items as _batch_extraction_items,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     batch_sequence as _batch_sequence,
-    extract_with_optional_batch as _extract_with_optional_batch,
-    context_package_for_services as _context_package_for_services,
-    structured_step_failure as _structured_step_failure,
-    timezone_for_source as _timezone,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     combined_extraction_plan as _combined_extraction_plan,
 )
+from my_digital_brain.ingestion.runtime_helpers import (
+    context_package_for_services as _context_package_for_services,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
+    extract_with_optional_batch as _extract_with_optional_batch,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
+    structured_step_failure as _structured_step_failure,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
+    timezone_for_source as _timezone,
+)
+
 
 class IngestionPlanningMixin:
     def _reason(
@@ -95,9 +108,7 @@ class IngestionPlanningMixin:
                 "reasoning",
                 result.assistant_text or "Reasoning checkpoint failed.",
             )
-        return IngestionReasoningCheckpointDraft.model_validate(
-            result.structured_output
-        )
+        return IngestionReasoningCheckpointDraft.model_validate(result.structured_output)
 
     def _plan_entities(
         self,
@@ -218,7 +229,6 @@ class IngestionPlanningMixin:
         return EntityIngestionPlanDraft.model_validate(result.structured_output)
 
 
-
 class IngestionExtractionMixin:
     def _extract_memory_logs(
         self,
@@ -246,9 +256,7 @@ class IngestionExtractionMixin:
                     memory_log_index,
                 )
 
-        pending: list[
-            tuple[int, ExtractionTask, Any, Any, int]
-        ] = []
+        pending: list[tuple[int, ExtractionTask, Any, Any, int]] = []
         for index, task in enumerate(extraction_plan.tasks):
             planned = action_by_ref.get(task.target_ref or "")
             if planned is None:
@@ -274,10 +282,7 @@ class IngestionExtractionMixin:
         ):
             first_index = batch[0][0]
             tasks = [item[1] for item in batch]
-            planned_items = [
-                (item[2], item[3], item[4])
-                for item in batch
-            ]
+            planned_items = [(item[2], item[3], item[4]) for item in batch]
             context = build_memory_log_extraction_batch_context(
                 source_text=source.raw_text or source.content_ref or "",
                 graph_context_view=graph_context_view,
@@ -445,9 +450,7 @@ class IngestionExtractionMixin:
                 return extractor
         return None
 
-    def _find_relationship_extractor(
-        self, task: ExtractionTask
-    ) -> FocusedExtractor | None:
+    def _find_relationship_extractor(self, task: ExtractionTask) -> FocusedExtractor | None:
         for extractor in self.relationship_extractors:
             if extractor.supports(task):
                 return extractor
@@ -471,9 +474,7 @@ class IngestionExtractionMixin:
         combined_plan = _combined_extraction_plan(source, graph_context_pack, plans)
         return self.assembler.assemble(source, combined_plan, candidates)
 
-    def _execution_context(
-        self, source: SourceRecordRef
-    ) -> AgenticToolExecutionContext:
+    def _execution_context(self, source: SourceRecordRef) -> AgenticToolExecutionContext:
         context = (
             self.execution_context_factory(source)
             if self.execution_context_factory is not None
@@ -495,8 +496,7 @@ class IngestionExtractionMixin:
 def _raise_if_interrupted(result: Any) -> None:
     if getattr(result, "status", None) != "interrupted":
         return
-    interruption = (getattr(result, "metadata", None) or {}).get("interruption") or {}
-    packet = ClarificationPacket.model_validate(
-        interruption.get("clarification_packet") or {}
+    raise RuntimeError(
+        "The ingestion step is awaiting an external tool interaction: "
+        f"{getattr(result, 'assistant_text', None) or 'answer the pending tool request'}"
     )
-    raise ClarificationInterrupted(packet)

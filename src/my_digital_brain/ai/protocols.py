@@ -2,57 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from .models import ToolResult
 from .schemas import (
     AIRequestContext,
-    ChatRequest,
-    ChatResult,
     EmbeddingRequest,
     EmbeddingResult,
     ModelRoute,
-    StructuredGenerationRequest,
-    StructuredGenerationResult,
     TranscriptionRequest,
     TranscriptionResult,
 )
-from .tools import ToolBox
+from .session import LLMSessionRequest, LLMSessionResult
 
 
 @runtime_checkable
 class LLMProvider(Protocol):
     provider_name: str
 
-    def generate_chat(self, request: ChatRequest) -> ChatResult:
-        """Generate a chat response."""
-
-
-@runtime_checkable
-class ToolCallingLLMProvider(Protocol):
-    provider_name: str
-
-    def generate_chat_with_tools(
-        self,
-        request: ChatRequest,
-        *,
-        toolbox: ToolBox,
-        tools_mapping: dict[str, Callable[..., ToolResult]],
-        max_tool_calls: int | None = None,
-    ) -> ChatResult:
-        """Generate a chat response with provider-managed tool-call looping."""
-
-
-@runtime_checkable
-class StructuredLLMProvider(Protocol):
-    provider_name: str
-
-    def generate_structured(
-        self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
-        """Generate and parse a structured response."""
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        """Run one text or structured LLM session with optional tools."""
 
 
 @runtime_checkable

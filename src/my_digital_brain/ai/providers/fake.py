@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
 from typing import Any
 
-from pydantic import BaseModel
-
-from ..models import ToolResult
 from ..schemas import (
     ChatMessage,
-    ChatRequest,
-    ChatResult,
     EmbeddingRequest,
     EmbeddingResult,
     ProviderCallMetadata,
     ProviderUsage,
-    StructuredGenerationRequest,
-    StructuredGenerationResult,
     TranscriptionRequest,
     TranscriptionResult,
 )
-from ..tools import ToolBox
+from ..session import (
+    LLMCompletionRequest,
+    LLMCompletionResult,
+    LLMSessionRequest,
+    LLMSessionResult,
+    LLMSessionRunner,
+)
 
 
 class FakeLLMProvider:
@@ -33,51 +32,38 @@ class FakeLLMProvider:
         chat_response: str = "ok",
         structured_payload: dict[str, Any] | None = None,
         model: str = "fake-chat-model",
+        completion_steps: list[dict[str, Any]] | None = None,
     ) -> None:
         self.chat_response = chat_response
         self.structured_payload = structured_payload or {}
         self.model = model
+        self.completion_steps = list(completion_steps or [])
 
-    def generate_chat(self, request: ChatRequest) -> ChatResult:
-        input_tokens = sum(
-            _message_token_estimate(message.content)
-            for message in request.messages
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        return LLMSessionRunner(self).run(request)
+
+    def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+        step = self.completion_steps.pop(0) if self.completion_steps else {}
+        tool_calls = step.get("tool_calls") or []
+        content = step.get("content")
+        if content is None:
+            content = (
+                json.dumps(self.structured_payload, ensure_ascii=True)
+                if request.response_format
+                else self.chat_response
+            )
+        message = ChatMessage(
+            role="assistant",
+            content=str(content),
+            tool_calls=tool_calls or None,
         )
-        return ChatResult(
-            content=self.chat_response,
-            message_delta=[ChatMessage(role="assistant", content=self.chat_response)],
+        return LLMCompletionResult(
+            assistant_message=message,
             usage=ProviderUsage(
-                input_tokens=input_tokens,
-                output_tokens=len(self.chat_response.split()),
-            ),
-            metadata=ProviderCallMetadata.fake(model=request.model or self.model),
-        )
-
-    def generate_chat_with_tools(
-        self,
-        request: ChatRequest,
-        *,
-        toolbox: ToolBox,
-        tools_mapping: dict[str, Callable[..., ToolResult]],
-        max_tool_calls: int | None = None,
-    ) -> ChatResult:
-        return self.generate_chat(request)
-
-    def generate_structured(
-        self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
-        parsed = request.output_schema.model_validate(self.structured_payload)
-        input_text = (
-            " ".join(str(message.content or "") for message in request.messages)
-            if request.messages
-            else str(request.input_message or "")
-        )
-        return StructuredGenerationResult(
-            parsed=parsed,
-            usage=ProviderUsage(
-                input_tokens=len(input_text.split()),
-                output_tokens=len(str(self.structured_payload).split()),
+                input_tokens=sum(
+                    _message_token_estimate(message.content) for message in request.messages
+                ),
+                output_tokens=len(str(content).split()),
             ),
             metadata=ProviderCallMetadata.fake(model=request.model or self.model),
         )
@@ -93,8 +79,7 @@ class FakeEmbeddingProvider:
     def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         dimensions = request.dimensions or self.dimensions
         embeddings = [
-            _deterministic_embedding(text, dimensions=dimensions)
-            for text in request.texts
+            _deterministic_embedding(text, dimensions=dimensions) for text in request.texts
         ]
         return EmbeddingResult(
             embeddings=embeddings,
@@ -144,6 +129,7 @@ class FakeAIProvider(FakeLLMProvider, FakeEmbeddingProvider, FakeSpeechToTextPro
             self,
             chat_response=chat_response,
             structured_payload=structured_payload,
+            completion_steps=None,
         )
         self.transcription_text = transcription_text
         self.embedding_dimensions = embedding_dimensions

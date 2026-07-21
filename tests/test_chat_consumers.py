@@ -3,10 +3,16 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from my_digital_brain.api.routes import telegram as telegram_routes
 from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
-from my_digital_brain.ai.schemas import ChatRequest, ChatResult, ProviderCallMetadata
-from my_digital_brain.ai.tools import ToolBox
+from my_digital_brain.ai.schemas import ChatMessage, ProviderCallMetadata
+from my_digital_brain.ai.session import (
+    LLMCompletionRequest,
+    LLMCompletionResult,
+    LLMSessionRequest,
+    LLMSessionResult,
+    LLMSessionRunner,
+)
+from my_digital_brain.api.routes import telegram as telegram_routes
 from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.enums import ChatChannel, ChatResponseStatus
 from my_digital_brain.chat.models import AgenticFrame, ChatResponse, ClarificationPacket
@@ -17,23 +23,38 @@ from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
 from my_digital_brain.config import Settings
 
 
-
 class ScriptedToolProvider:
     provider_name = "scripted"
 
-    def generate_chat_with_tools(
-        self,
-        request: ChatRequest,
-        *,
-        toolbox: ToolBox,
-        tools_mapping: dict[str, object],
-        max_tool_calls: int | None = None,
-    ) -> ChatResult:
-        if "ingest_memory" in tools_mapping:
-            tools_mapping["ingest_memory"]()
-        content = "accepted:hello from telegram"
-        return ChatResult(
-            content=content,
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        self._tool_emitted = False
+        self._mapping = request.tools_mapping
+        return LLMSessionRunner(self).run(request)
+
+    def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+        if not getattr(self, "_tool_emitted", False) and "ingest_memory" in {
+            tool["function"]["name"] for tool in request.tools
+        }:
+            self._tool_emitted = True
+            return LLMCompletionResult(
+                assistant_message=ChatMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": "call-ingest",
+                            "type": "function",
+                            "function": {"name": "ingest_memory", "arguments": "{}"},
+                        }
+                    ],
+                ),
+                metadata=ProviderCallMetadata.fake(model=request.model),
+            )
+        return LLMCompletionResult(
+            assistant_message=ChatMessage(
+                role="assistant",
+                content="accepted:hello from telegram",
+            ),
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
@@ -84,8 +105,6 @@ def test_telegram_adapter_normalizes_voice_update_without_text() -> None:
     assert normalized.media_refs[0].duration_seconds == 12
 
 
-
-
 def test_telegram_adapter_renders_clarification_with_inline_buttons() -> None:
     packet = _clarification_packet(frame_id="frame-1")
     response = ChatResponse(
@@ -103,9 +122,7 @@ def test_telegram_adapter_renders_clarification_with_inline_buttons() -> None:
     assert "1." not in rendered.text
     keyboard = rendered.reply_markup["inline_keyboard"]
     assert keyboard[0][0]["text"] == "Marco from university"
-    assert keyboard[0][0]["callback_data"] == (
-        "clarify:frame-1:question-1:option-marco-university"
-    )
+    assert keyboard[0][0]["callback_data"] == ("clarify:frame-1:question-1:option-marco-university")
 
 
 def test_telegram_adapter_renders_plain_clarification_without_options() -> None:
@@ -132,6 +149,7 @@ def test_telegram_adapter_renders_plain_clarification_without_options() -> None:
     assert rendered.text == "What should I remember?\n\nYou can reply with your own answer."
     assert rendered.reply_markup is None
 
+
 def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None:
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
@@ -149,8 +167,6 @@ def test_telegram_webhook_uses_shared_runtime_and_returns_send_message() -> None
     assert response.json()["method"] == "sendMessage"
     assert response.json()["chat_id"] == "100"
     assert response.json()["text"] == "accepted:hello from telegram"
-
-
 
 
 def test_telegram_webhook_routes_free_text_to_active_clarification() -> None:
@@ -195,9 +211,10 @@ def test_telegram_webhook_routes_free_text_to_active_clarification() -> None:
         if message.metadata.get("message_kind") == "clarification_answer"
     )
     assert "Marco from Milan." in answer_message.text
-    assert answer_message.metadata["clarification_answer_packet"]["answers"][0][
-        "free_text"
-    ] == "Marco from Milan."
+    assert (
+        answer_message.metadata["clarification_answer_packet"]["answers"][0]["free_text"]
+        == "Marco from Milan."
+    )
 
 
 def test_telegram_webhook_routes_callback_to_selected_clarification_option() -> None:
@@ -275,6 +292,7 @@ def test_telegram_webhook_rejects_free_text_when_clarification_disallows_it() ->
     assert response.status_code == 400
     assert "does not accept free-text" in response.json()["detail"]
 
+
 def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
@@ -294,7 +312,6 @@ def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:
 
     assert missing_secret.status_code == 401
     assert unknown_sender.status_code == 403
-
 
 
 def _save_interrupted_frame(

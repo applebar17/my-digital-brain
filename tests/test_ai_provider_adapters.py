@@ -16,7 +16,7 @@ from my_digital_brain.ai.client.settings import (
     genai_settings_from_app_settings,
 )
 from my_digital_brain.ai.models import ToolResult
-from my_digital_brain.ai.protocols import ToolCallingLLMProvider
+from my_digital_brain.ai.protocols import LLMProvider
 from my_digital_brain.ai.providers import AzureOpenAIProvider, OpenAIProvider
 from my_digital_brain.ai.router import (
     DEFAULT_STRUCTURED_TASKS,
@@ -29,11 +29,10 @@ from my_digital_brain.ai.router import (
 )
 from my_digital_brain.ai.schemas import (
     ChatMessage,
-    ChatRequest,
     EmbeddingRequest,
-    StructuredGenerationRequest,
     TranscriptionRequest,
 )
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.ai.tools import ToolBox, build_tool_index
 from my_digital_brain.config import Settings
 
@@ -45,29 +44,20 @@ class ExampleStructuredOutput(BaseModel):
 class StubGenAIClient:
     def __init__(self) -> None:
         self.chat_params: dict[str, Any] | None = None
-        self.toolbox: ToolBox | None = None
-        self.tools_mapping: dict[str, Any] | None = None
-        self.max_tool_calls: int | None = None
         self.embed_call: dict[str, Any] | None = None
         self.transcribe_call: dict[str, Any] | None = None
-        self.structured_call: dict[str, Any] | None = None
+        self.complete_calls: list[dict[str, Any]] = []
 
-    def call_openai(
-        self,
-        params: dict[str, Any],
-        *,
-        tools_mapping: dict[str, Any] | None = None,
-        toolbox: ToolBox | None = None,
-        max_tool_calls: int | None = None,
-    ):
-        self.chat_params = params
-        self.tools_mapping = tools_mapping
-        self.toolbox = toolbox
-        self.max_tool_calls = max_tool_calls
+    def complete_chat(self, params: dict[str, Any]):
+        self.chat_params = dict(params)
+        self.complete_calls.append(dict(params))
+        content = "chat response"
+        if params.get("response_format"):
+            content = '{"title":"extract:memory"}'
         return SimpleNamespace(
             id="chat-request-1",
             choices=[
-                SimpleNamespace(message=SimpleNamespace(content="chat response"))
+                SimpleNamespace(message=SimpleNamespace(content=content))
             ],
             usage=SimpleNamespace(
                 prompt_tokens=4,
@@ -75,25 +65,6 @@ class StubGenAIClient:
                 total_tokens=6,
             ),
         )
-
-    def generate_structured(
-        self,
-        schema: type[BaseModel],
-        system_prompt: str,
-        input_message: str | None = None,
-        **kwargs: Any,
-    ) -> BaseModel:
-        messages = kwargs.get("messages")
-        self.structured_call = {
-            "system_prompt": system_prompt,
-            "input_message": input_message,
-            "messages": messages,
-        }
-        if messages:
-            content = messages[-1].get("content")
-        else:
-            content = input_message
-        return schema.model_validate({"title": f"{system_prompt}:{content}"})
 
     def embed(
         self,
@@ -137,50 +108,31 @@ class StubGenAIClient:
 
 
 class ToolLoopGenAIClient(StubGenAIClient):
-    def call_openai(
-        self,
-        params: dict[str, Any],
-        *,
-        tools_mapping: dict[str, Any] | None = None,
-        toolbox: ToolBox | None = None,
-        max_tool_calls: int | None = None,
-    ):
-        self.chat_params = params
-        self.tools_mapping = tools_mapping
-        self.toolbox = toolbox
-        self.max_tool_calls = max_tool_calls
-        params["messages"].append(
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {
-                            "name": "example_tool",
-                            "arguments": "{}",
-                        },
-                    },
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def complete_chat(self, params: dict[str, Any]):
+        self.calls += 1
+        self.chat_params = dict(params)
+        if self.calls == 1:
+            message = SimpleNamespace(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    SimpleNamespace(
+                        id="call-1",
+                        type="function",
+                        function=SimpleNamespace(name="example_tool", arguments="{}"),
+                    )
                 ],
-            }
-        )
-        params["messages"].append(
-            {
-                "role": "tool",
-                "tool_call_id": "call-1",
-                "content": '{"status":"ok","output":"done"}',
-            }
-        )
+            )
+        else:
+            message = SimpleNamespace(role="assistant", content="Tool completed.")
         return SimpleNamespace(
             id="chat-request-1",
             choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        role="assistant",
-                        content="Tool completed.",
-                    )
-                )
+                SimpleNamespace(message=message)
             ],
             usage=SimpleNamespace(
                 prompt_tokens=10,
@@ -210,18 +162,19 @@ def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
         settings=GenAISettings(openai_api_key="test"),
     )
 
-    chat = provider.generate_chat(
-        ChatRequest(
+    chat = provider.run_session(
+        LLMSessionRequest(
+            system_prompt="",
             messages=[ChatMessage(role="user", content="hello")],
             model="chat-model",
         )
     )
-    structured = provider.generate_structured(
-        StructuredGenerationRequest(
-            schema=ExampleStructuredOutput,
+    structured = provider.run_session(
+        LLMSessionRequest(
             system_prompt="extract",
             messages=[ChatMessage(role="user", content="memory")],
             model="structured-model",
+            output_schema=ExampleStructuredOutput,
         )
     )
     embeddings = provider.embed(
@@ -240,13 +193,11 @@ def test_openai_provider_wraps_chat_structured_embeddings_and_transcription(
         )
     )
 
+    assert isinstance(chat, LLMSessionCompleted)
     assert chat.content == "chat response"
     assert chat.usage.total_tokens == 6
+    assert isinstance(structured, LLMSessionCompleted)
     assert structured.parsed.title == "extract:memory"
-    assert client.structured_call["input_message"] is None
-    assert client.structured_call["messages"] == [
-        {"role": "user", "content": "memory"},
-    ]
     assert len(embeddings.embeddings[0]) == 4
     assert client.embed_call == {
         "texts": ["alpha", "beta"],
@@ -286,21 +237,20 @@ def test_openai_provider_passes_toolbox_and_mapping_to_genai_client() -> None:
     )
     mapping = {"example_tool": lambda: ToolResult(status="ok", output="done")}
 
-    chat = provider.generate_chat_with_tools(
-        ChatRequest(
+    result = provider.run_session(
+        LLMSessionRequest(
+            system_prompt="",
             messages=[ChatMessage(role="user", content="hello")],
             model="chat-model",
+            toolbox=toolbox,
+            tools_mapping=mapping,
+            max_tool_calls=2,
         ),
-        toolbox=toolbox,
-        tools_mapping=mapping,
-        max_tool_calls=2,
     )
 
-    assert isinstance(provider, ToolCallingLLMProvider)
-    assert chat.content == "chat response"
-    assert client.toolbox is toolbox
-    assert client.tools_mapping is mapping
-    assert client.max_tool_calls == 2
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.content == "chat response"
+    assert client.chat_params["tools"] == toolbox.tools
 
 
 def test_openai_provider_returns_tool_loop_message_delta() -> None:
@@ -329,26 +279,19 @@ def test_openai_provider_returns_tool_loop_message_delta() -> None:
         tools_by_name=build_tool_index([tool]),
     )
 
-    chat = provider.generate_chat_with_tools(
-        ChatRequest(
+    result = provider.run_session(
+        LLMSessionRequest(
+            system_prompt="",
             messages=[ChatMessage(role="user", content="hello")],
             model="chat-model",
+            toolbox=toolbox,
+            tools_mapping={"example_tool": lambda: ToolResult(status="ok", output="done")},
+            max_tool_calls=2,
         ),
-        toolbox=toolbox,
-        tools_mapping={"example_tool": lambda: ToolResult(status="ok", output="done")},
-        max_tool_calls=2,
     )
 
-    assert [message.role for message in chat.message_delta] == [
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    assert chat.message_delta[0].content is None
-    assert chat.message_delta[0].tool_calls[0]["id"] == "call-1"
-    assert chat.message_delta[1].tool_call_id == "call-1"
-    assert chat.message_delta[1].content == '{"status":"ok","output":"done"}'
-    assert chat.message_delta[2].content == "Tool completed."
+    assert isinstance(result, LLMSessionCompleted)
+    assert [message.role for message in result.messages[-3:]] == ["assistant", "tool", "assistant"]
 
 
 def test_gpt5_chat_params_use_supported_token_and_temperature_shape() -> None:
@@ -358,8 +301,9 @@ def test_gpt5_chat_params_use_supported_token_and_temperature_shape() -> None:
         settings=GenAISettings(openai_api_key="test"),
     )
 
-    provider.generate_chat(
-        ChatRequest(
+    provider.run_session(
+        LLMSessionRequest(
+            system_prompt="",
             messages=[ChatMessage(role="user", content="hello")],
             model="capco-ch-uat-openai-gpt5.2",
             temperature=0.2,
@@ -408,7 +352,7 @@ def test_azure_provider_marks_provider_and_deployment(tmp_path: Path) -> None:
 
     assert transcript.metadata.provider == "azure_openai"
     assert transcript.metadata.deployment == "whisper-deploy"
-    assert isinstance(provider, ToolCallingLLMProvider)
+    assert isinstance(provider, LLMProvider)
 
 
 def test_static_model_router_uses_default_and_azure_routes() -> None:

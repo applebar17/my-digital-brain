@@ -8,15 +8,13 @@ from my_digital_brain.agentic import (
     AgenticReasoningService,
     AgenticStateRunner,
 )
-from my_digital_brain.ai.schemas import ProviderCallMetadata, StructuredGenerationRequest
-from my_digital_brain.ai.schemas import StructuredGenerationResult
-from my_digital_brain.graph.models import NodeSearchResult
+from my_digital_brain.ai.schemas import ProviderCallMetadata
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.ingestion import (
     IngestionService,
     WholeSourceGraphContextPackBuilder,
 )
 from my_digital_brain.ingestion.contracts import (
-    CandidateEntity,
     GraphContextDuplicateHintItem,
     GraphContextEntityItem,
     GraphContextKnownAliasItem,
@@ -101,7 +99,9 @@ def test_whole_source_graph_context_pack_builder_compacts_hybrid_search_result()
     )
 
 
-def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_relationship_planning() -> None:
+def test_reasoning_first_runtime_matches_merc_alias_to_existing_entity_before_relationship_planning() -> (
+    None
+):
     provider = QueuedStructuredProvider(
         [
             {
@@ -286,9 +286,7 @@ def test_reasoning_first_runtime_plans_brother_relationship_against_staged_entit
     assert result.memory_log_plan is not None
     assert len(result.memory_logs) == 1
     assert result.memory_logs[0].local_ref == "MEMORY_LOG_001"
-    assert result.memory_logs[0].metadata["model_output_local_ref"] == (
-        "MEMORY_LOG_MODEL_001"
-    )
+    assert result.memory_logs[0].metadata["model_output_local_ref"] == ("MEMORY_LOG_MODEL_001")
     assert len(result.relationship_candidates) == 1
     assert result.candidate_graph is not None
     assert len(result.candidate_graph.memory_logs) == 1
@@ -481,16 +479,20 @@ class QueuedStructuredProvider:
 
     def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
         self.payloads = list(payloads)
-        self.requests: list[StructuredGenerationRequest] = []
+        self.requests: list[LLMSessionRequest] = []
 
-    def generate_structured(
+    def run_session(
         self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
+        request: LLMSessionRequest,
+    ) -> LLMSessionCompleted:
         self.requests.append(request)
         payload = self.payloads.pop(0)
+        assert request.output_schema is not None
         parsed = request.output_schema.model_validate(payload)
-        return StructuredGenerationResult(
+        return LLMSessionCompleted(
+            session_id=request.session_id or "test-session",
+            messages=request.messages,
+            content=parsed.model_dump_json(),
             parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
         )

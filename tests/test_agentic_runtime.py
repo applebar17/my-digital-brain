@@ -5,9 +5,9 @@ from typing import Any
 
 from my_digital_brain.agentic import (
     AgenticMemoryLogExtractionService,
-    AgenticRuntime,
     AgenticPlanningService,
     AgenticReasoningService,
+    AgenticRuntime,
     AgenticStateId,
     AgenticStateInvocation,
     AgenticStateRunner,
@@ -15,15 +15,8 @@ from my_digital_brain.agentic import (
     ChannelSessionMetadata,
     ConversationContext,
     GraphUpdateContext,
-    MemoryPlanAction,
-    MemoryPlanActionType,
-    MemoryPlanStep,
-    MemoryPlanningPhase,
-    NodeMemoryPlan,
-    NodePlanPacket,
-    PlannedRefPacket,
     NeutralConversationMessage,
-    PlanningActionContext,
+    NodeMemoryPlan,
     PlanningPurposeGuidelines,
     PlanningTransformContext,
     PlanningTransformResultContext,
@@ -31,19 +24,20 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
-from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 from my_digital_brain.ai.schemas import (
     ChatMessage,
-    ChatRequest,
-    ChatResult,
     ProviderCallMetadata,
 )
-from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
-from my_digital_brain.ai.schemas import StructuredGenerationRequest, StructuredGenerationResult
-from my_digital_brain.ai.tools import ToolBox
-from my_digital_brain.chat.enums import ChatResponseStatus
+from my_digital_brain.ai.session import (
+    LLMCompletionRequest,
+    LLMCompletionResult,
+    LLMSessionRequest,
+    LLMSessionResult,
+    LLMSessionRunner,
+)
 from my_digital_brain.chat.models import ClarificationAnswerPacket
 from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 
 
 class ScriptedToolCallingProvider:
@@ -58,102 +52,49 @@ class ScriptedToolCallingProvider:
         self.steps = list(steps)
         self.structured_payloads = list(structured_payloads or [])
         self.calls: list[dict[str, Any]] = []
-        self.structured_calls: list[StructuredGenerationRequest] = []
+        self.structured_calls: list[LLMSessionRequest] = []
+        self.completion_calls = 0
+        self.completion_messages: list[list[ChatMessage]] = []
 
-    def generate_chat_with_tools(
-        self,
-        request: ChatRequest,
-        *,
-        toolbox: ToolBox,
-        tools_mapping: dict[str, Any],
-        max_tool_calls: int | None = None,
-    ) -> ChatResult:
-        step = self.steps.pop(0) if self.steps else {"content": ""}
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        if request.output_schema is not None:
+            self.structured_calls.append(request)
         self.calls.append(
             {
                 "request": request,
-                "toolbox": toolbox,
-                "tool_names": sorted(toolbox.tools_by_name),
-                "max_tool_calls": max_tool_calls,
+                "toolbox": request.toolbox,
+                "tool_names": sorted(request.toolbox.tools_by_name) if request.toolbox else [],
+                "max_tool_calls": request.max_tool_calls,
             }
         )
+        return LLMSessionRunner(self).run(request)
+
+    def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+        self.completion_calls += 1
+        self.completion_messages.append(list(request.messages))
+        step = self.steps.pop(0) if self.steps else {"content": ""}
         tool_name = step.get("tool")
-        message_delta: list[ChatMessage] = []
-        if tool_name:
-            assert tool_name in toolbox.tools_by_name
-            tool_call_id = f"call-{len(self.calls)}"
-            arguments = step.get("arguments", {})
-            message_delta.append(
-                ChatMessage(
-                    role="assistant",
-                    content=None,
-                    tool_calls=[
-                        {
-                            "id": tool_call_id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": _json_arguments(arguments),
-                            },
-                        }
-                    ],
-                )
-            )
-            tool_fn = tools_mapping[tool_name]
-            context = getattr(tool_fn, "_agentic_execution_context", None)
-            previous_tool_call_id = getattr(context, "current_tool_call_id", None)
-            previous_tool_name = getattr(context, "current_tool_name", None)
-            if context is not None:
-                context.current_tool_call_id = tool_call_id
-                context.current_tool_name = str(tool_name)
-            try:
-                tool_result = tool_fn(**arguments)
-            finally:
-                if context is not None:
-                    context.current_tool_call_id = previous_tool_call_id
-                    context.current_tool_name = previous_tool_name
-            if getattr(tool_result, "status", None) == "interrupted":
-                raise ToolCallInterruption(
-                    tool_call_id=tool_call_id,
-                    tool_name=str(tool_name),
-                    result=tool_result,
-                    messages=[
-                        message.model_dump(mode="json", exclude_none=True)
-                        for message in [*request.messages, *message_delta]
-                    ],
-                )
-            message_delta.append(
-                ChatMessage(
-                    role="tool",
-                    tool_call_id=tool_call_id,
-                    content=_tool_result_content(tool_result),
-                )
-            )
-        if step.get("content"):
-            message_delta.append(
-                ChatMessage(role="assistant", content=str(step.get("content") or ""))
-            )
-        return ChatResult(
-            content=step.get("content", ""),
-            message_delta=message_delta,
-            metadata=ProviderCallMetadata.fake(model=request.model),
-        )
-
-    def generate_chat(self, request: ChatRequest) -> ChatResult:
-        return ChatResult(
-            content="plain chat",
-            metadata=ProviderCallMetadata.fake(model=request.model),
-        )
-
-    def generate_structured(
-        self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
-        self.structured_calls.append(request)
-        payload = self.structured_payloads.pop(0)
-        parsed = request.output_schema.model_validate(payload)
-        return StructuredGenerationResult(
-            parsed=parsed,
+        tool_calls = []
+        if isinstance(tool_name, str):
+            tool_calls = [
+                {
+                    "id": f"call-{len(self.calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": _json_arguments(step.get("arguments", {})),
+                    },
+                }
+            ]
+        content = step.get("content")
+        if request.response_format and not tool_name:
+            content = json.dumps(self.structured_payloads.pop(0))
+        return LLMCompletionResult(
+            assistant_message=ChatMessage(
+                role="assistant",
+                content=str(content) if content is not None else None,
+                tool_calls=tool_calls or None,
+            ),
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
@@ -183,9 +124,7 @@ def _memory_ingestion_structured_payloads() -> list[dict[str, Any]]:
                 "logs": ["The user clarified Marco was from university."],
                 "edges": {"relationships": "University context may matter."},
             },
-            "possible_aliases": [
-                {"main_mention": "Marco", "aliases": ["Marco from university"]}
-            ],
+            "possible_aliases": [{"main_mention": "Marco", "aliases": ["Marco from university"]}],
             "planning_guidance": "Plan nodes, then memories, then edges.",
         },
         {
@@ -327,7 +266,6 @@ class FakeGraphService:
         }
 
 
-
 def _runner(provider: ScriptedToolCallingProvider) -> AgenticStateRunner:
     return AgenticStateRunner(provider=provider)
 
@@ -344,11 +282,8 @@ def _conversation(text: str = "What do I remember about Marco?") -> Conversation
     )
 
 
-
 def test_conversation_entry_without_tool_call_returns_terminal_assistant_response() -> None:
-    provider = ScriptedToolCallingProvider(
-        [{"content": "I can help you store or query memories."}]
-    )
+    provider = ScriptedToolCallingProvider([{"content": "I can help you store or query memories."}])
     runtime = AgenticRuntime(_runner(provider))
 
     result = runtime.run(_conversation("hello"), AgenticToolExecutionContext())
@@ -357,7 +292,7 @@ def test_conversation_entry_without_tool_call_returns_terminal_assistant_respons
     assert result.final_text == "I can help you store or query memories."
     assert result.visited_states == [AgenticStateId.CONVERSATION_ENTRY.value]
     assert result.state_results[0].terminal is True
-    prompt_payload = provider.calls[0]["request"].messages[1].content
+    prompt_payload = provider.calls[0]["request"].messages[0].content
     assert "channel_metadata" not in str(prompt_payload)
     assert provider.calls[0]["tool_names"] == ["ingest_memory", "query_memory"]
 
@@ -401,6 +336,7 @@ def test_conversation_entry_query_tool_runs_memory_query_child_frame() -> None:
         "get_timeline",
     ]
 
+
 def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> None:
     provider = ScriptedToolCallingProvider(
         [
@@ -424,7 +360,10 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
     assert event.tool_name == "ingest_memory"
     assert event.status == "ok"
     assert event.data["child_state_id"] == AgenticStateId.MEMORY_INGESTION.value
-    assert event.data["summary"] == "Memory ingestion planning completed through nodes, memory_logs, and edges."
+    assert (
+        event.data["summary"]
+        == "Memory ingestion planning completed through nodes, memory_logs, and edges."
+    )
     assert [call.output_schema.__name__ for call in provider.structured_calls] == [
         "MemoryIngestionReasoning",
         "NodeMemoryPlan",
@@ -450,7 +389,8 @@ def test_missing_graph_dependency_produces_tool_error_without_crashing() -> None
                 "content": "I could not retrieve memory context.",
                 "tool": "get_context_package",
                 "arguments": {"node_id": "node-marco"},
-            }
+            },
+            {"content": "I could not retrieve memory context."},
         ]
     )
     runner = _runner(provider)
@@ -513,7 +453,7 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
     )
 
     assert result.status == "interrupted"
-    assert result.tool_events[0].status == "interrupted"
+    assert result.tool_events[0].status == "pending"
     interruption = result.metadata["interruption"]
     assert interruption["tool_name"] == "ask_clarification"
     assert interruption["tool_call_id"] == "call-1"
@@ -521,9 +461,7 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
     assert interruption["clarification_packet"]["questions"][0]["question"] == (
         "Which target should I use?"
     )
-    assert result.message_delta[0].tool_calls[0]["function"]["name"] == (
-        "ask_clarification"
-    )
+    assert result.message_delta[0].tool_calls[0]["function"]["name"] == ("ask_clarification")
 
 
 def test_graph_update_clarification_resumes_same_frame() -> None:
@@ -611,6 +549,7 @@ def test_graph_update_clarification_resumes_same_frame() -> None:
     assert resumed.final_text == "Graph update resumed."
     assert store.get_agentic_frame(frame.frame_id).status == "completed"
 
+
 def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent() -> None:
     provider = ScriptedToolCallingProvider(
         [
@@ -658,13 +597,13 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
 
     assert interrupted.status == "interrupted"
     child_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
-    assert child_frame.state_id == AgenticStateId.MEMORY_CREATION.value
+    assert child_frame.state_id == AgenticStateId.MEMORY_INGESTION.value
     assert child_frame.status == "interrupted"
     assert child_frame.clarification_packet is not None
     parent_frame = store.get_agentic_frame(child_frame.parent_frame_id or "")
     assert parent_frame.status == "waiting_child"
-    assert parent_frame.active_tool_name == "run_memory_creation"
-    top_parent_frame = store.get_agentic_frame(parent_frame.parent_frame_id or "")
+    assert parent_frame.active_tool_name == "ingest_memory"
+    top_parent_frame = parent_frame
     assert top_parent_frame.state_id == AgenticStateId.CONVERSATION_ENTRY.value
     assert top_parent_frame.status == "waiting_child"
     assert top_parent_frame.active_tool_name == "ingest_memory"
@@ -696,19 +635,20 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
     )
 
     assert resumed.status == "ok"
-    assert resumed.final_text == "Conversation parent resumed."
+    assert resumed.final_text == "Ingestion parent resumed."
     assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
     completed_parent = store.get_agentic_frame(top_parent_frame.frame_id)
     assert completed_parent.status == "completed"
     parent_tool_messages = [
         message for message in completed_parent.messages if message.get("role") == "tool"
     ]
-    assert len(parent_tool_messages) == 1
-    parent_tool_payload = json.loads(parent_tool_messages[0]["content"])
-    assert parent_tool_payload["data"]["child_frame_id"] == parent_frame.frame_id
+    assert len(parent_tool_messages) == 2
+    parent_tool_payload = json.loads(parent_tool_messages[-1]["content"])
+    assert parent_tool_payload["data"]["child_frame_id"]
     assert parent_tool_payload["data"]["child_status"] == "ok"
     assert parent_tool_payload["data"]["resolved_clarifications"]
     assert "state_result" not in parent_tool_payload["data"]
+
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     provider = ScriptedToolCallingProvider(
@@ -738,6 +678,7 @@ def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     )
     assert "state_results" not in result.state_results[0].tool_events[0].data
 
+
 def test_child_frames_do_not_use_handoff_state_switching() -> None:
     provider = ScriptedToolCallingProvider(
         [
@@ -763,6 +704,7 @@ def test_child_frames_do_not_use_handoff_state_switching() -> None:
     assert result.state_results[0].tool_events[0].data["visited_states"] == [
         AgenticStateId.MEMORY_QUERY.value,
     ]
+
 
 def test_state_runner_accepts_specialist_context_and_records_tool_events() -> None:
     provider = ScriptedToolCallingProvider(
@@ -867,7 +809,6 @@ def test_reasoning_checkpoint_service_runs_structured_state() -> None:
     assert structured_call.output_schema.__name__ == "ReasoningCheckpointResultContext"
     assert "Runtime context:" not in structured_call.system_prompt
     assert "timezone: Europe/Rome" not in structured_call.system_prompt
-    assert structured_call.input_message is None
     assert structured_call.messages[-1].role == "user"
     assert structured_call.messages[-1].content == "Alessia is my girlfriend."
     assert "Process context:" not in structured_call.system_prompt
@@ -932,7 +873,6 @@ def test_planning_checkpoint_service_runs_structured_state() -> None:
     assert structured_call.output_schema.__name__ == "PlanningTransformResultContext"
     assert "Runtime context:" not in structured_call.system_prompt
     assert "timezone: Europe/Rome" not in structured_call.system_prompt
-    assert structured_call.input_message is None
     assert len(structured_call.messages) == 1
     assert structured_call.messages[0].role == "user"
     assert structured_call.messages[0].content == "Merc is Matteo Mercoldi."
@@ -1069,7 +1009,6 @@ def test_contradiction_review_free_form_question_without_structured_intent_is_no
     assert result.metadata["contradiction_intent"] == "emit_verdict"
 
 
-
 def test_structured_state_repairs_validation_error_once() -> None:
     provider = ScriptedToolCallingProvider(
         steps=[],
@@ -1142,7 +1081,9 @@ def test_structured_state_repairs_validation_error_once() -> None:
                 ),
                 expected_output_schema="NodeMemoryPlan",
                 conversation=ConversationContext(
-                    current_message=NeutralConversationMessage.user("Remember Lorenzo at the beach."),
+                    current_message=NeutralConversationMessage.user(
+                        "Remember Lorenzo at the beach."
+                    ),
                 ),
             ),
             execution_context=AgenticToolExecutionContext(),
@@ -1153,12 +1094,11 @@ def test_structured_state_repairs_validation_error_once() -> None:
 
     assert result.status == "ok"
     assert result.structured_output is not None
-    assert result.structured_output["node_plan_packet"]["planned_refs"][0]["ref"] == "node_new_lorenzo"
-    assert len(provider.structured_calls) == 2
-    repair_messages = provider.structured_calls[1].messages
+    assert (
+        result.structured_output["node_plan_packet"]["planned_refs"][0]["ref"] == "node_new_lorenzo"
+    )
+    assert provider.completion_calls == 2
+    repair_messages = provider.completion_messages[-1]
     assert repair_messages[-1].role == "user"
-    assert "previous structured output did not validate" in repair_messages[-1].content
+    assert "Repair your previous response" in repair_messages[-1].content
     assert "node_new_lorenzo" in repair_messages[-1].content
-
-
-

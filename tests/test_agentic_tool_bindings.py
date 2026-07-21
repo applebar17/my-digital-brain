@@ -437,7 +437,7 @@ def test_ask_clarification_creates_frame_packet() -> None:
         ],
     )
 
-    assert result.status == "interrupted"
+    assert result.status == "pending"
     assert result.data["operation"] == "ask_clarification"
     assert result.data["frame_id"] == "frame-1"
     packet = result.data["clarification_packet"]
@@ -448,7 +448,7 @@ def test_ask_clarification_creates_frame_packet() -> None:
     assert packet["history_delta"][0]["role"] == "assistant"
     assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
     assert result.data["history_delta"] == packet["history_delta"]
-    assert execution_context.tool_events[0].status == "interrupted"
+    assert execution_context.tool_events[0].status == "pending"
 
 
 def test_ask_clarification_is_not_exposed_to_conversation_entry() -> None:

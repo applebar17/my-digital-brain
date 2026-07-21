@@ -4,6 +4,14 @@ import json
 
 import pytest
 
+from my_digital_brain.ai.schemas import ChatMessage, ProviderCallMetadata
+from my_digital_brain.ai.session import (
+    LLMCompletionRequest,
+    LLMCompletionResult,
+    LLMSessionRequest,
+    LLMSessionResult,
+    LLMSessionRunner,
+)
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     IngestionContextPackage,
@@ -57,26 +65,51 @@ def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
     class Provider:
         def __init__(self) -> None:
             self.calls: list[tuple[int, int | None]] = []
+            self._emitted = False
 
-        def generate_chat_with_tools(
-            self,
-            request,
-            *,
-            toolbox,
-            tools_mapping,
-            max_tool_calls=None,
-        ) -> None:
-            content = request.messages[-1].content
+        def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+            self._emitted = False
+            return LLMSessionRunner(self).run(request)
+
+        def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+            if self._emitted:
+                return LLMCompletionResult(
+                    assistant_message=ChatMessage(role="assistant", content="done"),
+                    metadata=ProviderCallMetadata.fake(model=request.model),
+                )
+            content = request.messages[-1].content or ""
             content = content.removeprefix("```json\n").removesuffix("\n```")
             payload = json.loads(content)
-            self.calls.append((len(payload["candidate_actions"]), max_tool_calls))
-            for candidate in payload["candidate_actions"]:
-                tools_mapping["create_node"](
-                    candidate_ref=candidate["local_ref"],
-                    payload={},
-                    reason="test",
-                    evidence_refs=[],
-                )
+            self.calls.append(
+                (len(payload["candidate_actions"]), len(payload["candidate_actions"]))
+            )
+            self._emitted = True
+            tool_calls = [
+                {
+                    "id": f"call-{index}",
+                    "type": "function",
+                    "function": {
+                        "name": "create_node",
+                        "arguments": json.dumps(
+                            {
+                                "candidate_ref": candidate["local_ref"],
+                                "payload": {},
+                                "reason": "test",
+                                "evidence_refs": [],
+                            }
+                        ),
+                    },
+                }
+                for index, candidate in enumerate(payload["candidate_actions"])
+            ]
+            return LLMCompletionResult(
+                assistant_message=ChatMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=tool_calls,
+                ),
+                metadata=ProviderCallMetadata.fake(model=request.model),
+            )
 
     provider = Provider()
     graph = CandidateMemoryGraph(

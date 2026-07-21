@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -121,8 +121,6 @@ class GenAISettings:
     azure_openai_api_version: str = "2024-10-21"
     azure_openai_embed_deployment: str | None = None
     azure_openai_transcription_deployment: str | None = None
-    genai_tool_call_limit: int = 8
-    genai_tool_call_timeout_seconds: float = 30.0
 
 
 def get_genai_settings() -> GenAISettings:
@@ -190,17 +188,9 @@ def get_genai_settings() -> GenAISettings:
         is_azure=is_azure,
         azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-        azure_openai_api_version=os.getenv(
-            "AZURE_OPENAI_API_VERSION", "2024-10-21"
-        ),
+        azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         azure_openai_embed_deployment=os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT"),
-        azure_openai_transcription_deployment=os.getenv(
-            "AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT"
-        ),
-        genai_tool_call_limit=_env_int("GENAI_TOOL_CALL_LIMIT", 8),
-        genai_tool_call_timeout_seconds=_env_float(
-            "GENAI_TOOL_CALL_TIMEOUT_SECONDS", 30.0
-        ),
+        azure_openai_transcription_deployment=os.getenv("AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT"),
     )
 
 

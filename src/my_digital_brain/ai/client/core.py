@@ -1,30 +1,24 @@
-"""OpenAI/Azure GenAI client wrapper with tools and token guardrails."""
+"""OpenAI/Azure Chat Completions transport and media client."""
 
 from __future__ import annotations
 
 import logging
-import os
+from collections.abc import Iterable
 from pathlib import Path
-import time
-from typing import Any, Callable, Iterable
-
-from pydantic import BaseModel
+from typing import Any
 
 from my_digital_brain.ai.context import ContextBudgetResolver, GenAIContextManager
-from my_digital_brain.ai.logging import log_event
-from my_digital_brain.ai.models import ToolSpec
 from my_digital_brain.ai.tokenizer import TokenCounter
-from my_digital_brain.ai.tools import ToolBox, build_chat_toolbox
 from my_digital_brain.ai.tracing import traceable, wrap_openai_client
 
 from .context_ops import GenAIContextMixin
-from .diagnostics import _llm_prompt_diagnostics
-from .errors import _provider_error_details
 from .retrying import GenAIRetryMixin
 from .settings import GenAISettings, get_genai_settings
-from .tool_execution import GenAIToolExecutionMixin, ToolCallInterruption
 
-class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
+
+class GenAIClient(GenAIRetryMixin, GenAIContextMixin):
+    """Execute one provider request; session orchestration lives above this class."""
+
     def __init__(
         self,
         settings: GenAISettings | None = None,
@@ -39,58 +33,14 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         self.output_reserve_tokens = self.settings.output_reserve_tokens
         self.max_retries = 3
         self.retry_backoff_seconds = 1.5
-        self.use_responses_api = self._resolve_responses_api()
-        self.tool_call_limit = max(0, int(self.settings.genai_tool_call_limit))
-        self.tool_call_timeout_seconds = max(
-            0.0, float(self.settings.genai_tool_call_timeout_seconds)
-        )
-        self.chat_toolbox = build_chat_toolbox()
-        self._tool_mapping: dict[str, Callable[..., Any]] | None = None
         self._log_configuration()
 
-    @traceable(
-        name="Structured Generation",
-        run_type="chain"
-    )
-    def generate_structured(
-        self,
-        schema: type[BaseModel],
-        system_prompt: str,
-        chat_message: str | dict[str, Any] | list[dict[str, Any]] | None = None,
-        *,
-        messages: list[dict[str, Any]] | None = None,
-        model: str | None = None,
-        temperature: float = 0.2,
-        max_tokens: int | None = None,
-    ) -> BaseModel:
-        if messages is not None:
-            built_messages = self._build_messages(system_prompt, messages)
-        elif chat_message is not None:
-            built_messages = self._build_messages(system_prompt, chat_message)
-        else:
-            raise ValueError("Structured generation requires messages or chat_message.")
-        params: dict[str, Any] = {
-            "model": model or self._default_chat_model(),
-            "messages": built_messages,
-        }
-        if temperature is not None:
-            params["temperature"] = temperature
-        if max_tokens is not None:
-            params["max_tokens"] = max_tokens
-        params = self._prepare_chat_completion_params(params)
-        self._ensure_context_budget(params)
-        built_messages = params.get("messages") or built_messages
-        max_tokens = params.get("max_tokens")
-        max_completion_tokens = params.get("max_completion_tokens")
-        temperature = params.get("temperature")
-        return self._call_structured_with_retries(
-            schema,
-            messages=built_messages,
-            model=params["model"],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            max_completion_tokens=max_completion_tokens,
-        )
+    @traceable(name="Chat Completion Transport", run_type="llm")
+    def complete_chat(self, params: dict[str, Any]) -> Any:
+        """Perform one Chat Completions request without executing tools."""
+        prepared = self._prepare_chat_completion_params(dict(params))
+        self._ensure_context_budget(prepared)
+        return self._call_with_retries(prepared)
 
     @traceable(name="Embed Texts", run_type="embedding")
     def embed(
@@ -100,9 +50,8 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         model: str | None = None,
         dimensions: int | None = None,
     ) -> list[list[float]]:
-        model_name = model or self._default_embed_model()
         params: dict[str, Any] = {
-            "model": model_name,
+            "model": model or self._default_embed_model(),
             "input": list(texts),
         }
         dimensions = dimensions or getattr(self.settings, "embed_dimensions", None)
@@ -121,9 +70,8 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         prompt: str | None = None,
         response_format: str = "verbose_json",
     ) -> Any:
-        model_name = model or self._default_transcription_model()
         params: dict[str, Any] = {
-            "model": model_name,
+            "model": model or self._default_transcription_model(),
             "response_format": response_format,
         }
         if language:
@@ -133,247 +81,6 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         with Path(audio_path).open("rb") as audio_file:
             params["file"] = audio_file
             return self.client.audio.transcriptions.create(**params)
-
-    @traceable(
-        name="Build Chat Params",
-        run_type="prompt"
-    )
-    def handle_params(
-        self,
-        system_prompt: str,
-        chat_messages: str | dict[str, Any] | list[dict[str, Any]],
-        *,
-        model: str | None = None,
-        temperature: float = 0.2,
-        max_tokens: int | None = None,
-        response_format: dict[str, Any] | type[BaseModel] | None = None,
-        tools: list[ToolSpec] | None = None,
-        toolbox: ToolBox | None = None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        messages = self._build_messages(system_prompt, chat_messages)
-
-        params: dict[str, Any] = {
-            "model": model or self._default_chat_model(),
-            "messages": messages,
-            # Some OpenAI models reject explicit temperature.
-        }
-
-        if max_tokens is not None:
-            params["max_tokens"] = max_tokens
-        if response_format is not None:
-            params["response_format"] = response_format
-        if toolbox and not tools:
-            tools = toolbox.tools
-        if tools:
-            params["tools"] = tools
-
-        for key, value in kwargs.items():
-            if value is not None:
-                params[key] = value
-        if "tools" not in params:
-            params.pop("parallel_tool_calls", None)
-
-        params = self._prepare_chat_completion_params(params)
-        self._ensure_context_budget(params)
-        return params
-
-    @traceable(name="Chat Completion", run_type="chain")
-    def call_openai(
-        self,
-        params: dict[str, Any],
-        tools_mapping: dict[str, Callable[..., Any]] | None = None,
-        toolbox: ToolBox | None = None,
-        include_tool_meta: bool = False,
-        max_tool_calls: int | None = None,
-    ):
-        call_start = time.monotonic()
-        model = str(params.get("model") or "unknown")
-        tool_call_limit = self._resolve_tool_call_limit(max_tool_calls)
-        prompt_diagnostics = _llm_prompt_diagnostics(
-            params,
-            toolbox=toolbox,
-            model=model,
-        )
-        log_event(
-            self.logger,
-            "llm.call.start",
-            component="genai",
-            step="call_openai",
-            status="started",
-            model=model,
-            provider="azure_openai" if self.settings.is_azure else "openai",
-            **prompt_diagnostics,
-        )
-        if toolbox and "tools" not in params:
-            params["tools"] = toolbox.tools
-        if tools_mapping is None and (toolbox or params.get("tools")):
-            tools_mapping = self._get_tool_mapping()
-
-        tools_by_name = toolbox.tools_by_name if toolbox else None
-        tool_calls_executed = 0
-        start_time = time.monotonic()
-        response_format = params.get("response_format")
-        structured_schema = (
-            response_format
-            if isinstance(response_format, type)
-            and issubclass(response_format, BaseModel)
-            else None
-        )
-        call_fn = (
-            self._call_structured_response_with_retries
-            if structured_schema is not None
-            else self._call_with_retries
-        )
-
-        try:
-            while True:
-                self._ensure_context_budget(params)
-                response = call_fn(params)
-
-                choice = response.choices[0]
-                message = choice.message
-                tool_calls = getattr(message, "tool_calls", None)
-                if not tool_calls:
-                    prompt_diagnostics = _llm_prompt_diagnostics(
-                        params,
-                        toolbox=toolbox,
-                        model=model,
-                    )
-                    log_event(
-                        self.logger,
-                        "llm.call.end",
-                        component="genai",
-                        step="call_openai",
-                        status="ok",
-                        model=model,
-                        provider="azure_openai" if self.settings.is_azure else "openai",
-                        duration_ms=int((time.monotonic() - call_start) * 1000),
-                        tool_call_count=tool_calls_executed,
-                        **prompt_diagnostics,
-                    )
-                    return response
-
-                params["messages"].append(self._message_to_dict(message))
-
-                if not tools_mapping:
-                    raise ValueError("tools_mapping is required for tool calls.")
-
-                if self._tool_budget_exceeded(
-                    start_time,
-                    tool_calls_executed,
-                    len(tool_calls),
-                    tool_call_limit=tool_call_limit,
-                ):
-                    self.logger.warning(
-                        "Tool budget exceeded; completing without tools. "
-                        "tool_calls=%s limit=%s timeout=%.1fs",
-                        tool_calls_executed,
-                        tool_call_limit,
-                        self.tool_call_timeout_seconds,
-                    )
-                    log_event(
-                        self.logger,
-                        "llm.tool_budget_exceeded",
-                        "warning",
-                        component="genai",
-                        step="call_openai",
-                        status="error",
-                        model=model,
-                        tool_call_count=tool_calls_executed,
-                        tool_call_limit=tool_call_limit,
-                        tool_call_timeout_seconds=self.tool_call_timeout_seconds,
-                    )
-                    tool_calls_executed += self._append_tool_budget_exceeded_messages(
-                        params,
-                        tool_calls,
-                        tool_calls_executed=tool_calls_executed,
-                        start_time=start_time,
-                        tool_call_limit=tool_call_limit,
-                    )
-                    response = self._call_without_tools(params)
-                    prompt_diagnostics = _llm_prompt_diagnostics(
-                        params,
-                        toolbox=toolbox,
-                        model=model,
-                    )
-                    log_event(
-                        self.logger,
-                        "llm.call.end",
-                        component="genai",
-                        step="call_openai",
-                        status="partial",
-                        model=model,
-                        provider="azure_openai" if self.settings.is_azure else "openai",
-                        duration_ms=int((time.monotonic() - call_start) * 1000),
-                        tool_call_count=tool_calls_executed,
-                        **prompt_diagnostics,
-                    )
-                    return response
-
-                for tool_call in tool_calls:
-                    tool_result = self._execute_tool_call(
-                        tool_call,
-                        tools_mapping=tools_mapping,
-                        tools_by_name=tools_by_name,
-                        include_tool_meta=include_tool_meta,
-                        messages_snapshot=list(params.get("messages") or []),
-                    )
-                    params["messages"].append(tool_result)
-                    tool_calls_executed += 1
-        except ToolCallInterruption as exc:
-            exc.messages = list(params.get("messages") or [])
-            log_event(
-                self.logger,
-                "llm.tool_interrupted",
-                component="genai",
-                step="call_openai",
-                status="interrupted",
-                model=model,
-                provider="azure_openai" if self.settings.is_azure else "openai",
-                duration_ms=int((time.monotonic() - call_start) * 1000),
-                tool_name=exc.tool_name,
-                tool_call_id=exc.tool_call_id,
-            )
-            raise
-        except Exception as exc:
-            duration_ms = int((time.monotonic() - call_start) * 1000)
-            prompt_diagnostics = _llm_prompt_diagnostics(
-                params,
-                toolbox=toolbox,
-                model=model,
-            )
-            error_details = _provider_error_details(exc)
-            if error_details.get("error_code") == "content_filter":
-                log_event(
-                    self.logger,
-                    "llm.content_filter",
-                    "warning",
-                    component="genai",
-                    step="call_openai",
-                    status="error",
-                    model=model,
-                    provider="azure_openai" if self.settings.is_azure else "openai",
-                    duration_ms=duration_ms,
-                    error_type=exc.__class__.__name__,
-                    **error_details,
-                    **prompt_diagnostics,
-                )
-            log_event(
-                self.logger,
-                "llm.call.error",
-                "error",
-                component="genai",
-                step="call_openai",
-                status="error",
-                model=model,
-                provider="azure_openai" if self.settings.is_azure else "openai",
-                duration_ms=duration_ms,
-                error_type=exc.__class__.__name__,
-                **error_details,
-                **prompt_diagnostics,
-            )
-            raise
 
     def _default_chat_model(self) -> str:
         return self.settings.chat_model_default or "gpt-4o-mini"
@@ -404,15 +111,10 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
         try:
             import openai
         except ImportError as exc:
-            raise RuntimeError(
-                "openai package is required for GenAIClient."
-            ) from exc
+            raise RuntimeError("openai package is required for GenAIClient.") from exc
 
         if self.settings.is_azure:
-            if (
-                not self.settings.azure_openai_endpoint
-                or not self.settings.azure_openai_api_key
-            ):
+            if not self.settings.azure_openai_endpoint or not self.settings.azure_openai_api_key:
                 raise RuntimeError("Azure OpenAI settings are missing.")
             client = openai.AzureOpenAI(
                 api_key=self.settings.azure_openai_api_key,
@@ -423,8 +125,7 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
 
         if not self.settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is missing.")
-        client = openai.OpenAI(api_key=self.settings.openai_api_key)
-        return wrap_openai_client(client)
+        return wrap_openai_client(openai.OpenAI(api_key=self.settings.openai_api_key))
 
     def _build_context_manager(self) -> GenAIContextManager:
         tier_context_tokens = {
@@ -451,51 +152,14 @@ class GenAIClient(GenAIToolExecutionMixin, GenAIRetryMixin, GenAIContextMixin):
             logger=self.logger,
         )
 
-    def _resolve_responses_api(self) -> bool:
-        override = os.getenv("GENAI_USE_RESPONSES_API")
-        supported = hasattr(self.client, "responses") and hasattr(
-            self.client.responses, "parse"
-        )
-        if override is None or override.strip() == "":
-            return supported and not self.settings.is_azure
-        enabled = override.strip().lower() in {"1", "true", "yes", "y"}
-        if enabled and not supported:
-            self.logger.warning(
-                "GENAI_USE_RESPONSES_API is set but responses API is unavailable; "
-                "falling back to chat completions."
-            )
-            return False
-        if enabled and self.settings.is_azure:
-            self.logger.warning(
-                "GENAI_USE_RESPONSES_API is set but Azure does not support responses; "
-                "using chat completions."
-            )
-            return False
-        return enabled
-
     def _log_configuration(self) -> None:
-        if self.settings.is_azure:
-            self.logger.debug(
-                "GenAI client init: provider=azure endpoint=%s api_version=%s "
-                "chat_default=%s chat_smart=%s chat_reasoning=%s "
-                "embed_deployment=%s transcription_deployment=%s responses_api=%s",
-                self.settings.azure_openai_endpoint or "unset",
-                self.settings.azure_openai_api_version or "unset",
-                self.settings.chat_model_default or "unset",
-                self.settings.chat_model_smart or "unset",
-                self.settings.chat_model_reasoning or "unset",
-                self.settings.azure_openai_embed_deployment or "unset",
-                self.settings.azure_openai_transcription_deployment or "unset",
-                self.use_responses_api,
-            )
-            return
         self.logger.debug(
-            "GenAI client init: provider=openai chat_default=%s chat_smart=%s "
-            "chat_reasoning=%s embed_model=%s transcription_model=%s responses_api=%s",
+            "GenAI client init: provider=%s chat_default=%s chat_smart=%s "
+            "chat_reasoning=%s embed_model=%s transcription_model=%s",
+            "azure_openai" if self.settings.is_azure else "openai",
             self.settings.chat_model_default or "unset",
             self.settings.chat_model_smart or "unset",
             self.settings.chat_model_reasoning or "unset",
             self.settings.openai_embed_model or "unset",
             self.settings.openai_transcription_model or "unset",
-            self.use_responses_api,
         )

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 from pydantic import BaseModel
 
-from my_digital_brain.ai.protocols import ModelRouter, StructuredLLMProvider
-from my_digital_brain.ai.schemas import AIRequestContext, StructuredGenerationRequest
+from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
+from my_digital_brain.ai.schemas import AIRequestContext
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ingestion.contracts import (
     CandidateOutput,
@@ -14,8 +14,10 @@ from my_digital_brain.ingestion.contracts import (
     IngestionContextPackage,
     SourceRecordRef,
 )
-from my_digital_brain.ingestion.enrichment import enrich_candidate_batch
-from my_digital_brain.ingestion.enrichment import enrich_candidate_batch_with_tasks
+from my_digital_brain.ingestion.enrichment import (
+    enrich_candidate_batch,
+    enrich_candidate_batch_with_tasks,
+)
 from my_digital_brain.ingestion.enums import ExtractionTaskType
 from my_digital_brain.ingestion.prompt_builders import (
     IngestionPromptBuilder,
@@ -30,7 +32,7 @@ class FocusedLLMExtractor:
 
     def __init__(
         self,
-        provider: StructuredLLMProvider,
+        provider: LLMProvider,
         *,
         router: ModelRouter | None = None,
         prompt_builder: IngestionPromptBuilder | None = None,
@@ -80,19 +82,21 @@ class FocusedLLMExtractor:
             metadata={"task_id": task.task_id, "task_type": str(task.task_type)},
         )
         route = self.router.route(self.route_task, request_context) if self.router else None
-        result = self.provider.generate_structured(
-            StructuredGenerationRequest(
-                schema=self.output_schema,
+        result = self.provider.run_session(
+            LLMSessionRequest(
                 system_prompt=system_prompt_with_runtime_context(
                     self.prompt_builder.extractor_system_prompt,
                     source,
                 ),
                 messages=self.prompt_builder.extraction_messages(source, task, context),
                 model=self.model or (route.model if route else None),
+                output_schema=self.output_schema,
                 context=request_context,
                 metadata={"route": route.model_dump(mode="json")} if route else {},
-            ),
+            )
         )
+        if not isinstance(result, LLMSessionCompleted) or result.parsed is None:
+            raise ValueError(f"Structured extraction did not complete: {result}")
         return result.parsed
 
     @traceable(name="Focused Extraction Batch Structured Call", run_type="parser")
@@ -113,9 +117,8 @@ class FocusedLLMExtractor:
             },
         )
         route = self.router.route(self.route_task, request_context) if self.router else None
-        result = self.provider.generate_structured(
-            StructuredGenerationRequest(
-                schema=self.output_schema,
+        result = self.provider.run_session(
+            LLMSessionRequest(
                 system_prompt=system_prompt_with_runtime_context(
                     self.prompt_builder.extractor_system_prompt,
                     source,
@@ -126,10 +129,13 @@ class FocusedLLMExtractor:
                     context,
                 ),
                 model=self.model or (route.model if route else None),
+                output_schema=self.output_schema,
                 context=request_context,
                 metadata={"route": route.model_dump(mode="json")} if route else {},
-            ),
+            )
         )
+        if not isinstance(result, LLMSessionCompleted) or result.parsed is None:
+            raise ValueError(f"Structured extraction did not complete: {result}")
         return result.parsed
 
 

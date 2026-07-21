@@ -13,22 +13,19 @@ from my_digital_brain.ai.protocols import (
     EmbeddingProvider,
     LLMProvider,
     SpeechToTextProvider,
-    StructuredLLMProvider,
-    ToolCallingLLMProvider,
 )
 from my_digital_brain.ai.providers import FakeAIProvider
 from my_digital_brain.ai.request_log import build_provider_request_log_payload
 from my_digital_brain.ai.schemas import (
     AIRequestContext,
     ChatMessage,
-    ChatRequest,
     EmbeddingRequest,
     ModelRoute,
     ProviderCallMetadata,
     ProviderUsage,
-    StructuredGenerationRequest,
     TranscriptionRequest,
 )
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 
 
 class ExampleStructuredOutput(BaseModel):
@@ -53,15 +50,11 @@ def test_ai_provider_schemas_validate_minimal_and_rich_payloads(tmp_path: Path) 
         metadata={"trace": "test"},
     )
 
-    chat_request = ChatRequest(
+    session_request = LLMSessionRequest(
+        system_prompt="Extract a structured payload.",
         messages=[ChatMessage(role="user", content="I met Marco yesterday.")],
         model="fake-chat-model",
-        context=context,
-    )
-    structured_request = StructuredGenerationRequest(
-        schema=ExampleStructuredOutput,
-        system_prompt="Extract a structured payload.",
-        input_message="A high-priority memory.",
+        output_schema=ExampleStructuredOutput,
         context=context,
     )
     transcription_request = TranscriptionRequest(
@@ -70,12 +63,12 @@ def test_ai_provider_schemas_validate_minimal_and_rich_payloads(tmp_path: Path) 
         context=context,
     )
 
-    assert chat_request.context.source_id == "source-1"
-    assert structured_request.output_schema is ExampleStructuredOutput
+    assert session_request.context.source_id == "source-1"
+    assert session_request.output_schema is ExampleStructuredOutput
     assert transcription_request.audio_path.name == "voice.ogg"
 
 
-def test_fake_provider_implements_all_wave1_protocols(tmp_path: Path) -> None:
+def test_fake_provider_implements_all_provider_protocols(tmp_path: Path) -> None:
     provider = FakeAIProvider(
         chat_response="stored",
         structured_payload={"title": "Memory", "importance": 2},
@@ -84,19 +77,14 @@ def test_fake_provider_implements_all_wave1_protocols(tmp_path: Path) -> None:
     )
 
     assert isinstance(provider, LLMProvider)
-    assert isinstance(provider, StructuredLLMProvider)
     assert isinstance(provider, EmbeddingProvider)
     assert isinstance(provider, SpeechToTextProvider)
-    assert isinstance(provider, ToolCallingLLMProvider)
 
-    chat = provider.generate_chat(
-        ChatRequest(messages=[ChatMessage(role="user", content="hello")])
-    )
-    structured = provider.generate_structured(
-        StructuredGenerationRequest(
-            schema=ExampleStructuredOutput,
+    session = provider.run_session(
+        LLMSessionRequest(
             system_prompt="Extract.",
-            input_message="Memory",
+            messages=[ChatMessage(role="user", content="Memory")],
+            output_schema=ExampleStructuredOutput,
         )
     )
     embeddings = provider.embed(EmbeddingRequest(texts=["alpha", "beta"], dimensions=4))
@@ -104,8 +92,8 @@ def test_fake_provider_implements_all_wave1_protocols(tmp_path: Path) -> None:
         TranscriptionRequest(audio_path=tmp_path / "voice.ogg")
     )
 
-    assert chat.content == "stored"
-    assert structured.parsed.title == "Memory"
+    assert isinstance(session, LLMSessionCompleted)
+    assert session.parsed.title == "Memory"
     assert len(embeddings.embeddings) == 2
     assert len(embeddings.embeddings[0]) == 4
     assert transcript.text == "I met Marco yesterday."

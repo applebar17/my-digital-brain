@@ -8,11 +8,8 @@ from my_digital_brain.agentic import (
     AgenticReasoningService,
     AgenticStateRunner,
 )
-from my_digital_brain.ai.schemas import (
-    ProviderCallMetadata,
-    StructuredGenerationRequest,
-    StructuredGenerationResult,
-)
+from my_digital_brain.ai.schemas import ProviderCallMetadata
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult, SocialCircleNode
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
@@ -29,12 +26,8 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLogLink,
     ResolutionDecision,
     ResolutionResult,
-    ResolutionStep,
-    ResolutionToolAction,
-    ResolutionToolName,
     SourceRecordRef,
 )
-from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
 from my_digital_brain.ingestion.enums import (
     ExtractionExecutionMode,
     ExtractionTaskType,
@@ -44,10 +37,7 @@ from my_digital_brain.ingestion.enums import (
     SourceType,
 )
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
-from my_digital_brain.ingestion.resolution_proposals import (
-    ResolutionProposalCompiler,
-    ResolutionProposalValidator,
-)
+from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
@@ -293,12 +283,11 @@ def test_write_plan_builder_and_executor_create_memory_logs_for_existing_host() 
 
     assert len(plan.memory_logs_to_create) == 1
     assert plan.memory_logs_to_create[0].label == "MemoryLog"
-    assert plan.memory_logs_to_create[0].properties["log_text"] == (
-        "Marco changed job yesterday."
-    )
+    assert plan.memory_logs_to_create[0].properties["log_text"] == ("Marco changed job yesterday.")
     assert plan.memory_logs_to_create[0].properties["media_refs"] == ["media-ref-1"]
-    assert plan.memory_logs_to_create[0].properties["id"] == (
-        same_plan.memory_logs_to_create[0].properties["id"]
+    assert (
+        plan.memory_logs_to_create[0].properties["id"]
+        == (same_plan.memory_logs_to_create[0].properties["id"])
     )
     assert plan.relationships_to_create[0].relationship_type == "HAS_MEMORY_LOG"
     assert plan.relationships_to_create[0].from_ref == host_id
@@ -471,7 +460,7 @@ def test_ingestion_service_rejects_empty_candidate_graph() -> None:
 
 def _reasoning_first_service(
     *,
-    graph: "FakeGraphService",
+    graph: FakeGraphService,
     provider_payloads: Sequence[dict[str, Any]],
     resolution_agent: FixedResolutionAgent | None = None,
     write_plan_builder: GraphWritePlanBuilder | None = None,
@@ -549,16 +538,20 @@ class QueuedStructuredProvider:
 
     def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
         self.payloads = list(payloads)
-        self.requests: list[StructuredGenerationRequest] = []
+        self.requests: list[LLMSessionRequest] = []
 
-    def generate_structured(
+    def run_session(
         self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
+        request: LLMSessionRequest,
+    ) -> LLMSessionCompleted:
         self.requests.append(request)
         payload = self.payloads.pop(0)
+        assert request.output_schema is not None
         parsed = request.output_schema.model_validate(payload)
-        return StructuredGenerationResult(
+        return LLMSessionCompleted(
+            session_id=request.session_id or "test-session",
+            messages=request.messages,
+            content=parsed.model_dump_json(),
             parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
         )

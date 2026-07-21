@@ -6,16 +6,6 @@ from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.core.ids import new_uuid
 
 
-class ClarificationInterrupted(Exception):
-    """A provider call paused because the agent invoked ask_clarification."""
-
-    def __init__(self, packet: Any) -> None:
-        self.packet = packet
-        from my_digital_brain.chat.clarification import render_clarification_questions
-
-        super().__init__(render_clarification_questions(packet))
-
-
 class ClarificationService:
     """Single transport-neutral boundary for agent clarification requests."""
 
@@ -41,7 +31,7 @@ class ClarificationService:
             target_refs=target_refs or [],
         )
         return ToolResult(
-            status="interrupted",
+            status="pending",
             output=render_clarification_questions(packet),
             data={
                 "operation": "ask_clarification",

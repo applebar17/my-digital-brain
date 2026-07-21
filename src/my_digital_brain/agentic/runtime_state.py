@@ -1,35 +1,23 @@
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from my_digital_brain.agentic.contexts import (
-    ContradictionJudgeResultContext,
-    ContradictionReviewContext,
-    ConversationContext,
-    EdgeMemoryPlan,
-    MemoryIngestionContext,
-    MemoryIngestionReasoning,
-    MemoryIngestionResultContext,
-    MemoryLogMemoryPlan,
-    MemoryPlan,
-    NodeMemoryPlan,
-)
-from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanningPhase
+from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.history import AgenticHistoryService
-from my_digital_brain.agentic.planning_contracts import (
-    PlanningPurposeGuidelines,
-    PlanningTransformContext,
+from my_digital_brain.agentic.runtime_helpers import (
+    _chat_message_to_frame_dict,
+    _state_value,
+    _structured_summary,
+    _system_prompt_with_runtime_context,
+    _trace_json_section,
 )
 from my_digital_brain.agentic.runtime_models import (
-    AgenticRunResult,
     AgenticStateInvocation,
     AgenticStateRunResult,
-    AgenticToolEvent,
 )
 from my_digital_brain.agentic.state import AgenticStateConfig, default_state_configs
 from my_digital_brain.agentic.tools import (
@@ -39,42 +27,29 @@ from my_digital_brain.agentic.tools import (
     build_agentic_toolbox,
     default_agentic_tool_registry,
 )
-from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
+from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
 from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.ai.schemas import (
     AIRequestContext,
     ChatMessage,
-    ChatRequest,
-    StructuredGenerationRequest,
 )
-from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
-from my_digital_brain.ai.models import ToolResult
+from my_digital_brain.ai.session import (
+    LLMSessionAwaitingTool,
+    LLMSessionFailed,
+    LLMSessionRequest,
+)
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.prompts import PromptRegistry
-from my_digital_brain.agentic.runtime_helpers import (
-    _chat_message_to_frame_dict,
-    _collect_child_payload_values,
-    _collect_memory_plan_refs,
-    _compact_state_trace,
-    _contradiction_runtime_status,
-    _frame_context_payload,
-    _memory_ingestion_error_result,
-    _state_value,
-    _structured_summary,
-    _system_prompt_with_runtime_context,
-    _trace_json_section,
-)
-
 
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class AgenticStateRunner:
-    provider: ToolCallingLLMProvider
+    provider: LLMProvider
     model_router: ModelRouter = field(default_factory=StaticModelRouter)
     prompt_registry: PromptRegistry = field(default_factory=PromptRegistry)
     state_configs: dict[AgenticStateId, AgenticStateConfig] = field(
@@ -104,9 +79,7 @@ class AgenticStateRunner:
             if tools_disabled
             else build_agentic_toolbox(state_config, self.tool_registry)
         )
-        invocation.execution_context.frame_id = (
-            invocation.execution_context.frame_id or new_uuid()
-        )
+        invocation.execution_context.frame_id = invocation.execution_context.frame_id or new_uuid()
         invocation.execution_context.current_payload = invocation.context_payload
         event_start = len(invocation.execution_context.tool_events)
         tools_mapping = (
@@ -119,7 +92,9 @@ class AgenticStateRunner:
             )
         )
         prompt_id = str(invocation.metadata.get("prompt_id_override") or state_config.prompt_id)
-        prompt_version = str(invocation.metadata.get("prompt_version_override") or state_config.prompt_version)
+        prompt_version = str(
+            invocation.metadata.get("prompt_version_override") or state_config.prompt_version
+        )
         prompt = self.prompt_registry.load(
             prompt_id,
             prompt_version,
@@ -175,42 +150,53 @@ class AgenticStateRunner:
             ],
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
-        request = ChatRequest(
+        request = LLMSessionRequest(
+            system_prompt=prompt,
             model=route.model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            messages=[
-                ChatMessage(role="system", content=prompt),
-                *model_messages,
-            ],
+            messages=model_messages,
+            toolbox=toolbox,
+            tools_mapping=tools_mapping,
+            max_tool_calls=0 if tools_disabled else state_config.max_tool_calls,
+            session_id=invocation.execution_context.frame_id or new_uuid(),
             context=context,
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
-        try:
-            result = self.provider.generate_chat_with_tools(
-                request,
-                toolbox=toolbox,
-                tools_mapping=tools_mapping,
-                max_tool_calls=0 if tools_disabled else state_config.max_tool_calls,
-            )
-        except ToolCallInterruption as exc:
-            return self._interrupted_state_result(
+        result = self.provider.run_session(request)
+        if isinstance(result, LLMSessionAwaitingTool):
+            return self._awaiting_tool_state_result(
                 state_config,
                 request,
                 invocation,
                 event_start,
-                exc,
+                result,
                 route=route,
+            )
+        if isinstance(result, LLMSessionFailed):
+            return AgenticStateRunResult(
+                state_id=state_id,
+                assistant_text=result.error,
+                message_delta=result.messages[1 + len(model_messages) :],
+                tool_events=invocation.execution_context.tool_events[event_start:],
+                terminal=True,
+                status="error",
+                metadata={
+                    "provider": route.provider,
+                    "model": route.model,
+                    "route": route.model_dump(mode="json", exclude_none=True),
+                    "error": result.error,
+                },
             )
         tool_events = invocation.execution_context.tool_events[event_start:]
         has_error = any(
-            event.status not in {"ok", "accepted", "interrupted"}
+            event.status not in {"ok", "accepted", "pending", "interrupted"}
             for event in tool_events
         )
         state_run_result = AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
-            message_delta=list(result.message_delta),
+            message_delta=result.messages[1 + len(model_messages) :],
             tool_events=tool_events,
             terminal=True,
             status="error" if has_error else "ok",
@@ -244,10 +230,7 @@ class AgenticStateRunner:
                 ),
                 _trace_json_section(
                     "TOOL OUTPUTS",
-                    [
-                        event.model_dump(mode="json", exclude_none=True)
-                        for event in tool_events
-                    ],
+                    [event.model_dump(mode="json", exclude_none=True) for event in tool_events],
                 ),
                 _trace_json_section(
                     "ERROR / DIAGNOSTICS",
@@ -281,7 +264,9 @@ class AgenticStateRunner:
         )
         route = self.model_router.route(model_task, context)
         prompt_id = str(invocation.metadata.get("prompt_id_override") or state_config.prompt_id)
-        prompt_version = str(invocation.metadata.get("prompt_version_override") or state_config.prompt_version)
+        prompt_version = str(
+            invocation.metadata.get("prompt_version_override") or state_config.prompt_version
+        )
         prompt = self.prompt_registry.load(
             prompt_id,
             prompt_version,
@@ -333,107 +318,57 @@ class AgenticStateRunner:
             ],
             metadata={"route": route.model_dump(mode="json", exclude_none=True)},
         )
-        provider = self.provider
-        if not hasattr(provider, "generate_structured"):
-            return AgenticStateRunResult(
-                state_id=state_id,
-                assistant_text=(
-                    f"{state_value} requires structured output provider support "
-                    f"for {output_schema.__name__}."
+        result = self.provider.run_session(
+            LLMSessionRequest(
+                system_prompt=prompt,
+                messages=model_messages,
+                model=route.model,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                output_schema=output_schema,
+                toolbox=build_agentic_toolbox(state_config, self.tool_registry),
+                tools_mapping=build_agentic_tool_mapping(
+                    state_config,
+                    invocation.execution_context,
+                    self.tool_registry,
                 ),
-                status="error",
-                metadata={
-                    "provider": getattr(provider, "provider_name", "unknown"),
-                    "model": route.model,
-                    "route": route.model_dump(mode="json", exclude_none=True),
-                    "error": "missing_generate_structured",
-                },
-            )
-        try:
-            result = provider.generate_structured(  # type: ignore[attr-defined]
-                StructuredGenerationRequest(
-                    schema=output_schema,
+                max_tool_calls=state_config.max_tool_calls,
+                session_id=invocation.execution_context.frame_id or new_uuid(),
+                context=context,
+                metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+            ),
+        )
+        if isinstance(result, LLMSessionAwaitingTool):
+            return self._awaiting_tool_state_result(
+                state_config,
+                LLMSessionRequest(
                     system_prompt=prompt,
                     messages=model_messages,
-                    model=route.model,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    context=context,
-                    metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+                    output_schema=output_schema,
+                    session_id=result.session_id,
                 ),
+                invocation,
+                len(invocation.execution_context.tool_events),
+                result,
+                route=route,
             )
-        except ValidationError as exc:
-            LOGGER.exception(
-                "agentic.structured_state.validation_error",
-                extra={
-                    "event": "agentic.structured_state.validation_error",
-                    "state_id": state_value,
-                    "prompt_id": prompt_id,
-                    "schema_id": output_schema.__name__,
+        if isinstance(result, LLMSessionFailed) or result.parsed is None:
+            error = (
+                result.error
+                if isinstance(result, LLMSessionFailed)
+                else "Structured output was empty."
+            )
+            return AgenticStateRunResult(
+                state_id=state_id,
+                assistant_text=error,
+                status="error",
+                metadata={
+                    "provider": route.provider,
                     "model": route.model,
-                    "error_type": exc.__class__.__name__,
-                    "validation_error_count": len(exc.errors()),
+                    "route": route.model_dump(mode="json", exclude_none=True),
+                    "error": error,
                 },
             )
-            try:
-                repair_message = ChatMessage(
-                    role="user",
-                    content=_structured_validation_repair_message(
-                        output_schema.__name__,
-                        exc,
-                    ),
-                )
-                LOGGER.info(
-                    "agentic.structured_state.validation_repair_retry",
-                    extra={
-                        "event": "agentic.structured_state.validation_repair_retry",
-                        "state_id": state_value,
-                        "prompt_id": prompt_id,
-                        "schema_id": output_schema.__name__,
-                        "model": route.model,
-                        "validation_error_count": len(exc.errors()),
-                    },
-                )
-                result = provider.generate_structured(  # type: ignore[attr-defined]
-                    StructuredGenerationRequest(
-                        schema=output_schema,
-                        system_prompt=prompt,
-                        messages=[*model_messages, repair_message],
-                        model=route.model,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                        context=context,
-                        metadata={
-                            "route": route.model_dump(mode="json", exclude_none=True),
-                            "validation_repair_retry": True,
-                        },
-                    ),
-                )
-            except ValidationError as retry_exc:
-                LOGGER.exception(
-                    "agentic.structured_state.validation_repair_failed",
-                    extra={
-                        "event": "agentic.structured_state.validation_repair_failed",
-                        "state_id": state_value,
-                        "prompt_id": prompt_id,
-                        "schema_id": output_schema.__name__,
-                        "model": route.model,
-                        "error_type": retry_exc.__class__.__name__,
-                        "validation_error_count": len(retry_exc.errors()),
-                    },
-                )
-                return AgenticStateRunResult(
-                    state_id=state_id,
-                    assistant_text=f"{state_value} returned invalid structured output: {retry_exc}",
-                    status="error",
-                    metadata={
-                        "provider": getattr(provider, "provider_name", "unknown"),
-                        "model": route.model,
-                        "route": route.model_dump(mode="json", exclude_none=True),
-                        "error": "invalid_structured_output",
-                        "validation_repair_attempted": True,
-                    },
-                )
         parsed = result.parsed
         structured_output = parsed.model_dump(mode="json", exclude_none=True)
         assistant_text = _structured_summary(parsed)
@@ -445,7 +380,7 @@ class AgenticStateRunner:
             terminal=True,
             status="ok",
             metadata={
-                "provider": result.metadata.provider,
+                "provider": result.metadata.provider if result.metadata else route.provider,
                 "model": result.metadata.model,
                 "route": route.model_dump(mode="json", exclude_none=True),
                 "structured_output_schema": output_schema.__name__,
@@ -489,45 +424,51 @@ class AgenticStateRunner:
             expected_output=expected_output,
         )
 
-    def _interrupted_state_result(
+    def _awaiting_tool_state_result(
         self,
         state_config: AgenticStateConfig,
-        request: ChatRequest,
+        request: LLMSessionRequest,
         invocation: AgenticStateInvocation,
         event_start: int,
-        exc: ToolCallInterruption,
+        result: LLMSessionAwaitingTool,
         *,
         route: Any,
     ) -> AgenticStateRunResult:
         frame_id = invocation.execution_context.frame_id or new_uuid()
-        messages = [_chat_message_to_frame_dict(message) for message in exc.messages]
-        if not messages:
-            messages = [
-                _chat_message_to_frame_dict(message)
-                for message in request.messages
-            ]
+        messages = [_chat_message_to_frame_dict(message) for message in result.messages]
+        pending_result = result.continuation.pending_tool_call
         packet = None
-        if isinstance(exc.result.data, dict):
-            packet = exc.result.data.get("clarification_packet")
+        pending_events = [
+            event for event in result.tool_events if event.call_id == pending_result.call_id
+        ]
+        pending_data = (
+            pending_events[-1].result.data
+            if pending_events and isinstance(pending_events[-1].result.data, dict)
+            else {}
+        )
+        if isinstance(pending_data, dict):
+            packet = pending_data.get("clarification_packet")
             if isinstance(packet, dict):
                 packet = dict(packet)
-                packet.setdefault("tool_call_id", exc.tool_call_id)
-                packet.setdefault("tool_name", exc.tool_name)
+                packet.setdefault("tool_call_id", pending_result.call_id)
+                packet.setdefault("tool_name", pending_result.name)
         tool_events = invocation.execution_context.tool_events[event_start:]
         interruption_owner = None
         parent_frame_id = invocation.execution_context.parent_frame_id
-        if isinstance(exc.result.data, dict):
-            interruption_owner = exc.result.data.get("interruption_owner")
+        if isinstance(pending_data, dict):
+            interruption_owner = pending_data.get("interruption_owner")
             if interruption_owner == "child":
-                frame_id = str(exc.result.data.get("child_frame_id") or frame_id)
-                parent_frame_id = str(exc.result.data.get("parent_frame_id") or parent_frame_id or "") or None
-                packet = exc.result.data.get("clarification_packet") or packet
+                frame_id = str(pending_data.get("child_frame_id") or frame_id)
+                parent_frame_id = (
+                    str(pending_data.get("parent_frame_id") or parent_frame_id or "") or None
+                )
+                packet = pending_data.get("clarification_packet") or packet
         return AgenticStateRunResult(
             state_id=state_config.state_id,
-            assistant_text=exc.result.output,
+            assistant_text=pending_events[-1].result.output if pending_events else None,
             message_delta=[
                 ChatMessage.model_validate(message)
-                for message in messages[len(request.messages) :]
+                for message in messages[1 + len(request.messages) :]
                 if message.get("role") in {"assistant", "tool"}
             ],
             tool_events=tool_events,
@@ -541,20 +482,12 @@ class AgenticStateRunner:
                     "interruption_owner": interruption_owner,
                     "frame_id": frame_id,
                     "state_id": (
-                        str(exc.result.data.get("child_state_id"))
-                        if isinstance(exc.result.data, dict) and exc.result.data.get("child_state_id")
+                        str(pending_data.get("child_state_id"))
+                        if pending_data.get("child_state_id")
                         else _state_value(state_config.state_id)
                     ),
-                    "tool_call_id": (
-                        str(exc.result.data.get("tool_call_id"))
-                        if isinstance(exc.result.data, dict) and exc.result.data.get("tool_call_id")
-                        else exc.tool_call_id
-                    ),
-                    "tool_name": (
-                        str(exc.result.data.get("tool_name"))
-                        if isinstance(exc.result.data, dict) and exc.result.data.get("tool_name")
-                        else exc.tool_name
-                    ),
+                    "tool_call_id": pending_result.call_id,
+                    "tool_name": pending_result.name,
                     "messages": messages,
                     "clarification_packet": packet,
                     "parent_frame_id": parent_frame_id,
@@ -590,26 +523,25 @@ class AgenticStateRunner:
             execution_context,
             self.tool_registry,
         )
-        request = ChatRequest(
+        request = LLMSessionRequest(
+            system_prompt="",
             model=route.model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            messages=[
-                ChatMessage.model_validate(message)
-                for message in messages
-            ],
+            messages=[ChatMessage.model_validate(message) for message in messages],
+            toolbox=toolbox,
+            tools_mapping=tools_mapping,
+            max_tool_calls=state_config.max_tool_calls,
+            session_id=execution_context.frame_id or new_uuid(),
             context=context,
-            metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+            metadata={
+                "route": route.model_dump(mode="json", exclude_none=True),
+                **(metadata or {}),
+            },
         )
-        try:
-            result = self.provider.generate_chat_with_tools(
-                request,
-                toolbox=toolbox,
-                tools_mapping=tools_mapping,
-                max_tool_calls=state_config.max_tool_calls,
-            )
-        except ToolCallInterruption as exc:
-            return self._interrupted_state_result(
+        result = self.provider.run_session(request)
+        if isinstance(result, LLMSessionAwaitingTool):
+            return self._awaiting_tool_state_result(
                 state_config,
                 request,
                 AgenticStateInvocation(
@@ -618,48 +550,41 @@ class AgenticStateRunner:
                     execution_context=execution_context,
                 ),
                 event_start,
-                exc,
+                result,
                 route=route,
+            )
+        if isinstance(result, LLMSessionFailed):
+            return AgenticStateRunResult(
+                state_id=state_id,
+                assistant_text=result.error,
+                message_delta=result.messages[len(messages) :],
+                tool_events=execution_context.tool_events[event_start:],
+                terminal=True,
+                status="error",
+                metadata={
+                    **(metadata or {}),
+                    "provider": route.provider,
+                    "model": route.model,
+                    "route": route.model_dump(mode="json", exclude_none=True),
+                    "error": result.error,
+                },
             )
         tool_events = execution_context.tool_events[event_start:]
         has_error = any(
-            event.status not in {"ok", "accepted", "interrupted"}
+            event.status not in {"ok", "accepted", "pending", "interrupted"}
             for event in tool_events
         )
         return AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
-            message_delta=list(result.message_delta),
+            message_delta=result.messages[len(messages) :],
             tool_events=tool_events,
             terminal=True,
             status="error" if has_error else "ok",
             metadata={
                 **(metadata or {}),
-                "provider": result.metadata.provider,
+                "provider": result.metadata.provider if result.metadata else route.provider,
                 "model": result.metadata.model,
                 "route": route.model_dump(mode="json", exclude_none=True),
             },
         )
-
-
-
-def _structured_validation_repair_message(schema_name: str, exc: ValidationError) -> str:
-    compact_errors: list[dict[str, Any]] = []
-    for error in exc.errors()[:12]:
-        compact_errors.append(
-            {
-                "path": ".".join(str(part) for part in error.get("loc", ())),
-                "message": error.get("msg"),
-                "type": error.get("type"),
-            }
-        )
-    return (
-        "Your previous structured output did not validate. Repair the same output for "
-        f"schema {schema_name}. Keep the same intent and content, but fix only schema, "
-        "field, enum, ref, uniqueness, and format issues. Existing refs must stay unchanged. "
-        "New refs may be short readable local refs such as node_new_lorenzo, "
-        "memory_new_beach_outing, context_new_alessandro_perception, or edge_new_user_lorenzo_brother. "
-        "Refs must use a valid prefix, lowercase ASCII letters/numbers/underscores, no spaces, "
-        "and be unique when defining planned objects. Validation errors:\n"
-        + json.dumps(compact_errors, ensure_ascii=True, indent=2)
-    )

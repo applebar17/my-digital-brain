@@ -6,22 +6,24 @@ import json
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from my_digital_brain.api.routes import chat as chat_routes
 from my_digital_brain.agentic import AgenticRuntime, AgenticStateRunner
-from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
 from my_digital_brain.ai.schemas import (
-    ChatRequest,
-    ChatResult,
+    ChatMessage,
     ProviderCallMetadata,
-    StructuredGenerationRequest,
-    StructuredGenerationResult,
 )
-from my_digital_brain.ai.tools import ToolBox
+from my_digital_brain.ai.session import (
+    LLMCompletionRequest,
+    LLMCompletionResult,
+    LLMSessionRequest,
+    LLMSessionResult,
+    LLMSessionRunner,
+)
+from my_digital_brain.api.routes import chat as chat_routes
+from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
 )
-from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.models import (
     AgenticFrame,
     ChatResponse,
@@ -32,7 +34,6 @@ from my_digital_brain.chat.models import (
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.config import Settings
-
 
 
 class ScriptedToolProvider:
@@ -47,74 +48,42 @@ class ScriptedToolProvider:
         self.steps = list(steps)
         self.structured_payloads = list(structured_payloads or [])
         self.calls: list[dict[str, object]] = []
-        self.structured_calls: list[StructuredGenerationRequest] = []
+        self.structured_calls: list[LLMSessionRequest] = []
 
-    def generate_chat_with_tools(
-        self,
-        request: ChatRequest,
-        *,
-        toolbox: ToolBox,
-        tools_mapping: dict[str, object],
-        max_tool_calls: int | None = None,
-    ) -> ChatResult:
-        step = self.steps.pop(0) if self.steps else {"content": ""}
-        self.calls.append({"request": request, "tool_names": sorted(toolbox.tools_by_name)})
-        tool_name = step.get("tool")
-        if isinstance(tool_name, str):
-            tool_call_id = f"call-{len(self.calls)}"
-            assistant_message = {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "id": tool_call_id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": _json_arguments(step.get("arguments", {})),
-                        },
-                    }
-                ],
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        self.structured_calls.extend([request] if request.output_schema is not None else [])
+        self.calls.append(
+            {
+                "request": request,
+                "tool_names": sorted(request.toolbox.tools_by_name) if request.toolbox else [],
             }
-            tool_fn = tools_mapping[tool_name]
-            context = getattr(tool_fn, "_agentic_execution_context", None)
-            previous_tool_call_id = getattr(context, "current_tool_call_id", None)
-            previous_tool_name = getattr(context, "current_tool_name", None)
-            if context is not None:
-                context.current_tool_call_id = tool_call_id
-                context.current_tool_name = tool_name
-            try:
-                tool_result = tool_fn(**step.get("arguments", {}))
-            finally:
-                if context is not None:
-                    context.current_tool_call_id = previous_tool_call_id
-                    context.current_tool_name = previous_tool_name
-            if getattr(tool_result, "status", None) == "interrupted":
-                raise ToolCallInterruption(
-                    tool_call_id=tool_call_id,
-                    tool_name=tool_name,
-                    result=tool_result,
-                    messages=[
-                        *[
-                            message.model_dump(mode="json", exclude_none=True)
-                            for message in request.messages
-                        ],
-                        assistant_message,
-                    ],
-                )
-        return ChatResult(
-            content=str(step.get("content") or ""),
-            metadata=ProviderCallMetadata.fake(model=request.model),
         )
+        return LLMSessionRunner(self).run(request)
 
-    def generate_structured(
-        self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
-        self.structured_calls.append(request)
-        payload = self.structured_payloads.pop(0)
-        parsed = request.output_schema.model_validate(payload)
-        return StructuredGenerationResult(
-            parsed=parsed,
+    def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+        step = self.steps.pop(0) if self.steps else {"content": ""}
+        tool_name = step.get("tool")
+        tool_calls = []
+        if isinstance(tool_name, str):
+            tool_calls = [
+                {
+                    "id": f"call-{len(self.calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": _json_arguments(step.get("arguments", {})),
+                    },
+                }
+            ]
+        content = step.get("content")
+        if request.response_format and not tool_name:
+            content = json.dumps(self.structured_payloads.pop(0))
+        return LLMCompletionResult(
+            assistant_message=ChatMessage(
+                role="assistant",
+                content=str(content) if content is not None else None,
+                tool_calls=tool_calls or None,
+            ),
             metadata=ProviderCallMetadata.fake(model=request.model),
         )
 
@@ -148,7 +117,12 @@ def _chat_memory_ingestion_structured_payloads() -> list[dict[str, object]]:
             ],
             "node_plan_packet": {
                 "planned_refs": [
-                    {"ref": "node_new_0001", "object_kind": "node", "label": "Person", "name": "Marco"}
+                    {
+                        "ref": "node_new_0001",
+                        "object_kind": "node",
+                        "label": "Person",
+                        "name": "Marco",
+                    }
                 ],
                 "summary": "node_new_0001 is available for memory planning.",
             },
@@ -172,7 +146,12 @@ def _chat_memory_ingestion_structured_payloads() -> list[dict[str, object]]:
             ],
             "memory_plan_packet": {
                 "planned_refs": [
-                    {"ref": "memory_new_0001", "object_kind": "memory", "label": "MemoryLog", "summary": "Remember this memory."}
+                    {
+                        "ref": "memory_new_0001",
+                        "object_kind": "memory",
+                        "label": "MemoryLog",
+                        "summary": "Remember this memory.",
+                    }
                 ],
                 "host_refs": ["node_new_0001"],
                 "summary": "memory_new_0001 is available for edge planning.",
@@ -254,7 +233,6 @@ def test_chat_runtime_requires_agentic_runtime() -> None:
         raise AssertionError("ChatRuntime should fail without an AgenticRuntime")
 
 
-
 def test_chat_store_has_no_pending_process_api() -> None:
     store = InMemoryChatSessionStore()
 
@@ -264,11 +242,13 @@ def test_chat_store_has_no_pending_process_api() -> None:
 
 
 def test_debug_commands_are_normal_agentic_messages() -> None:
-    provider = ScriptedToolProvider([
-        {"content": "Ask handled normally."},
-        {"content": "Correction handled normally."},
-        {"content": "Cancel handled normally."},
-    ])
+    provider = ScriptedToolProvider(
+        [
+            {"content": "Ask handled normally."},
+            {"content": "Correction handled normally."},
+            {"content": "Cancel handled normally."},
+        ]
+    )
     runtime = ChatRuntime(
         store=InMemoryChatSessionStore(),
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
@@ -276,7 +256,9 @@ def test_debug_commands_are_normal_agentic_messages() -> None:
     )
 
     first = runtime.handle_message(_message(text="/ask what happened in Greece?", message_id="m1"))
-    second = runtime.handle_message(_message(text="/correct Marco was from university", message_id="m2"))
+    second = runtime.handle_message(
+        _message(text="/correct Marco was from university", message_id="m2")
+    )
     third = runtime.handle_message(_message(text="/cancel", message_id="m3"))
 
     assert [first.primary_text, second.primary_text, third.primary_text] == [
@@ -284,6 +266,7 @@ def test_debug_commands_are_normal_agentic_messages() -> None:
         "Correction handled normally.",
         "Cancel handled normally.",
     ]
+
 
 def test_debug_commands_do_not_enable_legacy_fallback_by_default() -> None:
     provider = ScriptedToolProvider([{"content": "Status handled normally."}])
@@ -296,6 +279,7 @@ def test_debug_commands_do_not_enable_legacy_fallback_by_default() -> None:
 
     assert response.status == ChatResponseStatus.OK
     assert response.primary_text == "Status handled normally."
+
 
 def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it() -> None:
     provider = ScriptedToolProvider([{"content": "I can help with that."}])
@@ -313,7 +297,6 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     assert response.metadata["visited_states"] == ["conversation_entry"]
     assert detail.messages[-1].role == "assistant"
     assert detail.messages[-1].text == "I can help with that."
-
 
 
 def test_agentic_ingestion_runs_without_pending_process_surface() -> None:
@@ -339,7 +322,9 @@ def test_agentic_ingestion_runs_without_pending_process_surface() -> None:
     assert response.status == ChatResponseStatus.OK
     assert "pending_process" not in response.model_dump(mode="json", exclude_none=True)
     assert "pending_process" not in detail.model_dump(mode="json", exclude_none=True)
-    assert "pending_process_id" not in detail.messages[-1].model_dump(mode="json", exclude_none=True)
+    assert "pending_process_id" not in detail.messages[-1].model_dump(
+        mode="json", exclude_none=True
+    )
 
 
 def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> None:
@@ -392,7 +377,9 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
     assert store.get_agentic_frame(packet.frame_id).status == "completed"
 
 
-def test_clarification_answer_endpoint_accumulates_multi_question_progress_before_resuming() -> None:
+def test_clarification_answer_endpoint_accumulates_multi_question_progress_before_resuming() -> (
+    None
+):
     provider = ScriptedToolProvider([{"content": "Resumed after all answers."}])
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(
@@ -462,9 +449,9 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
     assert provider.calls == []
     frame = store.get_agentic_frame(packet.frame_id)
     assert frame.status == "interrupted"
-    assert frame.metadata["clarification_progress"]["answers_by_question_id"][
-        "question-1"
-    ]["selected_option_ids"] == ["option-marco-university"]
+    assert frame.metadata["clarification_progress"]["answers_by_question_id"]["question-1"][
+        "selected_option_ids"
+    ] == ["option-marco-university"]
     messages = runtime.get_session_detail(session.session_id).messages
     assert messages[-2].metadata["message_kind"] == "clarification_answer"
     assert messages[-2].metadata["ui_hidden"] is True
@@ -658,6 +645,7 @@ def test_chat_api_get_session_and_cancel_removed_legacy_process_path() -> None:
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == ChatResponseStatus.FAILED.value
     assert cancelled.json()["diagnostics"][0]["code"] == "legacy_process_cancel_removed"
+
 
 def test_chat_api_create_list_update_and_post_to_selected_session() -> None:
     provider = ScriptedToolProvider([{"content": "Stored in selected chat."}])

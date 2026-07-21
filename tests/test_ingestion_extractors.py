@@ -6,11 +6,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from my_digital_brain.ai.schemas import (
-    ProviderCallMetadata,
-    StructuredGenerationRequest,
-    StructuredGenerationResult,
-)
+from my_digital_brain.ai.schemas import ProviderCallMetadata
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateEntityDraftBatch,
@@ -75,23 +72,19 @@ def test_focused_entity_extractor_returns_only_entity_candidates() -> None:
     assert candidates[0].source_refs == ["source-1"]
     assert candidates[0].local_ref == "CANDIDATE_PERSON_042"
     assert candidates[0].metadata["model_output_local_ref"] == "CANDIDATE_PERSON_001"
-    assert candidates[0].metadata["local_ref_enforced_from_task"] == (
-        "CANDIDATE_PERSON_042"
-    )
+    assert candidates[0].metadata["local_ref_enforced_from_task"] == ("CANDIDATE_PERSON_042")
     assert candidates[0].evidence_refs[0].source_id == "source-1"
     assert candidates[0].evidence_refs[0].evidence_text == "Marco"
     assert candidates[0].typed_properties == {"nickname": "Marco"}
     assert not PerceptionExtractor(provider).supports(task)
     assert provider.requests[0].output_schema is CandidateEntityDraftBatch
     assert provider.requests[0].context.purpose == INGESTION_ENTITY_EXTRACTION_TASK
-    assert provider.requests[0].input_message is None
+    assert provider.requests[0].messages[-1].role == "user"
     assert len(provider.requests[0].messages) == 2
     assert provider.requests[0].messages[0].role == "user"
     assert provider.requests[0].messages[0].content == source.raw_text
     assert provider.requests[0].messages[-1].role == "user"
-    assert "Ingest this planning target/action" in (
-        provider.requests[0].messages[-1].content or ""
-    )
+    assert "Ingest this planning target/action" in (provider.requests[0].messages[-1].content or "")
     assert "raw_text" not in (provider.requests[0].messages[-1].content or "")
 
 
@@ -257,15 +250,9 @@ def test_focused_extractor_keeps_clarification_history_before_ingestion_instruct
         "user",
         "user",
     ]
-    assert provider.requests[0].messages[0].content == (
-        "Clarification needed: Which Marco?"
-    )
-    assert provider.requests[0].messages[1].content == (
-        "Clarification answer: Marco from Milan."
-    )
-    assert "Ingest this planning target/action" in (
-        provider.requests[0].messages[2].content or ""
-    )
+    assert provider.requests[0].messages[0].content == ("Clarification needed: Which Marco?")
+    assert provider.requests[0].messages[1].content == ("Clarification answer: Marco from Milan.")
+    assert "Ingest this planning target/action" in (provider.requests[0].messages[2].content or "")
 
 
 class QueuedStructuredProvider:
@@ -273,16 +260,20 @@ class QueuedStructuredProvider:
 
     def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
         self.payloads = list(payloads)
-        self.requests: list[StructuredGenerationRequest] = []
+        self.requests: list[LLMSessionRequest] = []
 
-    def generate_structured(
+    def run_session(
         self,
-        request: StructuredGenerationRequest,
-    ) -> StructuredGenerationResult:
+        request: LLMSessionRequest,
+    ) -> LLMSessionCompleted:
         self.requests.append(request)
         payload = self.payloads.pop(0)
+        assert request.output_schema is not None
         parsed = request.output_schema.model_validate(payload)
-        return StructuredGenerationResult(
+        return LLMSessionCompleted(
+            session_id=request.session_id or "test-session",
+            messages=request.messages,
+            content=parsed.model_dump_json(),
             parsed=parsed,
             metadata=ProviderCallMetadata.fake(model=request.model or "fake-model"),
         )

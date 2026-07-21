@@ -8,23 +8,28 @@ from pydantic import BaseModel
 from my_digital_brain.agentic.contexts import (
     ConversationContext,
     EdgeMemoryPlan,
-    MemoryCreationContext,
     MemoryIngestionContext,
     MemoryIngestionReasoning,
     MemoryIngestionResultContext,
     MemoryLogMemoryPlan,
     MemoryPlan,
     NodeMemoryPlan,
-    GraphUpdateContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanActionType, MemoryPlanningPhase
-from my_digital_brain.agentic.planning_contracts import PlanningPurposeGuidelines, PlanningTransformContext
+from my_digital_brain.agentic.planning_contracts import (
+    PlanningPurposeGuidelines,
+    PlanningTransformContext,
+)
 from my_digital_brain.agentic.runtime_helpers import (
     _collect_memory_plan_refs,
     _compact_state_trace,
     _memory_ingestion_error_result,
 )
-from my_digital_brain.agentic.runtime_models import AgenticRunResult, AgenticStateInvocation, AgenticStateRunResult
+from my_digital_brain.agentic.runtime_models import (
+    AgenticRunResult,
+    AgenticStateInvocation,
+    AgenticStateRunResult,
+)
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 
 
@@ -84,7 +89,9 @@ class MemoryIngestionRuntimeService:
                 "metadata": {
                     **current_payload.metadata,
                     "node_plan": node_plan.model_dump(mode="json", exclude_none=True),
-                    "node_plan_packet": node_plan.node_plan_packet.model_dump(mode="json", exclude_none=True),
+                    "node_plan_packet": node_plan.node_plan_packet.model_dump(
+                        mode="json", exclude_none=True
+                    ),
                 },
             },
             deep=True,
@@ -98,7 +105,7 @@ class MemoryIngestionRuntimeService:
         if node_action_result is not None:
             state_results.extend(node_action_result.state_results)
             compact_trace.extend(node_action_result.compact_trace or [])
-            if node_action_result.status == "interrupted":
+            if node_action_result.status in {"interrupted", "pending"}:
                 node_action_result.state_results = state_results
                 node_action_result.compact_trace = compact_trace
                 return node_action_result
@@ -122,7 +129,9 @@ class MemoryIngestionRuntimeService:
                 "metadata": {
                     **current_payload.metadata,
                     "memory_plan": memory_plan.model_dump(mode="json", exclude_none=True),
-                    "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(mode="json", exclude_none=True),
+                    "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(
+                        mode="json", exclude_none=True
+                    ),
                 },
             },
             deep=True,
@@ -136,7 +145,7 @@ class MemoryIngestionRuntimeService:
         if memory_action_result is not None:
             state_results.extend(memory_action_result.state_results)
             compact_trace.extend(memory_action_result.compact_trace or [])
-            if memory_action_result.status == "interrupted":
+            if memory_action_result.status in {"interrupted", "pending"}:
                 memory_action_result.state_results = state_results
                 memory_action_result.compact_trace = compact_trace
                 return memory_action_result
@@ -172,7 +181,7 @@ class MemoryIngestionRuntimeService:
         if edge_action_result is not None:
             state_results.extend(edge_action_result.state_results)
             compact_trace.extend(edge_action_result.compact_trace or [])
-            if edge_action_result.status == "interrupted":
+            if edge_action_result.status in {"interrupted", "pending"}:
                 edge_action_result.state_results = state_results
                 edge_action_result.compact_trace = compact_trace
                 return edge_action_result
@@ -181,8 +190,12 @@ class MemoryIngestionRuntimeService:
             steps=[*node_plan.steps, *memory_plan.steps, *edge_plan.steps],
             metadata={
                 "reasoning": reasoning.model_dump(mode="json", exclude_none=True),
-                "node_plan_packet": node_plan.node_plan_packet.model_dump(mode="json", exclude_none=True),
-                "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(mode="json", exclude_none=True),
+                "node_plan_packet": node_plan.node_plan_packet.model_dump(
+                    mode="json", exclude_none=True
+                ),
+                "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(
+                    mode="json", exclude_none=True
+                ),
             },
         )
         result_context = MemoryIngestionResultContext(
@@ -193,8 +206,12 @@ class MemoryIngestionRuntimeService:
             updated_refs=_collect_memory_plan_refs(aggregated_plan, "updated_refs"),
             affected_graph_ids=_collect_memory_plan_refs(aggregated_plan, "affected_graph_ids"),
             ref_context_delta={
-                "node_plan_packet": node_plan.node_plan_packet.model_dump(mode="json", exclude_none=True),
-                "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(mode="json", exclude_none=True),
+                "node_plan_packet": node_plan.node_plan_packet.model_dump(
+                    mode="json", exclude_none=True
+                ),
+                "memory_plan_packet": memory_plan.memory_plan_packet.model_dump(
+                    mode="json", exclude_none=True
+                ),
             },
             diagnostics=compact_trace,
         )
@@ -264,8 +281,12 @@ class MemoryIngestionRuntimeService:
                     item.model_dump(mode="json", exclude_none=True)
                     for item in (payload.reasoning.irrelevant_details if payload.reasoning else [])
                 ],
-                "duplicate_candidate_packets": payload.metadata.get("duplicate_candidate_packets", []),
-                "relationship_candidate_packets": payload.metadata.get("relationship_candidate_packets", []),
+                "duplicate_candidate_packets": payload.metadata.get(
+                    "duplicate_candidate_packets", []
+                ),
+                "relationship_candidate_packets": payload.metadata.get(
+                    "relationship_candidate_packets", []
+                ),
             },
             reasoning_artifact=(
                 payload.reasoning.model_dump(mode="json", exclude_none=True)
@@ -354,13 +375,13 @@ class MemoryIngestionRuntimeService:
                 state_result = AgenticStateRunResult(
                     state_id=child_state,
                     assistant_text=result.output,
-                    terminal=result.status != "interrupted",
+                    terminal=result.status not in {"interrupted", "pending"},
                     status=str(result.status),
                     metadata={"tool_result": result.model_dump(mode="json", exclude_none=True)},
                 )
                 action_results.append(state_result)
                 compact_trace.append(_compact_state_trace(state_result))
-                if result.status == "interrupted":
+                if result.status in {"interrupted", "pending"}:
                     return AgenticRunResult(
                         final_text=result.output,
                         visited_states=[item.state_id for item in action_results],
@@ -378,4 +399,3 @@ class MemoryIngestionRuntimeService:
             status="ok" if all(item.status == "ok" for item in action_results) else "error",
             compact_trace=compact_trace,
         )
-

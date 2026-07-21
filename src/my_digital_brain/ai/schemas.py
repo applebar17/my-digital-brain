@@ -6,9 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from .models import ToolSpec
+from pydantic import BaseModel, Field
 
 
 class AIRequestContext(BaseModel):
@@ -71,59 +69,6 @@ class ChatMessage(BaseModel):
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
-    model: str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-    tools: list[ToolSpec] | None = None
-    context: AIRequestContext = Field(default_factory=AIRequestContext)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ChatResult(BaseModel):
-    content: str
-    message_delta: list[ChatMessage] = Field(
-        default_factory=list,
-        description=(
-            "Assistant/tool messages produced by this provider call, excluding "
-            "the caller-supplied prompt/history messages."
-        ),
-    )
-    usage: ProviderUsage | None = None
-    metadata: ProviderCallMetadata
-    raw_response: dict[str, Any] | None = None
-
-
-class StructuredGenerationRequest(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
-
-    output_schema: type[BaseModel] = Field(alias="schema")
-    system_prompt: str
-    messages: list[ChatMessage] = Field(default_factory=list)
-    input_message: str | dict[str, Any] | list[dict[str, Any]] | None = None
-    model: str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-    context: AIRequestContext = Field(default_factory=AIRequestContext)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _validate_model_input(self) -> "StructuredGenerationRequest":
-        if not self.messages and self.input_message is None:
-            raise ValueError("Structured generation requires messages or input_message.")
-        return self
-
-
-class StructuredGenerationResult(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    parsed: BaseModel
-    usage: ProviderUsage | None = None
-    metadata: ProviderCallMetadata
-    raw_response: dict[str, Any] | None = None
 
 
 class EmbeddingRequest(BaseModel):

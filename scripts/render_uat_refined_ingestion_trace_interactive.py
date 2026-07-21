@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +13,9 @@ from uat_refined_trace_common import (
     load_graph_context_pack,
     source_from_file,
 )
-from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
-from my_digital_brain.chat.models import ClarificationPacket
-from my_digital_brain.clarification import ClarificationInterrupted, ClarificationService
 
+from my_digital_brain.chat.models import ClarificationPacket
+from my_digital_brain.clarification import ClarificationService
 
 DEFAULT_OUTPUT = Path("docs/uat/refined-ingestion-trace.txt")
 logger = logging.getLogger("uat_ingestion_trace")
@@ -38,7 +37,10 @@ def main() -> int:
     )
     route: dict[str, Any] = {
         "route": "local_uat_refined_ingestion_interactive",
-        "selected_path": "reasoning -> entity planning -> entity candidates -> relationship planning -> relationship candidates",
+        "selected_path": (
+            "reasoning -> entity planning -> entity candidates -> "
+            "relationship planning -> relationship candidates"
+        ),
         "reason": (
             "This script treats the input text as a memory-ingestion source, "
             "asks terminal clarification questions when the dry run blocks, "
@@ -138,65 +140,78 @@ def _answer_clarifications_from_terminal(
     trace_events: list[dict[str, Any]],
 ) -> tuple[Any, Any]:
     interactions = route["clarification_interactions"]
-    clarification_service = ClarificationService()
     for attempt in range(1, max(0, max_clarifications) + 1):
-        try:
-            if result is None:
-                result = service.process_source(source)
+        if result is None:
+            result = service.process_source(source)
+        pending_packet = _pending_clarification_packet(result)
+        if pending_packet is None:
             return source, result
-        except (ToolCallInterruption, ClarificationInterrupted) as interruption:
-            if isinstance(interruption, ClarificationInterrupted):
-                packet = interruption.packet
-            else:
-                packet = ClarificationPacket.model_validate(
-                    (interruption.result.data or {}).get("clarification_packet") or {}
-                )
-            question = packet.questions[0]
-            print("")
-            print("Clarification needed before continuing the local UAT trace.")
-            print(f"Stage: {packet.origin_state_id}")
-            print(f"Question: {question.question}")
-            if question.options:
-                print("Options: " + ", ".join(option.label for option in question.options))
-            if packet.target_refs:
-                print(f"Target refs: {', '.join(packet.target_refs)}")
-            event = {
-                "type": "clarification",
-                "after_call_count": len(structured_calls),
-                "attempt": attempt,
-                "stage": packet.origin_state_id,
-                "question": question.question,
-                "reason": packet.reason,
-                "target_refs": list(packet.target_refs),
-                "options": [option.label for option in question.options],
-            }
-            try:
-                answer = input("Answer (leave empty to stop): ").strip()
-            except EOFError:
-                event["stop_reason"] = "stdin_eof"
-                trace_events.append(event)
-                route["clarification_stop_reason"] = "stdin_eof"
-                return source, None
-            if not answer:
-                event["stop_reason"] = "empty_answer"
-                trace_events.append(event)
-                route["clarification_stop_reason"] = "empty_answer"
-                return source, None
-            _, answer_history = clarification_service.answer_text(packet, answer)
-            event["answer"] = answer
+
+        question = pending_packet.questions[0]
+        print("")
+        print("Clarification needed before continuing the local UAT trace.")
+        print(f"Stage: {pending_packet.origin_state_id}")
+        print(f"Question: {question.question}")
+        if question.options:
+            print("Options: " + ", ".join(option.label for option in question.options))
+        if pending_packet.target_refs:
+            print(f"Target refs: {', '.join(pending_packet.target_refs)}")
+        event = {
+            "type": "clarification",
+            "after_call_count": len(structured_calls),
+            "attempt": attempt,
+            "stage": pending_packet.origin_state_id,
+            "question": question.question,
+            "reason": pending_packet.reason,
+            "target_refs": list(pending_packet.target_refs),
+            "options": [option.label for option in question.options],
+        }
+        try:
+            answer = input("Answer (leave empty to stop): ").strip()
+        except EOFError:
+            event["stop_reason"] = "stdin_eof"
             trace_events.append(event)
-            interactions.append({**event, "answer": answer})
-            source = _source_with_clarification_history(
-                source,
-                base_raw_text=base_raw_text,
-                packet=packet,
-                answer_history=answer_history,
-                clarification_service=clarification_service,
-            )
-            result = None
+            route["clarification_stop_reason"] = "stdin_eof"
+            return source, None
+        if not answer:
+            event["stop_reason"] = "empty_answer"
+            trace_events.append(event)
+            route["clarification_stop_reason"] = "empty_answer"
+            return source, None
+        clarification_service = ClarificationService()
+        _, answer_history = clarification_service.answer_text(pending_packet, answer)
+        event["answer"] = answer
+        trace_events.append(event)
+        interactions.append({**event, "answer": answer})
+        source = _source_with_clarification_history(
+            source,
+            base_raw_text=base_raw_text,
+            packet=pending_packet,
+            answer_history=answer_history,
+            clarification_service=clarification_service,
+        )
+        result = None
 
     route["clarification_stop_reason"] = "max_clarifications_reached"
     return source, result
+
+
+def _pending_clarification_packet(result: Any) -> ClarificationPacket | None:
+    """Extract a pending packet when a channel-aware service exposes one."""
+    continuation = getattr(result, "continuation", None)
+    for event in getattr(result, "tool_events", []):
+        payload = getattr(getattr(event, "result", None), "data", None) or {}
+        packet = payload.get("clarification_packet")
+        if packet:
+            return ClarificationPacket.model_validate(packet)
+    if continuation is not None:
+        for event in continuation.tool_events:
+            payload = event.result.data or {}
+            packet = payload.get("clarification_packet")
+            if packet:
+                return ClarificationPacket.model_validate(packet)
+    return None
+
 
 def _source_with_clarification_history(
     source: Any,
@@ -281,12 +296,18 @@ def _append_execution_trace(
     _append_pass_header(lines, pass_index, "initial input")
     for event in sorted(trace_events, key=lambda item: int(item.get("after_call_count", 0))):
         after_call_count = max(0, min(int(event.get("after_call_count", 0)), len(structured_calls)))
-        _append_structured_calls(lines, structured_calls[previous_index:after_call_count], previous_index)
+        _append_structured_calls(
+            lines, structured_calls[previous_index:after_call_count], previous_index
+        )
         previous_index = after_call_count
         _append_clarification_event(lines, event)
         if event.get("answer"):
             pass_index += 1
-            _append_pass_header(lines, pass_index, "clarification answer added to model-facing history")
+            _append_pass_header(
+                lines,
+                pass_index,
+                "clarification answer added to model-facing history",
+            )
     _append_structured_calls(lines, structured_calls[previous_index:], previous_index)
     if not structured_calls:
         lines.append("No structured provider calls were captured.")
@@ -318,11 +339,7 @@ def _append_clarification_event(lines: list[str], event: dict[str, Any]) -> None
     _append_json_block(
         lines,
         "Interaction",
-        {
-            key: value
-            for key, value in event.items()
-            if key not in {"type", "after_call_count"}
-        },
+        {key: value for key, value in event.items() if key not in {"type", "after_call_count"}},
     )
 
 
@@ -339,8 +356,6 @@ def _append_structured_calls(
         lines.append(f"Model: {call.model or 'default route'}")
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
-        if call.input_message is not None:
-            _append_json_block(lines, "Input Message", call.input_message)
         _append_json_block(lines, "Messages", call.messages)
         if call.error is not None:
             _append_json_block(lines, "Error / Diagnostics", call.error)
@@ -360,8 +375,7 @@ def _result_summary(result: Any) -> dict[str, Any]:
         "supplemental_entity_candidates": len(result.supplemental_entity_candidates),
         "relationship_candidates": len(result.relationship_candidates),
         "validation_errors": [
-            issue.model_dump(mode="json", exclude_none=True)
-            for issue in result.validation_errors
+            issue.model_dump(mode="json", exclude_none=True) for issue in result.validation_errors
         ],
         "missing_entities": (
             [
@@ -389,7 +403,7 @@ def _base_report_lines(title: str) -> list[str]:
         title,
         "=" * len(title),
         "",
-        f"Generated at: {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}",
+        f"Generated at: {datetime.now(UTC).replace(microsecond=0).isoformat()}",
         "Graph/database integrations: disabled",
         "Provider-generated sections are non-deterministic.",
         "Report order: chronological execution trace first, final result last.",

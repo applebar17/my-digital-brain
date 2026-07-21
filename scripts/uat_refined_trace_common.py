@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import logging
 import os
-from pathlib import Path
 import sys
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -25,12 +24,18 @@ from my_digital_brain.agentic import (  # noqa: E402
 )
 from my_digital_brain.ai.client.settings import genai_settings_from_app_settings  # noqa: E402
 from my_digital_brain.ai.router import StaticModelRouter  # noqa: E402
+from my_digital_brain.ai.session import (  # noqa: E402
+    LLMSessionCompleted,
+    LLMSessionRequest,
+    LLMSessionResult,
+)
 from my_digital_brain.chat.factory import build_ai_provider  # noqa: E402
 from my_digital_brain.config import Settings  # noqa: E402
-from my_digital_brain.ingestion import IngestionService  # noqa: E402
-from my_digital_brain.ingestion import GraphWritePlanBuilder  # noqa: E402
-from my_digital_brain.ingestion import LLMResolutionProposalAgent  # noqa: E402
-from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry  # noqa: E402
+from my_digital_brain.ingestion import (  # noqa: E402
+    GraphWritePlanBuilder,  # noqa: E402
+    IngestionService,  # noqa: E402
+    LLMResolutionProposalAgent,  # noqa: E402
+)
 from my_digital_brain.ingestion.contracts import (  # noqa: E402
     CandidateEntity,
     GraphContextPack,
@@ -46,6 +51,7 @@ from my_digital_brain.ingestion.extractors import (  # noqa: E402
     RelationshipContextExtractor,
     RelationshipExtractor,
 )
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry  # noqa: E402
 
 
 @dataclass(slots=True)
@@ -55,7 +61,6 @@ class CapturedStructuredCall:
     model: str | None
     system_prompt: str
     messages: list[dict[str, Any]]
-    input_message: Any | None = None
     output: Any | None = None
     error: dict[str, Any] | None = None
 
@@ -78,48 +83,47 @@ class TraceStructuredProvider:
         self.structured_calls: list[CapturedStructuredCall] = []
         self.tool_calls: list[CapturedToolCall] = []
 
-    def generate_structured(self, request: Any) -> Any:
-        call = CapturedStructuredCall(
-            purpose=getattr(request.context, "purpose", None),
-            schema=request.output_schema.__name__,
-            model=request.model,
-            system_prompt=request.system_prompt,
-            messages=[
-                message.model_dump(mode="json", exclude_none=True)
-                if hasattr(message, "model_dump")
-                else dict(message)
-                for message in request.messages
-            ],
-            input_message=request.input_message,
-        )
-        self.structured_calls.append(call)
-        try:
-            result = self.delegate.generate_structured(request)
-        except Exception as exc:
-            call.error = {
-                "error_type": exc.__class__.__name__,
-                "message": str(exc),
-            }
-            logger.exception(
-                "Structured call failed for schema %s and purpose %s.",
-                call.schema,
-                call.purpose or "unknown",
+    def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+        call: CapturedStructuredCall | None = None
+        if request.output_schema is not None:
+            call = CapturedStructuredCall(
+                purpose=getattr(request.context, "purpose", None),
+                schema=request.output_schema.__name__,
+                model=request.model,
+                system_prompt=request.system_prompt,
+                messages=[
+                    message.model_dump(mode="json", exclude_none=True)
+                    for message in request.messages
+                ],
             )
+            self.structured_calls.append(call)
+
+        wrapped_mapping = {
+            name: self._capture_tool(name, handler)
+            for name, handler in request.tools_mapping.items()
+        }
+        wrapped_request = request.model_copy(update={"tools_mapping": wrapped_mapping})
+        try:
+            result = self.delegate.run_session(wrapped_request)
+        except Exception as exc:
+            if call is not None:
+                call.error = {
+                    "error_type": exc.__class__.__name__,
+                    "message": str(exc),
+                }
+                logger.exception(
+                    "Session failed for schema %s and purpose %s.",
+                    call.schema,
+                    call.purpose or "unknown",
+                )
             raise
-        call.output = result.parsed.model_dump(mode="json", exclude_none=True)
+        if call is not None and isinstance(result, LLMSessionCompleted):
+            call.output = (
+                result.parsed.model_dump(mode="json", exclude_none=True)
+                if result.parsed is not None
+                else None
+            )
         return result
-
-    def generate_chat(self, request: Any) -> Any:
-        return self.delegate.generate_chat(request)
-
-    def generate_chat_with_tools(self, request: Any, **kwargs: Any) -> Any:
-        mapping = kwargs.get("tools_mapping")
-        if mapping:
-            wrapped_mapping = {}
-            for name, handler in mapping.items():
-                wrapped_mapping[name] = self._capture_tool(name, handler)
-            kwargs["tools_mapping"] = wrapped_mapping
-        return self.delegate.generate_chat_with_tools(request, **kwargs)
 
     def _capture_tool(self, name: str, handler: Any) -> Any:
         def wrapped(**arguments: Any) -> Any:
@@ -197,7 +201,9 @@ def build_trace_service(
 def _ensure_trace_registry(graph_context_pack: GraphContextPack) -> GraphContextPack:
     if graph_context_pack.reference_registry_snapshot:
         return graph_context_pack
-    registry = RunReferenceRegistry(graph_scope="uat", run_scope=graph_context_pack.source_id or "uat")
+    registry = RunReferenceRegistry(
+        graph_scope="uat", run_scope=graph_context_pack.source_id or "uat"
+    )
     registry.register_owner("person:owner")
     return graph_context_pack.model_copy(
         update={
@@ -296,7 +302,10 @@ def write_report(
         _append_json_block(
             lines,
             "Initial Predefined Entity Candidates",
-            [candidate.model_dump(mode="json", exclude_none=True) for candidate in initial_entities],
+            [
+                candidate.model_dump(mode="json", exclude_none=True)
+                for candidate in initial_entities
+            ],
         )
     _append_result_summary(lines, result)
     _append_structured_calls(lines, structured_calls)
@@ -321,7 +330,10 @@ def write_failure_report(
         _append_json_block(
             lines,
             "Initial Predefined Entity Candidates",
-            [candidate.model_dump(mode="json", exclude_none=True) for candidate in initial_entities],
+            [
+                candidate.model_dump(mode="json", exclude_none=True)
+                for candidate in initial_entities
+            ],
         )
     _append_json_block(
         lines,
@@ -341,7 +353,7 @@ def _base_report_lines(title: str) -> list[str]:
         title,
         "=" * len(title),
         "",
-        f"Generated at: {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}",
+        f"Generated at: {datetime.now(UTC).replace(microsecond=0).isoformat()}",
         "Graph/database integrations: disabled",
         "Provider-generated sections are non-deterministic.",
         "",
@@ -356,8 +368,7 @@ def _append_result_summary(lines: list[str], result: IngestionResult) -> None:
         "supplemental_entity_candidates": len(result.supplemental_entity_candidates),
         "relationship_candidates": len(result.relationship_candidates),
         "validation_errors": [
-            issue.model_dump(mode="json", exclude_none=True)
-            for issue in result.validation_errors
+            issue.model_dump(mode="json", exclude_none=True) for issue in result.validation_errors
         ],
         "missing_entities": (
             [
@@ -392,8 +403,6 @@ def _append_structured_calls(
         lines.append(f"Model: {call.model or 'default route'}")
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
-        if call.input_message is not None:
-            _append_json_block(lines, "Input Message", call.input_message)
         _append_json_block(lines, "Messages", call.messages)
         if call.error is not None:
             _append_json_block(lines, "Error / Diagnostics", call.error)

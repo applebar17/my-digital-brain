@@ -9,8 +9,9 @@ from typing import Any
 
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
-from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
-from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
+from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
+from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage
+from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
 from my_digital_brain.clarification import ClarificationService
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
@@ -38,7 +39,7 @@ class LLMResolutionProposalAgent:
 
     def __init__(
         self,
-        provider: ToolCallingLLMProvider,
+        provider: LLMProvider,
         *,
         router: ModelRouter | None = None,
         model: str | None = None,
@@ -91,48 +92,47 @@ class LLMResolutionProposalAgent:
         for batch_start in range(0, len(step_candidates), self.max_tool_calls):
             batch = step_candidates[batch_start : batch_start + self.max_tool_calls]
             batch_refs = {
-                candidate.local_ref
-                for candidate in batch
-                if getattr(candidate, "local_ref", None)
+                candidate.local_ref for candidate in batch if getattr(candidate, "local_ref", None)
             }
             batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
             input_payload = {
                 "source_text": source_text,
                 "owner_context": owner_prompt_block(context.owner_snapshot),
                 "candidate_actions": [
-                    self._model_candidate_payload(candidate)
-                    for candidate in batch
+                    self._model_candidate_payload(candidate) for candidate in batch
                 ],
                 "identity_lookup_packets": [
-                    packet.model_dump(mode="json", exclude_none=True)
-                    for packet in batch_packets
+                    packet.model_dump(mode="json", exclude_none=True) for packet in batch_packets
                 ],
                 "available_tools": sorted(toolbox.tools_by_name),
             }
             mapping = {
-                name: self._capture_handler(step, name, actions)
-                for name in toolbox.tools_by_name
+                name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
             }
-            self.provider.generate_chat_with_tools(
-                ChatRequest(
-                    model=self.model or (route.model if route else None),
-                    temperature=0.1,
+            result = self.provider.run_session(
+                LLMSessionRequest(
+                    system_prompt=prompt,
                     messages=[
-                        ChatMessage(role="system", content=prompt),
                         ChatMessage(
                             role="user",
                             content=(
-                                "```json\n"
-                                f"{json.dumps(input_payload, ensure_ascii=False)}\n```"
+                                f"```json\n{json.dumps(input_payload, ensure_ascii=False)}\n```"
                             ),
                         ),
                     ],
+                    model=self.model or (route.model if route else None),
+                    temperature=0.1,
+                    toolbox=toolbox,
+                    tools_mapping=mapping,
+                    max_tool_calls=len(batch),
+                    session_id=(
+                        f"resolution-{context.source_id or 'run'}-{step.value}-{batch_start}"
+                    ),
                     context=request_context,
-                ),
-                toolbox=toolbox,
-                tools_mapping=mapping,
-                max_tool_calls=len(batch),
+                )
             )
+            if not isinstance(result, LLMSessionCompleted):
+                raise ValueError(f"Resolution step '{step.value}' did not complete: {result}")
         if not actions:
             raise ValueError(
                 f"Resolution step '{step.value}' returned no action tool call. "
@@ -240,8 +240,7 @@ class LLMResolutionProposalAgent:
         return {
             key: value
             for key, value in payload.items()
-            if not key.endswith("_id")
-            and key not in {"metadata", "source_refs", "evidence_refs"}
+            if not key.endswith("_id") and key not in {"metadata", "source_refs", "evidence_refs"}
         }
 
     @staticmethod

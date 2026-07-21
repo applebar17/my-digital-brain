@@ -16,7 +16,7 @@ def test_ask_clarification_returns_one_transport_neutral_packet() -> None:
         target_refs=["CANDIDATE_PERSON_001"],
     )
 
-    assert result.status == "interrupted"
+    assert result.status == "pending"
     packet = ClarificationPacket.model_validate(result.data["clarification_packet"])
     assert packet.questions[0].question == "Which Marco did you mean?"
     assert packet.target_refs == ["CANDIDATE_PERSON_001"]

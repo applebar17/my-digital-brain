@@ -15,11 +15,10 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticRunResult,
     AgenticStateRunResult,
 )
-from my_digital_brain.debug import AIFlowTraceSection
-from my_digital_brain.prompts.registry import render_prompt_template
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.core.profile_context import owner_profile_prompt_block
-
+from my_digital_brain.debug import AIFlowTraceSection
+from my_digital_brain.prompts.registry import render_prompt_template
 
 _RUNTIME_PROMPT_PLACEHOLDERS = (
     "purpose",
@@ -45,6 +44,15 @@ def _memory_ingestion_error_result(
     compact_trace: list[dict[str, Any]],
     failed_result: AgenticStateRunResult,
 ) -> AgenticRunResult:
+    if failed_result.status in {"interrupted", "pending"}:
+        return AgenticRunResult(
+            final_text=failed_result.assistant_text,
+            visited_states=[result.state_id for result in state_results],
+            state_results=state_results,
+            status="interrupted",
+            interruption=failed_result.metadata.get("interruption"),
+            compact_trace=compact_trace,
+        )
     return AgenticRunResult(
         final_text=failed_result.assistant_text,
         visited_states=[result.state_id for result in state_results],
@@ -112,9 +120,7 @@ def _structured_summary(parsed: BaseModel) -> str:
         value = getattr(parsed, field_name, None)
         if isinstance(value, str) and value.strip():
             return value
-    return json.dumps(
-        parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True
-    )
+    return json.dumps(parsed.model_dump(mode="json", exclude_none=True), ensure_ascii=True)
 
 
 def _trace_json_section(title: str, payload: Any) -> AIFlowTraceSection:
@@ -152,9 +158,7 @@ def _frame_context_payload(
         "conversation": conversation.model_dump(mode="json", exclude_none=True),
     }
     if hasattr(current_payload, "model_dump"):
-        payload["current_payload"] = current_payload.model_dump(
-            mode="json", exclude_none=True
-        )
+        payload["current_payload"] = current_payload.model_dump(mode="json", exclude_none=True)
     elif isinstance(current_payload, dict):
         payload["current_payload"] = current_payload
     else:
@@ -210,11 +214,7 @@ def _system_prompt_with_runtime_context(
         )
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
     timezone = _find_prompt_value(payload, "timezone") or "UTC"
-    runtime_context = (
-        "Runtime context:\n"
-        f"- current_time: {current_time}\n"
-        f"- timezone: {timezone}"
-    )
+    runtime_context = f"Runtime context:\n- current_time: {current_time}\n- timezone: {timezone}"
     sections = [
         prompt.rstrip(),
         runtime_context,
@@ -236,7 +236,7 @@ def _find_owner_snapshot(value: Any) -> Any | None:
     if value is None:
         return None
     if hasattr(value, "owner_snapshot"):
-        snapshot = getattr(value, "owner_snapshot")
+        snapshot = value.owner_snapshot
         if snapshot is not None:
             return snapshot
     if hasattr(value, "model_dump"):
@@ -260,8 +260,8 @@ def _find_profile_context(value: Any) -> tuple[Any, str] | None:
     if value is None:
         return None
     if hasattr(value, "approved_owner_profile") and hasattr(value, "profile_purpose"):
-        snapshot = getattr(value, "approved_owner_profile")
-        purpose = getattr(value, "profile_purpose")
+        snapshot = value.approved_owner_profile
+        purpose = value.profile_purpose
         if snapshot is not None and purpose in {"owner_profile", "profile_duplication"}:
             return snapshot, str(purpose)
     if hasattr(value, "model_dump"):
@@ -293,19 +293,12 @@ def _uses_runtime_placeholders(prompt: str) -> bool:
 def _prompt_json_block(payload: Any) -> str:
     if payload in (None, "", [], {}):
         return "(none)"
-    return (
-        "```json\n"
-        f"{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n"
-        "```"
-    )
+    return f"```json\n{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n```"
 
 
 def _system_json_section(title: str, payload: Any) -> str:
     return (
-        f"{title}:\n"
-        "```json\n"
-        f"{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n"
-        "```"
+        f"{title}:\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2, default=str)}\n```"
     )
 
 
