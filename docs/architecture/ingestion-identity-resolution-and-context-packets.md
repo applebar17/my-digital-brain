@@ -11,13 +11,21 @@ Design agreed for implementation. This document captures the behavior discussed 
 - Derive lookup fields and matching policy in backend code from the planned
   candidate. The planner does not control graph-search policy.
 - Use deterministic normalized name, name-token, and alias matching to find
-  candidates. Fuzzy or semantic results are hints only.
+  candidates. Fuzzy or semantic results remain explicitly labeled as weaker
+  evidence and are never backend bindings.
 - Use one run-scoped reference registry. Existing ingestion-context nodes use
   the canonical `NODE_000001`-style reference family; proposed entities use
   `CANDIDATE_*`; the owner uses `OWNER`.
 - Resolution behavior is prompt-guided and LLM-decided. The backend classifies
   evidence and enforces safety, but it does not deterministically choose the
-  final extractor action.
+  final extractor action. Lookup status is context, not a decision rule.
+- The LLM drives semantic planning, extraction, and resolution proposals from
+  the context supplied by the backend. The backend drives graph lookup,
+  reference translation, validation, deterministic write planning, and graph
+  execution.
+- Backend validation errors must be explicit, structured, and sufficiently
+  detailed for the LLM to correct its proposal. The backend must not hide an
+  invalid proposal behind an automatic create, attach, or other fallback.
 - Candidate and context limits are configurable. Initial provisional values
   are defined in the Wave 3 section and may be tuned during implementation.
 - Clarifications belong to the current session. Questions and answers are
@@ -48,9 +56,9 @@ The planner proposes `Marco` as a Person candidate. The backend searches the gra
 
 1. **Lookup is backend-owned.** The backend creates a structured lookup request from the planned candidate. The LLM never produces Cypher or an executable graph query.
 2. **Planning and identity resolution are separate.** The planner describes the entity through normal candidate fields. The backend derives lookup fields and performs lookup before extraction.
-3. **Search is deterministic.** Name and alias lookup may return candidates using deterministic normalization and bounded matching. Semantic similarity is evidence only and cannot automatically bind an entity.
+3. **Lookup is deterministic; resolution is not.** Name and alias lookup may return candidates using deterministic normalization and bounded matching. The resulting status and match kind are evidence supplied to the LLM; they do not automatically bind, create, reject, or clarify an entity.
 4. **The extractor is autonomous within explicit boundaries.** It may select an existing candidate, request clarification, or keep the entity as new when the packet supports that decision.
-5. **Graph execution remains backend-owned.** An LLM decision is a proposal. The backend validates its references and converts it into an authorized write plan.
+5. **Graph execution remains backend-owned.** An LLM decision is a proposal. The backend validates its structure, references, scope, labels, and protected-field rules, reports actionable errors, and converts valid proposals into an authorized write plan. It does not replace a failed proposal with a hidden fallback.
 6. **References are run-scoped.** Model-facing references are aliases valid for the current ingestion run. They are never persisted as graph IDs and never become a substitute for backend identity validation.
 7. **Context is bounded.** Candidate context contains only relevant, permitted information needed for disambiguation. It must not expose the entire graph neighborhood or unrestricted memory history.
 
@@ -64,8 +72,10 @@ source
   -> planned entity candidates
   -> backend identity lookup
   -> candidate context packet
-  -> entity and memory extraction
-  -> resolution proposal validation
+  -> entity extraction
+  -> LLM resolution proposal
+  -> backend proposal validation and reference compilation
+  -> memory and relationship planning/extraction
   -> graph write planning
   -> backend execution
 ```
@@ -543,49 +553,75 @@ limits, privacy review, and refined-ingestion UAT results.
 **Exit criteria:** the extractor can receive a safe, bounded overview of
 possible existing nodes without receiving direct database identity data.
 
-### Wave 4: Autonomous LLM Resolution Proposals
+### Wave 4: LLM-Driven Resolution Proposals
 
-**Scope:** planner and extractor prompts, structured outputs, and validation
-of LLM-selected outcomes.
+**Scope:** context-first prompting, LLM resolution proposals, proposal
+validation, reference compilation, and error feedback. The LLM makes the
+semantic choice. The backend only determines whether the proposal is
+structurally valid, safe to execute, and expressible as a graph write.
 
 **Deliverables:**
 
 - Keep the planner responsible for describing candidate identity through its
   normal candidate fields. The backend derives lookup fields and policy from
   those fields; the planner does not emit lookup instructions or queries.
-- Add the candidate packet to every extraction process that can create or
-  reference graph nodes.
-- Teach the extractor the allowed outcomes:
+- Add the candidate packet to every LLM process that can create or reference
+  graph nodes, with the packet scoped to the current task.
+- Add an LLM-facing resolution proposal output with the allowed outcomes:
   - `CREATE_NEW`;
   - `ATTACH_TO_EXISTING`;
   - `REQUEST_CLARIFICATION`;
   - `IGNORE_OR_DEFER`.
-- Require existing-node attachment to reference only a supplied alias.
-- Add scenario-specific prompting instructions for selecting one candidate,
-  creating a new node, deferring, or requesting clarification.
-- Instruct the extractor that fuzzy matches are not confirmed facts and that
-  it must use the available context to decide autonomously.
+- Require the LLM to use only references supplied in its current packet. An
+  existing-node target must be a supplied model-facing alias; the LLM never
+  receives or generates a persisted graph ID.
+- Instruct the LLM to use the full packet, source evidence, and session
+  history to decide whether to attach, create, clarify, or defer. The lookup
+  status does not select the action.
+- Explain that exact, token, and fuzzy match kinds have different evidentiary
+  strength without turning them into deterministic backend outcomes.
+- Allow the LLM to select a fuzzy candidate when the complete context
+  supports that decision; ask for clarification when the context is not
+  sufficient.
+- Require clarification proposals to include a human-readable question and
+  preserve the candidate and evidence references.
 - Prevent direct Person-property mutation as an implicit result of identity
   matching.
-- Add backend validation that rejects invented aliases, invalid labels,
-  owner impersonation, and unsupported actions.
+- Compile validated model-facing proposals into the existing backend
+  `ResolutionResult` and `ResolvedEntityMap` without performing a second
+  semantic identity search.
+- Add backend validation that rejects invented or stale aliases, cross-run or
+  cross-graph references, invalid labels, owner impersonation, protected
+  field mutation, and unsupported actions.
+- Return verbose structured validation errors to the LLM-facing process. Do
+  not silently convert invalid output into `CREATE_NEW`,
+  `ATTACH_TO_EXISTING`, or any other fallback.
 
-The backend classifies lookup evidence and enforces safety constraints, but it
-does not deterministically choose the extractor's final action. The extractor
-uses the prompt instructions and the supplied context to make that decision.
+The backend classifies lookup evidence and enforces structural and graph
+safety constraints. It does not choose a semantic outcome from the lookup
+status. The LLM uses the prompt instructions, source evidence, session
+history, and supplied candidate context to make that decision.
 
 **Tests:**
 
-- no-candidate extraction can propose a new entity;
-- a sufficient single-candidate packet permits attachment;
-- ambiguous packets produce clarification instead of silent selection;
-- fuzzy-only context cannot produce an automatic attachment;
-- invalid or invented references are rejected;
+- no-candidate, one-candidate, multiple-candidate, and fuzzy packets are all
+  passed to the LLM as evidence without backend action selection;
+- the LLM can propose create, attach, clarify, or defer for each evidence
+  shape, and the backend compiles the selected proposal;
+- ambiguous context can produce clarification, while informative context can
+  support attachment or new-node creation;
+- valid proposals referencing supplied fuzzy candidates are not rejected only
+  because their match kind is fuzzy;
+- invalid, invented, stale, cross-scope, or persisted-ID references are
+  rejected with actionable errors;
 - owner relationships use `OWNER` as the endpoint;
+- invalid proposals do not silently fall back to another action;
 - unrelated extraction flows retain their current behavior.
 
-**Exit criteria:** the extractor can autonomously choose a safe resolution
-outcome using the packet, while every outcome remains backend-validated.
+**Exit criteria:** the LLM can choose a resolution outcome from a bounded
+context packet, and the backend can validate, explain, compile, and execute
+that proposal without making a hidden semantic decision or performing a
+second identity search.
 
 ### Wave 5: Clarification And Update-Agent Handoff
 
