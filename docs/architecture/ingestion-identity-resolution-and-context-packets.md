@@ -664,7 +664,14 @@ update planning.
 
 The agent must have a phase-appropriate toolbox. These tools are typed action
 requests routed through backend validation and deterministic execution; they
-are not unrestricted graph access.
+are not unrestricted graph access. Wave 5 permits multiple clarification tool
+calls in one resolution step. The backend preserves every question and blocks
+the write plan until the current session has enough information to continue.
+
+Each resolution step also has a configurable tool-call ceiling. The setting
+`INGESTION_RESOLUTION_MAX_TOOL_CALLS` defaults to `10` and cannot exceed `10`.
+The effective ceiling is the lower of this setting, the number required by the
+current candidate set, and any lower provider/client limit.
 
 **Deliverables:**
 
@@ -691,6 +698,12 @@ are not unrestricted graph access.
   relationship effects.
 - Keep tool requests proposal-shaped. The backend validates references,
   ownership, protected fields, provenance, and graph scope before execution.
+- Compile validated `create_memory`, `update_memory`, `create_relationship`,
+  `update_relationship`, and `defer_or_ignore` actions into the existing
+  backend write plan. Tool handlers never write to the graph.
+- Preserve all `ask_clarification` requests in `IngestionResult.clarifications`
+  and the session snapshot. The singular clarification field remains the
+  backward-compatible first-item view.
 - Define the update-agent handoff as a structured proposal, not a second
   independent identity lookup.
 - Revalidate the selected existing node immediately before write planning.
@@ -701,6 +714,10 @@ are not unrestricted graph access.
 
 **Tests:**
 
+- multiple clarification calls in one resolution step are retained in order;
+- the per-step tool-call ceiling is configurable and capped at ten;
+- memory and relationship create/update/defer actions produce the corresponding
+  write-plan effects without direct tool execution;
 - clarification selects an existing node;
 - clarification selects new-node creation;
 - clarification remains unresolved safely;
