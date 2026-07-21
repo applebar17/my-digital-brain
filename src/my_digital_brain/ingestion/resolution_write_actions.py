@@ -40,7 +40,6 @@ class ResolutionWriteActions:
     def is_skip(action: ResolutionToolAction | None) -> bool:
         return action is not None and action.tool_name in {
             ResolutionToolName.DEFER_OR_IGNORE,
-            ResolutionToolName.ASK_CLARIFICATION,
         }
 
     @staticmethod

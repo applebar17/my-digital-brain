@@ -1,26 +1,21 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
-    IngestionResult,
+    IngestionContextPackage,
     MemoryLog,
     ResolutionResult,
     ResolutionStep,
     ResolutionToolAction,
     ResolutionToolName,
 )
-from my_digital_brain.ingestion.enums import IngestionStatus
-from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
-from my_digital_brain.ingestion.resolution_proposals import (
-    ResolutionProposalCompiler,
-    ResolutionProposalValidator,
-)
-from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
-from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
-from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
+from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
+from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 
 
 def _memory() -> MemoryLog:
@@ -29,46 +24,6 @@ def _memory() -> MemoryLog:
         log_text="Marco changed jobs.",
         host_target_ids=["NODE_000001"],
     )
-
-
-def test_multiple_clarifications_survive_compilation_and_session_snapshot() -> None:
-    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
-    compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
-    result = compiler.merge_step_actions(
-        ResolutionResult(),
-        [
-            ResolutionToolAction(
-                step=ResolutionStep.MEMORY,
-                tool_name=ResolutionToolName.ASK_CLARIFICATION,
-                candidate_ref="MEMORY_LOG_001",
-                question="Should this update Marco's timeline?",
-            ),
-            ResolutionToolAction(
-                step=ResolutionStep.MEMORY,
-                tool_name=ResolutionToolName.ASK_CLARIFICATION,
-                candidate_ref="MEMORY_LOG_001",
-                question="Which date did this happen?",
-            ),
-        ],
-        step=ResolutionStep.MEMORY,
-        supplied_candidate_refs={"MEMORY_LOG_001"},
-    )
-
-    assert [item.question for item in result.clarifications] == [
-        "Should this update Marco's timeline?",
-        "Which date did this happen?",
-    ]
-    snapshot = InMemoryIngestionProcessStore().record_result(
-        IngestionResult(
-            source_id="source-1",
-            status=IngestionStatus.NEEDS_CLARIFICATION,
-            clarifications=result.clarifications,
-        ),
-    )
-    assert snapshot.pending_questions == [
-        "Should this update Marco's timeline?",
-        "Which date did this happen?",
-    ]
 
 
 def test_resolution_actions_control_memory_write_shape() -> None:
@@ -96,6 +51,54 @@ def test_resolution_actions_control_memory_write_shape() -> None:
 def test_resolution_agent_enforces_ten_call_wave5_ceiling() -> None:
     agent = LLMResolutionProposalAgent(object(), max_tool_calls=100)  # type: ignore[arg-type]
     assert agent.max_tool_calls == 10
+
+
+def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int | None]] = []
+
+        def generate_chat_with_tools(
+            self,
+            request,
+            *,
+            toolbox,
+            tools_mapping,
+            max_tool_calls=None,
+        ) -> None:
+            content = request.messages[-1].content
+            content = content.removeprefix("```json\n").removesuffix("\n```")
+            payload = json.loads(content)
+            self.calls.append((len(payload["candidate_actions"]), max_tool_calls))
+            for candidate in payload["candidate_actions"]:
+                tools_mapping["create_node"](
+                    candidate_ref=candidate["local_ref"],
+                    payload={},
+                    reason="test",
+                    evidence_refs=[],
+                )
+
+    provider = Provider()
+    graph = CandidateMemoryGraph(
+        source_id="source-1",
+        candidate_entities=[
+            {
+                "local_ref": f"CANDIDATE_PERSON_{index:03d}",
+                "entity_type": "Person",
+                "display_name": f"Person {index}",
+            }
+            for index in range(1, 12)
+        ],
+    )
+    actions = LLMResolutionProposalAgent(provider).propose(
+        step=ResolutionStep.NODE,
+        source_text="source",
+        context=IngestionContextPackage(source_id="source-1"),
+        candidate_graph=graph,
+    )
+
+    assert len(actions) == 11
+    assert provider.calls == [(10, 10), (1, 1)]
 
 
 def test_missing_structured_node_decision_never_defaults_to_creation() -> None:

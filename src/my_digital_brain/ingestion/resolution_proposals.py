@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Iterable
 
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
-    ClarificationRequest,
     EntityLookupContextPacket,
     ReferenceObjectKind,
+    ResolutionDecision,
     ResolutionResult,
     ResolutionStep,
     ResolutionToolAction,
@@ -18,7 +18,6 @@ from my_digital_brain.ingestion.contracts import (
     ResolvedEntityMap,
     ResolvedEntityMapEntry,
     ResolvedEntityStatus,
-    ResolutionDecision,
 )
 from my_digital_brain.ingestion.enums import ResolutionDecisionType
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
@@ -46,7 +45,10 @@ class ResolutionProposalValidator:
         errors: list[str] = []
         candidate_refs = set(supplied_candidate_refs)
         packet_by_candidate = {packet.candidate_ref: packet for packet in packets}
-        if action.candidate_ref not in candidate_refs and action.candidate_ref not in packet_by_candidate:
+        if (
+            action.candidate_ref not in candidate_refs
+            and action.candidate_ref not in packet_by_candidate
+        ):
             errors.append(f"candidate_ref '{action.candidate_ref}' was not supplied for this step.")
 
         refs_to_check = [
@@ -65,7 +67,10 @@ class ResolutionProposalValidator:
             except ValueError:
                 errors.append(f"{field_name} '{ref}' is unknown, stale, or outside this run.")
                 continue
-            if entry.graph_scope != self.registry.graph_scope or entry.session_scope != self.registry.run_scope:
+            if (
+                entry.graph_scope != self.registry.graph_scope
+                or entry.session_scope != self.registry.run_scope
+            ):
                 errors.append(f"{field_name} '{ref}' is outside the active graph/session scope.")
 
         if action.tool_name in {
@@ -146,29 +151,11 @@ class ResolutionProposalCompiler:
         self._require_actions_for_refs(node_actions, entity_refs, "node")
 
         decisions: list[ResolutionDecision] = []
-        clarifications: list[ClarificationRequest] = []
         actions_by_ref: dict[str, list[ResolutionToolAction]] = {}
         for action in node_actions:
             actions_by_ref.setdefault(action.candidate_ref, []).append(action)
         for candidate_ref, candidate_actions in actions_by_ref.items():
-            clarifying_actions = [
-                action
-                for action in candidate_actions
-                if action.tool_name == ResolutionToolName.ASK_CLARIFICATION
-            ]
-            clarifications.extend(
-                self._clarification(action, ResolutionStep.NODE)
-                for action in clarifying_actions
-            )
-            actionable = [action for action in candidate_actions if action not in clarifying_actions]
-            if clarifying_actions and actionable:
-                raise ResolutionProposalValidationError(
-                    [
-                        f"Candidate {candidate_ref} cannot combine clarification and "
-                        "mutation actions in one resolution step."
-                    ]
-                )
-            action = actionable[0] if actionable else clarifying_actions[0]
+            action = candidate_actions[0]
             if action.tool_name == ResolutionToolName.CREATE_NODE:
                 decision_type = ResolutionDecisionType.CREATE
                 target_id = None
@@ -180,9 +167,6 @@ class ResolutionProposalCompiler:
                 )
             elif action.tool_name == ResolutionToolName.DEFER_OR_IGNORE:
                 decision_type = ResolutionDecisionType.KEEP_PENDING
-                target_id = None
-            elif action.tool_name == ResolutionToolName.ASK_CLARIFICATION:
-                decision_type = ResolutionDecisionType.ASK_CLARIFICATION
                 target_id = None
             else:
                 raise ResolutionProposalValidationError(
@@ -204,10 +188,12 @@ class ResolutionProposalCompiler:
 
         return ResolutionResult(
             decisions=decisions,
-            clarifications=clarifications,
             metadata={
                 "policy": "llm_selected_action_backend_validated",
-                "validated_tool_actions": [action.model_dump(mode="json", exclude_none=True) for action in validated],
+                "validated_tool_actions": [
+                    action.model_dump(mode="json", exclude_none=True)
+                    for action in validated
+                ],
             },
         )
 
@@ -251,20 +237,17 @@ class ResolutionProposalCompiler:
             set(action_candidate_refs or candidate_refs),
             step.value,
         )
-        clarifications = [
-            self._clarification(action, step)
-            for action in step_actions
-            if action.tool_name == ResolutionToolName.ASK_CLARIFICATION
-        ]
         existing_actions = list(result.metadata.get("validated_tool_actions") or [])
         return result.model_copy(
             update={
-                "clarifications": [*result.clarifications, *clarifications],
                 "metadata": {
                     **result.metadata,
                     "validated_tool_actions": [
                         *existing_actions,
-                        *[action.model_dump(mode="json", exclude_none=True) for action in validated],
+                        *[
+                            action.model_dump(mode="json", exclude_none=True)
+                            for action in validated
+                        ],
                     ],
                 },
             },
@@ -285,7 +268,6 @@ class ResolutionProposalCompiler:
             ref
             for ref, ref_actions in by_ref.items()
             if len(ref_actions) > 1
-            and any(action.tool_name != ResolutionToolName.ASK_CLARIFICATION for action in ref_actions)
         )
         missing = sorted(candidate_refs - set(action_refs))
         if duplicates or missing:
@@ -318,7 +300,9 @@ class ResolutionProposalCompiler:
                 graph_alias = entity.local_ref
             elif decision.decision_type == ResolutionDecisionType.MATCH_EXISTING:
                 status = ResolvedEntityStatus.MATCHED_EXISTING
-                graph_alias = self.validator.registry.alias_for_internal(decision.target_entity_id or "")
+                graph_alias = self.validator.registry.alias_for_internal(
+                    decision.target_entity_id or ""
+                )
             elif decision.decision_type == ResolutionDecisionType.KEEP_PENDING:
                 status = ResolvedEntityStatus.PENDING_DUPLICATE_REVIEW
                 graph_alias = None
@@ -374,25 +358,6 @@ class ResolutionProposalCompiler:
             decisions=decisions,
             metadata={"policy": "llm_selected_action_backend_validated"},
         )
-
-    def _clarification(
-        self,
-        action: ResolutionToolAction,
-        step: ResolutionStep,
-    ) -> ClarificationRequest:
-        return ClarificationRequest(
-            doubt=action.question or "Which supplied candidate did you mean?",
-            reason=action.reason or "The supplied context did not support one safe identity choice.",
-            target_refs=[action.candidate_ref, *([action.target_ref] if action.target_ref else [])],
-            options="; ".join(action.options) or None,
-            blocking=True,
-            metadata={
-                "source": "ask_clarification",
-                "resolution_step": step.value,
-                "evidence_refs": list(action.evidence_refs),
-            },
-        )
-
 
 def _contains_protected_person_fields(payload: object) -> bool:
     if isinstance(payload, list):

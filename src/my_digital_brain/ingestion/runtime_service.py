@@ -47,7 +47,6 @@ from my_digital_brain.ingestion.protocols import (
     GraphVectorizationService,
     GraphWritePlanBuilder,
     GraphWritePlanExecutor,
-    IngestionProcessStore,
     ResolutionProposalAgent,
 )
 from my_digital_brain.ingestion.resolution_proposals import ResolutionProposalValidationError
@@ -55,7 +54,6 @@ from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.runtime_helpers import (
     DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE,
-    clarification_from_draft as _clarification_from_draft,
     context_package_for_services as _context_package_for_services,
     entity_extraction_plan as _entity_extraction_plan,
 )
@@ -103,7 +101,6 @@ class IngestionService(
     write_plan_executor: GraphWritePlanExecutor | None = None
     vectorization_service: GraphVectorizationService | None = None
     execute_write_plan: bool = False
-    process_store: IngestionProcessStore | None = None
     execution_context_factory: ExecutionContextFactory | None = None
     extraction_draft_batch_size: int = DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE
 
@@ -171,7 +168,6 @@ class IngestionService(
             component="ingestion",
             source_id=source.source_id,
             decision_count=len(result.decisions),
-            clarification_count=len(result.clarifications),
             policy=result.metadata.get("policy"),
         )
         return resolved_map, result
@@ -221,28 +217,6 @@ class IngestionService(
             if isinstance(missing_plan, IngestionResult):
                 return missing_plan
             supplemental_plans.append(missing_plan)
-            if missing_plan.clarification is not None:
-                return self._finish(IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.NEEDS_CLARIFICATION,
-                    graph_context_pack=graph_context_pack,
-                    graph_context_views=graph_context_views,
-                    reasoning=reasoning,
-                    entity_plan=entity_plan,
-                    entity_extraction_plan=entity_extraction_plan,
-                    entity_candidates=entity_candidates,
-                    entity_candidate_graph=entity_candidate_graph,
-                    supplemental_entity_plans=supplemental_plans,
-                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=supplemental_candidates,
-                    resolved_entity_map=resolved_entity_map,
-                    memory_log_plan=memory_log_plan,
-                    memory_log_extraction_plan=memory_log_extraction_plan,
-                    memory_logs=memory_logs,
-                    relationship_plan=relationship_plan,
-                    clarification=_clarification_from_draft(missing_plan.clarification),
-                    metadata={"ingestion_stage": "missing_entity_planning_clarification"},
-                ))
             try:
                 self._attach_identity_lookup_packets(source, graph_context_pack, missing_plan)
             except (IdentityLookupError, CandidateContextHydrationError) as exc:
@@ -385,31 +359,6 @@ class IngestionService(
                         ),
                     ],
                     metadata={"ingestion_stage": "missing_entity_resolution"},
-                ),
-            )
-        if resolution.clarifications:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.NEEDS_CLARIFICATION,
-                    graph_context_pack=graph_context_pack,
-                    graph_context_views=graph_context_views,
-                    reasoning=reasoning,
-                    entity_plan=entity_plan,
-                    entity_extraction_plan=entity_extraction_plan,
-                    entity_candidates=entity_candidates,
-                    entity_candidate_graph=entity_candidate_graph,
-                    supplemental_entity_plans=supplemental_plans,
-                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=supplemental_candidates,
-                    resolved_entity_map=updated_resolved_map,
-                    memory_log_plan=memory_log_plan,
-                    memory_log_extraction_plan=memory_log_extraction_plan,
-                    memory_logs=memory_logs,
-                    relationship_plan=relationship_plan,
-                    clarification=resolution.clarification,
-                    clarifications=resolution.clarifications,
-                    metadata={"ingestion_stage": "missing_entity_resolution_clarification"},
                 ),
             )
         return (

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
@@ -16,7 +15,6 @@ from my_digital_brain.ingestion.contracts.candidates import (
 from my_digital_brain.ingestion.contracts.context import GraphContextPack, GraphContextPackView
 from my_digital_brain.ingestion.contracts.identity_resolution import EntityLookupContextPacket
 from my_digital_brain.ingestion.contracts.planning import (
-    ClarificationRequest,
     ExtractionPlan,
 )
 from my_digital_brain.ingestion.contracts.memory_logs import MemoryLog
@@ -77,29 +75,6 @@ class IngestionResult(IngestionModel):
     relationship_extraction_plan: ExtractionPlan | None = None
     relationship_candidates: list[CandidateOutput] = Field(default_factory=list)
     candidate_graph: CandidateMemoryGraph | None = None
-    clarification: ClarificationRequest | None = None
-    clarifications: list[ClarificationRequest] = Field(default_factory=list)
     write_plan: GraphWritePlan | None = None
     validation_errors: list[ValidationIssue] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _synchronize_clarifications(self) -> "IngestionResult":
-        if self.clarification is not None and not self.clarifications:
-            self.clarifications = [self.clarification]
-        elif self.clarifications and self.clarification is None:
-            self.clarification = self.clarifications[0]
-        return self
-
-
-class IngestionSessionSnapshot(IngestionModel):
-    session_id: str = Field(default_factory=new_uuid)
-    source_id: str
-    status: IngestionStatus
-    pending_question: str | None = None
-    pending_questions: list[str] = Field(default_factory=list)
-    reference_registry_snapshot: dict[str, Any] = Field(default_factory=dict)
-    candidate_graph_snapshot: dict[str, Any] = Field(default_factory=dict)
-    write_plan_snapshot: dict[str, Any] = Field(default_factory=dict)
-    expires_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

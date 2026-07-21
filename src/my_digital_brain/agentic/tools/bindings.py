@@ -19,6 +19,7 @@ from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.clarification import ClarificationService
 
 
 GRAPH_UPDATE_CREATABLE_LABELS = {
@@ -80,6 +81,7 @@ class AgenticToolExecutionContext:
     agentic_runtime: Any | None = None
     conversation_context: Any | None = None
     current_payload: Any | None = None
+    clarification_service: ClarificationService | None = None
 
 
 class AgenticToolBindings:
@@ -314,28 +316,24 @@ class AgenticToolBindings:
             details={"action_id": action_id},
         )
 
-    def _handle_request_user_clarification(
+    def _handle_ask_clarification(
         self,
         reason: str,
         questions: list[dict[str, Any]],
         target_refs: list[str] | None = None,
     ) -> ToolResult:
-        from my_digital_brain.chat.clarification import build_clarification_packet
-
-        state_id = self.context.state_id or "unknown"
-        frame_id = self.context.frame_id or new_uuid()
-        self.context.frame_id = frame_id
+        service = self.context.clarification_service or ClarificationService()
         try:
-            packet = build_clarification_packet(
-                frame_id=frame_id,
-                origin_state_id=state_id,
+            return service.ask(
                 reason=reason,
                 questions=questions,
+                frame_id=self.context.frame_id,
+                state_id=self.context.state_id or "unknown",
                 target_refs=target_refs or [],
             )
         except Exception as exc:
             return _tool_error(
-                "request_user_clarification",
+                "ask_clarification",
                 "invalid_clarification_packet",
                 f"Clarification questions failed validation: {exc}",
                 (
@@ -345,21 +343,6 @@ class AgenticToolBindings:
                 retryable=True,
                 details={"exception_type": exc.__class__.__name__},
             )
-
-        question = packet.questions[0].question
-        return ToolResult(
-            status="interrupted",
-            output=question,
-            data={
-                "operation": "request_user_clarification",
-                "frame_id": frame_id,
-                "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
-                "history_delta": [
-                    message.model_dump(mode="json", exclude_none=True)
-                    for message in packet.history_delta
-                ],
-            },
-        )
 
     def _handle_get_context_package(
         self,

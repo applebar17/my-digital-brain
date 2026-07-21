@@ -60,6 +60,15 @@ class CapturedStructuredCall:
     error: dict[str, Any] | None = None
 
 
+@dataclass(slots=True)
+class CapturedToolCall:
+    name: str
+    arguments: dict[str, Any]
+    status: str | None = None
+    output: Any | None = None
+    error: str | None = None
+
+
 class TraceStructuredProvider:
     provider_name = "trace_wrapper"
 
@@ -67,6 +76,7 @@ class TraceStructuredProvider:
         self.delegate = delegate
         self.provider_name = getattr(delegate, "provider_name", "unknown")
         self.structured_calls: list[CapturedStructuredCall] = []
+        self.tool_calls: list[CapturedToolCall] = []
 
     def generate_structured(self, request: Any) -> Any:
         call = CapturedStructuredCall(
@@ -103,7 +113,32 @@ class TraceStructuredProvider:
         return self.delegate.generate_chat(request)
 
     def generate_chat_with_tools(self, request: Any, **kwargs: Any) -> Any:
+        mapping = kwargs.get("tools_mapping")
+        if mapping:
+            wrapped_mapping = {}
+            for name, handler in mapping.items():
+                wrapped_mapping[name] = self._capture_tool(name, handler)
+            kwargs["tools_mapping"] = wrapped_mapping
         return self.delegate.generate_chat_with_tools(request, **kwargs)
+
+    def _capture_tool(self, name: str, handler: Any) -> Any:
+        def wrapped(**arguments: Any) -> Any:
+            call = CapturedToolCall(name=name, arguments=dict(arguments))
+            self.tool_calls.append(call)
+            try:
+                result = handler(**arguments)
+            except Exception as exc:
+                call.error = str(exc)
+                raise
+            call.status = str(getattr(result, "status", "ok"))
+            call.output = (
+                result.model_dump(mode="json", exclude_none=True)
+                if hasattr(result, "model_dump")
+                else result
+            )
+            return result
+
+        return wrapped
 
     def embed(self, request: Any) -> Any:
         return self.delegate.embed(request)

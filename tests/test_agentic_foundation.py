@@ -201,7 +201,7 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
         "MemoryCreationContext"
     )
     assert "run_memory_creation" in configs[AgenticStateId.MEMORY_INGESTION].allowed_tools
-    assert "request_user_clarification" not in configs[AgenticStateId.MEMORY_QUERY].allowed_tools
+    assert "ask_clarification" not in configs[AgenticStateId.MEMORY_QUERY].allowed_tools
     assert "cancel_pending_process" not in entry.allowed_tools
     assert "get_conversation_status" not in entry.allowed_tools
     assert "focused_extraction" in entry.forbidden_tools
@@ -209,21 +209,21 @@ def test_default_state_configs_lock_wave1_toolboxes() -> None:
     assert reasoning.required_context_type == "ReasoningCheckpointContext"
     assert reasoning.produced_context_type == "ReasoningCheckpointResultContext"
     assert "get_context_package" in reasoning.allowed_tools
-    assert "request_user_clarification" in reasoning.allowed_tools
+    assert "ask_clarification" in reasoning.allowed_tools
     assert "execute_graph_write_plan" in reasoning.forbidden_tools
     planning = configs[AgenticStateId.PLANNING_CHECKPOINT]
     assert planning.prompt_id == "planning_checkpoint"
     assert planning.required_context_type == "PlanningTransformContext"
     assert planning.produced_context_type == "PlanningTransformResultContext"
     assert "get_context_package" in planning.allowed_tools
-    assert "request_user_clarification" in planning.allowed_tools
+    assert "ask_clarification" in planning.allowed_tools
     assert "focused_extraction" in planning.forbidden_tools
     memory_log_extraction = configs[AgenticStateId.MEMORY_LOG_EXTRACTION]
     assert memory_log_extraction.prompt_id == "memory_log_extraction"
     assert memory_log_extraction.model_task == "memory_log_extraction"
     assert memory_log_extraction.required_context_type == "PlanningTransformContext"
     assert memory_log_extraction.produced_context_type == "MemoryLogDraftBatch"
-    assert "request_user_clarification" in memory_log_extraction.allowed_tools
+    assert "ask_clarification" in memory_log_extraction.allowed_tools
     assert "execute_graph_write_plan" in memory_log_extraction.forbidden_tools
 
 

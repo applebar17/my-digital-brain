@@ -5,7 +5,6 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from my_digital_brain.ingestion.contracts.base import IngestionModel
-from my_digital_brain.ingestion.contracts.drafts import ClarificationRequestDraft
 from my_digital_brain.ingestion.ontology import LLMEntityType
 
 
@@ -41,10 +40,6 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
         default_factory=list,
         description="Missing context that may weaken extraction or planning.",
     )
-    clarification_candidates: list[ClarificationRequestDraft] = Field(
-        default_factory=list,
-        description="Clarifications that may be needed before safe ingestion.",
-    )
 
     @model_validator(mode="after")
     def _validate_useful_signal(self) -> "IngestionReasoningCheckpointDraft":
@@ -58,7 +53,6 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
             or self.node_vs_detail_notes
             or self.user_owner_notes
             or self.context_gaps
-            or self.clarification_candidates
         ):
             raise ValueError("Ingestion reasoning checkpoint requires at least one note.")
         return self
@@ -119,10 +113,6 @@ class EntityIngestionPlanDraft(IngestionModel):
         default_factory=list,
         description="Simple entity actions to execute or hand off.",
     )
-    clarification: ClarificationRequestDraft | None = Field(
-        default=None,
-        description="Blocking clarification required before entity extraction can continue.",
-    )
     context_gaps: list[str] = Field(
         default_factory=list,
         description="Missing context that should be retrieved before entity extraction.",
@@ -130,9 +120,9 @@ class EntityIngestionPlanDraft(IngestionModel):
 
     @model_validator(mode="after")
     def _validate_has_next_step(self) -> "EntityIngestionPlanDraft":
-        if not (self.actions or self.clarification or self.context_gaps):
+        if not (self.actions or self.context_gaps):
             raise ValueError(
-                "Entity ingestion plan requires actions, clarification, or context gaps."
+                "Entity ingestion plan requires actions or context gaps."
             )
         refs = [
             entity.local_ref
@@ -207,10 +197,6 @@ class MemoryLogIngestionPlanDraft(IngestionModel):
         default_factory=list,
         description="Simple memory-log actions to execute or hand off.",
     )
-    clarification: ClarificationRequestDraft | None = Field(
-        default=None,
-        description="Blocking clarification required before memory-log extraction can continue.",
-    )
     context_gaps: list[str] = Field(
         default_factory=list,
         description="Missing context, or a concise reason no memory logs are needed.",
@@ -218,9 +204,9 @@ class MemoryLogIngestionPlanDraft(IngestionModel):
 
     @model_validator(mode="after")
     def _validate_has_next_step(self) -> "MemoryLogIngestionPlanDraft":
-        if not (self.actions or self.clarification or self.context_gaps):
+        if not (self.actions or self.context_gaps):
             raise ValueError(
-                "Memory-log ingestion plan requires actions, clarification, or context gaps."
+                "Memory-log ingestion plan requires actions or context gaps."
             )
         refs = [
             memory_log.local_ref
@@ -335,10 +321,6 @@ class RelationshipIngestionPlanDraft(IngestionModel):
         default_factory=list,
         description="Missing endpoints that must be entity-planned before blocked relationships resume.",
     )
-    clarification: ClarificationRequestDraft | None = Field(
-        default=None,
-        description="Blocking clarification required before relationship extraction can continue.",
-    )
     context_gaps: list[str] = Field(
         default_factory=list,
         description="Missing context that should be retrieved before relationship extraction.",
@@ -346,10 +328,10 @@ class RelationshipIngestionPlanDraft(IngestionModel):
 
     @model_validator(mode="after")
     def _validate_has_next_step(self) -> "RelationshipIngestionPlanDraft":
-        if not (self.actions or self.missing_entities or self.clarification or self.context_gaps):
+        if not (self.actions or self.missing_entities or self.context_gaps):
             raise ValueError(
                 "Relationship ingestion plan requires actions, missing entities, "
-                "clarification, or context gaps."
+                "or context gaps."
             )
         refs = [action.local_ref for action in self.actions if action.local_ref]
         duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})

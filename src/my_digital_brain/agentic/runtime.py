@@ -429,7 +429,7 @@ class AgenticRuntime:
             status="ok",
             output=clarification_answer_summary,
             data={
-                "operation": "request_user_clarification",
+                "operation": "ask_clarification",
                 "clarification_answer_summary": clarification_answer_summary,
                 "clarification_answer_packet": answer_packet.model_dump(
                     mode="json",

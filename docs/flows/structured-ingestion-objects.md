@@ -753,29 +753,11 @@ Core fields:
 - `ambiguity_flags`
 - `missing_fields`
 
-The candidate graph is not a write plan. It is the structured proposal that validation and resolution turn into a `GraphWritePlan` or `ClarificationRequest`.
+The candidate graph is not a write plan. It is the structured proposal that validation and resolution turn into a `GraphWritePlan` or an LLM clarification interruption.
 
 Wave 0 only locks the `MemoryLog` contracts. Runtime assembly of memory logs
 into `CandidateMemoryGraph`, write-plan support, and graph persistence are later
 implementation waves.
-
-### ClarificationRequest
-
-A doubt that may need user clarification before a decision is safe or useful.
-All clarification handling allows free text; ingestion contracts do not carry a
-`free_text_allowed` flag.
-
-Core fields:
-
-- `clarification_id`
-- `doubt`
-- `reason`
-- `target_refs`
-- `options`: one prose string describing plausible interpretations, not an
-  authoritative option array.
-- `blocking`
-- `created_at`
-- `expires_at`
 
 ### ContradictionJudgeRequest
 
@@ -949,7 +931,6 @@ The first implementation does not need every field above, but it should establis
 - `CandidateMemoryGraph`
 - `ContradictionJudgeRequest`
 - `ContradictionJudgeDecision`
-- `ClarificationRequest`
 - `ResolutionDecision`
 - `ResolvedEntityMap`
 - `GraphWritePlan`

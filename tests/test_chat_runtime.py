@@ -551,7 +551,7 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
     assert response.status_code == 200
     assert response.json()["primary_text"] == "Graph update resumed."
     assert response.json()["metadata"]["resumed_frame_id"] == packet.frame_id
-    assert provider.calls[0]["tool_names"] == [
+    assert set(provider.calls[0]["tool_names"]) == {
         "create_graph_node",
         "create_memory_log",
         "create_relationship_state",
@@ -561,10 +561,10 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
         "get_target_evidence",
         "get_timeline",
         "patch_graph_node",
-        "request_user_clarification",
+        "ask_clarification",
         "resolve_graph_update_targets",
         "upsert_graph_relationship",
-    ]
+    }
     assert store.get_agentic_frame(packet.frame_id).status == "completed"
 
 
@@ -767,7 +767,7 @@ def _save_interrupted_frame(
                             "id": tool_call_id,
                             "type": "function",
                             "function": {
-                                "name": "request_user_clarification",
+                                "name": "ask_clarification",
                                 "arguments": "{}",
                             },
                         }
@@ -783,7 +783,7 @@ def _save_interrupted_frame(
                 }
             },
             active_tool_call_id=tool_call_id,
-            active_tool_name="request_user_clarification",
+            active_tool_name="ask_clarification",
             clarification_packet=packet,
         ),
     )
@@ -800,7 +800,7 @@ def _clarification_packet(
     return build_clarification_packet(
         frame_id=frame_id,
         tool_call_id=tool_call_id,
-        tool_name="request_user_clarification" if tool_call_id else None,
+        tool_name="ask_clarification" if tool_call_id else None,
         origin_state_id=state_id,
         reason="Multiple Marco candidates exist.",
         target_refs=["NODE_000001", "NODE_000002"],

@@ -133,8 +133,9 @@ The contracts must enforce:
 - planner output contains no graph query or LLM-controlled search policy;
 - lookup statuses distinguish no candidate, one candidate, multiple
   candidates, and fuzzy-only candidates;
-- resolution actions are `CREATE_NEW`, `ATTACH_TO_EXISTING`,
-  `REQUEST_CLARIFICATION`, and `IGNORE_OR_DEFER`;
+- resolution outcomes are `CREATE_NEW`, `ATTACH_TO_EXISTING`, and
+  `IGNORE_OR_DEFER`; clarification is an agent tool interruption, not a
+  resolution action or persisted ingestion status;
 - `target_ref` is required only for existing-node attachment;
 - clarification questions and answers remain normal session-history messages;
 - no new graph taxonomy object or separate clarification subsystem exists.
@@ -572,7 +573,6 @@ separate structured proposal/tool contract.
 - Add an LLM-facing resolution proposal output with the allowed outcomes:
   - `CREATE_NEW`;
   - `ATTACH_TO_EXISTING`;
-  - `REQUEST_CLARIFICATION`;
   - `IGNORE_OR_DEFER`.
 - Expose proposal-only, step-scoped toolboxes to the resolution/extraction agent:
   - node step: `ask_clarification`, `create_node`, `update_node`,
@@ -581,9 +581,12 @@ separate structured proposal/tool contract.
     `defer_or_ignore`;
   - relationship step: `ask_clarification`, `create_relationship`,
     `update_relationship`, `defer_or_ignore`.
-  These tool calls are captured as model proposals. They do not execute graph
-  writes or graph searches; backend validation and the existing write-plan
-  executor remain authoritative.
+  `ask_clarification` is the single exception: it invokes the centralized
+  clarification service, emits a transport-neutral question packet, and
+  interrupts the current agent call. It is never compiled into a graph
+  proposal or ingestion result. All other tool calls are captured as model
+  proposals. They do not execute graph writes or graph searches; backend
+  validation and the existing write-plan executor remain authoritative.
 - Require the LLM to use only references supplied in its current packet. An
   existing-node target must be a supplied model-facing alias; the LLM never
   receives or generates a persisted graph ID.
@@ -965,12 +968,6 @@ Use when the extractor can identify one supplied existing reference.
 
 The existing node normally receives new MemoryLog, relationship, claim, or perception records. Selecting an existing node does not automatically mean that its Person properties should be mutated.
 
-### `REQUEST_CLARIFICATION`
-
-Use when the available evidence is insufficient to select one candidate or safely create a new entity.
-
-The LLM asks a user-facing question using human-readable candidate summaries. It must not expose backend IDs or ask the user to choose an internal alias.
-
 ### `IGNORE_OR_DEFER`
 
 Use when the reference is too weak, irrelevant, or outside the current extraction scope. This avoids forced node creation.
@@ -979,10 +976,15 @@ Use when the reference is too weak, irrelevant, or outside the current extractio
 
 When clarification is required:
 
-1. The extractor returns a structured clarification request and does not create or bind the entity.
-2. The application presents a natural-language question using candidate summaries.
-3. The question and the user's response become session history messages and
-   are reintroduced with the original candidate and lookup packet.
+1. The LLM invokes `ask_clarification` with a human-readable question and
+   supplied model references only.
+2. The centralized clarification service emits a transport-neutral question
+   packet. The active adapter renders it for the web app, Telegram, or the
+   local UAT terminal.
+3. The user's answer is validated by that adapter and appended to the normal
+   conversation history. The next agent call receives the original context
+   plus the clarification history; no ingestion `needs_clarification` result
+   or separate clarification record is created.
 4. The LLM chooses `CREATE_NEW`, `ATTACH_TO_EXISTING`, or another clarification request.
 5. The backend revalidates the selected reference and refreshes the relevant node state before producing a write plan.
 

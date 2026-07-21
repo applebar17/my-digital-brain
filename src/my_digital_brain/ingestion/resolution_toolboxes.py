@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from my_digital_brain.ai.tools import ToolBox, build_tool_index
 from my_digital_brain.agentic.tools.specs import (
     array_property,
     object_property,
@@ -10,6 +9,7 @@ from my_digital_brain.agentic.tools.specs import (
     string_property,
     tool_spec,
 )
+from my_digital_brain.ai.tools import ToolBox, build_tool_index
 from my_digital_brain.ingestion.contracts import ResolutionStep, ResolutionToolName, tools_for_step
 
 
@@ -27,7 +27,17 @@ def build_resolution_toolbox(step: ResolutionStep | str) -> ToolBox:
 
 def resolution_toolbox_for_task(task_type: str) -> ToolBox | None:
     normalized = str(task_type).lower()
-    if normalized in {"person", "place", "event", "organization", "object", "animal", "social_circle", "topic", "link"}:
+    if normalized in {
+        "person",
+        "place",
+        "event",
+        "organization",
+        "object",
+        "animal",
+        "social_circle",
+        "topic",
+        "link",
+    }:
         return build_resolution_toolbox(ResolutionStep.NODE)
     if normalized in {"memory_log", "profile_memory", "claim", "perception", "metadata_patch"}:
         return build_resolution_toolbox(ResolutionStep.MEMORY)
@@ -40,13 +50,15 @@ def _action_properties() -> dict[str, dict]:
     return {
         "candidate_ref": string_property("Candidate ref supplied in the current context."),
         "target_ref": optional_string_property("Existing supplied ref to update, when applicable."),
-        "from_ref": optional_string_property("Supplied source endpoint ref, for relationship actions."),
-        "to_ref": optional_string_property("Supplied target endpoint ref, for relationship actions."),
+        "from_ref": optional_string_property(
+            "Supplied source endpoint ref, for relationship actions."
+        ),
+        "to_ref": optional_string_property(
+            "Supplied target endpoint ref, for relationship actions."
+        ),
         "payload": object_property("Proposal data grounded in the source and current context."),
         "reason": optional_string_property("Short source-grounded reason for the action."),
         "evidence_refs": array_property("Supplied evidence refs supporting the action."),
-        "question": optional_string_property("User-facing clarification question, for ask_clarification only."),
-        "options": array_property("Short answer options, for ask_clarification only."),
     }
 
 
@@ -64,10 +76,19 @@ def _spec(
 
 
 _tool_specs = {
-    ResolutionToolName.ASK_CLARIFICATION: _spec(
-        ResolutionToolName.ASK_CLARIFICATION,
-        "Ask the user for clarification when the supplied context cannot support a safe action. This is a proposal, not a graph write.",
-        ("candidate_ref", "question", "options", "reason", "evidence_refs"),
+    ResolutionToolName.ASK_CLARIFICATION: tool_spec(
+        ResolutionToolName.ASK_CLARIFICATION.value,
+        (
+            "Ask the user for clarification when the supplied context cannot support "
+            "a safe action. This interrupts the current step and is not a graph action."
+        ),
+        properties={
+            "candidate_ref": string_property("Candidate ref supplied in the current context."),
+            "question": string_property("User-facing clarification question."),
+            "options": array_property("Short answer options."),
+            "reason": optional_string_property("Why the current context is insufficient."),
+            "evidence_refs": array_property("Supplied evidence refs supporting the question."),
+        },
     ),
     ResolutionToolName.CREATE_NODE: _spec(
         ResolutionToolName.CREATE_NODE,
@@ -76,7 +97,10 @@ _tool_specs = {
     ),
     ResolutionToolName.UPDATE_NODE: _spec(
         ResolutionToolName.UPDATE_NODE,
-        "Propose an additive update to one supplied existing node. Do not place stable traits directly on Person.",
+        (
+            "Propose an additive update to one supplied existing node. Do not place "
+            "stable traits directly on Person."
+        ),
         ("candidate_ref", "target_ref", "payload", "reason", "evidence_refs"),
     ),
     ResolutionToolName.CREATE_MEMORY: _spec(

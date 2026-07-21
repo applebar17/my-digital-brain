@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from my_digital_brain.agentic import (
@@ -51,7 +50,6 @@ from my_digital_brain.ingestion.resolution_proposals import (
 )
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.service import IngestionService
-from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from tests.support_resolution import FixedResolutionAgent
 
@@ -88,7 +86,6 @@ def test_structured_resolution_agent_controls_attachment_without_semantic_fallba
         candidate_graph=graph,
     )
 
-    assert result.clarification is None
     assert resolved.entries[0].status == "matched_existing"
     assert resolved.entries[0].graph_alias == existing_ref
 
@@ -472,61 +469,6 @@ def test_ingestion_service_rejects_empty_candidate_graph() -> None:
     assert result.validation_errors[0].code == "empty_write_plan"
 
 
-def test_ingestion_service_pauses_on_resolution_clarification() -> None:
-    graph = FakeGraphService(
-        nodes=[
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-        ],
-    )
-    service = _reasoning_first_service(
-        graph=graph,
-        provider_payloads=_single_person_payloads("Marco Rossi"),
-        resolution_agent=FixedResolutionAgent(clarify=True),
-        write_plan_builder=GraphWritePlanBuilder(),
-    )
-
-    result = service.process_source(_source())
-
-    assert result.status == IngestionStatus.NEEDS_CLARIFICATION
-    assert result.clarification is not None
-    assert result.clarification.target_refs == ["CANDIDATE_PERSON_001"]
-
-
-def test_process_store_records_source_snapshots_and_expires_pending_sessions() -> None:
-    store = InMemoryIngestionProcessStore()
-    graph = FakeGraphService(
-        nodes=[
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-        ],
-    )
-    service = _reasoning_first_service(
-        graph=graph,
-        provider_payloads=_single_person_payloads("Marco Rossi"),
-        resolution_agent=FixedResolutionAgent(clarify=True),
-        write_plan_builder=GraphWritePlanBuilder(),
-        process_store=store,
-    )
-
-    result = service.process_source(_source())
-    snapshot = store.get_session(result.ingestion_id)
-    assert snapshot is not None
-    assert store.sources["source-1"].raw_text == "I met Marco in Milan."
-    assert snapshot.pending_question == (
-        "Which supplied person did you mean?"
-    )
-
-    expired_snapshot = snapshot.model_copy(
-        update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)}
-    )
-    store.sessions[snapshot.session_id] = expired_snapshot
-    expired_ids = store.expire_pending()
-
-    assert expired_ids == [snapshot.session_id]
-    assert store.sessions[snapshot.session_id].metadata["expired"] is True
-
-
 def _reasoning_first_service(
     *,
     graph: "FakeGraphService",
@@ -536,7 +478,6 @@ def _reasoning_first_service(
     write_plan_executor: GraphWritePlanExecutor | None = None,
     vectorization_service: Any | None = None,
     execute_write_plan: bool = False,
-    process_store: InMemoryIngestionProcessStore | None = None,
 ) -> IngestionService:
     provider = QueuedStructuredProvider(provider_payloads)
     runner = AgenticStateRunner(provider=provider)
@@ -558,7 +499,6 @@ def _reasoning_first_service(
         write_plan_executor=write_plan_executor,
         vectorization_service=vectorization_service,
         execute_write_plan=execute_write_plan,
-        process_store=process_store,
     )
 
 

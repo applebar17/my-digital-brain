@@ -44,7 +44,6 @@ from my_digital_brain.ingestion.contracts.identity_resolution import (
     ReferenceObjectKind,
     ReferenceRegistryEntry,
     ReferenceStatus,
-    SessionClarificationContext,
 )
 from my_digital_brain.ingestion.contracts.drafts import (
     CandidateBaseDraft,
@@ -61,7 +60,6 @@ from my_digital_brain.ingestion.contracts.drafts import (
     CandidateRelationshipContextDraftBatch,
     CandidateRelationshipDraft,
     CandidateRelationshipDraftBatch,
-    ClarificationRequestDraft,
     EvidenceSpanDraft,
     PropertyDraft,
 )
@@ -80,7 +78,6 @@ from my_digital_brain.ingestion.contracts.memory_logs import (
     NodeUpdatePlanDraft,
 )
 from my_digital_brain.ingestion.contracts.planning import (
-    ClarificationRequest,
     ExtractionPlan,
     ExtractionTask,
 )
@@ -114,7 +111,6 @@ from my_digital_brain.ingestion.contracts.resolution_actions import (
 from my_digital_brain.ingestion.contracts.results import (
     IngestionContextPackage,
     IngestionResult,
-    IngestionSessionSnapshot,
 )
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
 from my_digital_brain.ingestion.contracts.source import (
@@ -174,8 +170,6 @@ __all__ = [
     "CandidateRelationshipContextDraftBatch",
     "CandidateRelationshipDraft",
     "CandidateRelationshipDraftBatch",
-    "ClarificationRequest",
-    "ClarificationRequestDraft",
     "EvidenceRef",
     "EvidenceSpanDraft",
     "ExtractionPlan",
@@ -205,7 +199,6 @@ __all__ = [
     "ReferenceObjectKind",
     "ReferenceRegistryEntry",
     "ReferenceStatus",
-    "SessionClarificationContext",
     "GraphNodeWrite",
     "GraphRelationshipWrite",
     "GraphWritePlan",
@@ -213,7 +206,6 @@ __all__ = [
     "IngestionModel",
     "IngestionReasoningCheckpointDraft",
     "IngestionResult",
-    "IngestionSessionSnapshot",
     "MemoryLogIngestionActionDraft",
     "MemoryLogIngestionPlanDraft",
     "MediaAsset",

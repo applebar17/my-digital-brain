@@ -192,7 +192,7 @@ def test_history_service_compacts_tool_events_for_planning_checkpoint_context() 
                 data={"matches": [{"text": "x" * 200}]},
             ),
             AgenticToolEvent(
-                tool_name="request_user_clarification",
+                tool_name="ask_clarification",
                 status="ok",
                 data={"clarification_packet": {"question": "Which Marco?"}},
             ),
@@ -209,7 +209,7 @@ def test_history_service_compacts_tool_events_for_planning_checkpoint_context() 
     assert output.tool_name == "get_context_package"
     assert output.summary == "Graph context expanded."
     assert output.data["truncated"] is True
-    assert planning_context.prior_tool_outputs[1].tool_name == "request_user_clarification"
+    assert planning_context.prior_tool_outputs[1].tool_name == "ask_clarification"
 
 
 def _message(

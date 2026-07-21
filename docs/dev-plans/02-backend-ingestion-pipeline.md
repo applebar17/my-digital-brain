@@ -113,7 +113,8 @@ Required target flow:
 13. If a required endpoint is missing, emit `missing_entity_required` and loop
     through supplemental entity handling.
 14. Validate relationship schemas, allowed ontology values, and endpoints.
-15. Produce a deterministic `GraphWritePlan` or `ClarificationRequest`.
+15. Produce a deterministic `GraphWritePlan`; the LLM may interrupt an
+    earlier resolution step through the centralized `ask_clarification` tool.
 16. Execute the validated write plan through graph services.
 
 Generated natural-language graph query fan-out is out of scope for this
@@ -290,7 +291,6 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
   - `ExtractionExecutionMode`
   - `ExtractionTaskType`
   - `CandidateRefKind`
-  - `ClarificationStatus`
   - `ResolutionDecisionType`
   - `GraphWritePlanStatus`
   - `IngestionStatus`
@@ -309,7 +309,6 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
   - `CandidateRelationshipContext`
   - `CandidateMetadataPatch`
   - `CandidateMemoryGraph`
-  - `ClarificationRequest`
   - `ResolutionDecision`
   - `GraphNodeWrite`
   - `GraphRelationshipWrite`
@@ -323,7 +322,6 @@ The purpose is to make the ingestion pipeline testable before prompts are introd
   - `GraphWritePlanBuilder`
   - `GraphWritePlanExecutor`
   - `GraphVectorizationService`
-  - `IngestionProcessStore`
 - Add `ingestion/assembly.py`:
   - assemble extractor outputs into a `CandidateMemoryGraph`
   - validate local candidate references
@@ -465,7 +463,10 @@ Status: implemented with conservative resolution, deterministic write-plan build
 
 ### Summary
 
-Turn validated candidate graphs into deterministic graph write plans, resolve obvious existing matches, create clarification requests for ambiguity, and execute safe plans through graph services.
+Turn validated candidate graphs into deterministic graph write plans, preserve
+LLM-selected resolution actions, and execute safe plans through graph services.
+Ambiguity is handled by the LLM through the centralized `ask_clarification`
+tool rather than by a backend resolution status.
 
 This wave makes the first useful ingestion path possible.
 
@@ -476,7 +477,9 @@ This wave makes the first useful ingestion path possible.
   - Alias matching.
   - Existing graph alias resolution.
   - Obvious source-backed matches.
-  - Ambiguous matches produce `ClarificationRequest`.
+  - Ambiguous matches are presented to the LLM as contextual evidence.
+  - The LLM may invoke `ask_clarification`; the backend does not infer or
+    synthesize a clarification action.
   - No aggressive merge logic in MVP.
 - Add `ingestion/write_plan.py`.
   - Converts validated candidates plus resolution decisions into `GraphWritePlan`.

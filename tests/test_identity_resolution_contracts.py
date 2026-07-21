@@ -16,7 +16,6 @@ from my_digital_brain.ingestion.contracts import (
     ReferenceObjectKind,
     ReferenceRegistryEntry,
     ReferenceStatus,
-    SessionClarificationContext,
 )
 
 
@@ -31,20 +30,6 @@ def _candidate(ref: str = "NODE_000001") -> EntityLookupCandidate:
             relationship_summaries=["university friend"],
             relevant_memory_summaries=["Attended university together"],
         ),
-    )
-
-
-def _packet() -> EntityLookupContextPacket:
-    result = EntityLookupResult(
-        candidate_ref="CANDIDATE_PERSON_001",
-        status=IdentityLookupStatus.MULTIPLE_CANDIDATES,
-        candidates=[_candidate(), _candidate("NODE_000002")],
-    )
-    return EntityLookupContextPacket(
-        candidate_ref="CANDIDATE_PERSON_001",
-        entity_type="Person",
-        proposed_display_name="Marco",
-        lookup=result,
     )
 
 
@@ -145,21 +130,6 @@ def test_resolution_proposal_rejects_invented_or_proposed_target() -> None:
                 target_ref=target_ref,
                 reason="Invalid target.",
             )
-
-
-def test_clarification_context_uses_session_history_and_owner_alias() -> None:
-    context = SessionClarificationContext(
-        session_id="session-1",
-        candidate_ref="CANDIDATE_PERSON_001",
-        lookup_packet=_packet(),
-        question="Which Marco did you mean?",
-        history_message_refs=["message-question", "message-source"],
-        question_message_ref="message-question",
-    )
-
-    assert context.owner_ref == "OWNER"
-    assert context.history_message_refs == ["message-question", "message-source"]
-    assert context.answer_message_ref is None
 
 
 def test_reference_registry_separates_backend_and_model_facing_data() -> None:

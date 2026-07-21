@@ -225,7 +225,7 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_entity_detail",
         "get_neighborhood_view",
         "get_target_evidence",
-        "request_user_clarification",
+        "ask_clarification",
     ]
     assert "structured reasoning notes" in PromptRegistry().load(
         "reasoning_checkpoint",
@@ -236,7 +236,7 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_entity_detail",
         "get_neighborhood_view",
         "get_target_evidence",
-        "request_user_clarification",
+        "ask_clarification",
     ]
     assert "ordered process actions" in PromptRegistry().load(
         "planning_checkpoint",
@@ -415,12 +415,12 @@ def test_missing_dependency_returns_verbose_tool_error() -> None:
     assert "Configure AgenticToolExecutionContext.graph_service" in result.error.hint
 
 
-def test_request_user_clarification_creates_frame_packet() -> None:
+def test_ask_clarification_creates_frame_packet() -> None:
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
     execution_context = _execution_context(frame_id="frame-1")
     mapping = build_agentic_tool_mapping(config, execution_context)
 
-    result = mapping["request_user_clarification"](
+    result = mapping["ask_clarification"](
         reason="Two people named Marco are plausible.",
         target_refs=["NODE_000001", "NODE_000002"],
         questions=[
@@ -438,7 +438,7 @@ def test_request_user_clarification_creates_frame_packet() -> None:
     )
 
     assert result.status == "interrupted"
-    assert result.data["operation"] == "request_user_clarification"
+    assert result.data["operation"] == "ask_clarification"
     assert result.data["frame_id"] == "frame-1"
     packet = result.data["clarification_packet"]
     assert "pending_process" not in result.data
@@ -451,18 +451,18 @@ def test_request_user_clarification_creates_frame_packet() -> None:
     assert execution_context.tool_events[0].status == "interrupted"
 
 
-def test_request_user_clarification_is_not_exposed_to_conversation_entry() -> None:
+def test_ask_clarification_is_not_exposed_to_conversation_entry() -> None:
     config = default_state_configs()[AgenticStateId.CONVERSATION_ENTRY]
     toolbox = build_agentic_toolbox(config)
 
-    assert "request_user_clarification" not in toolbox.tools_by_name
+    assert "ask_clarification" not in toolbox.tools_by_name
 
 
-def test_request_user_clarification_is_not_exposed_to_memory_query() -> None:
+def test_ask_clarification_is_not_exposed_to_memory_query() -> None:
     config = default_state_configs()[AgenticStateId.MEMORY_QUERY]
     toolbox = build_agentic_toolbox(config)
 
-    assert "request_user_clarification" not in toolbox.tools_by_name
+    assert "ask_clarification" not in toolbox.tools_by_name
 
 
 def test_child_frame_tools_fail_visibly_without_runtime_or_plan_action() -> None:

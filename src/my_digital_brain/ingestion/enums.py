@@ -53,21 +53,12 @@ class CandidateRefKind(StrEnum):
     EXTRACTION_RUN = "extraction_run"
 
 
-class ClarificationStatus(StrEnum):
-    PROPOSED = "proposed"
-    WAITING_FOR_USER = "waiting_for_user"
-    ANSWERED = "answered"
-    SKIPPED = "skipped"
-    EXPIRED = "expired"
-
-
 class ResolutionDecisionType(StrEnum):
     CREATE = "create"
     MATCH_EXISTING = "match_existing"
     MERGE = "merge"
     REJECT = "reject"
     KEEP_PENDING = "keep_pending"
-    ASK_CLARIFICATION = "ask_clarification"
 
 
 class GraphWritePlanStatus(StrEnum):
@@ -81,7 +72,6 @@ class IngestionStatus(StrEnum):
     RECEIVED = "received"
     PLANNED = "planned"
     CANDIDATE_READY = "candidate_ready"
-    NEEDS_CLARIFICATION = "needs_clarification"
     VALIDATION_FAILED = "validation_failed"
     WRITE_PLAN_READY = "write_plan_ready"
     WRITTEN = "written"

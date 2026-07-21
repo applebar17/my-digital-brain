@@ -20,11 +20,9 @@ class FixedResolutionAgent:
     def __init__(
         self,
         *,
-        clarify: bool = False,
         node_action: str = "create",
         target_ref: str | None = None,
     ) -> None:
-        self.clarify = clarify
         self.node_action = node_action
         self.target_ref = target_ref
 
@@ -39,16 +37,7 @@ class FixedResolutionAgent:
         registry = RunReferenceRegistry.from_snapshot(context.reference_registry_snapshot)
         actions = []
         for entity in candidate_graph.candidate_entities:
-            if self.clarify:
-                actions.append(
-                    ResolutionToolAction(
-                        step=ResolutionStep.NODE,
-                        tool_name=ResolutionToolName.ASK_CLARIFICATION,
-                        candidate_ref=entity.local_ref,
-                        question="Which supplied person did you mean?",
-                    ),
-                )
-            elif self.node_action == "update":
+            if self.node_action == "update":
                 actions.append(
                     ResolutionToolAction(
                         step=ResolutionStep.NODE,

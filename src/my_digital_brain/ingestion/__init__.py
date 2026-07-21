@@ -26,8 +26,6 @@ from my_digital_brain.ingestion.contracts import (
     CandidateRelationshipContextDraftBatch,
     CandidateRelationshipDraft,
     CandidateRelationshipDraftBatch,
-    ClarificationRequest,
-    ClarificationRequestDraft,
     EntityIngestionActionDraft,
     EntityIngestionPlanDraft,
     EntityLookupCandidate,
@@ -58,7 +56,6 @@ from my_digital_brain.ingestion.contracts import (
     IngestionContextPackage,
     IngestionReasoningCheckpointDraft,
     IngestionResult,
-    IngestionSessionSnapshot,
     IdentityLookupStatus,
     IdentityMatchKind,
     MemoryLogIngestionActionDraft,
@@ -96,7 +93,6 @@ from my_digital_brain.ingestion.contracts import (
     ResolutionToolAction,
     ResolutionToolActionBatch,
     ResolutionToolName,
-    SessionClarificationContext,
     SourceRecordRef,
     TemporalScope,
     V1_VECTOR_DIMENSIONS,
@@ -126,7 +122,6 @@ from my_digital_brain.ingestion.identity_lookup import (
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.enums import (
     CandidateRefKind,
-    ClarificationStatus,
     ExtractionExecutionMode,
     ExtractionTaskType,
     GraphWritePlanStatus,
@@ -162,7 +157,6 @@ from my_digital_brain.ingestion.resolution_toolboxes import (
     resolution_toolbox_for_task,
 )
 from my_digital_brain.ingestion.service import IngestionService
-from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
@@ -196,9 +190,6 @@ __all__ = [
     "CandidateRelationshipContextDraftBatch",
     "CandidateRelationshipDraft",
     "CandidateRelationshipDraftBatch",
-    "ClarificationRequest",
-    "ClarificationStatus",
-    "ClarificationRequestDraft",
     "EntityIngestionActionDraft",
     "EntityIngestionPlanDraft",
     "EntityLookupCandidate",
@@ -236,10 +227,8 @@ __all__ = [
     "IngestionReasoningCheckpointDraft",
     "GraphWritePlanBuilder",
     "GraphWritePlanExecutor",
-    "InMemoryIngestionProcessStore",
     "IngestionResult",
     "IngestionService",
-    "IngestionSessionSnapshot",
     "IngestionStatus",
     "IdentityLookupStatus",
     "IdentityMatchKind",
@@ -285,7 +274,6 @@ __all__ = [
     "LLMResolutionProposalAgent",
     "build_resolution_toolbox",
     "resolution_toolbox_for_task",
-    "SessionClarificationContext",
     "ResolutionDecisionType",
     "SourceChannel",
     "SourceRecordRef",

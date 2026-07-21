@@ -7,10 +7,7 @@ from pydantic import Field, model_validator
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
-from my_digital_brain.ingestion.contracts.drafts import (
-    ClarificationRequestDraft,
-    EvidenceSpanDraft,
-)
+from my_digital_brain.ingestion.contracts.drafts import EvidenceSpanDraft
 from my_digital_brain.ingestion.contracts.shared import TemporalScope
 from my_digital_brain.ingestion.contracts.source import EvidenceRef
 
@@ -286,10 +283,6 @@ class NodeUpdatePlanDraft(IngestionModel):
         default_factory=list,
         description="Safe explicit field patches. Prefer MemoryLog for ordinary updates.",
     )
-    clarification: ClarificationRequestDraft | None = Field(
-        default=None,
-        description="Blocking clarification required before update execution can continue.",
-    )
     context_gaps: list[str] = Field(
         default_factory=list,
         description="Missing context that should be retrieved before update execution.",
@@ -300,11 +293,10 @@ class NodeUpdatePlanDraft(IngestionModel):
         if not (
             self.memory_logs
             or self.field_patches
-            or self.clarification
             or self.context_gaps
         ):
             raise ValueError(
                 "Node update plan requires memory_logs, field_patches, "
-                "clarification, or context gaps."
+                "or context gaps."
             )
         return self

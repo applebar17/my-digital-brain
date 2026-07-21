@@ -327,7 +327,7 @@ def _save_interrupted_frame(
                             "id": tool_call_id,
                             "type": "function",
                             "function": {
-                                "name": "request_user_clarification",
+                                "name": "ask_clarification",
                                 "arguments": "{}",
                             },
                         }
@@ -343,7 +343,7 @@ def _save_interrupted_frame(
                 }
             },
             active_tool_call_id=tool_call_id,
-            active_tool_name="request_user_clarification",
+            active_tool_name="ask_clarification",
             clarification_packet=packet,
         ),
     )
@@ -359,7 +359,7 @@ def _clarification_packet(
     return build_clarification_packet(
         frame_id=frame_id,
         tool_call_id=tool_call_id,
-        tool_name="request_user_clarification" if tool_call_id else None,
+        tool_name="ask_clarification" if tool_call_id else None,
         origin_state_id="memory_query",
         reason="Multiple Marco candidates exist.",
         target_refs=["NODE_000001", "NODE_000002"],

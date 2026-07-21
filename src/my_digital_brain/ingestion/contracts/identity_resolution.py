@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field, model_validator
 
 from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.ingestion.contracts.base import IngestionModel
-from my_digital_brain.ingestion.enums import ClarificationStatus
 
 
 class IdentityLookupStatus(StrEnum):
@@ -21,7 +20,6 @@ class IdentityLookupStatus(StrEnum):
 class EntityResolutionAction(StrEnum):
     CREATE_NEW = "create_new"
     ATTACH_TO_EXISTING = "attach_to_existing"
-    REQUEST_CLARIFICATION = "request_clarification"
     IGNORE_OR_DEFER = "ignore_or_defer"
 
 
@@ -154,27 +152,6 @@ class EntityResolutionProposal(IngestionModel):
                 raise ValueError("Existing-node attachment requires OWNER or NODE ref.")
         elif self.target_ref is not None:
             raise ValueError("target_ref is allowed only for existing-node attachment.")
-        return self
-
-
-class SessionClarificationContext(IngestionModel):
-    """Transient resolution state carried through normal session history."""
-
-    session_id: str = Field(min_length=1)
-    candidate_ref: str
-    lookup_packet: EntityLookupContextPacket
-    question: str = Field(min_length=1)
-    history_message_refs: list[str] = Field(default_factory=list)
-    question_message_ref: str | None = None
-    answer_message_ref: str | None = None
-    status: ClarificationStatus = ClarificationStatus.WAITING_FOR_USER
-    owner_ref: Literal["OWNER"] = OWNER_ALIAS
-
-    @model_validator(mode="after")
-    def _validate_candidate_ref(self) -> "SessionClarificationContext":
-        _require_candidate_ref(self.candidate_ref)
-        if self.lookup_packet.candidate_ref != self.candidate_ref:
-            raise ValueError("Clarification packet must target the candidate ref.")
         return self
 
 

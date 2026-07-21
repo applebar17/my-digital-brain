@@ -25,7 +25,6 @@ from my_digital_brain.ingestion.refined_relationships import build_relationship_
 from my_digital_brain.ingestion.planning_contexts import build_resolved_entity_packet
 from my_digital_brain.ingestion.planning_contexts import build_memory_log_packet
 from my_digital_brain.ingestion.runtime_helpers import (
-    clarification_from_draft as _clarification_from_draft,
     memory_log_extraction_plan as _memory_log_extraction_plan,
 )
 
@@ -84,29 +83,12 @@ class IngestionCandidateFlowMixin:
                 },
                 deep=True,
             ))
-        if memory_log_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                clarification=_clarification_from_draft(memory_log_plan.clarification),
-                metadata={"ingestion_stage": "memory_log_planning_clarification"},
-            ))
-
         memory_log_extraction_plan = _memory_log_extraction_plan(
             source,
             graph_context_pack,
             memory_log_plan,
         )
-        memory_logs, extraction_issues, clarification = self._extract_memory_logs(
+        memory_logs, extraction_issues = self._extract_memory_logs(
             source,
             graph_context_pack,
             memory_log_view,
@@ -116,24 +98,6 @@ class IngestionCandidateFlowMixin:
             memory_log_plan,
             memory_log_extraction_plan,
         )
-        if clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                clarification=clarification,
-                metadata={"ingestion_stage": "memory_log_extraction_clarification"},
-            ))
         if extraction_issues:
             return self._finish(IngestionResult(
                 source_id=source.source_id,
@@ -279,30 +243,6 @@ class IngestionCandidateFlowMixin:
                 ))
 
         all_entity_candidates = [*entity_candidates, *supplemental_candidates]
-        if relationship_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(
-                    relationship_plan.clarification
-                ),
-                metadata={"ingestion_stage": "relationship_planning_clarification"},
-            ))
         if relationship_plan.missing_entities:
             candidate_graph = self._assemble_final_candidate_graph(
                 source,

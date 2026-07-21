@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import Field, model_validator
 
 from my_digital_brain.ingestion.contracts.base import IngestionModel
 from my_digital_brain.ingestion.contracts.shared import AffectiveFields, TemporalScope
@@ -36,49 +36,6 @@ class PropertyDraft(IngestionModel):
         default=None,
         description="Why this property is useful enough to keep.",
     )
-
-
-class ClarificationRequestDraft(IngestionModel):
-    doubt: str = Field(
-        description=(
-            "Model-explained doubt that may require user clarification. State what is "
-            "uncertain; do not phrase this as an authoritative question."
-        ),
-        validation_alias=AliasChoices("doubt", "question"),
-        serialization_alias="doubt",
-    )
-    reason: str = Field(description="Why this clarification may be needed.")
-    target_refs: list[str] = Field(
-        default_factory=list,
-        description="Candidate refs or graph aliases affected by the doubt.",
-    )
-    options: str | None = Field(
-        default=None,
-        description=(
-            "Concise description of plausible interpretations or answer directions "
-            "supported by context. Do not present these as exhaustive or authoritative."
-        ),
-    )
-    blocking: bool = Field(
-        default=True,
-        description="Whether ingestion should wait before producing graph write candidates.",
-    )
-
-    @property
-    def question(self) -> str:
-        return self.doubt
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_legacy_payload(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            return data
-        normalized = dict(data)
-        normalized.pop("free_text_allowed", None)
-        options = normalized.get("options")
-        if isinstance(options, list):
-            normalized["options"] = "; ".join(str(option) for option in options if option)
-        return normalized
 
 
 class CandidateBaseDraft(IngestionModel):

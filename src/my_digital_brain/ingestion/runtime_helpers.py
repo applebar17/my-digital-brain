@@ -9,8 +9,6 @@ from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateOutput,
-    ClarificationRequest,
-    ClarificationRequestDraft,
     EntityIngestionPlanDraft,
     ExtractionPlan,
     ExtractionTask,
@@ -76,7 +74,6 @@ def entity_extraction_plan(
         execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
         reason=entity_plan.reason,
         tasks=tasks,
-        clarification=(clarification_from_draft(entity_plan.clarification) if entity_plan.clarification else None),
         context_gaps=list(entity_plan.context_gaps),
         metadata={
             "schema_layer": "reasoning_first_entity_extraction_plan",
@@ -127,7 +124,6 @@ def memory_log_extraction_plan(
         execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
         reason=memory_log_plan.reason,
         tasks=tasks,
-        clarification=(clarification_from_draft(memory_log_plan.clarification) if memory_log_plan.clarification else None),
         context_gaps=list(memory_log_plan.context_gaps),
         metadata={"schema_layer": "reasoning_first_memory_log_extraction_plan"},
     )
@@ -242,39 +238,6 @@ def normalized_extraction_batch_size(value: int) -> int:
     except (TypeError, ValueError):
         batch_size = DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE
     return max(1, min(batch_size, MAX_EXTRACTION_DRAFT_BATCH_SIZE))
-
-
-def clarification_from_draft(draft: ClarificationRequestDraft | None) -> ClarificationRequest | None:
-    if draft is None:
-        return None
-    return ClarificationRequest(
-        doubt=draft.doubt,
-        reason=draft.reason,
-        target_refs=list(draft.target_refs),
-        options=draft.options,
-        blocking=draft.blocking,
-        metadata={"schema_layer": "reasoning_first_ingestion"},
-    )
-
-
-def clarification_from_agentic_result(result: Any) -> ClarificationRequest | None:
-    if getattr(result, "status", None) != "interrupted":
-        return None
-    interruption = result.metadata.get("interruption", {}) if result.metadata else {}
-    packet = interruption.get("clarification_packet") or {}
-    questions = packet.get("questions") or []
-    first_question = questions[0] if questions else {}
-    option_labels = [str(option.get("label") or "").strip() for option in first_question.get("options", []) if str(option.get("label") or "").strip()]
-    doubt = str(first_question.get("question") or "").strip() or result.assistant_text or "Clarification is required before ingestion can continue."
-    reason = str(packet.get("reason") or "").strip() or str(interruption.get("reason") or "").strip() or "The agentic ingestion step requested clarification."
-    return ClarificationRequest(
-        doubt=doubt,
-        reason=reason,
-        target_refs=list(packet.get("target_refs") or interruption.get("target_refs") or []),
-        options="; ".join(option_labels) if option_labels else None,
-        blocking=True,
-        metadata={"schema_layer": "reasoning_first_ingestion", "agentic_interruption": interruption},
-    )
 
 
 def structured_step_failure(source: SourceRecordRef, stage: str, message: str) -> IngestionResult:

@@ -155,7 +155,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             required=[],
         ),
         _definition(
-            "request_user_clarification",
+            "ask_clarification",
             (
                 "Ask the user one to three direct, user-friendly clarification questions "
                 "when the current state cannot continue safely. Questions must be "

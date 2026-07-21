@@ -315,10 +315,10 @@ General context rules:
 | `BP: whole_source_hybrid_graph_context` | Source context, normalized text/transcript, privacy/lifecycle filters, owner scope, current time/timezone, pending target refs when resuming. On resume, retrieval is refreshed before write planning. | `GraphContextPack`: compact graph context from whole-source hybrid retrieval, candidate entities with aliases, relevant relationships, nearby memories, source/evidence summaries, known ambiguities, and duplicate hints. |
 | `AS: entity_ingestion_planning` | Source context, full usable or compacted conversation history from the caller, `GraphContextPack`, structured reasoning checkpoint, pending clarification context if present, current time/timezone. | Entity-only plan: entity actions, alias actions, details to keep as metadata, possible duplicate refs, ambiguity/context gaps, or structured clarification interruption. |
 | `LP: entity_candidate_preparation` | Source context, entity plan, entity-focused reasoning, graph aliases, duplicate hints, temporal basis. | Entity candidate drafts with local refs, aliases, property suggestions, evidence, missing fields, and ambiguity flags. |
-| `BP: entity_validation_resolution` | Entity candidates, `GraphContextPack`, graph registries, resolver constraints, source/evidence refs, pending answer context if resumed. | `ResolvedEntityMap`, staged create/update operations, rejected candidates, pending duplicate-review items, validation errors, or clarification request. |
+| `BP: entity_validation_resolution` | Entity candidates, `GraphContextPack`, graph registries, resolver constraints, source/evidence refs, pending answer context if resumed. | `ResolvedEntityMap`, staged create/update operations, rejected candidates, pending duplicate-review items, validation errors, or an LLM clarification interruption. |
 | `AS: relationship_ingestion_planning` | Source context, relationship-focused reasoning, compact graph relationship context, current time/timezone, and `ResolvedEntityMap`. | Relationship-only plan, relationship context/perception/event-link actions, `missing_entity_required`, context gaps, or structured clarification interruption. |
 | `LP: relationship_candidate_preparation` | Source context, relationship plan, resolved entity map, allowed relationship ontology, graph aliases, temporal basis. | Relationship, relationship-context, perception, event-link, place-link, or metadata-link candidate drafts that reference only resolved refs. |
-| `BP: relationship_validation` | Relationship candidates, `ResolvedEntityMap`, graph registries, source/evidence refs, ontology constraints, resolver constraints. | `GraphWritePlan`, `ClarificationRequest`, contradiction doubt package, validation errors, or relationship resolution result. |
+| `BP: relationship_validation` | Relationship candidates, `ResolvedEntityMap`, graph registries, source/evidence refs, ontology constraints, resolver constraints. | `GraphWritePlan`, an LLM clarification interruption, contradiction doubt package, validation errors, or relationship resolution result. |
 | `AS: contradiction_review` | Proposed candidate/write intent, validator explanation of the doubt, retrieved graph context, source evidence, affected target aliases, relevant change/relationship history. | Grounded contradiction assessment and recommended action: continue, mark disputed, ask user, request more context, or fail safely. |
 | `RS: clarification_waiting` | Clarification question text, reason, target refs/aliases, original source context, process/session refs, expiration timestamp. | Stored pending context for the next chat turn; no model output by itself. |
 | `RS: write_plan_ready` | Validated write plan, source refs, resolution summary, optional confirmation requirement. | Write execution input or confirmation-waiting context. |
@@ -369,7 +369,7 @@ sequenceDiagram
         O->>I: relationship candidate preparation
         I-->>O: relationship candidates
         O->>I: deterministic relationship validation
-        I-->>O: GraphWritePlan or ClarificationRequest
+        I-->>O: GraphWritePlan or clarification interruption
         O->>G: execute validated write plan
         G-->>O: write result
         O-->>R: ingestion summary
@@ -387,7 +387,7 @@ Entity candidate preparation -> enum/ref-constrained entity drafts
 Entity validation/resolution -> ResolvedEntityMap + staged entity ops
 Relationship planner -> relationship-only plan from resolved refs
 Relationship candidate preparation -> enum/ref-constrained relationship drafts
-Relationship validation -> GraphWritePlan or ClarificationRequest
+Relationship validation -> GraphWritePlan or clarification interruption
 Executor -> graph mutation
 ```
 
@@ -745,7 +745,7 @@ Forbidden:
 Purpose:
 
 Validate relationship candidates and produce either a `GraphWritePlan`,
-`ClarificationRequest`, contradiction doubt package, or validation error.
+clarification interruption, contradiction doubt package, or validation error.
 
 Wave-1 validation is deterministic:
 

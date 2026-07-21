@@ -13,6 +13,9 @@ from uat_refined_trace_common import (
     load_graph_context_pack,
     source_from_file,
 )
+from my_digital_brain.ai.client.tool_execution import ToolCallInterruption
+from my_digital_brain.chat.models import ClarificationPacket
+from my_digital_brain.clarification import ClarificationInterrupted, ClarificationService
 
 
 DEFAULT_OUTPUT = Path("docs/uat/refined-ingestion-trace.txt")
@@ -49,15 +52,15 @@ def main() -> int:
     }
     trace_events: list[dict[str, Any]] = []
     try:
-        result = service.process_source(source)
         source, result = _answer_clarifications_from_terminal(
             service,
             source,
             base_raw_text=base_raw_text,
-            result=result,
+            result=None,
             route=route,
             max_clarifications=args.max_clarifications,
             structured_calls=provider.structured_calls,
+            tool_calls=provider.tool_calls,
             trace_events=trace_events,
         )
     except Exception as exc:
@@ -69,6 +72,7 @@ def main() -> int:
             route=route,
             error=exc,
             structured_calls=provider.structured_calls,
+            tool_calls=provider.tool_calls,
             trace_events=trace_events,
         )
         print(f"Wrote failed interactive ingestion UAT trace to {args.output}")
@@ -80,6 +84,7 @@ def main() -> int:
         route=route,
         result=result,
         structured_calls=provider.structured_calls,
+        tool_calls=provider.tool_calls,
         trace_events=trace_events,
     )
     print(f"Wrote interactive ingestion UAT trace to {args.output}")
@@ -129,81 +134,86 @@ def _answer_clarifications_from_terminal(
     route: dict[str, Any],
     max_clarifications: int,
     structured_calls: list[Any],
+    tool_calls: list[Any],
     trace_events: list[dict[str, Any]],
 ) -> tuple[Any, Any]:
     interactions = route["clarification_interactions"]
+    clarification_service = ClarificationService()
     for attempt in range(1, max(0, max_clarifications) + 1):
-        clarification = getattr(result, "clarification", None)
-        if str(getattr(result, "status", "")) != "needs_clarification" or clarification is None:
-            return source, result
-
-        print("")
-        print("Clarification needed before continuing the local UAT trace.")
-        print(f"Stage: {result.metadata.get('ingestion_stage', 'unknown')}")
-        print(f"Question: {clarification.question}")
-        if clarification.options:
-            print(f"Options: {clarification.options}")
-        if clarification.target_refs:
-            print(f"Target refs: {', '.join(clarification.target_refs)}")
-
-        event = {
-            "type": "clarification",
-            "after_call_count": len(structured_calls),
-            "attempt": attempt,
-            "ingestion_stage": result.metadata.get("ingestion_stage"),
-            "question": clarification.question,
-            "reason": clarification.reason,
-            "target_refs": list(clarification.target_refs),
-            "options": clarification.options,
-        }
         try:
-            answer = input("Answer (leave empty to stop): ").strip()
-        except EOFError:
-            event["stop_reason"] = "stdin_eof"
-            trace_events.append(event)
-            route["clarification_stop_reason"] = "stdin_eof"
+            if result is None:
+                result = service.process_source(source)
             return source, result
-
-        if not answer:
-            event["stop_reason"] = "empty_answer"
-            trace_events.append(event)
-            route["clarification_stop_reason"] = "empty_answer"
-            return source, result
-
-        event["answer"] = answer
-        trace_events.append(event)
-        interactions.append(
-            {
+        except (ToolCallInterruption, ClarificationInterrupted) as interruption:
+            if isinstance(interruption, ClarificationInterrupted):
+                packet = interruption.packet
+            else:
+                packet = ClarificationPacket.model_validate(
+                    (interruption.result.data or {}).get("clarification_packet") or {}
+                )
+            question = packet.questions[0]
+            print("")
+            print("Clarification needed before continuing the local UAT trace.")
+            print(f"Stage: {packet.origin_state_id}")
+            print(f"Question: {question.question}")
+            if question.options:
+                print("Options: " + ", ".join(option.label for option in question.options))
+            if packet.target_refs:
+                print(f"Target refs: {', '.join(packet.target_refs)}")
+            event = {
+                "type": "clarification",
+                "after_call_count": len(structured_calls),
                 "attempt": attempt,
-                "ingestion_stage": result.metadata.get("ingestion_stage"),
-                "question": clarification.question,
-                "reason": clarification.reason,
-                "target_refs": list(clarification.target_refs),
-                "options": clarification.options,
-                "answer": answer,
+                "stage": packet.origin_state_id,
+                "question": question.question,
+                "reason": packet.reason,
+                "target_refs": list(packet.target_refs),
+                "options": [option.label for option in question.options],
             }
-        )
-        source = _source_with_clarification_answers(
-            source,
-            base_raw_text=base_raw_text,
-            interactions=interactions,
-        )
-        result = service.process_source(source)
+            try:
+                answer = input("Answer (leave empty to stop): ").strip()
+            except EOFError:
+                event["stop_reason"] = "stdin_eof"
+                trace_events.append(event)
+                route["clarification_stop_reason"] = "stdin_eof"
+                return source, None
+            if not answer:
+                event["stop_reason"] = "empty_answer"
+                trace_events.append(event)
+                route["clarification_stop_reason"] = "empty_answer"
+                return source, None
+            _, answer_history = clarification_service.answer_text(packet, answer)
+            event["answer"] = answer
+            trace_events.append(event)
+            interactions.append({**event, "answer": answer})
+            source = _source_with_clarification_history(
+                source,
+                base_raw_text=base_raw_text,
+                packet=packet,
+                answer_history=answer_history,
+                clarification_service=clarification_service,
+            )
+            result = None
 
-    if str(getattr(result, "status", "")) == "needs_clarification":
-        route["clarification_stop_reason"] = "max_clarifications_reached"
+    route["clarification_stop_reason"] = "max_clarifications_reached"
     return source, result
 
-
-def _source_with_clarification_answers(
+def _source_with_clarification_history(
     source: Any,
     *,
     base_raw_text: str,
-    interactions: list[dict[str, Any]],
+    packet: ClarificationPacket,
+    answer_history: list[dict[str, str]],
+    clarification_service: ClarificationService,
 ) -> Any:
+    history = clarification_service.append_history(
+        list((source.metadata or {}).get("model_facing_history") or []),
+        packet,
+        answer_history,
+    )
     metadata = {
         **dict(source.metadata or {}),
-        "uat_terminal_clarifications": interactions,
+        "model_facing_history": history,
     }
     return source.model_copy(
         update={
@@ -222,12 +232,13 @@ def _write_chronological_report(
     route: dict[str, Any],
     result: Any,
     structured_calls: list[Any],
+    tool_calls: list[Any],
     trace_events: list[dict[str, Any]],
 ) -> None:
     lines = _base_report_lines(title)
     _append_text_block(lines, "User Request", source_text)
     _append_json_block(lines, "Routing", route)
-    _append_execution_trace(lines, structured_calls, trace_events)
+    _append_execution_trace(lines, structured_calls, tool_calls, trace_events)
     _append_json_block(lines, "Final Ingestion Result", _result_summary(result))
     _write_lines(output, lines)
 
@@ -240,12 +251,13 @@ def _write_chronological_failure_report(
     route: dict[str, Any],
     error: Exception,
     structured_calls: list[Any],
+    tool_calls: list[Any],
     trace_events: list[dict[str, Any]],
 ) -> None:
     lines = _base_report_lines(title)
     _append_text_block(lines, "User Request", source_text)
     _append_json_block(lines, "Routing", route)
-    _append_execution_trace(lines, structured_calls, trace_events)
+    _append_execution_trace(lines, structured_calls, tool_calls, trace_events)
     _append_json_block(
         lines,
         "Execution Error",
@@ -260,6 +272,7 @@ def _write_chronological_failure_report(
 def _append_execution_trace(
     lines: list[str],
     structured_calls: list[Any],
+    tool_calls: list[Any],
     trace_events: list[dict[str, Any]],
 ) -> None:
     lines.extend(["Execution Trace", "===============", ""])
@@ -278,6 +291,20 @@ def _append_execution_trace(
     if not structured_calls:
         lines.append("No structured provider calls were captured.")
         lines.append("")
+    if tool_calls:
+        lines.extend(["Tool Calls", "----------", ""])
+        for index, call in enumerate(tool_calls, start=1):
+            lines.append(f"Tool Call {index}: {call.name}")
+            _append_json_block(
+                lines,
+                "Tool Snapshot",
+                {
+                    "arguments": call.arguments,
+                    "status": call.status,
+                    "output": call.output,
+                    "error": call.error,
+                },
+            )
 
 
 def _append_pass_header(lines: list[str], pass_index: int, reason: str) -> None:
@@ -321,6 +348,11 @@ def _append_structured_calls(
 
 
 def _result_summary(result: Any) -> dict[str, Any]:
+    if result is None:
+        return {
+            "status": "stopped_before_completion",
+            "reason": "The terminal clarification interaction was not answered.",
+        }
     return {
         "status": str(result.status),
         "ingestion_stage": result.metadata.get("ingestion_stage"),

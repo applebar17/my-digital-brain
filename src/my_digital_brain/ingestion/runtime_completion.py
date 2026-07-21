@@ -176,18 +176,6 @@ class IngestionCompletionMixin:
                     metadata={"ingestion_stage": "resolution_result_compilation"},
                 ),
             )
-        if resolution.clarifications:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.NEEDS_CLARIFICATION,
-                    **checkpoint_fields,
-                    clarification=resolution.clarification,
-                    clarifications=resolution.clarifications,
-                    metadata={"ingestion_stage": "write_resolution_clarification"},
-                ),
-            )
-
         try:
             write_plan = self.write_plan_builder.build(candidate_graph, resolution, context)
         except Exception as exc:
@@ -297,24 +285,8 @@ class IngestionCompletionMixin:
             validation_error_codes=[
                 issue.code for issue in result.validation_errors if issue.code
             ],
-            has_clarification=result.clarification is not None,
             write_counts=_write_plan_counts(result.write_plan) if result.write_plan else None,
         )
-        if result.clarification is not None or result.clarifications:
-            log_event(
-                logger,
-                "ingestion.clarification.requested",
-                component="ingestion",
-                source_id=result.source_id,
-                ingestion_id=result.ingestion_id,
-                clarification_count=max(
-                    len(result.clarifications),
-                    1 if result.clarification is not None else 0,
-                ),
-                ingestion_stage=result.metadata.get("ingestion_stage"),
-            )
-        if self.process_store is not None:
-            self.process_store.record_result(result)
         record_ai_flow_event(
             title="Ingestion Backend Result",
             call_kind="backend_process_result",
@@ -329,7 +301,6 @@ class IngestionCompletionMixin:
                             "source_id": result.source_id,
                             "ingestion_id": result.ingestion_id,
                             "ingestion_stage": result.metadata.get("ingestion_stage"),
-                            "has_clarification": result.clarification is not None,
                             "validation_errors": _validation_issue_summaries(
                                 result.validation_errors,
                             ),

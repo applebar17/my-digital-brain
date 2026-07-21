@@ -11,10 +11,11 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
+from my_digital_brain.chat.models import ClarificationPacket
+from my_digital_brain.clarification import ClarificationInterrupted
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateOutput,
-    ClarificationRequest,
     EntityIngestionPlanDraft,
     ExtractionPlan,
     ExtractionTask,
@@ -29,7 +30,6 @@ from my_digital_brain.ingestion.contracts import (
     SourceRecordRef,
     ValidationIssue,
 )
-from my_digital_brain.ingestion.enums import IngestionStatus
 from my_digital_brain.ingestion.enrichment import enrich_memory_log_batch_with_tasks
 from my_digital_brain.ingestion.planning_contexts import (
     build_entity_planning_context,
@@ -42,7 +42,6 @@ from my_digital_brain.ingestion.refined_relationships import normalize_relations
 from my_digital_brain.ingestion.runtime_helpers import (
     batch_extraction_items as _batch_extraction_items,
     batch_sequence as _batch_sequence,
-    clarification_from_agentic_result as _clarification_from_agentic_result,
     extract_with_optional_batch as _extract_with_optional_batch,
     context_package_for_services as _context_package_for_services,
     structured_step_failure as _structured_step_failure,
@@ -89,6 +88,7 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=IngestionReasoningCheckpointDraft,
         )
+        _raise_if_interrupted(result)
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -116,6 +116,7 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=EntityIngestionPlanDraft,
         )
+        _raise_if_interrupted(result)
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -147,14 +148,7 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=RelationshipIngestionPlanDraft,
         )
-        clarification = _clarification_from_agentic_result(result)
-        if clarification is not None:
-            return IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                clarification=clarification,
-                metadata={"ingestion_stage": "relationship_planning_clarification"},
-            )
+        _raise_if_interrupted(result)
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -184,14 +178,7 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=MemoryLogIngestionPlanDraft,
         )
-        clarification = _clarification_from_agentic_result(result)
-        if clarification is not None:
-            return IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                clarification=clarification,
-                metadata={"ingestion_stage": "memory_log_planning_clarification"},
-            )
+        _raise_if_interrupted(result)
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -221,6 +208,7 @@ class IngestionPlanningMixin:
             self._execution_context(source),
             output_schema=EntityIngestionPlanDraft,
         )
+        _raise_if_interrupted(result)
         if result.status != "ok" or result.structured_output is None:
             return _structured_step_failure(
                 source,
@@ -242,7 +230,7 @@ class IngestionExtractionMixin:
         entity_packet: list[dict[str, Any]],
         memory_log_plan: MemoryLogIngestionPlanDraft,
         extraction_plan: ExtractionPlan,
-    ) -> tuple[list[MemoryLog], list[ValidationIssue], ClarificationRequest | None]:
+    ) -> tuple[list[MemoryLog], list[ValidationIssue]]:
         memory_logs: list[MemoryLog] = []
         issues: list[ValidationIssue] = []
         action_by_ref: dict[str, tuple[int, Any, Any, int]] = {}
@@ -303,9 +291,7 @@ class IngestionExtractionMixin:
                 self._execution_context(source),
                 output_schema=MemoryLogDraftBatch,
             )
-            clarification = _clarification_from_agentic_result(result)
-            if clarification is not None:
-                return memory_logs, issues, clarification
+            _raise_if_interrupted(result)
             if result.status != "ok" or result.structured_output is None:
                 issues.append(
                     ValidationIssue(
@@ -340,7 +326,7 @@ class IngestionExtractionMixin:
                 )
                 continue
             memory_logs.extend(extracted)
-        return memory_logs, issues, None
+        return memory_logs, issues
 
     def _extract_entities(
         self,
@@ -504,3 +490,13 @@ class IngestionExtractionMixin:
             "reasoning_first_ingestion": True,
         }
         return context
+
+
+def _raise_if_interrupted(result: Any) -> None:
+    if getattr(result, "status", None) != "interrupted":
+        return
+    interruption = (getattr(result, "metadata", None) or {}).get("interruption") or {}
+    packet = ClarificationPacket.model_validate(
+        interruption.get("clarification_packet") or {}
+    )
+    raise ClarificationInterrupted(packet)

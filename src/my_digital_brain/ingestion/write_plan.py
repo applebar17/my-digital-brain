@@ -45,10 +45,6 @@ class GraphWritePlanBuilder(GraphWriteSerializersMixin):
         resolution: ResolutionResult,
         context: IngestionContextPackage | None = None,
     ) -> GraphWritePlan:
-        if resolution.clarifications:
-            raise IngestionValidationError(
-                "Cannot build graph write plan while resolution requires clarification."
-            )
         if candidate_graph.candidate_profile_memories and (
             context is None or OWNER_ALIAS not in context.aliases
         ):
@@ -79,10 +75,6 @@ class GraphWritePlanBuilder(GraphWriteSerializersMixin):
                 ResolutionDecisionType.KEEP_PENDING,
             }:
                 continue
-            if _decision_type(decision) == ResolutionDecisionType.ASK_CLARIFICATION:
-                raise IngestionValidationError(
-                    f"Candidate {entity.local_ref} still requires clarification."
-                )
             write = self._entity_write(candidate_graph.source_id, entity)
             nodes_to_create.append(write)
             planned_ref_ids[entity.local_ref] = str(write.properties["id"])

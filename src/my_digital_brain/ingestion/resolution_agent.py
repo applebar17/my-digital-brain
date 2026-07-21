@@ -11,24 +11,24 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
+from my_digital_brain.clarification import ClarificationService
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     EntityLookupContextPacket,
     IngestionContextPackage,
+    ResolutionResult,
     ResolutionStep,
     ResolutionToolAction,
     ResolutionToolName,
-    ResolutionResult,
     ResolvedEntityMap,
 )
-from my_digital_brain.ingestion.resolution_toolboxes import build_resolution_toolbox
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidator,
 )
-
+from my_digital_brain.ingestion.resolution_toolboxes import build_resolution_toolbox
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class LLMResolutionProposalAgent:
         router: ModelRouter | None = None,
         model: str | None = None,
         max_tool_calls: int = 10,
+        clarification_service: ClarificationService | None = None,
     ) -> None:
         self.provider = provider
         self.router = router
@@ -52,6 +53,7 @@ class LLMResolutionProposalAgent:
         except (TypeError, ValueError):
             configured_limit = 10
         self.max_tool_calls = min(10, max(1, configured_limit))
+        self.clarification_service = clarification_service or ClarificationService()
 
     def propose(
         self,
@@ -75,50 +77,62 @@ class LLMResolutionProposalAgent:
             available_tools=sorted(toolbox.tools_by_name),
         )
         actions: list[ResolutionToolAction] = []
-        mapping = {
-            name: self._capture_handler(step, name, actions)
-            for name in toolbox.tools_by_name
-        }
         request_context = AIRequestContext(
             purpose=f"ingestion_resolution_{step.value}",
             source_id=context.source_id,
             metadata={"resolution_step": step.value},
         )
-        route = self.router.route(request_context.purpose or "ingestion_resolution", request_context) if self.router else None
-        prompt = self._system_prompt(step)
-        input_payload = {
-            "source_text": source_text,
-            "owner_context": owner_prompt_block(context.owner_snapshot),
-            "candidate_actions": [
-                self._model_candidate_payload(candidate)
-                for candidate in step_candidates
-            ],
-            "identity_lookup_packets": [
-                packet.model_dump(mode="json", exclude_none=True)
-                for packet in packets
-            ],
-            "available_tools": sorted(toolbox.tools_by_name),
-        }
-        self.provider.generate_chat_with_tools(
-            ChatRequest(
-                model=self.model or (route.model if route else None),
-                temperature=0.1,
-                messages=[
-                    ChatMessage(role="system", content=prompt),
-                    ChatMessage(
-                        role="user",
-                        content=f"```json\n{json.dumps(input_payload, ensure_ascii=False)}\n```",
-                    ),
-                ],
-                context=request_context,
-            ),
-            toolbox=toolbox,
-            tools_mapping=mapping,
-            max_tool_calls=min(
-                self.max_tool_calls,
-                max(1, len(input_payload["candidate_actions"]) + 2),
-            ),
+        route = (
+            self.router.route(request_context.purpose or "ingestion_resolution", request_context)
+            if self.router
+            else None
         )
+        prompt = self._system_prompt(step)
+        for batch_start in range(0, len(step_candidates), self.max_tool_calls):
+            batch = step_candidates[batch_start : batch_start + self.max_tool_calls]
+            batch_refs = {
+                candidate.local_ref
+                for candidate in batch
+                if getattr(candidate, "local_ref", None)
+            }
+            batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
+            input_payload = {
+                "source_text": source_text,
+                "owner_context": owner_prompt_block(context.owner_snapshot),
+                "candidate_actions": [
+                    self._model_candidate_payload(candidate)
+                    for candidate in batch
+                ],
+                "identity_lookup_packets": [
+                    packet.model_dump(mode="json", exclude_none=True)
+                    for packet in batch_packets
+                ],
+                "available_tools": sorted(toolbox.tools_by_name),
+            }
+            mapping = {
+                name: self._capture_handler(step, name, actions)
+                for name in toolbox.tools_by_name
+            }
+            self.provider.generate_chat_with_tools(
+                ChatRequest(
+                    model=self.model or (route.model if route else None),
+                    temperature=0.1,
+                    messages=[
+                        ChatMessage(role="system", content=prompt),
+                        ChatMessage(
+                            role="user",
+                            content=(
+                                "```json\n"
+                                f"{json.dumps(input_payload, ensure_ascii=False)}\n```"
+                            ),
+                        ),
+                    ],
+                    context=request_context,
+                ),
+                toolbox=toolbox,
+                tools_mapping=mapping,
+                max_tool_calls=len(batch),
+            )
         if not actions:
             raise ValueError(
                 f"Resolution step '{step.value}' returned no action tool call. "
@@ -130,7 +144,7 @@ class LLMResolutionProposalAgent:
             component="ingestion",
             resolution_step=step.value,
             action_count=len(actions),
-            action_tools=[action.tool_name.value for action in actions],
+            action_tools=[str(action.tool_name) for action in actions],
         )
         return actions
 
@@ -167,6 +181,22 @@ class LLMResolutionProposalAgent:
         actions: list[ResolutionToolAction],
     ) -> Any:
         def capture(**kwargs: Any) -> ToolResult:
+            if name == ResolutionToolName.ASK_CLARIFICATION.value:
+                return self.clarification_service.ask(
+                    reason=str(kwargs.get("reason") or "The current context is ambiguous."),
+                    questions=[
+                        {
+                            "question": kwargs.get("question"),
+                            "options": [
+                                {"label": option}
+                                for option in kwargs.get("options", [])
+                                if str(option).strip()
+                            ],
+                        }
+                    ],
+                    target_refs=[str(kwargs["candidate_ref"])],
+                    state_id=step.value,
+                )
             try:
                 action = ResolutionToolAction(
                     step=step,

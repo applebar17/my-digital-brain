@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from enum import StrEnum
 import re
+from enum import StrEnum
 from typing import Any
 
 from pydantic import Field, model_validator
@@ -59,7 +59,7 @@ def tools_for_step(step: ResolutionStep | str) -> tuple[ResolutionToolName, ...]
 
 
 class ResolutionToolAction(IngestionModel):
-    """One model-requested action before backend reference translation."""
+    """One model-requested graph action before backend reference translation."""
 
     step: ResolutionStep
     tool_name: ResolutionToolName
@@ -70,11 +70,9 @@ class ResolutionToolAction(IngestionModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
-    question: str | None = None
-    options: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validate_shape(self) -> "ResolutionToolAction":
+    def _validate_shape(self) -> ResolutionToolAction:
         allowed = tools_for_step(self.step)
         if self.tool_name not in allowed:
             raise ValueError(
@@ -91,9 +89,10 @@ class ResolutionToolAction(IngestionModel):
                 raise ValueError(f"{ref_name} must be a supplied model-facing reference.")
 
         if self.tool_name == ResolutionToolName.ASK_CLARIFICATION:
-            if not self.question or not self.question.strip():
-                raise ValueError("ask_clarification requires a question.")
-        elif self.tool_name in {
+            raise ValueError(
+                "ask_clarification is a runtime interruption tool and is not a graph action."
+            )
+        if self.tool_name in {
             ResolutionToolName.UPDATE_NODE,
             ResolutionToolName.UPDATE_MEMORY,
             ResolutionToolName.UPDATE_RELATIONSHIP,

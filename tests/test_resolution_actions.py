@@ -56,23 +56,40 @@ def _graph() -> CandidateMemoryGraph:
 
 
 def test_toolboxes_are_scoped_to_the_resolution_step() -> None:
-    node_names = [tool["function"]["name"] for tool in build_resolution_toolbox(ResolutionStep.NODE).tools]
-    memory_names = [tool["function"]["name"] for tool in build_resolution_toolbox(ResolutionStep.MEMORY).tools]
-    relationship_names = [tool["function"]["name"] for tool in build_resolution_toolbox(ResolutionStep.RELATIONSHIP).tools]
+    node_names = [
+        tool["function"]["name"] for tool in build_resolution_toolbox(ResolutionStep.NODE).tools
+    ]
+    memory_names = [
+        tool["function"]["name"] for tool in build_resolution_toolbox(ResolutionStep.MEMORY).tools
+    ]
+    relationship_names = [
+        tool["function"]["name"]
+        for tool in build_resolution_toolbox(ResolutionStep.RELATIONSHIP).tools
+    ]
 
     assert node_names == ["ask_clarification", "create_node", "update_node", "defer_or_ignore"]
-    assert memory_names == ["ask_clarification", "create_memory", "update_memory", "defer_or_ignore"]
-    assert relationship_names == ["ask_clarification", "create_relationship", "update_relationship", "defer_or_ignore"]
+    assert memory_names == [
+        "ask_clarification",
+        "create_memory",
+        "update_memory",
+        "defer_or_ignore",
+    ]
+    assert relationship_names == [
+        "ask_clarification",
+        "create_relationship",
+        "update_relationship",
+        "defer_or_ignore",
+    ]
 
 
-def test_tool_action_rejects_wrong_step_tool_and_missing_clarification_question() -> None:
+def test_tool_action_rejects_wrong_step_tool_and_runtime_clarification() -> None:
     with pytest.raises(ValidationError, match="not available"):
         ResolutionToolAction(
             step=ResolutionStep.NODE,
             tool_name=ResolutionToolName.CREATE_MEMORY,
             candidate_ref="CANDIDATE_PERSON_001",
         )
-    with pytest.raises(ValidationError, match="requires a question"):
+    with pytest.raises(ValidationError, match="runtime interruption tool"):
         ResolutionToolAction(
             step=ResolutionStep.NODE,
             tool_name=ResolutionToolName.ASK_CLARIFICATION,
@@ -96,25 +113,6 @@ def test_compiler_accepts_supplied_fuzzy_candidate_without_semantic_fallback() -
     assert result.decisions[0].target_entity_id == "person:marco"
     assert entity_map.relationship_usable_refs == {"CANDIDATE_PERSON_001": "NODE_000001"}
     assert result.metadata["policy"] == "llm_selected_action_backend_validated"
-
-
-def test_compiler_turns_clarification_tool_call_into_blocking_session_request() -> None:
-    registry = _registry()
-    action = ResolutionToolAction(
-        step=ResolutionStep.NODE,
-        tool_name=ResolutionToolName.ASK_CLARIFICATION,
-        candidate_ref="CANDIDATE_PERSON_001",
-        question="Which Marco did you mean?",
-        options=["Marco Bianchi", "A different Marco"],
-        reason="The supplied candidates remain indistinguishable.",
-    )
-    compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
-    result = compiler.compile([action], candidate_graph=_graph())
-
-    assert result.clarification is not None
-    assert result.clarification.blocking is True
-    assert result.clarification.target_refs == ["CANDIDATE_PERSON_001"]
-    assert result.clarification.metadata["source"] == "ask_clarification"
 
 
 def test_validator_rejects_invented_refs_and_owner_creation() -> None:
@@ -191,4 +189,7 @@ def test_prompt_adds_match_guidance_only_when_contextual_matches_exist() -> None
     match_payload = IngestionPromptBuilder().extraction_input(source, task, match_context)
 
     assert "match_resolution_guidance" in match_payload["resolution_context"]
-    assert "Contextual matches are evidence" in match_payload["resolution_context"]["match_resolution_guidance"]
+    assert (
+        "Contextual matches are evidence"
+        in match_payload["resolution_context"]["match_resolution_guidance"]
+    )

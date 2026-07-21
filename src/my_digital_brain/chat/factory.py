@@ -30,7 +30,6 @@ from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContex
 from my_digital_brain.ingestion.identity_lookup import DeterministicIdentityLookupService
 from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
 from my_digital_brain.ingestion.service import IngestionService
-from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from my_digital_brain.rag import (
     GraphVectorizationService,
@@ -225,5 +224,4 @@ def build_ingestion_service(
             owner_graph_node_id=settings.owner_graph_node_id,
         ),
         execute_write_plan=execute_write_plan,
-        process_store=InMemoryIngestionProcessStore(),
     )

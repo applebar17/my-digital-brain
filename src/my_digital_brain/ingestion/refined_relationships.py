@@ -118,7 +118,6 @@ def build_relationship_extraction_plan(
             execution_mode=ExtractionExecutionMode.FOCUSED_EXTRACTION,
             reason=relationship_plan.reason,
             tasks=tasks,
-            clarification=None,
             context_gaps=list(relationship_plan.context_gaps),
             metadata={
                 "schema_layer": "refined_relationship_extraction_plan",

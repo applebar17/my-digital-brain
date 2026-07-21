@@ -219,7 +219,7 @@ def test_prompt_builder_excludes_source_text_from_ingestion_payload() -> None:
     assert "raw_text" not in str(payload)
 
 
-def test_focused_extractor_keeps_clarifications_before_ingestion_instruction() -> None:
+def test_focused_extractor_keeps_clarification_history_before_ingestion_instruction() -> None:
     provider = QueuedStructuredProvider(
         [
             {
@@ -235,8 +235,9 @@ def test_focused_extractor_keeps_clarifications_before_ingestion_instruction() -
     )
     source = _source(
         metadata={
-            "uat_terminal_clarifications": [
-                {"question": "Which Marco?", "answer": "Marco from Milan."}
+            "model_facing_history": [
+                {"role": "assistant", "content": "Clarification needed: Which Marco?"},
+                {"role": "user", "content": "Clarification answer: Marco from Milan."},
             ],
         },
     )
@@ -252,20 +253,18 @@ def test_focused_extractor_keeps_clarifications_before_ingestion_instruction() -
     )
 
     assert [message.role for message in provider.requests[0].messages] == [
-        "user",
         "assistant",
         "user",
         "user",
     ]
-    assert provider.requests[0].messages[0].content == source.raw_text
-    assert "Clarification requested: Which Marco?" == (
-        provider.requests[0].messages[1].content
+    assert provider.requests[0].messages[0].content == (
+        "Clarification needed: Which Marco?"
     )
-    assert provider.requests[0].messages[2].content == (
+    assert provider.requests[0].messages[1].content == (
         "Clarification answer: Marco from Milan."
     )
     assert "Ingest this planning target/action" in (
-        provider.requests[0].messages[3].content or ""
+        provider.requests[0].messages[2].content or ""
     )
 
 

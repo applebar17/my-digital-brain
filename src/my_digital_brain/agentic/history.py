@@ -524,7 +524,7 @@ class AgenticHistoryService:
                 content = item.get("content")
                 if role in {"user", "assistant", "developer", "tool"} and content:
                     messages.append(ChatMessage(role=role, content=str(content)))
-        clarifications = metadata.get("uat_terminal_clarifications")
+        clarifications = metadata.get("clarification_history")
         if isinstance(clarifications, list):
             for item in clarifications:
                 if not isinstance(item, dict):

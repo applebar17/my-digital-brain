@@ -478,7 +478,7 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
         [
             {
                 "content": "I need to ask a clarification.",
-                "tool": "request_user_clarification",
+                "tool": "ask_clarification",
                 "arguments": {
                     "reason": "Two memory targets are plausible.",
                     "target_refs": ["NODE_000001", "NODE_000002"],
@@ -515,14 +515,14 @@ def test_clarification_tool_interrupts_without_error_status() -> None:
     assert result.status == "interrupted"
     assert result.tool_events[0].status == "interrupted"
     interruption = result.metadata["interruption"]
-    assert interruption["tool_name"] == "request_user_clarification"
+    assert interruption["tool_name"] == "ask_clarification"
     assert interruption["tool_call_id"] == "call-1"
     assert interruption["clarification_packet"]["tool_call_id"] == "call-1"
     assert interruption["clarification_packet"]["questions"][0]["question"] == (
         "Which target should I use?"
     )
     assert result.message_delta[0].tool_calls[0]["function"]["name"] == (
-        "request_user_clarification"
+        "ask_clarification"
     )
 
 
@@ -531,7 +531,7 @@ def test_graph_update_clarification_resumes_same_frame() -> None:
         [
             {
                 "content": "Need target detail.",
-                "tool": "request_user_clarification",
+                "tool": "ask_clarification",
                 "arguments": {
                     "reason": "Need to confirm which Marco to update.",
                     "target_refs": ["node-marco", "node-marco-work"],
@@ -617,7 +617,7 @@ def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
             {
                 "content": "Need clarification.",
-                "tool": "request_user_clarification",
+                "tool": "ask_clarification",
                 "arguments": {
                     "reason": "Marco is ambiguous.",
                     "target_refs": ["node_new_0001"],

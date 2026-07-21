@@ -54,7 +54,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_entity_detail",
                 "get_neighborhood_view",
                 "get_target_evidence",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -80,7 +80,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_entity_detail",
                 "get_neighborhood_view",
                 "get_target_evidence",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -106,7 +106,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_entity_detail",
                 "get_neighborhood_view",
                 "get_target_evidence",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",
@@ -138,7 +138,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "execute_graph_write_plan",
                 "ingest_memory",
                 "update_memory_graph",
-                "request_user_clarification",
+                "ask_clarification",
                 "raw_graph_query",
             ],
             model_task="memory_query",
@@ -156,7 +156,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_target_evidence",
                 "run_memory_creation",
                 "update_memory_graph",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "ingest_memory",
@@ -183,7 +183,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "upsert_graph_relationship",
                 "create_relationship_state",
                 "update_memory_graph",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "ingest_memory",
@@ -212,7 +212,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "patch_graph_node",
                 "upsert_graph_relationship",
                 "create_relationship_state",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "apply_merge",
@@ -235,7 +235,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "get_neighborhood_view",
                 "get_change_records",
                 "get_relationship_state_history",
-                "request_user_clarification",
+                "ask_clarification",
             ],
             forbidden_tools=[
                 "execute_graph_write_plan",

@@ -12,7 +12,6 @@ from my_digital_brain.ingestion.contracts import (
     CandidateEntityDraft,
     CandidateOutput,
     CandidateRelationship,
-    ClarificationRequest,
     EntityIngestionActionDraft,
     EntityIngestionPlanDraft,
     EvidenceRef,
