@@ -37,12 +37,16 @@ class LLMResolutionProposalAgent:
         *,
         router: ModelRouter | None = None,
         model: str | None = None,
-        max_tool_calls: int = 12,
+        max_tool_calls: int = 10,
     ) -> None:
         self.provider = provider
         self.router = router
         self.model = model
-        self.max_tool_calls = max(1, max_tool_calls)
+        try:
+            configured_limit = int(max_tool_calls)
+        except (TypeError, ValueError):
+            configured_limit = 10
+        self.max_tool_calls = min(10, max(1, configured_limit))
 
     def propose(
         self,

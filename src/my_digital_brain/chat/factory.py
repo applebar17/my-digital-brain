@@ -195,7 +195,11 @@ def build_ingestion_service(
             max_summary_chars=settings.identity_context_max_summary_chars,
             max_total_chars=settings.identity_context_max_total_chars,
         ),
-        resolution_agent=LLMResolutionProposalAgent(provider, router=router),
+        resolution_agent=LLMResolutionProposalAgent(
+            provider,
+            router=router,
+            max_tool_calls=settings.ingestion_resolution_max_tool_calls,
+        ),
         entity_extractors=[
             EntityExtractor(provider, router=router),
         ],

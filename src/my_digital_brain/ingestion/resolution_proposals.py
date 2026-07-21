@@ -58,6 +58,8 @@ class ResolutionProposalValidator:
         for field_name, ref in refs_to_check:
             if ref is None:
                 continue
+            if ref in candidate_refs:
+                continue
             try:
                 entry = self.registry.entry_for(ref)
             except ValueError:
@@ -76,8 +78,8 @@ class ResolutionProposalValidator:
             ResolutionToolName.CREATE_RELATIONSHIP,
             ResolutionToolName.UPDATE_RELATIONSHIP,
         }:
-            self._require_known(action.from_ref, errors, "from_ref")
-            self._require_known(action.to_ref, errors, "to_ref")
+            self._require_known(action.from_ref, errors, "from_ref", candidate_refs)
+            self._require_known(action.to_ref, errors, "to_ref", candidate_refs)
 
         if action.tool_name == ResolutionToolName.CREATE_NODE:
             owner_value = action.payload.get("is_owner")
@@ -92,8 +94,16 @@ class ResolutionProposalValidator:
             raise ResolutionProposalValidationError(errors)
         return action
 
-    def _require_known(self, ref: str | None, errors: list[str], field_name: str) -> None:
+    def _require_known(
+        self,
+        ref: str | None,
+        errors: list[str],
+        field_name: str,
+        candidate_refs: set[str],
+    ) -> None:
         if not ref:
+            return
+        if ref in candidate_refs:
             return
         try:
             self.registry.entry_for(ref)
@@ -122,36 +132,43 @@ class ResolutionProposalCompiler:
         packets: Iterable[EntityLookupContextPacket] = (),
         supplied_candidate_refs: Iterable[str] | None = None,
     ) -> ResolutionResult:
-        action_list = list(actions)
         candidate_refs = set(supplied_candidate_refs or [])
         candidate_refs.update(entity.local_ref for entity in candidate_graph.candidate_entities)
         packets_list = list(packets)
-        validated: list[ResolutionToolAction] = []
-        for action in action_list:
-            validated.append(
-                self.validator.validate(
-                    action,
-                    supplied_candidate_refs=candidate_refs,
-                    packets=packets_list,
-                ),
-            )
+        validated = self.validate_actions(
+            actions,
+            supplied_candidate_refs=candidate_refs,
+            packets=packets_list,
+        )
 
         node_actions = [action for action in validated if action.step == ResolutionStep.NODE]
         entity_refs = {entity.local_ref for entity in candidate_graph.candidate_entities}
-        action_refs = [action.candidate_ref for action in node_actions]
-        duplicates = sorted({ref for ref in action_refs if action_refs.count(ref) > 1})
-        missing = sorted(entity_refs - set(action_refs))
-        if duplicates or missing:
-            errors = []
-            if duplicates:
-                errors.append(f"Multiple node actions were supplied for: {', '.join(duplicates)}.")
-            if missing:
-                errors.append(f"No node action was supplied for: {', '.join(missing)}.")
-            raise ResolutionProposalValidationError(errors)
+        self._require_actions_for_refs(node_actions, entity_refs, "node")
 
         decisions: list[ResolutionDecision] = []
-        clarification: ClarificationRequest | None = None
+        clarifications: list[ClarificationRequest] = []
+        actions_by_ref: dict[str, list[ResolutionToolAction]] = {}
         for action in node_actions:
+            actions_by_ref.setdefault(action.candidate_ref, []).append(action)
+        for candidate_ref, candidate_actions in actions_by_ref.items():
+            clarifying_actions = [
+                action
+                for action in candidate_actions
+                if action.tool_name == ResolutionToolName.ASK_CLARIFICATION
+            ]
+            clarifications.extend(
+                self._clarification(action, ResolutionStep.NODE)
+                for action in clarifying_actions
+            )
+            actionable = [action for action in candidate_actions if action not in clarifying_actions]
+            if clarifying_actions and actionable:
+                raise ResolutionProposalValidationError(
+                    [
+                        f"Candidate {candidate_ref} cannot combine clarification and "
+                        "mutation actions in one resolution step."
+                    ]
+                )
+            action = actionable[0] if actionable else clarifying_actions[0]
             if action.tool_name == ResolutionToolName.CREATE_NODE:
                 decision_type = ResolutionDecisionType.CREATE
                 target_id = None
@@ -165,7 +182,6 @@ class ResolutionProposalCompiler:
                 decision_type = ResolutionDecisionType.KEEP_PENDING
                 target_id = None
             elif action.tool_name == ResolutionToolName.ASK_CLARIFICATION:
-                clarification = self._clarification(action)
                 decision_type = ResolutionDecisionType.ASK_CLARIFICATION
                 target_id = None
             else:
@@ -174,7 +190,7 @@ class ResolutionProposalCompiler:
                 )
             decisions.append(
                 ResolutionDecision(
-                    candidate_ref=action.candidate_ref,
+                    candidate_ref=candidate_ref,
                     decision_type=decision_type,
                     target_entity_id=target_id,
                     reasons=[action.reason] if action.reason else [],
@@ -188,12 +204,96 @@ class ResolutionProposalCompiler:
 
         return ResolutionResult(
             decisions=decisions,
-            clarification=clarification,
+            clarifications=clarifications,
             metadata={
                 "policy": "llm_selected_action_backend_validated",
                 "validated_tool_actions": [action.model_dump(mode="json", exclude_none=True) for action in validated],
             },
         )
+
+    def validate_actions(
+        self,
+        actions: Iterable[ResolutionToolAction],
+        *,
+        supplied_candidate_refs: Iterable[str],
+        packets: Iterable[EntityLookupContextPacket] = (),
+    ) -> list[ResolutionToolAction]:
+        packets_list = list(packets)
+        candidate_refs = set(supplied_candidate_refs)
+        return [
+            self.validator.validate(
+                action,
+                supplied_candidate_refs=candidate_refs,
+                packets=packets_list,
+            )
+            for action in actions
+        ]
+
+    def merge_step_actions(
+        self,
+        result: ResolutionResult,
+        actions: Iterable[ResolutionToolAction],
+        *,
+        step: ResolutionStep,
+        supplied_candidate_refs: Iterable[str],
+        packets: Iterable[EntityLookupContextPacket] = (),
+    ) -> ResolutionResult:
+        candidate_refs = set(supplied_candidate_refs)
+        validated = self.validate_actions(
+            actions,
+            supplied_candidate_refs=candidate_refs,
+            packets=packets,
+        )
+        step_actions = [action for action in validated if action.step == step]
+        self._require_actions_for_refs(step_actions, candidate_refs, step.value)
+        clarifications = [
+            self._clarification(action, step)
+            for action in step_actions
+            if action.tool_name == ResolutionToolName.ASK_CLARIFICATION
+        ]
+        existing_actions = list(result.metadata.get("validated_tool_actions") or [])
+        return result.model_copy(
+            update={
+                "clarifications": [*result.clarifications, *clarifications],
+                "metadata": {
+                    **result.metadata,
+                    "validated_tool_actions": [
+                        *existing_actions,
+                        *[action.model_dump(mode="json", exclude_none=True) for action in validated],
+                    ],
+                },
+            },
+            deep=True,
+        )
+
+    @staticmethod
+    def _require_actions_for_refs(
+        actions: list[ResolutionToolAction],
+        candidate_refs: set[str],
+        step_name: str,
+    ) -> None:
+        action_refs = [action.candidate_ref for action in actions]
+        by_ref: dict[str, list[ResolutionToolAction]] = {}
+        for action in actions:
+            by_ref.setdefault(action.candidate_ref, []).append(action)
+        duplicates = sorted(
+            ref
+            for ref, ref_actions in by_ref.items()
+            if len(ref_actions) > 1
+            and any(action.tool_name != ResolutionToolName.ASK_CLARIFICATION for action in ref_actions)
+        )
+        missing = sorted(candidate_refs - set(action_refs))
+        if duplicates or missing:
+            errors = []
+            if duplicates:
+                errors.append(
+                    f"Multiple {step_name} actions were supplied for: {', '.join(duplicates)}."
+                )
+            if missing:
+                errors.append(
+                    f"No {step_name} action was supplied for: {', '.join(missing)}."
+                )
+            raise ResolutionProposalValidationError(errors)
 
     def build_entity_map(
         self,
@@ -270,14 +370,22 @@ class ResolutionProposalCompiler:
             metadata={"policy": "llm_selected_action_backend_validated"},
         )
 
-    def _clarification(self, action: ResolutionToolAction) -> ClarificationRequest:
+    def _clarification(
+        self,
+        action: ResolutionToolAction,
+        step: ResolutionStep,
+    ) -> ClarificationRequest:
         return ClarificationRequest(
             doubt=action.question or "Which supplied candidate did you mean?",
             reason=action.reason or "The supplied context did not support one safe identity choice.",
             target_refs=[action.candidate_ref, *([action.target_ref] if action.target_ref else [])],
             options="; ".join(action.options) or None,
             blocking=True,
-            metadata={"source": "ask_clarification", "evidence_refs": list(action.evidence_refs)},
+            metadata={
+                "source": "ask_clarification",
+                "resolution_step": step.value,
+                "evidence_refs": list(action.evidence_refs),
+            },
         )
 
 

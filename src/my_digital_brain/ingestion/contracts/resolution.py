@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.ingestion.contracts.base import IngestionModel
@@ -33,7 +33,19 @@ class ResolutionResult(IngestionModel):
         default=None,
         description="Clarification needed before a safe graph write plan can be built.",
     )
+    clarifications: list[ClarificationRequest] = Field(
+        default_factory=list,
+        description="All clarification requests emitted by the current resolution step.",
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _synchronize_clarifications(self) -> "ResolutionResult":
+        if self.clarification is not None and not self.clarifications:
+            self.clarifications = [self.clarification]
+        elif self.clarifications and self.clarification is None:
+            self.clarification = self.clarifications[0]
+        return self
 
 
 class ResolvedEntityStatus(StrEnum):

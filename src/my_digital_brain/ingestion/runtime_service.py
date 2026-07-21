@@ -35,6 +35,7 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
+    ResolutionStep,
     SourceRecordRef,
     ValidationIssue,
 )
@@ -286,6 +287,7 @@ class IngestionService(
                 entity_candidate_graph=candidate_graph,
                 resolved_entity_map=resolved_entity_map,
                 clarification=node_resolution.clarification,
+                clarifications=node_resolution.clarifications,
                 metadata={"ingestion_stage": "entity_resolution_clarification"},
             ))
         memory_result = self._prepare_memory_logs(
@@ -918,9 +920,37 @@ class IngestionService(
                 registry = RunReferenceRegistry.from_snapshot(
                     context.reference_registry_snapshot,
                 )
-                resolution = ResolutionProposalCompiler(
-                    ResolutionProposalValidator(registry),
-                ).result_from_entity_map(resolved_entity_map)
+                compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
+                resolution = compiler.result_from_entity_map(resolved_entity_map)
+                for step, candidates in (
+                    (
+                        ResolutionStep.MEMORY,
+                        [*candidate_graph.memory_logs, *candidate_graph.candidate_profile_memories],
+                    ),
+                    (
+                        ResolutionStep.RELATIONSHIP,
+                        [
+                            *candidate_graph.candidate_relationships,
+                            *candidate_graph.candidate_relationship_contexts,
+                        ],
+                    ),
+                ):
+                    if not candidates:
+                        continue
+                    actions = self.resolution_agent.propose(
+                        step=step,
+                        source_text=source.raw_text,
+                        context=context,
+                        candidate_graph=candidate_graph,
+                        packets=context.identity_lookup_packets,
+                    )
+                    resolution = compiler.merge_step_actions(
+                        resolution,
+                        actions,
+                        step=step,
+                        supplied_candidate_refs=[candidate.local_ref for candidate in candidates],
+                        packets=context.identity_lookup_packets,
+                    )
             except (ResolutionProposalValidationError, ValueError) as exc:
                 return self._finish(
                     IngestionResult(
@@ -939,13 +969,14 @@ class IngestionService(
                 )
         else:
             resolution = self.resolution_service.resolve(candidate_graph, context)
-        if resolution.clarification is not None:
+        if resolution.clarifications:
             return self._finish(
                 IngestionResult(
                     source_id=source.source_id,
                     status=IngestionStatus.NEEDS_CLARIFICATION,
                     **checkpoint_fields,
                     clarification=resolution.clarification,
+                    clarifications=resolution.clarifications,
                     metadata={"ingestion_stage": "write_resolution_clarification"},
                 ),
             )

@@ -38,6 +38,7 @@ class InMemoryIngestionProcessStore:
             pending_question=(
                 result.clarification.question if result.clarification is not None else None
             ),
+            pending_questions=[item.question for item in result.clarifications],
             candidate_graph_snapshot=(
                 result.candidate_graph.model_dump(mode="json", exclude_none=True)
                 if result.candidate_graph is not None

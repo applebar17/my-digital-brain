@@ -99,6 +99,12 @@ class Settings(BaseSettings):
         le=100_000,
         alias="IDENTITY_CONTEXT_MAX_TOTAL_CHARS",
     )
+    ingestion_resolution_max_tool_calls: int = Field(
+        default=10,
+        ge=1,
+        le=10,
+        alias="INGESTION_RESOLUTION_MAX_TOOL_CALLS",
+    )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
         default="postgres",

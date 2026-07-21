@@ -25,11 +25,29 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLogLink,
     ResolutionDecision,
     ResolutionResult,
+    ResolutionStep,
+    ResolutionToolAction,
     TemporalScope,
 )
 from my_digital_brain.ingestion.enums import GraphWritePlanStatus, ResolutionDecisionType
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
 from my_digital_brain.ingestion.idempotency import deterministic_uuid, idempotency_key
+from my_digital_brain.ingestion.resolution_write_actions import ResolutionWriteActions
+
+
+def _required_action(
+    actions: ResolutionWriteActions | None,
+    step: ResolutionStep,
+    candidate_ref: str,
+) -> ResolutionToolAction | None:
+    if actions is None:
+        return None
+    action = actions.for_ref(step, candidate_ref)
+    if action is None:
+        raise IngestionValidationError(
+            f"No validated {step.value} resolution action exists for {candidate_ref}."
+        )
+    return action
 
 
 class GraphWritePlanBuilder:
@@ -41,7 +59,7 @@ class GraphWritePlanBuilder:
         resolution: ResolutionResult,
         context: IngestionContextPackage | None = None,
     ) -> GraphWritePlan:
-        if resolution.clarification is not None:
+        if resolution.clarifications:
             raise IngestionValidationError(
                 "Cannot build graph write plan while resolution requires clarification."
             )
@@ -53,14 +71,17 @@ class GraphWritePlanBuilder:
             )
 
         decision_by_ref = {decision.candidate_ref: decision for decision in resolution.decisions}
+        resolution_actions = ResolutionWriteActions.from_result(resolution)
         idempotency_keys: list[str] = []
         nodes_to_create: list[GraphNodeWrite] = []
         relationships_to_create: list[GraphRelationshipWrite] = []
         claims_to_create: list[GraphNodeWrite] = []
         perceptions_to_create: list[GraphNodeWrite] = []
         relationship_contexts_to_create: list[GraphNodeWrite] = []
+        nodes_to_update: list[GraphNodeWrite] = []
         memory_logs_to_create: list[GraphNodeWrite] = []
         profile_memories_to_create: list[GraphNodeWrite] = []
+        relationships_to_update: list[GraphRelationshipWrite] = []
         planned_ref_ids = self._local_ref_resolution(resolution)
 
         for entity in candidate_graph.candidate_entities:
@@ -115,13 +136,25 @@ class GraphWritePlanBuilder:
             idempotency_keys.append(relationship.idempotency_key or "")
 
         for context_candidate in candidate_graph.candidate_relationship_contexts:
+            action = _required_action(
+                resolution_actions,
+                ResolutionStep.RELATIONSHIP,
+                context_candidate.local_ref,
+            )
+            if ResolutionWriteActions.is_skip(action):
+                continue
             context_write = self._relationship_context_write(
                 candidate_graph.source_id,
                 context_candidate,
             )
-            relationship_contexts_to_create.append(context_write)
+            if ResolutionWriteActions.is_update(action):
+                nodes_to_update.append(ResolutionWriteActions.node_update(context_write, action))
+            else:
+                relationship_contexts_to_create.append(context_write)
             planned_ref_ids[context_candidate.local_ref] = str(context_write.properties["id"])
             idempotency_keys.append(context_write.idempotency_key or "")
+            if action is not None and ResolutionWriteActions.is_update(action):
+                continue
             for index, endpoint_ref in enumerate(
                 (context_candidate.from_ref, context_candidate.to_ref),
             ):
@@ -137,53 +170,89 @@ class GraphWritePlanBuilder:
                 idempotency_keys.append(relationship.idempotency_key or "")
 
         for memory_log in candidate_graph.memory_logs:
+            action = _required_action(
+                resolution_actions,
+                ResolutionStep.MEMORY,
+                memory_log.local_ref or memory_log.memory_log_id,
+            )
+            if ResolutionWriteActions.is_skip(action):
+                continue
             memory_log_write = self._memory_log_write(
                 candidate_graph.source_id,
                 memory_log,
                 planned_ref_ids,
             )
-            memory_logs_to_create.append(memory_log_write)
+            if ResolutionWriteActions.is_update(action):
+                nodes_to_update.append(ResolutionWriteActions.node_update(memory_log_write, action))
+            else:
+                memory_logs_to_create.append(memory_log_write)
             planned_ref_ids[memory_log_write.local_ref] = str(memory_log_write.properties["id"])
             idempotency_keys.append(memory_log_write.idempotency_key or "")
-            for index, link in enumerate(_memory_log_links(memory_log)):
-                relationship = self._memory_log_relationship_write(
+            if not ResolutionWriteActions.is_update(action):
+                for index, link in enumerate(_memory_log_links(memory_log)):
+                    relationship = self._memory_log_relationship_write(
+                        source_id=candidate_graph.source_id,
+                        memory_log=memory_log,
+                        link=link,
+                        index=index,
+                    )
+                    relationships_to_create.append(relationship)
+                    idempotency_keys.append(relationship.idempotency_key or "")
+
+        for profile in candidate_graph.candidate_profile_memories:
+            action = _required_action(
+                resolution_actions,
+                ResolutionStep.MEMORY,
+                profile.local_ref,
+            )
+            if ResolutionWriteActions.is_skip(action):
+                continue
+            profile_write = self._profile_memory_write(candidate_graph.source_id, profile)
+            if ResolutionWriteActions.is_update(action):
+                nodes_to_update.append(ResolutionWriteActions.node_update(profile_write, action))
+            else:
+                profile_memories_to_create.append(profile_write)
+            planned_ref_ids[profile.local_ref] = str(profile_write.properties["id"])
+            idempotency_keys.append(profile_write.idempotency_key or "")
+            if not ResolutionWriteActions.is_update(action):
+                relationship = self._relationship_write(
                     source_id=candidate_graph.source_id,
-                    memory_log=memory_log,
-                    link=link,
-                    index=index,
+                    local_ref=f"{profile.local_ref}_DESCRIBES_USER",
+                    relationship_type="DESCRIBES_USER",
+                    from_ref=profile.local_ref,
+                    to_ref="OWNER",
+                    candidate=profile,
                 )
                 relationships_to_create.append(relationship)
                 idempotency_keys.append(relationship.idempotency_key or "")
 
-        for profile in candidate_graph.candidate_profile_memories:
-            profile_write = self._profile_memory_write(candidate_graph.source_id, profile)
-            profile_memories_to_create.append(profile_write)
-            planned_ref_ids[profile.local_ref] = str(profile_write.properties["id"])
-            idempotency_keys.append(profile_write.idempotency_key or "")
-            relationship = self._relationship_write(
-                source_id=candidate_graph.source_id,
-                local_ref=f"{profile.local_ref}_DESCRIBES_USER",
-                relationship_type="DESCRIBES_USER",
-                from_ref=profile.local_ref,
-                to_ref="OWNER",
-                candidate=profile,
-            )
-            relationships_to_create.append(relationship)
-            idempotency_keys.append(relationship.idempotency_key or "")
-
         for relationship in candidate_graph.candidate_relationships:
+            action = _required_action(
+                resolution_actions,
+                ResolutionStep.RELATIONSHIP,
+                relationship.local_ref,
+            )
+            if ResolutionWriteActions.is_skip(action):
+                continue
             relationship_write = self._candidate_relationship_write(
                 candidate_graph.source_id,
                 relationship,
             )
-            relationships_to_create.append(relationship_write)
+            if ResolutionWriteActions.is_update(action):
+                relationships_to_update.append(
+                    ResolutionWriteActions.relationship_endpoints(relationship_write, action)
+                )
+            else:
+                relationships_to_create.append(relationship_write)
             idempotency_keys.append(relationship_write.idempotency_key or "")
 
         return GraphWritePlan(
             source_id=candidate_graph.source_id,
             status=GraphWritePlanStatus.DRAFT,
             nodes_to_create=nodes_to_create,
+            nodes_to_update=nodes_to_update,
             relationships_to_create=relationships_to_create,
+            relationships_to_update=relationships_to_update,
             claims_to_create=claims_to_create,
             perceptions_to_create=perceptions_to_create,
             relationship_contexts_to_create=relationship_contexts_to_create,
