@@ -62,6 +62,12 @@ from my_digital_brain.ingestion.refined_relationships import build_relationship_
 from my_digital_brain.ingestion.refined_resolution import (
     DeterministicResolvedEntityMapBuilder,
 )
+from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
+from my_digital_brain.ingestion.resolution_proposals import (
+    ResolutionProposalCompiler,
+    ResolutionProposalValidationError,
+    ResolutionProposalValidator,
+)
 from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.runtime_helpers import (
@@ -107,6 +113,7 @@ class IngestionService(
     )
     identity_lookup_service: DeterministicIdentityLookupService | None = None
     candidate_context_hydrator: BoundedCandidateContextHydrator | None = None
+    resolution_agent: LLMResolutionProposalAgent | None = None
     assembler: CandidateMemoryGraphAssembler = field(
         default_factory=CandidateMemoryGraphAssembler
     )
@@ -236,10 +243,51 @@ class IngestionService(
                 metadata={"ingestion_stage": "entity_validation"},
             ))
 
-        resolved_entity_map = self.entity_resolver.resolve(
-            candidate_graph.candidate_entities,
-            graph_context_pack,
-        )
+        try:
+            resolved_entity_map, node_resolution = self._resolve_entity_candidates(
+                source,
+                graph_context_pack,
+                candidate_graph,
+            )
+        except (ResolutionProposalValidationError, ValueError) as exc:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.VALIDATION_FAILED,
+                graph_context_pack=graph_context_pack,
+                graph_context_views={
+                    "reasoning": reasoning_view,
+                    "entity_planning": entity_view,
+                },
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=entity_candidates,
+                entity_candidate_graph=candidate_graph,
+                validation_errors=[ValidationIssue(
+                    field_path="resolution_proposals",
+                    message=str(exc),
+                    code="resolution_proposal_invalid",
+                )],
+                metadata={"ingestion_stage": "entity_resolution_proposals"},
+            ))
+        if node_resolution is not None and node_resolution.clarification is not None:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                graph_context_pack=graph_context_pack,
+                graph_context_views={
+                    "reasoning": reasoning_view,
+                    "entity_planning": entity_view,
+                },
+                reasoning=reasoning,
+                entity_plan=entity_plan,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=entity_candidates,
+                entity_candidate_graph=candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                clarification=node_resolution.clarification,
+                metadata={"ingestion_stage": "entity_resolution_clarification"},
+            ))
         memory_result = self._prepare_memory_logs(
             source=source,
             graph_context_pack=graph_context_pack,
@@ -363,6 +411,29 @@ class IngestionService(
         graph_context_pack.identity_lookup_packets = list(existing.values())
         graph_context_pack.alias_map = registry.backend_alias_map()
         graph_context_pack.reference_registry_snapshot = registry.snapshot()
+
+    def _resolve_entity_candidates(
+        self,
+        source: SourceRecordRef,
+        graph_context_pack: GraphContextPack,
+        candidate_graph: CandidateMemoryGraph,
+    ) -> tuple[ResolvedEntityMap, Any | None]:
+        if self.resolution_agent is None:
+            return (
+                self.entity_resolver.resolve(
+                    candidate_graph.candidate_entities,
+                    graph_context_pack,
+                ),
+                None,
+            )
+        context = _context_package_for_services(source, graph_context_pack)
+        resolved_map, result = self.resolution_agent.resolve_nodes(
+            source_text=source.raw_text,
+            context=context,
+            candidate_graph=candidate_graph,
+            packets=graph_context_pack.identity_lookup_packets,
+        )
+        return resolved_map, result
 
     def _prepare_memory_logs(
         self,
@@ -842,7 +913,32 @@ class IngestionService(
                 ),
             )
 
-        resolution = self.resolution_service.resolve(candidate_graph, context)
+        if self.resolution_agent is not None:
+            try:
+                registry = RunReferenceRegistry.from_snapshot(
+                    context.reference_registry_snapshot,
+                )
+                resolution = ResolutionProposalCompiler(
+                    ResolutionProposalValidator(registry),
+                ).result_from_entity_map(resolved_entity_map)
+            except (ResolutionProposalValidationError, ValueError) as exc:
+                return self._finish(
+                    IngestionResult(
+                        source_id=source.source_id,
+                        status=IngestionStatus.VALIDATION_FAILED,
+                        **checkpoint_fields,
+                        validation_errors=[
+                            ValidationIssue(
+                                field_path="resolution_result",
+                                message=str(exc),
+                                code="resolution_result_compilation_failed",
+                            ),
+                        ],
+                        metadata={"ingestion_stage": "resolution_result_compilation"},
+                    ),
+                )
+        else:
+            resolution = self.resolution_service.resolve(candidate_graph, context)
         if resolution.clarification is not None:
             return self._finish(
                 IngestionResult(

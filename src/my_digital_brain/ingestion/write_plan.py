@@ -67,6 +67,11 @@ class GraphWritePlanBuilder:
             decision = decision_by_ref.get(entity.local_ref)
             if _decision_type(decision) == ResolutionDecisionType.MATCH_EXISTING:
                 continue
+            if _decision_type(decision) in {
+                ResolutionDecisionType.REJECT,
+                ResolutionDecisionType.KEEP_PENDING,
+            }:
+                continue
             if _decision_type(decision) == ResolutionDecisionType.ASK_CLARIFICATION:
                 raise IngestionValidationError(
                     f"Candidate {entity.local_ref} still requires clarification."

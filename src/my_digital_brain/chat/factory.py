@@ -28,7 +28,7 @@ from my_digital_brain.ingestion.extractors import (
 )
 from my_digital_brain.ingestion.graph_context_pack import WholeSourceGraphContextPackBuilder
 from my_digital_brain.ingestion.identity_lookup import DeterministicIdentityLookupService
-from my_digital_brain.ingestion.resolution import ConservativeResolutionService
+from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
@@ -195,6 +195,7 @@ def build_ingestion_service(
             max_summary_chars=settings.identity_context_max_summary_chars,
             max_total_chars=settings.identity_context_max_total_chars,
         ),
+        resolution_agent=LLMResolutionProposalAgent(provider, router=router),
         entity_extractors=[
             EntityExtractor(provider, router=router),
         ],
@@ -207,7 +208,6 @@ def build_ingestion_service(
             ProfileMemoryExtractor(provider, router=router),
         ],
         execution_context_factory=planner_execution_context,
-        resolution_service=ConservativeResolutionService(graph_service),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph_service),
         vectorization_service=GraphVectorizationService(

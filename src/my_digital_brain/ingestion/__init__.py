@@ -92,6 +92,10 @@ from my_digital_brain.ingestion.contracts import (
     ResolvedEntityStatus,
     ResolutionDecision,
     ResolutionResult,
+    ResolutionStep,
+    ResolutionToolAction,
+    ResolutionToolActionBatch,
+    ResolutionToolName,
     SessionClarificationContext,
     SourceRecordRef,
     TemporalScope,
@@ -148,6 +152,16 @@ from my_digital_brain.ingestion.planning_guidelines import (
     relationship_ingestion_planning_guidelines,
 )
 from my_digital_brain.ingestion.resolution import ConservativeResolutionService
+from my_digital_brain.ingestion.resolution_proposals import (
+    ResolutionProposalCompiler,
+    ResolutionProposalValidationError,
+    ResolutionProposalValidator,
+)
+from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
+from my_digital_brain.ingestion.resolution_toolboxes import (
+    build_resolution_toolbox,
+    resolution_toolbox_for_task,
+)
 from my_digital_brain.ingestion.refined_resolution import DeterministicResolvedEntityMapBuilder
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
@@ -264,6 +278,16 @@ __all__ = [
     "ResolvedEntityStatus",
     "ResolutionDecision",
     "ResolutionResult",
+    "ResolutionStep",
+    "ResolutionToolAction",
+    "ResolutionToolActionBatch",
+    "ResolutionToolName",
+    "ResolutionProposalCompiler",
+    "ResolutionProposalValidationError",
+    "ResolutionProposalValidator",
+    "LLMResolutionProposalAgent",
+    "build_resolution_toolbox",
+    "resolution_toolbox_for_task",
     "SessionClarificationContext",
     "ResolutionDecisionType",
     "SourceChannel",

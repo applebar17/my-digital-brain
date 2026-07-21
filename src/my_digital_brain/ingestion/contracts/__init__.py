@@ -104,6 +104,13 @@ from my_digital_brain.ingestion.contracts.resolution import (
     ResolutionDecision,
     ResolutionResult,
 )
+from my_digital_brain.ingestion.contracts.resolution_actions import (
+    ResolutionStep,
+    ResolutionToolAction,
+    ResolutionToolActionBatch,
+    ResolutionToolName,
+    tools_for_step,
+)
 from my_digital_brain.ingestion.contracts.results import (
     IngestionContextPackage,
     IngestionResult,
@@ -235,7 +242,12 @@ __all__ = [
     "ResolvedEntityStatus",
     "ResolutionDecision",
     "ResolutionResult",
+    "ResolutionStep",
+    "ResolutionToolAction",
+    "ResolutionToolActionBatch",
+    "ResolutionToolName",
     "SourceRecordRef",
+    "tools_for_step",
     "TemporalScope",
     "V1_VECTOR_DIMENSIONS",
     "VectorQueryStrategy",

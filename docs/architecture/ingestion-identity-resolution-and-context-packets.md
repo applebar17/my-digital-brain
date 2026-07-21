@@ -575,6 +575,16 @@ separate structured proposal/tool contract.
   - `ATTACH_TO_EXISTING`;
   - `REQUEST_CLARIFICATION`;
   - `IGNORE_OR_DEFER`.
+- Expose proposal-only, step-scoped toolboxes to the resolution/extraction agent:
+  - node step: `ask_clarification`, `create_node`, `update_node`,
+    `defer_or_ignore`;
+  - memory step: `ask_clarification`, `create_memory`, `update_memory`,
+    `defer_or_ignore`;
+  - relationship step: `ask_clarification`, `create_relationship`,
+    `update_relationship`, `defer_or_ignore`.
+  These tool calls are captured as model proposals. They do not execute graph
+  writes or graph searches; backend validation and the existing write-plan
+  executor remain authoritative.
 - Require the LLM to use only references supplied in its current packet. An
   existing-node target must be a supplied model-facing alias; the LLM never
   receives or generates a persisted graph ID.
