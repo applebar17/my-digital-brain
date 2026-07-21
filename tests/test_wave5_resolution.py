@@ -9,6 +9,7 @@ from my_digital_brain.ai.session import (
     LLMCompletionRequest,
     LLMCompletionResult,
     LLMSessionAwaitingTool,
+    LLMSessionCompleted,
     LLMSessionRequest,
     LLMSessionResult,
     LLMSessionRunner,
@@ -187,6 +188,60 @@ def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
     assert isinstance(result, LLMSessionAwaitingTool)
     assert result.continuation.pending_tool_call.name == "ask_clarification"
     assert result.continuation.pending_tool_call.call_id == "clarify-1"
+
+
+def test_resolution_agent_replays_clarification_history_as_transcript_messages() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.request: LLMSessionRequest | None = None
+
+        def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+            self.request = request
+            return LLMSessionCompleted(
+                session_id=request.session_id,
+                messages=request.messages,
+                content="done",
+            )
+
+    provider = Provider()
+    agent = LLMResolutionProposalAgent(provider)
+
+    with pytest.raises(ValueError, match="returned no action tool call"):
+        agent.propose(
+            step=ResolutionStep.NODE,
+            source_text="I met Jacopo.",
+            context=IngestionContextPackage(
+                source_id="source-1",
+                metadata={
+                    "model_facing_history": [
+                        {
+                            "role": "assistant",
+                            "content": "Clarification needed: Which Jacopo?",
+                        },
+                        {
+                            "role": "user",
+                            "content": "Clarification answer: Jacopo Galletta.",
+                        },
+                    ],
+                },
+            ),
+            candidate_graph=CandidateMemoryGraph(
+                source_id="source-1",
+                candidate_entities=[
+                    {
+                        "local_ref": "CANDIDATE_PERSON_001",
+                        "entity_type": "Person",
+                        "display_name": "Jacopo Galletta",
+                    }
+                ],
+            ),
+        )
+
+    assert provider.request is not None
+    assert [message.content for message in provider.request.messages[:2]] == [
+        "Clarification needed: Which Jacopo?",
+        "Clarification answer: Jacopo Galletta.",
+    ]
 
 
 def test_missing_structured_node_decision_never_defaults_to_creation() -> None:

@@ -101,9 +101,6 @@ class LLMResolutionProposalAgent:
             batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
             input_payload = {
                 "source_text": source_text,
-                "clarification_history": list(
-                    context.metadata.get("model_facing_history") or []
-                ),
                 "owner_context": owner_prompt_block(context.owner_snapshot),
                 "candidate_actions": [
                     self._model_candidate_payload(candidate) for candidate in batch
@@ -120,6 +117,7 @@ class LLMResolutionProposalAgent:
                 LLMSessionRequest(
                     system_prompt=prompt,
                     messages=[
+                        *self._clarification_history_messages(context),
                         ChatMessage(
                             role="user",
                             content=(
@@ -261,11 +259,29 @@ class LLMResolutionProposalAgent:
             "owns graph lookup, reference translation, validation, and writing. Select "
             f"one or more actions only from the {step.value} toolbox. Use only refs in "
             "the supplied context; never invent persisted IDs or aliases. Contextual "
-            "matches are evidence, not decisions. Use the source, history, and summaries "
-            "to decide. If uncertainty remains, call ask_clarification. Stable Person "
+            "matches are evidence, not decisions. Prior clarification messages are part "
+            "of the transcript: treat an explicit user answer as current-run evidence and "
+            "do not repeat the same question unless the answer leaves the identity unresolved. "
+            "Use the source, history, and summaries to decide. If uncertainty remains, "
+            "call ask_clarification. Stable Person "
             "traits belong in profile-memory actions, never direct Person properties. "
             "Use OWNER for first-person references and never create an owner. For every "
             "candidate listed in this step, invoke exactly one terminal action tool: a "
             "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
             "only and do not omit a candidate action."
         )
+
+    @staticmethod
+    def _clarification_history_messages(
+        context: IngestionContextPackage,
+    ) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
+        for item in context.metadata.get("model_facing_history") or []:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip()
+            content = item.get("content")
+            if role not in {"user", "assistant", "developer", "tool"} or not content:
+                continue
+            messages.append(ChatMessage(role=role, content=str(content)))
+        return messages
