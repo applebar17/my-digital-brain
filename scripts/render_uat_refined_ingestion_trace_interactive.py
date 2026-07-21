@@ -140,6 +140,7 @@ def _answer_clarifications_from_terminal(
     trace_events: list[dict[str, Any]],
 ) -> tuple[Any, Any]:
     interactions = route["clarification_interactions"]
+    answered = False
     if result is None:
         result = service.process_source(source)
     for attempt in range(1, max(0, max_clarifications) + 1):
@@ -180,6 +181,7 @@ def _answer_clarifications_from_terminal(
             return source, None
         clarification_service = ClarificationService()
         _, answer_history = clarification_service.answer_text(pending_packet, answer)
+        answered = True
         event["answer"] = answer
         trace_events.append(event)
         interactions.append({**event, "answer": answer})
@@ -192,6 +194,8 @@ def _answer_clarifications_from_terminal(
         )
         result = None
 
+    if answered and result is None:
+        result = service.process_source(source)
     route["clarification_stop_reason"] = "max_clarifications_reached"
     return source, result
 
