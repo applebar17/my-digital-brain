@@ -8,6 +8,8 @@ from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     GraphContextPack,
     IngestionResult,
+    SourceRecordRef,
+    ValidationIssue,
 )
 from my_digital_brain.ingestion.contracts import GraphContextRenderPurpose
 from my_digital_brain.ingestion.enums import IngestionStatus
@@ -74,10 +76,44 @@ class IngestionUATMixin:
                 metadata={"ingestion_stage": "predefined_entity_validation"},
             ))
 
-        resolved_entity_map = self.entity_resolver.resolve(
-            entity_candidate_graph.candidate_entities,
-            graph_context_pack,
-        )
+        try:
+            resolved_entity_map, resolution = self._resolve_entity_candidates(
+                source,
+                graph_context_pack,
+                entity_candidate_graph,
+            )
+        except (ValueError, RuntimeError) as exc:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.VALIDATION_FAILED,
+                graph_context_pack=graph_context_pack,
+                graph_context_views={"reasoning": reasoning_view},
+                reasoning=reasoning,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                validation_errors=[ValidationIssue(
+                    field_path="resolution_proposals",
+                    message=str(exc),
+                    code="resolution_proposal_invalid",
+                )],
+                metadata={"ingestion_stage": "uat_entity_resolution"},
+            ))
+        if resolution.clarifications:
+            return self._finish(IngestionResult(
+                source_id=source.source_id,
+                status=IngestionStatus.NEEDS_CLARIFICATION,
+                graph_context_pack=graph_context_pack,
+                graph_context_views={"reasoning": reasoning_view},
+                reasoning=reasoning,
+                entity_extraction_plan=entity_extraction_plan,
+                entity_candidates=list(entity_candidates),
+                entity_candidate_graph=entity_candidate_graph,
+                resolved_entity_map=resolved_entity_map,
+                clarification=resolution.clarification,
+                clarifications=resolution.clarifications,
+                metadata={"ingestion_stage": "uat_entity_resolution_clarification"},
+            ))
         memory_result = self._prepare_memory_logs(
             source=source,
             graph_context_pack=graph_context_pack,
@@ -165,5 +201,4 @@ class IngestionUATMixin:
             memory_log_packet=memory_log_packet,
             relationship_plan=relationship_plan,
         )
-
 

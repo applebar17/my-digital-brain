@@ -151,7 +151,6 @@ from my_digital_brain.ingestion.planning_guidelines import (
     missing_entity_planning_guidelines,
     relationship_ingestion_planning_guidelines,
 )
-from my_digital_brain.ingestion.resolution import ConservativeResolutionService
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidationError,
@@ -162,7 +161,6 @@ from my_digital_brain.ingestion.resolution_toolboxes import (
     build_resolution_toolbox,
     resolution_toolbox_for_task,
 )
-from my_digital_brain.ingestion.refined_resolution import DeterministicResolvedEntityMapBuilder
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.validation import IngestionValidator
@@ -201,7 +199,6 @@ __all__ = [
     "ClarificationRequest",
     "ClarificationStatus",
     "ClarificationRequestDraft",
-    "ConservativeResolutionService",
     "EntityIngestionActionDraft",
     "EntityIngestionPlanDraft",
     "EntityLookupCandidate",
@@ -323,5 +320,4 @@ __all__ = [
     "memory_log_ingestion_planning_guidelines",
     "missing_entity_planning_guidelines",
     "relationship_ingestion_planning_guidelines",
-    "DeterministicResolvedEntityMapBuilder",
 ]

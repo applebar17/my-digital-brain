@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     IngestionResult,
@@ -18,6 +20,7 @@ from my_digital_brain.ingestion.resolution_proposals import (
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
+from my_digital_brain.ingestion.exceptions import IngestionValidationError
 
 
 def _memory() -> MemoryLog:
@@ -93,3 +96,19 @@ def test_resolution_actions_control_memory_write_shape() -> None:
 def test_resolution_agent_enforces_ten_call_wave5_ceiling() -> None:
     agent = LLMResolutionProposalAgent(object(), max_tool_calls=100)  # type: ignore[arg-type]
     assert agent.max_tool_calls == 10
+
+
+def test_missing_structured_node_decision_never_defaults_to_creation() -> None:
+    graph = CandidateMemoryGraph(
+        source_id="source-1",
+        candidate_entities=[
+            {
+                "local_ref": "CANDIDATE_PERSON_001",
+                "entity_type": "Person",
+                "display_name": "Marco",
+            },
+        ],
+    )
+
+    with pytest.raises(IngestionValidationError, match="omitted a candidate decision"):
+        GraphWritePlanBuilder().build(graph, ResolutionResult())

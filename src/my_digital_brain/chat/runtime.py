@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import logging
 from my_digital_brain.agentic.contexts import (
     ChannelSessionMetadata,
     ConversationContext as AgenticConversationContext,
@@ -9,6 +10,7 @@ from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.tracing import traceable
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.clarification import (
     answer_packet_from_progress,
@@ -41,6 +43,9 @@ from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionSto
 from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.core.profile_context import OwnerProfileSnapshot
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChatRuntime:
@@ -293,6 +298,14 @@ class ChatRuntime:
             raise ChatValidationError("The agentic frame has no active clarification packet.")
         packet = frame.clarification_packet
         validate_clarification_answers(packet, answer_packet)
+        log_event(
+            logger,
+            "chat.clarification.answer_received",
+            component="chat",
+            session_id=session.session_id,
+            frame_id=frame.frame_id,
+            answer_count=len(answer_packet.answers),
+        )
         progress = merge_clarification_progress(
             packet,
             frame.metadata.get("clarification_progress"),
@@ -396,6 +409,14 @@ class ChatRuntime:
             clarification_answer_summary=answer_summary,
             answer_packet=complete_answer_packet,
             resolved_clarifications=resolved_clarifications,
+        )
+        log_event(
+            logger,
+            "chat.clarification.resumed",
+            component="chat",
+            session_id=session.session_id,
+            frame_id=frame.frame_id,
+            resolved_count=len(resolved_clarifications),
         )
         response = render_agentic_chat_response(result, session_id=session.session_id)
         response = response.model_copy(

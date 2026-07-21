@@ -28,6 +28,9 @@ from my_digital_brain.ai.router import StaticModelRouter  # noqa: E402
 from my_digital_brain.chat.factory import build_ai_provider  # noqa: E402
 from my_digital_brain.config import Settings  # noqa: E402
 from my_digital_brain.ingestion import IngestionService  # noqa: E402
+from my_digital_brain.ingestion import GraphWritePlanBuilder  # noqa: E402
+from my_digital_brain.ingestion import LLMResolutionProposalAgent  # noqa: E402
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry  # noqa: E402
 from my_digital_brain.ingestion.contracts import (  # noqa: E402
     CandidateEntity,
     GraphContextPack,
@@ -127,6 +130,7 @@ def build_trace_service(
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env_file(env_file, override=override_env)
     settings = Settings()
+    graph_context_pack = _ensure_trace_registry(graph_context_pack)
     provider = TraceStructuredProvider(build_ai_provider(settings))
     router = StaticModelRouter(
         settings=genai_settings_from_app_settings(settings),
@@ -145,8 +149,28 @@ def build_trace_service(
             ClaimExtractor(provider, router=router),
             MetadataPatchExtractor(provider, router=router),
         ],
+        resolution_agent=LLMResolutionProposalAgent(
+            provider,
+            router=router,
+            max_tool_calls=settings.ingestion_resolution_max_tool_calls,
+        ),
+        write_plan_builder=GraphWritePlanBuilder(),
     )
     return service, provider
+
+
+def _ensure_trace_registry(graph_context_pack: GraphContextPack) -> GraphContextPack:
+    if graph_context_pack.reference_registry_snapshot:
+        return graph_context_pack
+    registry = RunReferenceRegistry(graph_scope="uat", run_scope=graph_context_pack.source_id or "uat")
+    registry.register_owner("person:owner")
+    return graph_context_pack.model_copy(
+        update={
+            "alias_map": registry.backend_alias_map(),
+            "reference_registry_snapshot": registry.snapshot(),
+        },
+        deep=True,
+    )
 
 
 def load_env_file(path: Path | None, *, override: bool = False) -> Path | None:

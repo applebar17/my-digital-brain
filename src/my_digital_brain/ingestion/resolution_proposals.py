@@ -236,6 +236,7 @@ class ResolutionProposalCompiler:
         *,
         step: ResolutionStep,
         supplied_candidate_refs: Iterable[str],
+        action_candidate_refs: Iterable[str] | None = None,
         packets: Iterable[EntityLookupContextPacket] = (),
     ) -> ResolutionResult:
         candidate_refs = set(supplied_candidate_refs)
@@ -245,7 +246,11 @@ class ResolutionProposalCompiler:
             packets=packets,
         )
         step_actions = [action for action in validated if action.step == step]
-        self._require_actions_for_refs(step_actions, candidate_refs, step.value)
+        self._require_actions_for_refs(
+            step_actions,
+            set(action_candidate_refs or candidate_refs),
+            step.value,
+        )
         clarifications = [
             self._clarification(action, step)
             for action in step_actions

@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     CandidateOutput,
+    EntityLookupContextPacket,
     ExtractionPlan,
     ExtractionTask,
     GraphWritePlan,
@@ -13,6 +14,9 @@ from my_digital_brain.ingestion.contracts import (
     IngestionResult,
     IngestionSessionSnapshot,
     ResolutionResult,
+    ResolutionStep,
+    ResolutionToolAction,
+    ResolvedEntityMap,
     SourceRecordRef,
     ValidationResult,
 )
@@ -53,13 +57,27 @@ class IngestionValidatorProtocol(Protocol):
 
 
 @runtime_checkable
-class ResolutionService(Protocol):
-    def resolve(
+class ResolutionProposalAgent(Protocol):
+    def resolve_nodes(
         self,
+        *,
+        source_text: str | None,
+        context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
-        context: IngestionContextPackage | None = None,
-    ) -> ResolutionResult:
-        """Resolve candidates against existing graph records."""
+        packets: Sequence[EntityLookupContextPacket] = (),
+    ) -> tuple[ResolvedEntityMap, ResolutionResult]:
+        """Collect and validate the complete node proposal set."""
+
+    def propose(
+        self,
+        *,
+        step: ResolutionStep,
+        source_text: str | None,
+        context: IngestionContextPackage,
+        candidate_graph: CandidateMemoryGraph,
+        packets: Sequence[EntityLookupContextPacket] = (),
+    ) -> list[ResolutionToolAction]:
+        """Collect proposal actions for one resolution step."""
 
 
 @runtime_checkable

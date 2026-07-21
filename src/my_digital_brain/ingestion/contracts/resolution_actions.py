@@ -50,7 +50,7 @@ _TOOLS_BY_STEP: dict[ResolutionStep, tuple[ResolutionToolName, ...]] = {
 _MODEL_REF_RE = re.compile(
     r"^(?:OWNER|CANDIDATE_[A-Z][A-Z0-9_]*_[0-9]{3,6}|"
     r"(?:NODE|REL|MEMORY|CONTEXT|MEDIA|SOURCE|CLAIM)_[0-9]{6}|"
-    r"(?:MEMORY_LOG|PROFILE)_[0-9]{3,6})$",
+    r"(?:MEMORY_LOG|PROFILE)_[A-Z0-9_]*[0-9]{3,6})$",
 )
 
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from typing import Any
 
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.protocols import ModelRouter, ToolCallingLLMProvider
 from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage, ChatRequest
@@ -26,6 +28,9 @@ from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidator,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMResolutionProposalAgent:
@@ -58,6 +63,17 @@ class LLMResolutionProposalAgent:
         packets: Sequence[EntityLookupContextPacket] = (),
     ) -> list[ResolutionToolAction]:
         toolbox = build_resolution_toolbox(step)
+        step_candidates = self._step_candidates(step, candidate_graph)
+        log_event(
+            logger,
+            "ingestion.resolution.proposal.request",
+            component="ingestion",
+            resolution_step=step.value,
+            candidate_count=len(step_candidates),
+            lookup_packet_count=len(packets),
+            lookup_statuses=[str(packet.lookup.status) for packet in packets],
+            available_tools=sorted(toolbox.tools_by_name),
+        )
         actions: list[ResolutionToolAction] = []
         mapping = {
             name: self._capture_handler(step, name, actions)
@@ -75,7 +91,7 @@ class LLMResolutionProposalAgent:
             "owner_context": owner_prompt_block(context.owner_snapshot),
             "candidate_actions": [
                 self._model_candidate_payload(candidate)
-                for candidate in self._step_candidates(step, candidate_graph)
+                for candidate in step_candidates
             ],
             "identity_lookup_packets": [
                 packet.model_dump(mode="json", exclude_none=True)
@@ -83,7 +99,7 @@ class LLMResolutionProposalAgent:
             ],
             "available_tools": sorted(toolbox.tools_by_name),
         }
-        result = self.provider.generate_chat_with_tools(
+        self.provider.generate_chat_with_tools(
             ChatRequest(
                 model=self.model or (route.model if route else None),
                 temperature=0.1,
@@ -108,6 +124,14 @@ class LLMResolutionProposalAgent:
                 f"Resolution step '{step.value}' returned no action tool call. "
                 "The backend will not infer a fallback action."
             )
+        log_event(
+            logger,
+            "ingestion.resolution.proposal.received",
+            component="ingestion",
+            resolution_step=step.value,
+            action_count=len(actions),
+            action_tools=[action.tool_name.value for action in actions],
+        )
         return actions
 
     def resolve_nodes(
@@ -200,5 +224,8 @@ class LLMResolutionProposalAgent:
             "matches are evidence, not decisions. Use the source, history, and summaries "
             "to decide. If uncertainty remains, call ask_clarification. Stable Person "
             "traits belong in profile-memory actions, never direct Person properties. "
-            "Use OWNER for first-person references and never create an owner."
+            "Use OWNER for first-person references and never create an owner. For every "
+            "candidate listed in this step, invoke exactly one terminal action tool: a "
+            "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
+            "only and do not omit a candidate action."
         )

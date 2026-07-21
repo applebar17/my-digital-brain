@@ -421,10 +421,9 @@ lookup packet as additional context.
 - Derive `EntityLookupRequest` in backend code from `mention_text`, aliases,
   the suggested entity type, and typed identity fields when those fields exist.
   The request must not contain an LLM-generated graph query or search policy.
-- Extract shared exact-identity matching helpers so the existing
-  `ConservativeResolutionService` and the new pre-extraction lookup do not
-  implement different normalization rules. Existing downstream resolution
-  remains exact-only until later waves change its behavior explicitly.
+- Keep identity lookup as the only deterministic graph-search operation. The
+  downstream resolution agent consumes its evidence and produces the complete
+  structured action set; it does not use a second deterministic resolver.
 - Implement label-constrained deterministic lookup for identity fields:
   - display name;
   - name;
@@ -732,8 +731,25 @@ unscoped mutation.
 
 ### Wave 6: Hardening, Evaluation, And UAT
 
-**Scope:** production hardening, observability, regression coverage, and
-interactive ingestion validation after direct integration.
+**Scope:** finish the directly affected implementation, remove obsolete
+semantic resolver paths, and harden the structured proposal protocol without
+turning LLM choices into backend scenario rules.
+
+#### Golden Rule
+
+The LLM owns semantic judgment. It receives the source, session history,
+owner context, lookup evidence, and phase-appropriate toolbox, then chooses
+whether to create, update, attach, clarify, or defer. The backend owns the
+execution boundary: it derives lookup requests, translates references,
+validates structure and scope, builds the write plan, and executes only valid
+commands. A lookup status never selects an action by itself.
+
+Protocol completeness is a structural requirement, not a semantic fallback.
+Every supplied candidate that participates in a resolution step must have a
+complete structured action or an `ask_clarification` action. Missing or
+malformed actions are rejected with explicit validation errors. The backend
+must never infer `create`, `attach`, `update`, or `defer` to repair an
+incomplete proposal.
 
 **Deliverables:**
 
@@ -759,13 +775,23 @@ interactive ingestion validation after direct integration.
   new-node rate, rejected references, and lookup failures.
 - Confirm that generic graph retrieval and unrelated semantic retrieval are
   unchanged.
-- Remove temporary compatibility paths that would allow the old late-only
-  resolution behavior to bypass the new pre-extraction packet when the
-  feature's relevant ingestion process is active.
+- Remove obsolete deterministic resolver implementations and their tests from
+  the affected ingestion path. Do not add compatibility facades, deprecated
+  aliases, duplicate resolution services, or hidden fallbacks.
+- Keep new feature modules below 500 lines and keep edited orchestration files
+  limited to wiring. Refactor an affected oversized file only when the split
+  creates a clear ownership boundary; unrelated legacy code remains outside
+  this wave.
+- Keep the structured contracts as the only input to backend graph actions.
+  Tool calls are proposals, handlers do not write directly, and write-plan
+  validation remains mandatory.
 
 **Exit criteria:** the interactive refined-ingestion trace demonstrates the
-full flow reliably, the regression suite passes, and direct integration does
-not expose hidden graph identifiers or allow unsafe writes.
+full flow reliably, the regression suite passes, every proposal is complete
+or rejected visibly, and direct integration does not expose hidden graph
+identifiers or allow unsafe writes. UAT evaluates protocol safety and trace
+shape; it does not assert that the LLM must choose one semantic action for a
+given matching scenario.
 
 ### Implementation Order Summary
 
@@ -1075,18 +1101,17 @@ Expected behavior:
 
 If identity remains ambiguous, steps 4 and 5 are blocked until clarification is obtained.
 
-## Reuse Of Existing Resolution Logic
+## Reuse Of Existing Lookup Logic
 
-The current `ConservativeResolutionService` already performs late exact-match resolution. The planned implementation should extract its deterministic matching behavior into a reusable identity lookup service.
-
-The same lookup result should be reused by:
+The deterministic lookup result is reused by:
 
 - pre-extraction candidate context generation;
 - clarification rendering;
-- post-extraction resolution validation;
+- structured resolution proposal validation;
 - final write-plan construction.
 
-This prevents the pre-extraction packet and final executor from applying different matching rules.
+This prevents the pre-extraction packet and final executor from applying
+different matching rules while keeping semantic action selection with the LLM.
 
 ## Failure And Safety Rules
 

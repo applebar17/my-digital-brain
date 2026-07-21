@@ -12,7 +12,6 @@ from my_digital_brain.ai.schemas import ProviderCallMetadata, StructuredGenerati
 from my_digital_brain.ai.schemas import StructuredGenerationResult
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.ingestion import (
-    DeterministicResolvedEntityMapBuilder,
     IngestionService,
     WholeSourceGraphContextPackBuilder,
 )
@@ -29,7 +28,9 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import IngestionStatus, SourceChannel, SourceType
 from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
-from my_digital_brain.ingestion.runtime_service import _batch_sequence
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
+from my_digital_brain.ingestion.runtime_helpers import batch_sequence as _batch_sequence
+from tests.support_resolution import FixedResolutionAgent
 
 
 def test_extraction_draft_batches_fold_trailing_singleton() -> None:
@@ -475,25 +476,6 @@ def test_reasoning_first_runtime_rejects_relationship_actions_with_unknown_endpo
     assert len(provider.requests) == 4
 
 
-def test_reasoning_first_entity_resolver_rejected_entries_are_not_relationship_usable() -> None:
-    resolver = DeterministicResolvedEntityMapBuilder()
-    resolved = resolver.resolve(
-        [
-            CandidateEntity(
-                local_ref="CANDIDATE_BAD_001",
-                entity_type="UnsafeLabel",
-                display_name="Unsupported",
-                source_refs=["source-1"],
-            ),
-        ],
-        GraphContextPack(source_id="source-1"),
-    )
-
-    assert resolved.entries[0].status == ResolvedEntityStatus.REJECTED.value
-    assert resolved.entries[0].relationship_ref is None
-    assert resolved.relationship_usable_refs == {}
-
-
 class QueuedStructuredProvider:
     provider_name = "fake"
 
@@ -541,12 +523,34 @@ class FakeSearchService:
 
 def _service(provider: QueuedStructuredProvider, pack: GraphContextPack) -> IngestionService:
     runner = AgenticStateRunner(provider=provider)
+    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
+    registry.register_owner("person:owner")
+    if not pack.reference_registry_snapshot:
+        for entity in pack.entities:
+            registry.register_existing(
+                f"uat:{entity.ref}",
+                object_kind="node",
+                label=entity.entity_type or "Node",
+                display_label=entity.display_label,
+                aliases=entity.aliases,
+            )
+        pack = pack.model_copy(
+            update={
+                "alias_map": registry.backend_alias_map(),
+                "reference_registry_snapshot": registry.snapshot(),
+            },
+            deep=True,
+        )
     return IngestionService(
         reasoning_service=AgenticReasoningService(runner),
         planning_service=AgenticPlanningService(runner),
         graph_context_builder=StaticGraphContextBuilder(pack),
         entity_extractors=[EntityExtractor(provider)],
         relationship_extractors=[RelationshipExtractor(provider)],
+        resolution_agent=FixedResolutionAgent(
+            node_action="update" if pack.entities else "create",
+            target_ref=pack.entities[0].ref if pack.entities else None,
+        ),
     )
 
 

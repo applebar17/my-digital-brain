@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateOutput,
@@ -37,6 +38,8 @@ def entity_extraction_plan(
     for action_index, action in enumerate(entity_plan.actions, start=1):
         action_payload = action.model_dump(mode="json", exclude_none=True)
         for entity_index, entity in enumerate(action.entities, start=1):
+            if entity.local_ref == OWNER_ALIAS:
+                continue
             if entity.suggested_entity_type is None:
                 issues.append(entity.local_ref)
                 continue

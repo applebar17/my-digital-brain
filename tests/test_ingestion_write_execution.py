@@ -30,6 +30,9 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLogLink,
     ResolutionDecision,
     ResolutionResult,
+    ResolutionStep,
+    ResolutionToolAction,
+    ResolutionToolName,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.extractors import EntityExtractor, RelationshipExtractor
@@ -42,20 +45,20 @@ from my_digital_brain.ingestion.enums import (
     SourceType,
 )
 from my_digital_brain.ingestion.executor import GraphWritePlanExecutor
-from my_digital_brain.ingestion.resolution import ConservativeResolutionService
+from my_digital_brain.ingestion.resolution_proposals import (
+    ResolutionProposalCompiler,
+    ResolutionProposalValidator,
+)
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.session_store import InMemoryIngestionProcessStore
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
+from tests.support_resolution import FixedResolutionAgent
 
 
-def test_conservative_resolution_matches_one_exact_existing_node() -> None:
+def test_structured_resolution_agent_controls_attachment_without_semantic_fallback() -> None:
     existing_id = new_uuid()
-    graph = FakeGraphService(
-        nodes=[
-            _node("Person", existing_id, display_name="Marco Rossi", aliases=["Marco"]),
-        ],
-    )
-    candidate_graph = _candidate_graph(
+    graph = _candidate_graph(
         [
             CandidateEntity(
                 local_ref="CANDIDATE_PERSON_001",
@@ -65,37 +68,29 @@ def test_conservative_resolution_matches_one_exact_existing_node() -> None:
             ),
         ],
     )
+    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
+    registry.register_owner("person:owner")
+    existing_ref = registry.register_existing(
+        existing_id,
+        object_kind="node",
+        label="Person",
+        display_label="Marco Rossi",
+    )
+    agent = FixedResolutionAgent(node_action="update", target_ref=existing_ref)
+    context = IngestionContextPackage(
+        source_id="source-1",
+        reference_registry_snapshot=registry.snapshot(),
+    )
 
-    result = ConservativeResolutionService(graph).resolve(candidate_graph)
+    resolved, result = agent.resolve_nodes(
+        source_text="I met Marco Rossi.",
+        context=context,
+        candidate_graph=graph,
+    )
 
     assert result.clarification is None
-    assert result.decisions[0].decision_type == ResolutionDecisionType.MATCH_EXISTING
-    assert result.decisions[0].target_entity_id == existing_id
-
-
-def test_conservative_resolution_returns_clarification_for_ambiguous_matches() -> None:
-    graph = FakeGraphService(
-        nodes=[
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-            _node("Person", new_uuid(), display_name="Marco Rossi"),
-        ],
-    )
-    candidate_graph = _candidate_graph(
-        [
-            CandidateEntity(
-                local_ref="CANDIDATE_PERSON_001",
-                entity_type="Person",
-                display_name="Marco Rossi",
-                source_refs=["source-1"],
-            ),
-        ],
-    )
-
-    result = ConservativeResolutionService(graph).resolve(candidate_graph)
-
-    assert result.clarification is not None
-    assert result.clarification.target_refs == ["CANDIDATE_PERSON_001"]
-    assert result.decisions[0].decision_type == ResolutionDecisionType.ASK_CLARIFICATION
+    assert resolved.entries[0].status == "matched_existing"
+    assert resolved.entries[0].graph_alias == existing_ref
 
 
 def test_write_plan_builder_maps_candidate_refs_and_is_deterministic() -> None:
@@ -378,7 +373,6 @@ def test_ingestion_service_can_execute_fake_write_path() -> None:
     service = _reasoning_first_service(
         graph=graph,
         provider_payloads=_single_person_payloads("Marco"),
-        resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
         execute_write_plan=True,
@@ -400,7 +394,6 @@ def test_ingestion_service_vectorizes_after_successful_graph_write() -> None:
             "Marco",
             description="University friend.",
         ),
-        resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
         vectorization_service=vectorizer,
@@ -422,7 +415,6 @@ def test_ingestion_service_keeps_written_status_when_vectorization_fails() -> No
             "Marco",
             description="University friend.",
         ),
-        resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
         vectorization_service=FailingVectorizer(),
@@ -441,7 +433,6 @@ def test_ingestion_service_returns_write_plan_ready_when_execution_is_disabled()
     service = _reasoning_first_service(
         graph=graph,
         provider_payloads=_single_person_payloads("Marco"),
-        resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
         execute_write_plan=False,
@@ -470,7 +461,6 @@ def test_ingestion_service_rejects_empty_candidate_graph() -> None:
             },
             {"reason": "No relationship action needed.", "context_gaps": ["No relationship."]},
         ],
-        resolution_service=ConservativeResolutionService(graph),
         write_plan_builder=GraphWritePlanBuilder(),
         write_plan_executor=GraphWritePlanExecutor(graph),
         execute_write_plan=True,
@@ -492,7 +482,7 @@ def test_ingestion_service_pauses_on_resolution_clarification() -> None:
     service = _reasoning_first_service(
         graph=graph,
         provider_payloads=_single_person_payloads("Marco Rossi"),
-        resolution_service=ConservativeResolutionService(graph),
+        resolution_agent=FixedResolutionAgent(clarify=True),
         write_plan_builder=GraphWritePlanBuilder(),
     )
 
@@ -514,7 +504,7 @@ def test_process_store_records_source_snapshots_and_expires_pending_sessions() -
     service = _reasoning_first_service(
         graph=graph,
         provider_payloads=_single_person_payloads("Marco Rossi"),
-        resolution_service=ConservativeResolutionService(graph),
+        resolution_agent=FixedResolutionAgent(clarify=True),
         write_plan_builder=GraphWritePlanBuilder(),
         process_store=store,
     )
@@ -524,7 +514,7 @@ def test_process_store_records_source_snapshots_and_expires_pending_sessions() -
     assert snapshot is not None
     assert store.sources["source-1"].raw_text == "I met Marco in Milan."
     assert snapshot.pending_question == (
-        "The candidate may refer to more than one existing memory."
+        "Which supplied person did you mean?"
     )
 
     expired_snapshot = snapshot.model_copy(
@@ -541,7 +531,7 @@ def _reasoning_first_service(
     *,
     graph: "FakeGraphService",
     provider_payloads: Sequence[dict[str, Any]],
-    resolution_service: ConservativeResolutionService | None = None,
+    resolution_agent: FixedResolutionAgent | None = None,
     write_plan_builder: GraphWritePlanBuilder | None = None,
     write_plan_executor: GraphWritePlanExecutor | None = None,
     vectorization_service: Any | None = None,
@@ -550,13 +540,20 @@ def _reasoning_first_service(
 ) -> IngestionService:
     provider = QueuedStructuredProvider(provider_payloads)
     runner = AgenticStateRunner(provider=provider)
+    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
+    registry.register_owner("person:owner")
+    context_pack = GraphContextPack(
+        source_id="source-1",
+        alias_map=registry.backend_alias_map(),
+        reference_registry_snapshot=registry.snapshot(),
+    )
     return IngestionService(
         reasoning_service=AgenticReasoningService(runner),
         planning_service=AgenticPlanningService(runner),
-        graph_context_builder=StaticGraphContextBuilder(GraphContextPack(source_id="source-1")),
+        graph_context_builder=StaticGraphContextBuilder(context_pack),
         entity_extractors=[EntityExtractor(provider)],
         relationship_extractors=[RelationshipExtractor(provider)],
-        resolution_service=resolution_service,
+        resolution_agent=resolution_agent or FixedResolutionAgent(),
         write_plan_builder=write_plan_builder,
         write_plan_executor=write_plan_executor,
         vectorization_service=vectorization_service,

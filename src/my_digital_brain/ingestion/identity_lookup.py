@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any
 
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.graph.utils import normalize_text
 from my_digital_brain.ingestion.contracts import (
@@ -24,6 +26,9 @@ class IdentityLookupError(RuntimeError):
     """Raised when deterministic lookup cannot safely complete."""
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(slots=True)
 class DeterministicIdentityLookupService:
     """Find bounded, label-constrained identity candidates before extraction."""
@@ -39,6 +44,14 @@ class DeterministicIdentityLookupService:
         *,
         registry: RunReferenceRegistry,
     ) -> EntityLookupResult:
+        log_event(
+            logger,
+            "ingestion.identity_lookup.request",
+            component="ingestion",
+            candidate_ref=request.candidate_ref,
+            entity_type=request.entity_type,
+            max_candidates=request.max_candidates,
+        )
         nodes = self._search(request)
         matched: dict[str, tuple[NodeSearchResult, IdentityMatchKind]] = {}
         for node in nodes:
@@ -68,25 +81,42 @@ class DeterministicIdentityLookupService:
                 if len(candidates) == 1
                 else IdentityLookupStatus.MULTIPLE_CANDIDATES
             )
-            return EntityLookupResult(
+            result = EntityLookupResult(
                 candidate_ref=request.candidate_ref,
                 status=status,
                 candidates=candidates,
                 guidance=_guidance(status),
             )
+            self._log_result(result)
+            return result
 
         fuzzy_candidates = self._fuzzy_candidates(request, registry)
         if fuzzy_candidates:
-            return EntityLookupResult(
+            result = EntityLookupResult(
                 candidate_ref=request.candidate_ref,
                 status=IdentityLookupStatus.FUZZY_CANDIDATES_ONLY,
                 candidates=fuzzy_candidates[: request.max_candidates],
                 guidance=_guidance(IdentityLookupStatus.FUZZY_CANDIDATES_ONLY),
             )
-        return EntityLookupResult(
+            self._log_result(result)
+            return result
+        result = EntityLookupResult(
             candidate_ref=request.candidate_ref,
             status=IdentityLookupStatus.NO_CANDIDATES,
             guidance=_guidance(IdentityLookupStatus.NO_CANDIDATES),
+        )
+        self._log_result(result)
+        return result
+
+    @staticmethod
+    def _log_result(result: EntityLookupResult) -> None:
+        log_event(
+            logger,
+            "ingestion.identity_lookup.classified",
+            component="ingestion",
+            candidate_ref=result.candidate_ref,
+            status=str(result.status),
+            candidate_count=len(result.candidates),
         )
 
     def lookup_planned_entity(

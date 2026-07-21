@@ -16,6 +16,8 @@ from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateMemoryGraph,
     CandidateProfileMemory,
+    EntityIngestionActionDraft,
+    EntityIngestionPlanDraft,
     GraphContextPack,
     GraphContextRenderPurpose,
     ExtractionTask,
@@ -25,6 +27,7 @@ from my_digital_brain.ingestion.contracts import (
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.contracts.resolution import ResolutionResult
 from my_digital_brain.ingestion.prompt_builders import IngestionPromptBuilder
+from my_digital_brain.ingestion.runtime_helpers import entity_extraction_plan
 from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.write_plan import GraphWritePlanBuilder
 from my_digital_brain.prompts import PromptRegistry
@@ -109,6 +112,34 @@ def test_owner_person_creation_and_profile_data_on_person_are_rejected() -> None
     result = IngestionValidator().validate_candidate_graph(candidate_graph)
     codes = {issue.code for issue in result.issues}
     assert "owner_creation_forbidden" in codes
+
+
+def test_owner_is_kept_as_an_existing_reference_during_entity_extraction_planning() -> None:
+    plan = entity_extraction_plan(
+        SourceRecordRef(source_id="source-1", source_type="text", channel="manual"),
+        GraphContextPack(source_id="source-1"),
+        EntityIngestionPlanDraft(
+            actions=[
+                EntityIngestionActionDraft(
+                    goal="Keep first-person references anchored to the owner.",
+                    entities=[
+                        {
+                            "local_ref": "OWNER",
+                            "mention_text": "I",
+                            "suggested_entity_type": "Person",
+                        },
+                        {
+                            "local_ref": "CANDIDATE_PERSON_001",
+                            "mention_text": "Marco",
+                            "suggested_entity_type": "Person",
+                        },
+                    ],
+                ),
+            ],
+        ),
+    )
+
+    assert [task.target_ref for task in plan.tasks] == ["CANDIDATE_PERSON_001"]
 
 
 def test_profile_candidate_requires_provenance_and_inferred_confirmation() -> None:

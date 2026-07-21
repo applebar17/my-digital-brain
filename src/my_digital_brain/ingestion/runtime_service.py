@@ -2,19 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-import json
 import logging
 from typing import Any
 
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.agentic import (
     AgenticMemoryLogExtractionService,
     AgenticPlanningService,
     AgenticReasoningService,
     AgenticToolExecutionContext,
 )
-from my_digital_brain.ai.logging import log_event
-from my_digital_brain.ai.tracing import traceable
-from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.candidate_context import (
     BoundedCandidateContextHydrator,
@@ -24,7 +21,6 @@ from my_digital_brain.ingestion.context_rendering import GraphContextPackRendere
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     CandidateMemoryGraph,
-    CandidateOutput,
     EntityIngestionPlanDraft,
     ExtractionPlan,
     GraphContextPack,
@@ -35,7 +31,6 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
     ResolvedEntityMap,
-    ResolutionStep,
     SourceRecordRef,
     ValidationIssue,
 )
@@ -47,28 +42,15 @@ from my_digital_brain.ingestion.identity_lookup import (
     DeterministicIdentityLookupService,
     IdentityLookupError,
 )
-from my_digital_brain.ingestion.planning_contexts import (
-    build_memory_log_packet,
-    build_resolved_entity_packet,
-)
 from my_digital_brain.ingestion.protocols import (
     FocusedExtractor,
     GraphVectorizationService,
     GraphWritePlanBuilder,
     GraphWritePlanExecutor,
     IngestionProcessStore,
-    ResolutionService,
+    ResolutionProposalAgent,
 )
-from my_digital_brain.ingestion.refined_relationships import build_relationship_extraction_plan
-from my_digital_brain.ingestion.refined_resolution import (
-    DeterministicResolvedEntityMapBuilder,
-)
-from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
-from my_digital_brain.ingestion.resolution_proposals import (
-    ResolutionProposalCompiler,
-    ResolutionProposalValidationError,
-    ResolutionProposalValidator,
-)
+from my_digital_brain.ingestion.resolution_proposals import ResolutionProposalValidationError
 from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.runtime_helpers import (
@@ -76,12 +58,10 @@ from my_digital_brain.ingestion.runtime_helpers import (
     clarification_from_draft as _clarification_from_draft,
     context_package_for_services as _context_package_for_services,
     entity_extraction_plan as _entity_extraction_plan,
-    memory_log_extraction_plan as _memory_log_extraction_plan,
-    validation_issue_summaries as _validation_issue_summaries,
-    write_plan_counts as _write_plan_counts,
-    write_plan_has_mutations as _write_plan_has_mutations,
-    batch_sequence as _batch_sequence,
 )
+from my_digital_brain.ingestion.runtime_completion import IngestionCompletionMixin
+from my_digital_brain.ingestion.runtime_candidate_flow import IngestionCandidateFlowMixin
+from my_digital_brain.ingestion.runtime_pipeline import IngestionPipelineMixin
 from my_digital_brain.ingestion.runtime_stages import (
     IngestionExtractionMixin,
     IngestionPlanningMixin,
@@ -94,6 +74,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class IngestionService(
+    IngestionCompletionMixin,
+    IngestionCandidateFlowMixin,
+    IngestionPipelineMixin,
     IngestionPlanningMixin,
     IngestionExtractionMixin,
     IngestionUATMixin,
@@ -109,17 +92,13 @@ class IngestionService(
     context_renderer: GraphContextPackRendererService = field(
         default_factory=GraphContextPackRendererService,
     )
-    entity_resolver: DeterministicResolvedEntityMapBuilder = field(
-        default_factory=DeterministicResolvedEntityMapBuilder,
-    )
     identity_lookup_service: DeterministicIdentityLookupService | None = None
     candidate_context_hydrator: BoundedCandidateContextHydrator | None = None
-    resolution_agent: LLMResolutionProposalAgent | None = None
+    resolution_agent: ResolutionProposalAgent | None = None
     assembler: CandidateMemoryGraphAssembler = field(
         default_factory=CandidateMemoryGraphAssembler
     )
     validator: IngestionValidator = field(default_factory=IngestionValidator)
-    resolution_service: ResolutionService | None = None
     write_plan_builder: GraphWritePlanBuilder | None = None
     write_plan_executor: GraphWritePlanExecutor | None = None
     vectorization_service: GraphVectorizationService | None = None
@@ -127,262 +106,6 @@ class IngestionService(
     process_store: IngestionProcessStore | None = None
     execution_context_factory: ExecutionContextFactory | None = None
     extraction_draft_batch_size: int = DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE
-
-    @traceable(name="Ingestion Process Source", run_type="chain")
-    def process_source(self, source: SourceRecordRef) -> IngestionResult:
-        log_event(
-            logger,
-            "ingestion.source.start",
-            component="ingestion",
-            source_id=source.source_id,
-            source_type=str(source.source_type),
-            channel=str(source.channel),
-            execute_write_plan=self.execute_write_plan,
-            reasoning_first_runtime=True,
-        )
-        if self.process_store is not None:
-            self.process_store.save_source(source)
-
-        graph_context_pack = self.graph_context_builder.build(source)
-        reasoning_view = self.context_renderer.render(
-            graph_context_pack,
-            GraphContextRenderPurpose.REASONING,
-        )
-        reasoning = self._reason(source, graph_context_pack, reasoning_view)
-        if isinstance(reasoning, IngestionResult):
-            return reasoning
-
-        entity_view = self.context_renderer.render(
-            graph_context_pack,
-            GraphContextRenderPurpose.ENTITY_PLANNING,
-        )
-        entity_plan = self._plan_entities(source, reasoning, entity_view)
-        if isinstance(entity_plan, IngestionResult):
-            return entity_plan
-        if entity_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                clarification=_clarification_from_draft(entity_plan.clarification),
-                metadata={"ingestion_stage": "entity_planning_clarification"},
-            ))
-
-        try:
-            self._attach_identity_lookup_packets(source, graph_context_pack, entity_plan)
-        except (IdentityLookupError, CandidateContextHydrationError) as exc:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                validation_errors=[ValidationIssue(
-                    field_path="identity_lookup",
-                    message=str(exc),
-                    code="identity_lookup_failed",
-                )],
-                metadata={"ingestion_stage": "identity_lookup"},
-            ))
-
-        entity_extraction_plan = _entity_extraction_plan(
-            source, graph_context_pack, entity_plan
-        )
-        entity_candidates, extraction_issues = self._extract_entities(
-            source,
-            graph_context_pack,
-            entity_extraction_plan,
-        )
-        if extraction_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=entity_candidates,
-                validation_errors=extraction_issues,
-                metadata={"ingestion_stage": "entity_candidate_preparation"},
-            ))
-
-        candidate_graph = self.assembler.assemble(
-            source,
-            entity_extraction_plan,
-            entity_candidates,
-        )
-        validation = self.validator.validate_candidate_graph(candidate_graph)
-        if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=entity_candidates,
-                entity_candidate_graph=candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "entity_validation"},
-            ))
-
-        try:
-            resolved_entity_map, node_resolution = self._resolve_entity_candidates(
-                source,
-                graph_context_pack,
-                candidate_graph,
-            )
-        except (ResolutionProposalValidationError, ValueError) as exc:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=entity_candidates,
-                entity_candidate_graph=candidate_graph,
-                validation_errors=[ValidationIssue(
-                    field_path="resolution_proposals",
-                    message=str(exc),
-                    code="resolution_proposal_invalid",
-                )],
-                metadata={"ingestion_stage": "entity_resolution_proposals"},
-            ))
-        if node_resolution is not None and node_resolution.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={
-                    "reasoning": reasoning_view,
-                    "entity_planning": entity_view,
-                },
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=entity_candidates,
-                entity_candidate_graph=candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                clarification=node_resolution.clarification,
-                clarifications=node_resolution.clarifications,
-                metadata={"ingestion_stage": "entity_resolution_clarification"},
-            ))
-        memory_result = self._prepare_memory_logs(
-            source=source,
-            graph_context_pack=graph_context_pack,
-            graph_context_views={
-                "reasoning": reasoning_view,
-                "entity_planning": entity_view,
-            },
-            reasoning=reasoning,
-            entity_plan=entity_plan,
-            entity_extraction_plan=entity_extraction_plan,
-            entity_candidates=entity_candidates,
-            entity_candidate_graph=candidate_graph,
-            resolved_entity_map=resolved_entity_map,
-        )
-        if isinstance(memory_result, IngestionResult):
-            return memory_result
-        (
-            memory_log_plan,
-            memory_log_extraction_plan,
-            memory_logs,
-            entity_packet,
-            memory_log_packet,
-            graph_context_views,
-        ) = memory_result
-        relationship_view = self.context_renderer.render(
-            graph_context_pack,
-            GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
-        )
-        graph_context_views["relationship_planning"] = relationship_view
-        relationship_plan = self._plan_relationships(
-            source,
-            reasoning,
-            relationship_view,
-            resolved_entity_map,
-            entity_packet,
-            memory_log_packet,
-        )
-        if isinstance(relationship_plan, IngestionResult):
-            return self._finish(relationship_plan.model_copy(
-                update={
-                    "graph_context_pack": graph_context_pack,
-                    "graph_context_views": graph_context_views,
-                    "reasoning": reasoning,
-                    "entity_plan": entity_plan,
-                    "entity_extraction_plan": entity_extraction_plan,
-                    "entity_candidates": entity_candidates,
-                    "entity_candidate_graph": candidate_graph,
-                    "resolved_entity_map": resolved_entity_map,
-                    "memory_log_plan": memory_log_plan,
-                    "memory_log_extraction_plan": memory_log_extraction_plan,
-                    "memory_logs": memory_logs,
-                },
-                deep=True,
-            ))
-        if relationship_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=entity_candidates,
-                entity_candidate_graph=candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(
-                    relationship_plan.clarification
-                ),
-                metadata={"ingestion_stage": "relationship_planning_clarification"},
-            ))
-
-        return self._complete_relationship_candidate_preparation(
-            source=source,
-            graph_context_pack=graph_context_pack,
-            graph_context_views=graph_context_views,
-            reasoning=reasoning,
-            entity_plan=entity_plan,
-            entity_extraction_plan=entity_extraction_plan,
-            entity_candidates=entity_candidates,
-            entity_candidate_graph=candidate_graph,
-            resolved_entity_map=resolved_entity_map,
-            memory_log_plan=memory_log_plan,
-            memory_log_extraction_plan=memory_log_extraction_plan,
-            memory_logs=memory_logs,
-            entity_packet=entity_packet,
-            memory_log_packet=memory_log_packet,
-            relationship_plan=relationship_plan,
-        )
 
     def _attach_identity_lookup_packets(
         self,
@@ -413,6 +136,17 @@ class IngestionService(
         graph_context_pack.identity_lookup_packets = list(existing.values())
         graph_context_pack.alias_map = registry.backend_alias_map()
         graph_context_pack.reference_registry_snapshot = registry.snapshot()
+        log_event(
+            logger,
+            "ingestion.identity_lookup.packet_created",
+            component="ingestion",
+            source_id=source.source_id,
+            packet_count=len(graph_context_pack.identity_lookup_packets),
+            packet_statuses=[
+                str(packet.lookup.status)
+                for packet in graph_context_pack.identity_lookup_packets
+            ],
+        )
 
     def _resolve_entity_candidates(
         self,
@@ -421,12 +155,8 @@ class IngestionService(
         candidate_graph: CandidateMemoryGraph,
     ) -> tuple[ResolvedEntityMap, Any | None]:
         if self.resolution_agent is None:
-            return (
-                self.entity_resolver.resolve(
-                    candidate_graph.candidate_entities,
-                    graph_context_pack,
-                ),
-                None,
+            raise ValueError(
+                "A structured resolution proposal agent is required for entity resolution."
             )
         context = _context_package_for_services(source, graph_context_pack)
         resolved_map, result = self.resolution_agent.resolve_nodes(
@@ -435,745 +165,16 @@ class IngestionService(
             candidate_graph=candidate_graph,
             packets=graph_context_pack.identity_lookup_packets,
         )
-        return resolved_map, result
-
-    def _prepare_memory_logs(
-        self,
-        *,
-        source: SourceRecordRef,
-        graph_context_pack: GraphContextPack,
-        graph_context_views: dict[str, Any],
-        reasoning: IngestionReasoningCheckpointDraft,
-        entity_plan: EntityIngestionPlanDraft | None,
-        entity_extraction_plan: ExtractionPlan,
-        entity_candidates: Sequence[CandidateEntity],
-        entity_candidate_graph: CandidateMemoryGraph,
-        resolved_entity_map: ResolvedEntityMap,
-    ) -> (
-        tuple[
-            MemoryLogIngestionPlanDraft,
-            ExtractionPlan,
-            list[MemoryLog],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            dict[str, Any],
-        ]
-        | IngestionResult
-    ):
-        entity_packet = build_resolved_entity_packet(
-            list(entity_candidate_graph.candidate_entities),
-            resolved_entity_map,
-        )
-        memory_log_view = self.context_renderer.render(
-            graph_context_pack,
-            GraphContextRenderPurpose.MEMORY_LOG_PLANNING,
-        )
-        graph_context_views = {**graph_context_views, "memory_log_planning": memory_log_view}
-        memory_log_plan = self._plan_memory_logs(
-            source,
-            reasoning,
-            memory_log_view,
-            resolved_entity_map,
-            entity_packet,
-        )
-        if isinstance(memory_log_plan, IngestionResult):
-            return self._finish(memory_log_plan.model_copy(
-                update={
-                    "graph_context_pack": graph_context_pack,
-                    "graph_context_views": graph_context_views,
-                    "reasoning": reasoning,
-                    "entity_plan": entity_plan,
-                    "entity_extraction_plan": entity_extraction_plan,
-                    "entity_candidates": list(entity_candidates),
-                    "entity_candidate_graph": entity_candidate_graph,
-                    "resolved_entity_map": resolved_entity_map,
-                },
-                deep=True,
-            ))
-        if memory_log_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                clarification=_clarification_from_draft(memory_log_plan.clarification),
-                metadata={"ingestion_stage": "memory_log_planning_clarification"},
-            ))
-
-        memory_log_extraction_plan = _memory_log_extraction_plan(
-            source,
-            graph_context_pack,
-            memory_log_plan,
-        )
-        memory_logs, extraction_issues, clarification = self._extract_memory_logs(
-            source,
-            graph_context_pack,
-            memory_log_view,
-            reasoning,
-            resolved_entity_map,
-            entity_packet,
-            memory_log_plan,
-            memory_log_extraction_plan,
-        )
-        if clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                clarification=clarification,
-                metadata={"ingestion_stage": "memory_log_extraction_clarification"},
-            ))
-        if extraction_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                validation_errors=extraction_issues,
-                metadata={"ingestion_stage": "memory_log_candidate_preparation"},
-            ))
-
-        candidate_graph = self._assemble_final_candidate_graph(
-            source,
-            graph_context_pack,
-            entity_extraction_plan,
-            [memory_log_extraction_plan],
-            None,
-            [*entity_candidates, *memory_logs],
-        )
-        validation = self.validator.validate_candidate_graph(candidate_graph)
-        if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                candidate_graph=candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "memory_log_validation"},
-            ))
-
-        memory_log_packet = build_memory_log_packet(memory_logs)
-        return (
-            memory_log_plan,
-            memory_log_extraction_plan,
-            memory_logs,
-            entity_packet,
-            memory_log_packet,
-            graph_context_views,
-        )
-
-    def _complete_relationship_candidate_preparation(
-        self,
-        *,
-        source: SourceRecordRef,
-        graph_context_pack: GraphContextPack,
-        graph_context_views: dict[str, Any],
-        reasoning: IngestionReasoningCheckpointDraft,
-        entity_plan: EntityIngestionPlanDraft | None,
-        entity_extraction_plan: ExtractionPlan,
-        entity_candidates: Sequence[CandidateEntity],
-        entity_candidate_graph: CandidateMemoryGraph,
-        resolved_entity_map: ResolvedEntityMap,
-        memory_log_plan: MemoryLogIngestionPlanDraft,
-        memory_log_extraction_plan: ExtractionPlan,
-        memory_logs: list[MemoryLog],
-        entity_packet: list[dict[str, Any]],
-        memory_log_packet: list[dict[str, Any]],
-        relationship_plan: RelationshipIngestionPlanDraft,
-    ) -> IngestionResult:
-        supplemental_plans: list[EntityIngestionPlanDraft] = []
-        supplemental_extraction_plans: list[ExtractionPlan] = []
-        supplemental_candidates: list[CandidateEntity] = []
-        relationship_view = graph_context_views.get("relationship_planning")
-
-        if relationship_plan.missing_entities:
-            missing_result = self._resolve_missing_entities_once(
-                source=source,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-            )
-            if isinstance(missing_result, IngestionResult):
-                return missing_result
-            (
-                supplemental_plans,
-                supplemental_extraction_plans,
-                supplemental_candidates,
-                resolved_entity_map,
-            ) = missing_result
-            if relationship_view is None:
-                relationship_view = self.context_renderer.render(
-                    graph_context_pack,
-                    GraphContextRenderPurpose.RELATIONSHIP_PLANNING,
-                )
-                graph_context_views["relationship_planning"] = relationship_view
-            relationship_plan = self._plan_relationships(
-                source,
-                reasoning,
-                relationship_view,
-                resolved_entity_map,
-                build_resolved_entity_packet(
-                    [*list(entity_candidates), *supplemental_candidates],
-                    resolved_entity_map,
-                ),
-                memory_log_packet,
-            )
-            if isinstance(relationship_plan, IngestionResult):
-                return self._finish(relationship_plan.model_copy(
-                    update={
-                        "graph_context_pack": graph_context_pack,
-                        "graph_context_views": graph_context_views,
-                        "reasoning": reasoning,
-                        "entity_plan": entity_plan,
-                        "entity_extraction_plan": entity_extraction_plan,
-                        "entity_candidates": list(entity_candidates),
-                        "entity_candidate_graph": entity_candidate_graph,
-                        "supplemental_entity_plans": supplemental_plans,
-                        "supplemental_entity_extraction_plans": supplemental_extraction_plans,
-                        "supplemental_entity_candidates": supplemental_candidates,
-                        "resolved_entity_map": resolved_entity_map,
-                        "memory_log_plan": memory_log_plan,
-                        "memory_log_extraction_plan": memory_log_extraction_plan,
-                        "memory_logs": memory_logs,
-                    },
-                    deep=True,
-                ))
-
-        all_entity_candidates = [*entity_candidates, *supplemental_candidates]
-        if relationship_plan.clarification is not None:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.NEEDS_CLARIFICATION,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                clarification=_clarification_from_draft(
-                    relationship_plan.clarification
-                ),
-                metadata={"ingestion_stage": "relationship_planning_clarification"},
-            ))
-        if relationship_plan.missing_entities:
-            candidate_graph = self._assemble_final_candidate_graph(
-                source,
-                graph_context_pack,
-                entity_extraction_plan,
-                [*supplemental_extraction_plans, memory_log_extraction_plan],
-                None,
-                [*all_entity_candidates, *memory_logs],
-            )
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.PLANNED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                candidate_graph=candidate_graph,
-                metadata={"ingestion_stage": "relationship_missing_entity_blocked"},
-            ))
-
-        plan_build = build_relationship_extraction_plan(
-            source,
-            graph_context_pack,
-            relationship_plan,
-            resolved_entity_map,
-        )
-        if plan_build.validation_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                validation_errors=plan_build.validation_issues,
-                metadata={"ingestion_stage": "relationship_candidate_preparation"},
-            ))
-
-        relationship_candidates, extraction_issues = (
-            self._extract_relationship_candidates(
-                source,
-                graph_context_pack,
-                plan_build.extraction_plan,
-                resolved_entity_map,
-            )
-        )
-        if extraction_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                relationship_candidates=relationship_candidates,
-                validation_errors=extraction_issues,
-                metadata={"ingestion_stage": "relationship_candidate_preparation"},
-            ))
-
-        candidate_graph = self._assemble_final_candidate_graph(
-            source,
-            graph_context_pack,
-            entity_extraction_plan,
-            [*supplemental_extraction_plans, memory_log_extraction_plan],
-            plan_build.extraction_plan,
-            [*all_entity_candidates, *memory_logs, *relationship_candidates],
-        )
-        validation = self.validator.validate_candidate_graph(candidate_graph)
-        if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                relationship_candidates=relationship_candidates,
-                candidate_graph=candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "candidate_graph_validation"},
-            ))
-
-        return self._complete_write(
-            source=source,
-            graph_context_pack=graph_context_pack,
-            graph_context_views=graph_context_views,
-            reasoning=reasoning,
-            entity_plan=entity_plan,
-            entity_extraction_plan=entity_extraction_plan,
-            entity_candidates=list(entity_candidates),
-            entity_candidate_graph=entity_candidate_graph,
-            supplemental_entity_plans=supplemental_plans,
-            supplemental_entity_extraction_plans=supplemental_extraction_plans,
-            supplemental_entity_candidates=supplemental_candidates,
-            resolved_entity_map=resolved_entity_map,
-            memory_log_plan=memory_log_plan,
-            memory_log_extraction_plan=memory_log_extraction_plan,
-            memory_logs=memory_logs,
-            relationship_plan=relationship_plan,
-            relationship_extraction_plan=plan_build.extraction_plan,
-            relationship_candidates=relationship_candidates,
-            candidate_graph=candidate_graph,
-        )
-
-    def _complete_write(
-        self,
-        *,
-        source: SourceRecordRef,
-        graph_context_pack: GraphContextPack,
-        graph_context_views: dict[str, Any],
-        reasoning: IngestionReasoningCheckpointDraft,
-        entity_plan: EntityIngestionPlanDraft | None,
-        entity_extraction_plan: ExtractionPlan,
-        entity_candidates: list[CandidateEntity],
-        entity_candidate_graph: CandidateMemoryGraph,
-        supplemental_entity_plans: list[EntityIngestionPlanDraft],
-        supplemental_entity_extraction_plans: list[ExtractionPlan],
-        supplemental_entity_candidates: list[CandidateEntity],
-        resolved_entity_map: ResolvedEntityMap,
-        memory_log_plan: MemoryLogIngestionPlanDraft,
-        memory_log_extraction_plan: ExtractionPlan,
-        memory_logs: list[MemoryLog],
-        relationship_plan: RelationshipIngestionPlanDraft,
-        relationship_extraction_plan: ExtractionPlan,
-        relationship_candidates: list[CandidateOutput],
-        candidate_graph: CandidateMemoryGraph,
-    ) -> IngestionResult:
-        checkpoint_fields = {
-            "graph_context_pack": graph_context_pack,
-            "graph_context_views": graph_context_views,
-            "reasoning": reasoning,
-            "entity_plan": entity_plan,
-            "entity_extraction_plan": entity_extraction_plan,
-            "entity_candidates": entity_candidates,
-            "entity_candidate_graph": entity_candidate_graph,
-            "supplemental_entity_plans": supplemental_entity_plans,
-            "supplemental_entity_extraction_plans": supplemental_entity_extraction_plans,
-            "supplemental_entity_candidates": supplemental_entity_candidates,
-            "resolved_entity_map": resolved_entity_map,
-            "memory_log_plan": memory_log_plan,
-            "memory_log_extraction_plan": memory_log_extraction_plan,
-            "memory_logs": memory_logs,
-            "relationship_plan": relationship_plan,
-            "relationship_extraction_plan": relationship_extraction_plan,
-            "relationship_candidates": relationship_candidates,
-            "candidate_graph": candidate_graph,
-        }
-        context = _context_package_for_services(source, graph_context_pack)
-
-        if self.resolution_service is None or self.write_plan_builder is None:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.CANDIDATE_READY,
-                    **checkpoint_fields,
-                    metadata={"ingestion_stage": "candidate_graph_ready"},
-                ),
-            )
-
-        if self.resolution_agent is not None:
-            try:
-                registry = RunReferenceRegistry.from_snapshot(
-                    context.reference_registry_snapshot,
-                )
-                compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
-                resolution = compiler.result_from_entity_map(resolved_entity_map)
-                for step, candidates in (
-                    (
-                        ResolutionStep.MEMORY,
-                        [*candidate_graph.memory_logs, *candidate_graph.candidate_profile_memories],
-                    ),
-                    (
-                        ResolutionStep.RELATIONSHIP,
-                        [
-                            *candidate_graph.candidate_relationships,
-                            *candidate_graph.candidate_relationship_contexts,
-                        ],
-                    ),
-                ):
-                    if not candidates:
-                        continue
-                    actions = self.resolution_agent.propose(
-                        step=step,
-                        source_text=source.raw_text,
-                        context=context,
-                        candidate_graph=candidate_graph,
-                        packets=context.identity_lookup_packets,
-                    )
-                    resolution = compiler.merge_step_actions(
-                        resolution,
-                        actions,
-                        step=step,
-                        supplied_candidate_refs=[candidate.local_ref for candidate in candidates],
-                        packets=context.identity_lookup_packets,
-                    )
-            except (ResolutionProposalValidationError, ValueError) as exc:
-                return self._finish(
-                    IngestionResult(
-                        source_id=source.source_id,
-                        status=IngestionStatus.VALIDATION_FAILED,
-                        **checkpoint_fields,
-                        validation_errors=[
-                            ValidationIssue(
-                                field_path="resolution_result",
-                                message=str(exc),
-                                code="resolution_result_compilation_failed",
-                            ),
-                        ],
-                        metadata={"ingestion_stage": "resolution_result_compilation"},
-                    ),
-                )
-        else:
-            resolution = self.resolution_service.resolve(candidate_graph, context)
-        if resolution.clarifications:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.NEEDS_CLARIFICATION,
-                    **checkpoint_fields,
-                    clarification=resolution.clarification,
-                    clarifications=resolution.clarifications,
-                    metadata={"ingestion_stage": "write_resolution_clarification"},
-                ),
-            )
-
-        try:
-            write_plan = self.write_plan_builder.build(candidate_graph, resolution, context)
-        except Exception as exc:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    **checkpoint_fields,
-                    validation_errors=[
-                        ValidationIssue(
-                            field_path="write_plan",
-                            message=str(exc),
-                            code="write_plan_build_failed",
-                        )
-                    ],
-                    metadata={"ingestion_stage": "write_plan_build"},
-                ),
-            )
-
-        if not _write_plan_has_mutations(write_plan):
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    **checkpoint_fields,
-                    write_plan=write_plan,
-                    validation_errors=[
-                        ValidationIssue(
-                            field_path="write_plan",
-                            message=(
-                                "The resolved write plan contains no graph mutations. "
-                                "Memory storage requires at least one durable write."
-                            ),
-                            code="empty_write_plan",
-                        )
-                    ],
-                    metadata={"ingestion_stage": "write_plan_validation"},
-                ),
-            )
-
-        write_validation = self.validator.validate_write_plan(write_plan)
-        if not write_validation.is_valid:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    **checkpoint_fields,
-                    write_plan=write_plan,
-                    validation_errors=write_validation.issues,
-                    metadata={"ingestion_stage": "write_plan_validation"},
-                ),
-            )
-
-        if self.write_plan_executor is None or not self.execute_write_plan:
-            return self._finish(
-                IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.WRITE_PLAN_READY,
-                    **checkpoint_fields,
-                    write_plan=write_plan,
-                    metadata={
-                        "ingestion_stage": "write_plan_ready",
-                        "write_counts": _write_plan_counts(write_plan),
-                    },
-                ),
-            )
-
-        execution = self.write_plan_executor.execute(write_plan)
-        execution = execution.model_copy(
-            update={
-                **checkpoint_fields,
-                "write_plan": execution.write_plan or write_plan,
-                "metadata": {
-                    **execution.metadata,
-                    "ingestion_stage": "write_executed",
-                    "write_counts": _write_plan_counts(execution.write_plan or write_plan),
-                },
-            },
-            deep=True,
-        )
-        if execution.status == IngestionStatus.WRITTEN:
-            self._vectorize_written_result(execution)
-        return self._finish(execution)
-
-    def _finish(self, result: IngestionResult) -> IngestionResult:
-        if result.validation_errors:
-            log_event(
-                logger,
-                "ingestion.validation_failed",
-                level="warning",
-                component="ingestion",
-                source_id=result.source_id,
-                ingestion_id=result.ingestion_id,
-                status=str(result.status),
-                validation_error_count=len(result.validation_errors),
-                validation_errors=_validation_issue_summaries(result.validation_errors),
-            )
         log_event(
             logger,
-            "ingestion.result",
+            "ingestion.resolution.validation_decision",
             component="ingestion",
-            source_id=result.source_id,
-            ingestion_id=result.ingestion_id,
-            status=str(result.status),
-            ingestion_stage=result.metadata.get("ingestion_stage"),
-            validation_error_count=len(result.validation_errors),
-            validation_error_codes=[
-                issue.code for issue in result.validation_errors if issue.code
-            ],
-            has_clarification=result.clarification is not None,
-            write_counts=_write_plan_counts(result.write_plan) if result.write_plan else None,
+            source_id=source.source_id,
+            decision_count=len(result.decisions),
+            clarification_count=len(result.clarifications),
+            policy=result.metadata.get("policy"),
         )
-        if self.process_store is not None:
-            self.process_store.record_result(result)
-        record_ai_flow_event(
-            title="Ingestion Backend Result",
-            call_kind="backend_process_result",
-            purpose="memory_ingestion",
-            status=str(result.status),
-            sections=[
-                AIFlowTraceSection(
-                    title="TOOL OUTPUT",
-                    content=json.dumps(
-                        {
-                            "status": str(result.status),
-                            "source_id": result.source_id,
-                            "ingestion_id": result.ingestion_id,
-                            "ingestion_stage": result.metadata.get("ingestion_stage"),
-                            "has_clarification": result.clarification is not None,
-                            "validation_errors": _validation_issue_summaries(
-                                result.validation_errors,
-                            ),
-                            "write_counts": (
-                                _write_plan_counts(result.write_plan)
-                                if result.write_plan
-                                else None
-                            ),
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                        default=str,
-                    ),
-                    content_type="json",
-                )
-            ],
-            metadata={
-                "source_id": result.source_id,
-                "ingestion_id": result.ingestion_id,
-                "status": str(result.status),
-            },
-        )
-        return result
-
-    @traceable(name="Ingestion Vectorize Written Result", run_type="chain")
-    def _vectorize_written_result(self, result: IngestionResult) -> None:
-        if self.vectorization_service is None:
-            return
-        try:
-            vectorization = self.vectorization_service.vectorize_ingestion_result(result)
-            if hasattr(vectorization, "model_dump"):
-                payload = vectorization.model_dump(mode="json", exclude_none=True)
-            elif isinstance(vectorization, dict):
-                payload = dict(vectorization)
-            else:
-                payload = {"result": str(vectorization)}
-            result.metadata = {**result.metadata, "vectorization": payload}
-            log_event(
-                logger,
-                "ingestion.vectorization.done",
-                component="ingestion",
-                source_id=result.source_id,
-                ingestion_id=result.ingestion_id,
-                vectorization=payload,
-            )
-        except Exception as exc:  # pragma: no cover - defensive around external stores
-            result.metadata = {
-                **result.metadata,
-                "vectorization": {
-                    "status": "failed",
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                },
-            }
-            log_event(
-                logger,
-                "ingestion.vectorization.failed",
-                level="error",
-                component="ingestion",
-                source_id=result.source_id,
-                ingestion_id=result.ingestion_id,
-                error_type=type(exc).__name__,
-                error=str(exc),
-            )
+        return resolved_map, result
 
     def _resolve_missing_entities_once(
         self,
@@ -1350,10 +351,67 @@ class IngestionService(
             None,
             [*entity_candidates, *supplemental_candidates],
         )
-        updated_resolved_map = self.entity_resolver.resolve(
-            combined_entity_graph.candidate_entities,
-            graph_context_pack,
-        )
+        try:
+            updated_resolved_map, resolution = self._resolve_entity_candidates(
+                source,
+                graph_context_pack,
+                combined_entity_graph,
+            )
+        except (ResolutionProposalValidationError, ValueError) as exc:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=entity_candidates,
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="resolution_proposals",
+                            message=str(exc),
+                            code="resolution_proposal_invalid",
+                        ),
+                    ],
+                    metadata={"ingestion_stage": "missing_entity_resolution"},
+                ),
+            )
+        if resolution.clarifications:
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.NEEDS_CLARIFICATION,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=entity_candidates,
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=updated_resolved_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    clarification=resolution.clarification,
+                    clarifications=resolution.clarifications,
+                    metadata={"ingestion_stage": "missing_entity_resolution_clarification"},
+                ),
+            )
         return (
             supplemental_plans,
             supplemental_extraction_plans,
