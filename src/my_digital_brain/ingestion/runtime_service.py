@@ -16,6 +16,10 @@ from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
+from my_digital_brain.ingestion.candidate_context import (
+    BoundedCandidateContextHydrator,
+    CandidateContextHydrationError,
+)
 from my_digital_brain.ingestion.context_rendering import GraphContextPackRendererService
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
@@ -102,6 +106,7 @@ class IngestionService(
         default_factory=DeterministicResolvedEntityMapBuilder,
     )
     identity_lookup_service: DeterministicIdentityLookupService | None = None
+    candidate_context_hydrator: BoundedCandidateContextHydrator | None = None
     assembler: CandidateMemoryGraphAssembler = field(
         default_factory=CandidateMemoryGraphAssembler
     )
@@ -163,7 +168,7 @@ class IngestionService(
 
         try:
             self._attach_identity_lookup_packets(source, graph_context_pack, entity_plan)
-        except IdentityLookupError as exc:
+        except (IdentityLookupError, CandidateContextHydrationError) as exc:
             return self._finish(IngestionResult(
                 source_id=source.source_id,
                 status=IngestionStatus.VALIDATION_FAILED,
@@ -345,6 +350,11 @@ class IngestionService(
             graph_context_pack.reference_registry_snapshot,
         )
         packets = self.identity_lookup_service.lookup_plan(entity_plan, registry=registry)
+        if self.candidate_context_hydrator is not None:
+            packets = self.candidate_context_hydrator.hydrate_packets(
+                packets,
+                registry=registry,
+            )
         existing = {
             packet.candidate_ref: packet
             for packet in graph_context_pack.identity_lookup_packets
@@ -1107,7 +1117,7 @@ class IngestionService(
                 ))
             try:
                 self._attach_identity_lookup_packets(source, graph_context_pack, missing_plan)
-            except IdentityLookupError as exc:
+            except (IdentityLookupError, CandidateContextHydrationError) as exc:
                 return self._finish(IngestionResult(
                     source_id=source.source_id,
                     status=IngestionStatus.VALIDATION_FAILED,

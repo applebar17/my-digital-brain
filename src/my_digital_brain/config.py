@@ -75,6 +75,30 @@ class Settings(BaseSettings):
         le=50,
         alias="IDENTITY_LOOKUP_MAX_CANDIDATES",
     )
+    identity_context_max_relationships: int = Field(
+        default=3,
+        ge=0,
+        le=50,
+        alias="IDENTITY_CONTEXT_MAX_RELATIONSHIPS",
+    )
+    identity_context_max_memory_logs: int = Field(
+        default=3,
+        ge=0,
+        le=50,
+        alias="IDENTITY_CONTEXT_MAX_MEMORY_LOGS",
+    )
+    identity_context_max_summary_chars: int = Field(
+        default=500,
+        ge=40,
+        le=10_000,
+        alias="IDENTITY_CONTEXT_MAX_SUMMARY_CHARS",
+    )
+    identity_context_max_total_chars: int = Field(
+        default=6000,
+        ge=500,
+        le=100_000,
+        alias="IDENTITY_CONTEXT_MAX_TOTAL_CHARS",
+    )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
         default="postgres",
