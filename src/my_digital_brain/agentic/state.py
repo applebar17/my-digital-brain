@@ -16,7 +16,7 @@ class AgenticStateConfig(AgenticModel):
     produced_context_type: str | None = None
     allowed_tools: list[str] = Field(default_factory=list)
     forbidden_tools: list[str] = Field(default_factory=list)
-    max_tool_calls: int = Field(default=3, ge=0)
+    max_tool_calls: int = Field(default=50, ge=0)
     model_task: str | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
 
@@ -63,7 +63,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "raw_graph_query",
                 "focused_extraction",
             ],
-            max_tool_calls=2,
+            max_tool_calls=50,
             model_task="reasoning_checkpoint",
         ),
         AgenticStateId.PLANNING_CHECKPOINT: AgenticStateConfig(
@@ -89,7 +89,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "raw_graph_query",
                 "focused_extraction",
             ],
-            max_tool_calls=2,
+            max_tool_calls=50,
             model_task="planning_checkpoint",
         ),
         AgenticStateId.MEMORY_LOG_EXTRACTION: AgenticStateConfig(
@@ -115,7 +115,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "raw_graph_query",
                 "focused_extraction",
             ],
-            max_tool_calls=2,
+            max_tool_calls=50,
             model_task="memory_log_extraction",
         ),
         AgenticStateId.MEMORY_QUERY: AgenticStateConfig(
@@ -164,7 +164,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "execute_graph_write_plan",
                 "raw_graph_query",
             ],
-            max_tool_calls=8,
+            max_tool_calls=50,
             model_task="memory_ingestion",
         ),
         AgenticStateId.MEMORY_CREATION: AgenticStateConfig(
@@ -191,7 +191,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "execute_graph_write_plan",
                 "raw_graph_query",
             ],
-            max_tool_calls=8,
+            max_tool_calls=50,
             model_task="memory_creation",
         ),
         AgenticStateId.GRAPH_UPDATE: AgenticStateConfig(
@@ -220,7 +220,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "delete_graph_node",
                 "archive_memory",
             ],
-            max_tool_calls=8,
+            max_tool_calls=50,
             model_task="graph_update",
         ),
         AgenticStateId.CONTRADICTION_REVIEW: AgenticStateConfig(
@@ -261,7 +261,7 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
                 "upsert_graph_relationship",
                 "raw_graph_query",
             ],
-            max_tool_calls=2,
+            max_tool_calls=50,
             model_task="profile_duplication",
         ),
     }
