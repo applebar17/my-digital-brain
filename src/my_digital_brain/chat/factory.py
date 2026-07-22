@@ -197,7 +197,7 @@ def build_ingestion_service(
         resolution_agent=LLMResolutionProposalAgent(
             provider,
             router=router,
-            max_tool_calls=settings.ingestion_resolution_max_tool_calls,
+            max_tool_calls=settings.llm_max_tool_calls,
         ),
         entity_extractors=[
             EntityExtractor(provider, router=router),
