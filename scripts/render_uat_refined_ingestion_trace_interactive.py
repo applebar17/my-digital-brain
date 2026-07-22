@@ -215,9 +215,15 @@ def _source_with_clarification_history(
     packet: ClarificationPacket,
     answer_history: list[dict[str, str]],
 ) -> Any:
-    history = AgenticHistoryService().promote_messages_to_master_history(
+    history_service = AgenticHistoryService()
+    history = history_service.append_user_message_to_master_history(
         list((source.metadata or {}).get("model_facing_history") or []),
-        [*packet.history_delta, *answer_history],
+        base_raw_text,
+    )
+    history = history_service.promote_clarification_to_master_history(
+        history,
+        packet,
+        answer_messages=answer_history,
     )
     metadata = {
         **dict(source.metadata or {}),

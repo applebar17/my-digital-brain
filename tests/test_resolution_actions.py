@@ -237,12 +237,7 @@ def test_prompt_adds_match_guidance_only_when_contextual_matches_exist() -> None
     no_match_context = IngestionContextPackage(source_id=source.source_id)
     no_match_payload = IngestionPromptBuilder().extraction_input(source, task, no_match_context)
 
-    assert no_match_payload["resolution_context"]["available_tools"] == [
-        "ask_clarification",
-        "create_node",
-        "update_node",
-        "defer_or_ignore",
-    ]
+    assert no_match_payload["resolution_context"] == {}
     assert "match_resolution_guidance" not in no_match_payload["resolution_context"]
 
     match_context = IngestionContextPackage(

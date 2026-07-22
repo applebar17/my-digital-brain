@@ -199,6 +199,44 @@ class AgenticHistoryService:
         )
         return promoted
 
+    def append_user_message_to_master_history(
+        self,
+        master_history: Iterable[dict[str, Any]],
+        content: str,
+    ) -> list[dict[str, Any]]:
+        """Ensure a source/user message exists once in master history."""
+
+        normalized = content.strip()
+        history = [dict(message) for message in master_history if isinstance(message, dict)]
+        if not normalized:
+            return history
+        if any(
+            str(message.get("role") or "") == "user"
+            and str(message.get("content") or "").strip() == normalized
+            for message in history
+        ):
+            return history
+        history.append({"role": "user", "content": normalized})
+        return history
+
+    def promote_clarification_to_master_history(
+        self,
+        master_history: Iterable[dict[str, Any]],
+        packet: Any,
+        answer_messages: Iterable[Any] = (),
+    ) -> list[dict[str, Any]]:
+        """Promote a clarification exchange without UI answer choices."""
+
+        question_messages = [
+            {"role": "assistant", "content": question_text}
+            for question in getattr(packet, "questions", ())
+            if (question_text := str(getattr(question, "question", "") or "").strip())
+        ]
+        return self.promote_messages_to_master_history(
+            master_history,
+            [*question_messages, *answer_messages],
+        )
+
     def model_payload_for_state(self, state_id: AgenticStateId | str, payload: Any) -> Any:
         state = AgenticStateId(state_id)
         if isinstance(payload, ConversationContext):
@@ -255,10 +293,20 @@ class AgenticHistoryService:
         """Render source-backed ingestion messages plus a transient user message."""
 
         messages = self._messages_from_source_metadata(source)
-        if not self._source_has_model_facing_user_history(source):
-            source_text = self._source_text_from_source(source)
-            if source_text:
-                messages.insert(0, ChatMessage(role="user", content=source_text))
+        source_text = self._source_text_from_source(source)
+        if source_text and not any(
+            message.role == "user" and message.content.strip() == source_text.strip()
+            for message in messages
+        ):
+            insert_at = next(
+                (
+                    index
+                    for index, message in enumerate(messages)
+                    if _is_clarification_question(messages, index)
+                ),
+                len(messages),
+            )
+            messages.insert(insert_at, ChatMessage(role="user", content=source_text))
         if appended_user_message and appended_user_message.strip():
             messages.append(ChatMessage(role="user", content=appended_user_message.strip()))
         return messages
@@ -577,20 +625,6 @@ class AgenticHistoryService:
                     )
         return messages
 
-    def _source_has_model_facing_user_history(self, source: Any) -> bool:
-        metadata = getattr(source, "metadata", None)
-        if not isinstance(metadata, dict):
-            return False
-        raw_history = metadata.get("model_facing_history")
-        if not isinstance(raw_history, list):
-            return False
-        return any(
-            isinstance(item, dict)
-            and str(item.get("role") or "").strip() == "user"
-            and bool(item.get("content"))
-            for item in raw_history
-        )
-
     def _source_text_from_source(self, source: Any) -> str | None:
         for key in ("raw_text", "content_ref"):
             value = getattr(source, key, None)
@@ -636,6 +670,18 @@ class AgenticHistoryService:
 
 def _enum_value(value: Any) -> str:
     return str(getattr(value, "value", value))
+
+
+def _is_clarification_question(messages: list[ChatMessage], index: int) -> bool:
+    message = messages[index]
+    if message.role != "assistant":
+        return False
+    if message.content.startswith("Clarification"):
+        return True
+    if index + 1 >= len(messages):
+        return False
+    next_message = messages[index + 1]
+    return next_message.role == "user" and next_message.content.startswith("Clarification answer:")
 
 
 def _truncate(value: str, max_chars: int) -> str:

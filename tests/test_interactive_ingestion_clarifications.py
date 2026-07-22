@@ -88,6 +88,10 @@ def test_terminal_answer_resumes_the_paused_session_without_rerunning_pipeline()
     assert len(service.resume_calls) == 1
     assert service.resume_calls[0][2] == "Amos Vignaroli"
     assert result is completed
+    assert updated_source.metadata["model_facing_history"][:2] == [
+        {"role": "user", "content": "I met Amos."},
+        {"role": "assistant", "content": "Who is Amos?"},
+    ]
     assert updated_source.metadata["model_facing_history"][-1] == {
         "role": "user",
         "content": "Clarification answer: Amos Vignaroli",

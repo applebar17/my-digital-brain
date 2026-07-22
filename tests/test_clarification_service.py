@@ -33,10 +33,12 @@ def test_answer_text_appends_user_history_without_pipeline_status() -> None:
     packet = ClarificationPacket.model_validate(result.data["clarification_packet"])
 
     _, answer_history = service.answer_text(packet, "The beach club in Rimini")
-    history = AgenticHistoryService().promote_messages_to_master_history(
+    history = AgenticHistoryService().promote_clarification_to_master_history(
         [],
-        [*packet.history_delta, *answer_history],
+        packet,
+        answer_messages=answer_history,
     )
 
     assert [item["role"] for item in history] == ["assistant", "user"]
+    assert history[0]["content"] == "Which place was it?"
     assert history[-1]["content"] == "Clarification answer: The beach club in Rimini"

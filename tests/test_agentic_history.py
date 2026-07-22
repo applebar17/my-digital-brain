@@ -16,6 +16,7 @@ from my_digital_brain.agentic import (
 from my_digital_brain.agentic.contexts import PlanningContext, SourceContext
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult
 from my_digital_brain.ai.schemas import ChatMessage
+from my_digital_brain.chat.clarification import build_clarification_packet
 from my_digital_brain.chat.enums import ConversationMessageRole
 from my_digital_brain.chat.models import ConversationMessage
 
@@ -87,6 +88,48 @@ def test_history_service_promotes_selected_messages_to_master_history() -> None:
         {"role": "user", "content": "Store this memory."},
         {"role": "assistant", "content": "Who's Amos?"},
         {"role": "user", "content": "Amos Vignaroli"},
+    ]
+
+
+def test_history_service_promotes_clarification_question_without_options() -> None:
+    service = AgenticHistoryService()
+    packet = build_clarification_packet(
+        frame_id="frame-1",
+        origin_state_id="node",
+        reason="The name is ambiguous.",
+        questions=[
+            {
+                "question": "Who is Amos?",
+                "options": [{"label": "Amos Vignaroli"}],
+            }
+        ],
+    )
+
+    history = service.promote_clarification_to_master_history(
+        [{"role": "user", "content": "Store this memory."}],
+        packet,
+        answer_messages=[{"role": "user", "content": "Amos Vignaroli"}],
+    )
+
+    assert history == [
+        {"role": "user", "content": "Store this memory."},
+        {"role": "assistant", "content": "Who is Amos?"},
+        {"role": "user", "content": "Amos Vignaroli"},
+    ]
+
+
+def test_history_service_appends_source_once_to_master_history() -> None:
+    service = AgenticHistoryService()
+
+    history = service.append_user_message_to_master_history(
+        [{"role": "user", "content": "Earlier message."}],
+        "Store this memory.",
+    )
+    history = service.append_user_message_to_master_history(history, "Store this memory.")
+
+    assert history == [
+        {"role": "user", "content": "Earlier message."},
+        {"role": "user", "content": "Store this memory."},
     ]
 
 

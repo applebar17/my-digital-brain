@@ -166,6 +166,7 @@ class LLMResolutionProposalAgent:
                     candidate_graph,
                     excluded_refs=self._candidate_refs(batch),
                 ),
+                owner_prompt_block(context.owner_snapshot),
             )
             # A resumed first batch already carries actions from earlier clarification
             # continuations. Validate the complete current-batch accumulator, not only
@@ -404,20 +405,21 @@ class LLMResolutionProposalAgent:
         }
         batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
         input_payload = {
-            "source_text": source_text,
-            "owner_context": owner_prompt_block(context.owner_snapshot),
+            "goal": (
+                "Resolve this candidate batch with exactly one terminal action per supplied "
+                "candidate. Other planned references are evidence or endpoint context only."
+            ),
             "candidate_actions": [self._model_candidate_payload(candidate) for candidate in batch],
             "identity_lookup_packets": [
                 packet.model_dump(mode="json", exclude_none=True) for packet in batch_packets
             ],
-            "available_tools": sorted(toolbox.tools_by_name),
         }
         mapping = {
             name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
         }
         if continuation is None:
             messages = [
-                *self._clarification_history_messages(context),
+                *self._session_history_messages(context, source_text),
                 ChatMessage(
                     role="user",
                     content=(f"```json\n{json.dumps(input_payload, ensure_ascii=False)}\n```"),
@@ -705,8 +707,14 @@ class LLMResolutionProposalAgent:
         return cls._candidate_refs(candidates)
 
     @staticmethod
-    def _system_prompt(step: ResolutionStep, other_context: str = "") -> str:
-        packet = f"\n\n{other_context}" if other_context else ""
+    def _system_prompt(
+        step: ResolutionStep,
+        other_context: str = "",
+        owner_context: str = "",
+    ) -> str:
+        context_blocks = "".join(
+            f"\n\n{block}" for block in (owner_context, other_context) if block
+        )
         return (
             "You are the semantic resolution agent for an ingestion step. The backend "
             "owns graph lookup, reference translation, validation, and writing. Select "
@@ -721,8 +729,30 @@ class LLMResolutionProposalAgent:
             "Use OWNER for first-person references and never create an owner. For every "
             "candidate listed in this step, invoke exactly one terminal action tool: a "
             "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
-            "only and do not omit a candidate action." + packet
+            "only and do not omit a candidate action." + context_blocks
         )
+
+    @staticmethod
+    def _session_history_messages(
+        context: IngestionContextPackage,
+        source_text: str | None,
+    ) -> list[ChatMessage]:
+        messages = LLMResolutionProposalAgent._clarification_history_messages(context)
+        normalized_source = (source_text or "").strip()
+        if normalized_source and not any(
+            message.role == "user" and message.content.strip() == normalized_source
+            for message in messages
+        ):
+            insert_at = next(
+                (
+                    index
+                    for index, message in enumerate(messages)
+                    if message.role == "assistant" and message.content.startswith("Clarification")
+                ),
+                len(messages),
+            )
+            messages.insert(insert_at, ChatMessage(role="user", content=normalized_source))
+        return messages
 
     @staticmethod
     def _clarification_history_messages(

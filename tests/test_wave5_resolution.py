@@ -633,7 +633,8 @@ def test_resolution_agent_replays_clarification_history_as_transcript_messages()
         )
 
     assert provider.request is not None
-    assert [message.content for message in provider.request.messages[:2]] == [
+    assert [message.content for message in provider.request.messages[:3]] == [
+        "I met Jacopo.",
         "Clarification needed: Which Jacopo?",
         "Clarification answer: Jacopo Galletta.",
     ]

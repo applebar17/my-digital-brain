@@ -246,13 +246,15 @@ def test_focused_extractor_keeps_clarification_history_before_ingestion_instruct
     )
 
     assert [message.role for message in provider.requests[0].messages] == [
+        "user",
         "assistant",
         "user",
         "user",
     ]
-    assert provider.requests[0].messages[0].content == ("Clarification needed: Which Marco?")
-    assert provider.requests[0].messages[1].content == ("Clarification answer: Marco from Milan.")
-    assert "Ingest this planning target/action" in (provider.requests[0].messages[2].content or "")
+    assert provider.requests[0].messages[0].content == "I met Marco in Milan and felt happy."
+    assert provider.requests[0].messages[1].content == ("Clarification needed: Which Marco?")
+    assert provider.requests[0].messages[2].content == ("Clarification answer: Marco from Milan.")
+    assert "Ingest this planning target/action" in (provider.requests[0].messages[3].content or "")
 
 
 class QueuedStructuredProvider:
