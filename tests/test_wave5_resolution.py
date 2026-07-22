@@ -196,9 +196,11 @@ def test_resolution_agent_resumes_the_same_session_after_clarification() -> None
         def __init__(self) -> None:
             self.turn = 0
             self.session_ids: list[str] = []
+            self.requests: list[LLMSessionRequest] = []
 
         def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
             self.session_ids.append(request.session_id)
+            self.requests.append(request)
             return LLMSessionRunner(self).run(request)
 
         def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
@@ -287,6 +289,15 @@ def test_resolution_agent_resumes_the_same_session_after_clarification() -> None
         "resolution-source-1-node-0",
         "resolution-source-1-node-0",
     ]
+    resumed_messages = provider.requests[1].messages
+    assert not any(
+        message.role == "user" and "Amos Vignaroli" in (message.content or "")
+        for message in resumed_messages
+    )
+    assert any(
+        message.role == "tool" and "Amos Vignaroli" in (message.content or "")
+        for message in resumed_messages
+    )
 
 
 def test_resolution_validation_is_scoped_to_the_current_batch_on_resume() -> None:

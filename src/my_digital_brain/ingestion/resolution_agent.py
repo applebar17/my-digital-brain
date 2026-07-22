@@ -230,21 +230,16 @@ class LLMResolutionProposalAgent:
             raise ValueError(
                 f"Pending tool call '{pending_call.call_id}' has no clarification packet."
             )
-        _, answer_history = self.clarification_service.answer_text(packet, answer_text)
+        self.clarification_service.answer_text(packet, answer_text)
         tool_result = ToolResult(
             status="ok",
             output=f"User clarification answer: {answer_text.strip()}",
             data={
                 "operation": "ask_clarification",
                 "answer": answer_text.strip(),
-                "history_delta": answer_history,
             },
         )
-        resumed = continuation_with_tool_result(
-            continuation,
-            tool_result,
-            history_messages=[ChatMessage.model_validate(message) for message in answer_history],
-        )
+        resumed = continuation_with_tool_result(continuation, tool_result)
         completed_results, completed_maps = self._continuation_batches(continuation)
         proposal = self._run_proposals(
             step=ResolutionStep.NODE,

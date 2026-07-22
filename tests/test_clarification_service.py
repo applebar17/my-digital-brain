@@ -1,3 +1,4 @@
+from my_digital_brain.agentic import AgenticHistoryService
 from my_digital_brain.chat.models import ClarificationPacket
 from my_digital_brain.clarification import ClarificationService
 
@@ -32,7 +33,10 @@ def test_answer_text_appends_user_history_without_pipeline_status() -> None:
     packet = ClarificationPacket.model_validate(result.data["clarification_packet"])
 
     _, answer_history = service.answer_text(packet, "The beach club in Rimini")
-    history = service.append_history([], packet, answer_history)
+    history = AgenticHistoryService().promote_messages_to_master_history(
+        [],
+        [*packet.history_delta, *answer_history],
+    )
 
     assert [item["role"] for item in history] == ["assistant", "user"]
     assert history[-1]["content"] == "Clarification answer: The beach club in Rimini"

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.schemas import ChatMessage
 
@@ -13,10 +11,8 @@ from .contracts import LLMSessionContinuation
 def continuation_with_tool_result(
     continuation: LLMSessionContinuation,
     result: ToolResult,
-    *,
-    history_messages: Sequence[ChatMessage] = (),
 ) -> LLMSessionContinuation:
-    """Append an external tool result and optional user history to a continuation."""
+    """Append an external tool result to the active session transcript."""
 
     messages = list(continuation.messages)
     tool_message = ChatMessage(
@@ -30,5 +26,4 @@ def continuation_with_tool_result(
             break
     else:
         messages.append(tool_message)
-    messages.extend(history_messages)
     return continuation.model_copy(update={"messages": messages}, deep=True)

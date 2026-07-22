@@ -14,6 +14,7 @@ from uat_refined_trace_common import (
     source_from_file,
 )
 
+from my_digital_brain.agentic import AgenticHistoryService
 from my_digital_brain.chat.models import ClarificationPacket
 from my_digital_brain.clarification import ClarificationService
 
@@ -182,7 +183,6 @@ def _answer_clarifications_from_terminal(
             base_raw_text=base_raw_text,
             packet=pending_packet,
             answer_history=answer_history,
-            clarification_service=clarification_service,
         )
         result = service.resume_pending(source, result, answer)
 
@@ -214,12 +214,10 @@ def _source_with_clarification_history(
     base_raw_text: str,
     packet: ClarificationPacket,
     answer_history: list[dict[str, str]],
-    clarification_service: ClarificationService,
 ) -> Any:
-    history = clarification_service.append_history(
+    history = AgenticHistoryService().promote_messages_to_master_history(
         list((source.metadata or {}).get("model_facing_history") or []),
-        packet,
-        answer_history,
+        [*packet.history_delta, *answer_history],
     )
     metadata = {
         **dict(source.metadata or {}),

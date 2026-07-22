@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from my_digital_brain.agentic.contexts import (
     ChannelSessionMetadata,
@@ -20,7 +21,6 @@ from my_digital_brain.agentic.messages import NeutralConversationMessage
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult, AgenticToolEvent
 from my_digital_brain.ai.schemas import ChatMessage
 from my_digital_brain.core.ids import new_uuid
-
 
 BACKEND_ONLY_KEYS = {
     "channel_metadata",
@@ -161,9 +161,7 @@ class AgenticHistoryService:
         dropped = history[: -self.policy.max_history_messages]
         kept = history[-self.policy.max_history_messages :]
         deterministic_summary = self._summarize_messages(dropped)
-        summary = "\n".join(
-            item for item in [compacted_summary, deterministic_summary] if item
-        )
+        summary = "\n".join(item for item in [compacted_summary, deterministic_summary] if item)
         return _truncate(summary, self.policy.compacted_summary_chars), kept
 
     def child_conversation_context(self, conversation: ConversationContext) -> ConversationContext:
@@ -181,6 +179,25 @@ class AgenticHistoryService:
             },
             deep=True,
         )
+
+    def promote_messages_to_master_history(
+        self,
+        master_history: Iterable[dict[str, Any]],
+        messages: Iterable[Any],
+    ) -> list[dict[str, Any]]:
+        """Append selected messages to the chat-wide internal history.
+
+        Callers choose which completed process messages are important enough to
+        promote. The active LLM session transcript remains separate.
+        """
+
+        promoted = [dict(message) for message in master_history if isinstance(message, dict)]
+        promoted.extend(
+            message
+            for message in (self._master_history_message(item) for item in messages)
+            if message is not None
+        )
+        return promoted
 
     def model_payload_for_state(self, state_id: AgenticStateId | str, payload: Any) -> Any:
         state = AgenticStateId(state_id)
@@ -367,6 +384,18 @@ class AgenticHistoryService:
             dumped = payload
         return self._drop_backend_only_keys(dumped)
 
+    @staticmethod
+    def _master_history_message(message: Any) -> dict[str, Any] | None:
+        if hasattr(message, "model_dump"):
+            message = message.model_dump(mode="json", exclude_none=True)
+        if not isinstance(message, dict):
+            return None
+        role = str(message.get("role") or "").strip()
+        content = message.get("content")
+        if role not in {"user", "assistant", "developer", "tool"} or not content:
+            return None
+        return {"role": role, "content": str(content)}
+
     def _drop_backend_only_keys(self, value: Any) -> Any:
         if isinstance(value, dict):
             return {
@@ -458,7 +487,8 @@ class AgenticHistoryService:
             return ChatMessage(
                 role="tool",
                 tool_call_id=output.tool_call_id,
-                content=output.content or json.dumps(
+                content=output.content
+                or json.dumps(
                     output.model_dump(mode="json", exclude_none=True),
                     ensure_ascii=True,
                     sort_keys=True,

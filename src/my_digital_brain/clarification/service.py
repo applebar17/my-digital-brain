@@ -80,18 +80,3 @@ class ClarificationService:
                 "content": f"Clarification answer: {answer_text}",
             }
         ]
-
-    def append_history(
-        self,
-        history: list[dict[str, Any]],
-        packet: Any,
-        answer_history: list[dict[str, str]],
-    ) -> list[dict[str, Any]]:
-        return [
-            *history,
-            *[
-                message.model_dump(mode="json", exclude_none=True)
-                for message in packet.history_delta
-            ],
-            *answer_history,
-        ]

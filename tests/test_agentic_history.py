@@ -15,6 +15,7 @@ from my_digital_brain.agentic import (
 )
 from my_digital_brain.agentic.contexts import PlanningContext, SourceContext
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult
+from my_digital_brain.ai.schemas import ChatMessage
 from my_digital_brain.chat.enums import ConversationMessageRole
 from my_digital_brain.chat.models import ConversationMessage
 
@@ -69,6 +70,24 @@ def test_history_service_child_projection_removes_channel_metadata() -> None:
     assert child.channel_metadata is None
     assert "channel_metadata" not in payload
     assert payload["history"][0]["content"] == "Marco is a friend."
+
+
+def test_history_service_promotes_selected_messages_to_master_history() -> None:
+    service = AgenticHistoryService()
+
+    history = service.promote_messages_to_master_history(
+        [{"role": "user", "content": "Store this memory."}],
+        [
+            ChatMessage(role="assistant", content="Who's Amos?"),
+            ChatMessage(role="user", content="Amos Vignaroli"),
+        ],
+    )
+
+    assert history == [
+        {"role": "user", "content": "Store this memory."},
+        {"role": "assistant", "content": "Who's Amos?"},
+        {"role": "user", "content": "Amos Vignaroli"},
+    ]
 
 
 def test_history_service_renders_role_preserved_messages_and_tool_outputs() -> None:
