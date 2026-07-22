@@ -17,6 +17,7 @@ from ..schemas import (
 from ..tools import ToolBox
 
 ToolMapping = dict[str, Callable[..., Any]]
+DEFAULT_MAX_TOOL_CALLS = 50
 
 
 class LLMCompletionRequest(BaseModel):
@@ -73,6 +74,7 @@ class LLMSessionContinuation(BaseModel):
     remaining_tool_calls: list[PendingToolCall] = Field(default_factory=list)
     tool_events: list[ToolExecutionEvent] = Field(default_factory=list)
     tool_calls_used: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class LLMSessionRequest(BaseModel):
