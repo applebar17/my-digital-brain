@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.contracts import (
+    V1_VECTOR_DIMENSIONS,
     AffectiveFields,
     CandidateEntity,
     CandidateEntityDraft,
@@ -54,7 +55,6 @@ from my_digital_brain.ingestion.contracts import (
     ResolvedEntityMapEntry,
     ResolvedEntityStatus,
     SourceRecordRef,
-    V1_VECTOR_DIMENSIONS,
     VectorQueryStrategy,
     VectorScopeConfig,
     VectorScopeHitRef,
@@ -64,14 +64,12 @@ from my_digital_brain.ingestion.contracts import (
 from my_digital_brain.ingestion.enums import (
     ExtractionExecutionMode,
     ExtractionTaskType,
-    IngestionStatus,
     SourceChannel,
     SourceType,
 )
 from my_digital_brain.ingestion.protocols import (
     FocusedExtractor,
 )
-from my_digital_brain.ingestion.service import IngestionService
 from my_digital_brain.ingestion.validation import IngestionValidator
 
 
@@ -138,7 +136,7 @@ def test_candidate_graph_assembler_splits_outputs_and_preserves_local_refs() -> 
     assert graph.candidate_relationships[0].relationship_type == "HAPPENED_AT"
 
 
-def test_candidate_graph_assembler_remaps_duplicate_local_refs_before_validation() -> None:
+def test_candidate_graph_assembler_preserves_duplicate_refs_for_validation() -> None:
     source = _source()
     plan = _plan()
     first_person = CandidateEntity(
@@ -163,10 +161,11 @@ def test_candidate_graph_assembler_remaps_duplicate_local_refs_before_validation
     )
     result = IngestionValidator().validate_candidate_graph(graph)
 
-    assert result.is_valid is True
+    assert result.is_valid is False
+    assert result.issues[0].code == "duplicate_local_ref"
+    assert "already present in this session" in result.issues[0].message
     assert graph.candidate_entities[0].local_ref == "CANDIDATE_PERSON_001"
-    assert graph.candidate_entities[1].local_ref.startswith("CANDIDATE_PERSON_001_TASK_")
-    assert graph.candidate_entities[1].metadata["original_local_ref"] == "CANDIDATE_PERSON_001"
+    assert graph.candidate_entities[1].local_ref == "CANDIDATE_PERSON_001"
 
 
 def test_candidate_graph_validation_uses_graph_registries_and_refs() -> None:
@@ -450,7 +449,7 @@ def test_lightweight_ingestion_reasoning_and_plan_drafts_validate_signal() -> No
     assert entity_plan.actions[0].entities[0].aliases == ["Merc"]
     assert relationship_plan.missing_entities[0].missing_ref == "MISSING_ENTITY_001"
 
-    with pytest.raises(ValidationError, match="local_refs must be unique"):
+    with pytest.raises(ValidationError, match="Candidate ID collision in this session"):
         EntityIngestionPlanDraft(
             reason="Duplicate refs should be rejected.",
             actions=[
