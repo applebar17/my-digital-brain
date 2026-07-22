@@ -59,6 +59,9 @@ class CapturedStructuredCall:
     purpose: str | None
     schema: str
     model: str | None
+    session_id: str
+    continuation: bool
+    tools: list[str]
     system_prompt: str
     messages: list[dict[str, Any]]
     output: Any | None = None
@@ -84,19 +87,21 @@ class TraceStructuredProvider:
         self.tool_calls: list[CapturedToolCall] = []
 
     def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
-        call: CapturedStructuredCall | None = None
-        if request.output_schema is not None:
-            call = CapturedStructuredCall(
-                purpose=getattr(request.context, "purpose", None),
-                schema=request.output_schema.__name__,
-                model=request.model,
-                system_prompt=request.system_prompt,
-                messages=[
-                    message.model_dump(mode="json", exclude_none=True)
-                    for message in request.messages
-                ],
-            )
-            self.structured_calls.append(call)
+        call = CapturedStructuredCall(
+            purpose=getattr(request.context, "purpose", None),
+            schema=(
+                request.output_schema.__name__ if request.output_schema else "TextOrToolSession"
+            ),
+            model=request.model,
+            session_id=request.session_id,
+            continuation=request.continuation is not None,
+            tools=sorted(request.toolbox.tools_by_name) if request.toolbox else [],
+            system_prompt=request.system_prompt,
+            messages=[
+                message.model_dump(mode="json", exclude_none=True) for message in request.messages
+            ],
+        )
+        self.structured_calls.append(call)
 
         wrapped_mapping = {
             name: self._capture_tool(name, handler)
@@ -106,22 +111,21 @@ class TraceStructuredProvider:
         try:
             result = self.delegate.run_session(wrapped_request)
         except Exception as exc:
-            if call is not None:
-                call.error = {
-                    "error_type": exc.__class__.__name__,
-                    "message": str(exc),
-                }
-                logger.exception(
-                    "Session failed for schema %s and purpose %s.",
-                    call.schema,
-                    call.purpose or "unknown",
-                )
+            call.error = {
+                "error_type": exc.__class__.__name__,
+                "message": str(exc),
+            }
+            logger.exception(
+                "Session failed for schema %s and purpose %s.",
+                call.schema,
+                call.purpose or "unknown",
+            )
             raise
-        if call is not None and isinstance(result, LLMSessionCompleted):
+        if isinstance(result, LLMSessionCompleted):
             call.output = (
                 result.parsed.model_dump(mode="json", exclude_none=True)
                 if result.parsed is not None
-                else None
+                else result.content
             )
         return result
 
@@ -191,7 +195,7 @@ def build_trace_service(
         resolution_agent=LLMResolutionProposalAgent(
             provider,
             router=router,
-            max_tool_calls=settings.ingestion_resolution_max_tool_calls,
+            max_tool_calls=settings.llm_max_tool_calls,
         ),
         write_plan_builder=GraphWritePlanBuilder(),
     )
@@ -402,10 +406,13 @@ def _append_structured_calls(
     structured_calls: list[CapturedStructuredCall],
 ) -> None:
     for index, call in enumerate(structured_calls, start=1):
-        title = f"Structured Call {index}: {call.schema}"
+        title = f"LLM Session Call {index}: {call.schema}"
         lines.extend([title, "-" * len(title), ""])
         lines.append(f"Purpose: {call.purpose or 'unknown'}")
         lines.append(f"Model: {call.model or 'default route'}")
+        lines.append(f"Session ID: {call.session_id or 'session-local'}")
+        lines.append(f"Continuation: {call.continuation}")
+        lines.append(f"Tools: {', '.join(call.tools) if call.tools else '(none)'}")
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
         _append_json_block(lines, "Messages", call.messages)
