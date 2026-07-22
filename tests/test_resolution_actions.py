@@ -27,6 +27,9 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import SourceChannel, SourceType
 from my_digital_brain.ingestion.prompt_builders import IngestionPromptBuilder
+from my_digital_brain.ingestion.resolution_context import (
+    build_other_planned_context_packet,
+)
 
 
 def _registry() -> RunReferenceRegistry:
@@ -113,6 +116,83 @@ def test_compiler_accepts_supplied_fuzzy_candidate_without_semantic_fallback() -
     assert result.decisions[0].target_entity_id == "person:marco"
     assert entity_map.relationship_usable_refs == {"CANDIDATE_PERSON_001": "NODE_000001"}
     assert result.metadata["policy"] == "llm_selected_action_backend_validated"
+
+
+def test_compiler_allows_cross_batch_evidence_but_requires_current_batch_action() -> None:
+    registry = _registry()
+    graph = CandidateMemoryGraph(
+        source_id="source-1",
+        candidate_entities=[
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Marco",
+            ),
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_008",
+                entity_type="Person",
+                display_name="Jacopo Galletta",
+            ),
+        ],
+    )
+    action = ResolutionToolAction(
+        step=ResolutionStep.NODE,
+        tool_name=ResolutionToolName.CREATE_NODE,
+        candidate_ref="CANDIDATE_PERSON_001",
+        evidence_refs=["CANDIDATE_PERSON_008"],
+    )
+    compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
+
+    result = compiler.compile(
+        [action],
+        candidate_graph=graph,
+        supplied_candidate_refs={"CANDIDATE_PERSON_001", "CANDIDATE_PERSON_008"},
+        required_candidate_refs={"CANDIDATE_PERSON_001"},
+        action_candidate_refs={"CANDIDATE_PERSON_001"},
+    )
+
+    assert result.decisions[0].candidate_ref == "CANDIDATE_PERSON_001"
+
+    outside_batch_action = action.model_copy(
+        update={"candidate_ref": "CANDIDATE_PERSON_008"},
+    )
+    with pytest.raises(ResolutionProposalValidationError, match="outside the current batch"):
+        compiler.compile(
+            [outside_batch_action],
+            candidate_graph=graph,
+            supplied_candidate_refs={"CANDIDATE_PERSON_001", "CANDIDATE_PERSON_008"},
+            required_candidate_refs={"CANDIDATE_PERSON_001"},
+            action_candidate_refs={"CANDIDATE_PERSON_001"},
+        )
+
+
+def test_other_planned_context_packet_is_compact_and_reference_only() -> None:
+    graph = CandidateMemoryGraph(
+        source_id="source-1",
+        candidate_entities=[
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Marco Bianchi",
+            ),
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_008",
+                entity_type="Person",
+                display_name="Jacopo Galletta",
+                aliases=["Jacopo"],
+            ),
+        ],
+    )
+
+    packet = build_other_planned_context_packet(
+        graph,
+        excluded_refs={"CANDIDATE_PERSON_001"},
+    )
+
+    assert "Other relevant planned ingestions" in packet
+    assert "CANDIDATE_PERSON_008: Person; Jacopo Galletta; aliases: Jacopo" in packet
+    assert "CANDIDATE_PERSON_001" not in packet
+    assert "person:" not in packet
 
 
 def test_validator_rejects_invented_refs_and_owner_creation() -> None:

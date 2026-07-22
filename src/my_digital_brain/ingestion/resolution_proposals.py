@@ -145,6 +145,7 @@ class ResolutionProposalCompiler:
         packets: Iterable[EntityLookupContextPacket] = (),
         supplied_candidate_refs: Iterable[str] | None = None,
         required_candidate_refs: Iterable[str] | None = None,
+        action_candidate_refs: Iterable[str] | None = None,
     ) -> ResolutionResult:
         if supplied_candidate_refs is None:
             candidate_refs = {entity.local_ref for entity in candidate_graph.candidate_entities}
@@ -161,6 +162,11 @@ class ResolutionProposalCompiler:
         )
 
         node_actions = [action for action in validated if action.step == ResolutionStep.NODE]
+        self._reject_actions_outside_refs(
+            node_actions,
+            set(action_candidate_refs or required_refs),
+            "node",
+        )
         entity_refs = {
             entity.local_ref
             for entity in candidate_graph.candidate_entities
@@ -249,9 +255,11 @@ class ResolutionProposalCompiler:
             packets=packets,
         )
         step_actions = [action for action in validated if action.step == step]
+        action_refs = set(action_candidate_refs or candidate_refs)
+        self._reject_actions_outside_refs(step_actions, action_refs, step.value)
         self._require_actions_for_refs(
             step_actions,
-            set(action_candidate_refs or candidate_refs),
+            action_refs,
             step.value,
         )
         existing_actions = list(result.metadata.get("validated_tool_actions") or [])
@@ -309,6 +317,23 @@ class ResolutionProposalCompiler:
                     "Provide exactly one terminal action for every supplied ID."
                 )
             raise ResolutionProposalValidationError(errors)
+
+    @staticmethod
+    def _reject_actions_outside_refs(
+        actions: list[ResolutionToolAction],
+        candidate_refs: set[str],
+        step_name: str,
+    ) -> None:
+        outside_refs = sorted({action.candidate_ref for action in actions} - candidate_refs)
+        if outside_refs:
+            raise ResolutionProposalValidationError(
+                [
+                    f"{step_name} actions were supplied for candidates outside the "
+                    f"current batch: {', '.join(outside_refs)}. "
+                    "Use those references only as evidence or relationship endpoints; "
+                    "submit terminal actions only for the current batch candidates."
+                ]
+            )
 
     def build_entity_map(
         self,

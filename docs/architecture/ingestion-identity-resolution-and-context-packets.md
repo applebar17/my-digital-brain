@@ -729,9 +729,23 @@ the write plan until the current session has enough information to continue.
 LLM sessions use the general configurable tool-call ceiling
 `LLM_MAX_TOOL_CALLS`, which defaults to `50`. Entity-resolution batching is a
 separate concern: `INGESTION_RESOLUTION_BATCH_SIZE` defaults to `5`. The batch
-size controls how many candidates are handled by one resolution session; it
+size controls how many candidates are scheduled in one resolution session; it
 does not change the tool budget inside that session. Both values may be
 overridden by settings or function parameters.
+
+Batch coverage and session reference scope are separate contracts. The current
+batch is the only set of candidates that requires one terminal action in the
+current session. The whole resolution session exposes every planned candidate
+reference, plus valid existing references, for evidence and relationship
+endpoints. A prior-batch reference such as `CANDIDATE_PERSON_008` may therefore
+appear in `evidence_refs`, `from_ref`, or `to_ref`, but it must not receive a
+new terminal action in a later batch.
+
+Each batch prompt also receives a compact, reference-only packet labelled
+`Other relevant planned ingestions`. It excludes the active batch's entities,
+memory/log candidates, and relationships because those are already present in
+the structured candidate payload. The packet contains only model-facing
+references and short summaries; it never contains persisted graph IDs.
 
 **Deliverables:**
 

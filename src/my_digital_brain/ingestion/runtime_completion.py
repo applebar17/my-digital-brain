@@ -6,9 +6,9 @@ import json
 import logging
 from typing import Any
 
-from my_digital_brain.ai.tracing import traceable
-from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.session import LLMSessionAwaitingTool
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
@@ -22,14 +22,14 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLog,
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
+    ResolutionStep,
     ResolvedEntityMap,
     SourceRecordRef,
     ValidationIssue,
-    ResolutionStep,
 )
 from my_digital_brain.ingestion.enums import IngestionStatus
-from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.pending import pending_from_session
+from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidationError,
@@ -37,8 +37,14 @@ from my_digital_brain.ingestion.resolution_proposals import (
 )
 from my_digital_brain.ingestion.runtime_helpers import (
     context_package_for_services as _context_package_for_services,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     validation_issue_summaries as _validation_issue_summaries,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     write_plan_counts as _write_plan_counts,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     write_plan_has_mutations as _write_plan_has_mutations,
 )
 
@@ -169,7 +175,16 @@ class IngestionCompletionMixin:
                     step=step,
                     supplied_candidate_refs=[
                         candidate.local_ref
-                        for candidate in [*candidate_graph.candidate_entities, *candidates]
+                        for candidate in [
+                            *candidate_graph.candidate_entities,
+                            *candidate_graph.memory_logs,
+                            *candidate_graph.candidate_profile_memories,
+                            *candidate_graph.candidate_relationships,
+                            *candidate_graph.candidate_relationship_contexts,
+                            *candidate_graph.candidate_claims,
+                            *candidate_graph.candidate_perceptions,
+                            *candidate_graph.candidate_metadata_patches,
+                        ]
                         if candidate.local_ref
                     ],
                     action_candidate_refs=[candidate.local_ref for candidate in candidates],
@@ -297,9 +312,7 @@ class IngestionCompletionMixin:
             status=str(result.status),
             ingestion_stage=result.metadata.get("ingestion_stage"),
             validation_error_count=len(result.validation_errors),
-            validation_error_codes=[
-                issue.code for issue in result.validation_errors if issue.code
-            ],
+            validation_error_codes=[issue.code for issue in result.validation_errors if issue.code],
             write_counts=_write_plan_counts(result.write_plan) if result.write_plan else None,
         )
         record_ai_flow_event(
@@ -320,9 +333,7 @@ class IngestionCompletionMixin:
                                 result.validation_errors,
                             ),
                             "write_counts": (
-                                _write_plan_counts(result.write_plan)
-                                if result.write_plan
-                                else None
+                                _write_plan_counts(result.write_plan) if result.write_plan else None
                             ),
                         },
                         ensure_ascii=False,

@@ -33,6 +33,9 @@ from my_digital_brain.ingestion.contracts import (
     ResolvedEntityMap,
 )
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
+from my_digital_brain.ingestion.resolution_context import (
+    build_other_planned_context_packet,
+)
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
     ResolutionProposalValidationError,
@@ -144,6 +147,7 @@ class LLMResolutionProposalAgent:
             batch_results=list(initial_results),
             batch_maps=list(initial_maps),
         )
+        session_candidate_refs = self._all_candidate_refs(candidate_graph)
         request_context = AIRequestContext(
             purpose=f"ingestion_resolution_{step.value}",
             source_id=context.source_id,
@@ -154,9 +158,15 @@ class LLMResolutionProposalAgent:
             if self.router
             else None
         )
-        prompt = self._system_prompt(step)
         for batch_start in range(start_batch, len(step_candidates), self.batch_size):
             batch = step_candidates[batch_start : batch_start + self.batch_size]
+            prompt = self._system_prompt(
+                step,
+                build_other_planned_context_packet(
+                    candidate_graph,
+                    excluded_refs=self._candidate_refs(batch),
+                ),
+            )
             # A resumed first batch already carries actions from earlier clarification
             # continuations. Validate the complete current-batch accumulator, not only
             # the actions captured during the latest provider invocation.
@@ -207,6 +217,7 @@ class LLMResolutionProposalAgent:
                     packets=packets,
                     candidate_graph=candidate_graph,
                     registry_snapshot=context.reference_registry_snapshot,
+                    session_candidate_refs=session_candidate_refs,
                 )
                 proposal.batch_results.append(batch_result)
                 proposal.batch_maps.append(batch_map)
@@ -325,8 +336,7 @@ class LLMResolutionProposalAgent:
                     ]
                 )
             mapping = {
-                name: self._capture_handler(step, name, actions)
-                for name in toolbox.tools_by_name
+                name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
             }
             current = self.provider.run_session(
                 LLMSessionRequest(
@@ -495,6 +505,7 @@ class LLMResolutionProposalAgent:
         packets: Sequence[EntityLookupContextPacket],
         candidate_graph: CandidateMemoryGraph,
         registry_snapshot: dict[str, Any],
+        session_candidate_refs: set[str],
     ) -> tuple[ResolutionResult, ResolvedEntityMap]:
         registry = RunReferenceRegistry.from_snapshot(registry_snapshot)
         compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
@@ -504,8 +515,9 @@ class LLMResolutionProposalAgent:
             actions,
             candidate_graph=candidate_graph,
             packets=batch_packets,
-            supplied_candidate_refs=batch_refs,
+            supplied_candidate_refs=session_candidate_refs,
             required_candidate_refs=batch_refs,
+            action_candidate_refs=batch_refs,
         )
         return (
             result,
@@ -678,8 +690,23 @@ class LLMResolutionProposalAgent:
             if not key.endswith("_id") and key not in {"metadata", "source_refs", "evidence_refs"}
         }
 
+    @classmethod
+    def _all_candidate_refs(cls, candidate_graph: CandidateMemoryGraph) -> set[str]:
+        candidates = [
+            *candidate_graph.candidate_entities,
+            *candidate_graph.memory_logs,
+            *candidate_graph.candidate_profile_memories,
+            *candidate_graph.candidate_relationships,
+            *candidate_graph.candidate_relationship_contexts,
+            *candidate_graph.candidate_claims,
+            *candidate_graph.candidate_perceptions,
+            *candidate_graph.candidate_metadata_patches,
+        ]
+        return cls._candidate_refs(candidates)
+
     @staticmethod
-    def _system_prompt(step: ResolutionStep) -> str:
+    def _system_prompt(step: ResolutionStep, other_context: str = "") -> str:
+        packet = f"\n\n{other_context}" if other_context else ""
         return (
             "You are the semantic resolution agent for an ingestion step. The backend "
             "owns graph lookup, reference translation, validation, and writing. Select "
@@ -694,7 +721,7 @@ class LLMResolutionProposalAgent:
             "Use OWNER for first-person references and never create an owner. For every "
             "candidate listed in this step, invoke exactly one terminal action tool: a "
             "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
-            "only and do not omit a candidate action."
+            "only and do not omit a candidate action." + packet
         )
 
     @staticmethod
