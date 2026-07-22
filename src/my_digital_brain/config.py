@@ -104,6 +104,11 @@ class Settings(BaseSettings):
         ge=1,
         alias="LLM_MAX_TOOL_CALLS",
     )
+    ingestion_resolution_batch_size: int = Field(
+        default=5,
+        ge=1,
+        alias="INGESTION_RESOLUTION_BATCH_SIZE",
+    )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
         default="postgres",

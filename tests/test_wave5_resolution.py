@@ -60,8 +60,9 @@ def test_resolution_actions_control_memory_write_shape() -> None:
 
 
 def test_resolution_agent_accepts_configured_tool_call_budget() -> None:
-    agent = LLMResolutionProposalAgent(object(), max_tool_calls=100)  # type: ignore[arg-type]
-    assert agent.max_tool_calls == 100
+    agent = LLMResolutionProposalAgent(object(), session_max_tool_calls=100)  # type: ignore[arg-type]
+    assert agent.session_max_tool_calls == 100
+    assert agent.batch_size == 5
 
 
 def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
@@ -126,7 +127,11 @@ def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
             for index in range(1, 12)
         ],
     )
-    actions = LLMResolutionProposalAgent(provider, max_tool_calls=10).propose(
+    actions = LLMResolutionProposalAgent(
+        provider,
+        session_max_tool_calls=10,
+        batch_size=10,
+    ).propose(
         step=ResolutionStep.NODE,
         source_text="source",
         context=IngestionContextPackage(source_id="source-1"),
@@ -135,6 +140,81 @@ def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
 
     assert len(actions) == 11
     assert provider.calls == [(10, 10), (1, 1)]
+
+
+def test_resolution_repairs_missing_actions_in_the_same_session() -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.turn = 0
+            self.requests: list[LLMSessionRequest] = []
+
+        def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+            self.requests.append(request)
+            return LLMSessionRunner(self).run(request)
+
+        def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+            self.turn += 1
+            if self.turn == 1:
+                return _tool_completion(
+                    [_resolution_tool_call("create-1", "create_node", "CANDIDATE_PERSON_001")],
+                    request.model,
+                )
+            if self.turn == 3:
+                return _tool_completion(
+                    [_resolution_tool_call("create-2", "create_node", "CANDIDATE_PERSON_002")],
+                    request.model,
+                )
+            if self.turn == 5:
+                return _tool_completion(
+                    [_resolution_tool_call("create-3", "create_node", "CANDIDATE_PERSON_003")],
+                    request.model,
+                )
+            return _text_completion("The current turn is complete.", request.model)
+
+    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
+    graph = CandidateMemoryGraph(
+        source_id="source-1",
+        candidate_entities=[
+            {
+                "local_ref": f"CANDIDATE_PERSON_{index:03d}",
+                "entity_type": "Person",
+                "display_name": f"Person {index}",
+            }
+            for index in range(1, 4)
+        ],
+    )
+    provider = Provider()
+    agent = LLMResolutionProposalAgent(provider, batch_size=5)
+
+    resolved_map, result = agent.resolve_nodes(
+        source_text="I met three people.",
+        context=IngestionContextPackage(
+            source_id="source-1",
+            reference_registry_snapshot=registry.snapshot(),
+        ),
+        candidate_graph=graph,
+    )
+
+    assert [entry.local_ref for entry in resolved_map.entries] == [
+        "CANDIDATE_PERSON_001",
+        "CANDIDATE_PERSON_002",
+        "CANDIDATE_PERSON_003",
+    ]
+    assert len(result.decisions) == 3
+    assert [request.session_id for request in provider.requests] == [
+        "resolution-source-1-node-0",
+        "resolution-source-1-node-0",
+        "resolution-source-1-node-0",
+    ]
+    repair_messages = [request.messages[-1] for request in provider.requests[1:]]
+    assert all(
+        message.role == "user"
+        and "still requiring exactly one terminal action" in (message.content or "")
+        for message in repair_messages
+    )
+    assert len(repair_messages) == 2
+    assert "CANDIDATE_PERSON_002" in repair_messages[0].content
+    assert "CANDIDATE_PERSON_003" in repair_messages[1].content
 
 
 def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
@@ -263,7 +343,7 @@ def test_resolution_agent_resumes_the_same_session_after_clarification() -> None
         ],
     )
     provider = Provider()
-    agent = LLMResolutionProposalAgent(provider, max_tool_calls=10)
+    agent = LLMResolutionProposalAgent(provider, session_max_tool_calls=10)
 
     pending = agent.propose(
         step=ResolutionStep.NODE,
@@ -374,7 +454,11 @@ def test_resolution_validation_is_scoped_to_the_current_batch_on_resume() -> Non
         reference_registry_snapshot=registry.snapshot(),
     )
     provider = Provider()
-    agent = LLMResolutionProposalAgent(provider, max_tool_calls=10)
+    agent = LLMResolutionProposalAgent(
+        provider,
+        session_max_tool_calls=10,
+        batch_size=10,
+    )
 
     pending = agent.resolve_nodes(
         source_text="I met eleven people.",
@@ -442,7 +526,7 @@ def test_resolution_accumulates_actions_across_multiple_clarification_continuati
         source_id="source-1",
         reference_registry_snapshot=registry.snapshot(),
     )
-    agent = LLMResolutionProposalAgent(Provider(), max_tool_calls=10)
+    agent = LLMResolutionProposalAgent(Provider(), session_max_tool_calls=10)
 
     pending = agent.resolve_nodes(
         source_text="I met three people.",
@@ -517,7 +601,7 @@ def test_resolution_agent_replays_clarification_history_as_transcript_messages()
     provider = Provider()
     agent = LLMResolutionProposalAgent(provider)
 
-    with pytest.raises(ValueError, match="returned no action tool call"):
+    with pytest.raises(ValueError, match="still requiring exactly one terminal action"):
         agent.propose(
             step=ResolutionStep.NODE,
             source_text="I met Jacopo.",

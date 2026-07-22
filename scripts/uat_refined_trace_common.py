@@ -195,7 +195,8 @@ def build_trace_service(
         resolution_agent=LLMResolutionProposalAgent(
             provider,
             router=router,
-            max_tool_calls=settings.llm_max_tool_calls,
+            session_max_tool_calls=settings.llm_max_tool_calls,
+            batch_size=settings.ingestion_resolution_batch_size,
         ),
         write_plan_builder=GraphWritePlanBuilder(),
     )

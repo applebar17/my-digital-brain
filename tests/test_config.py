@@ -8,6 +8,8 @@ def test_settings_defaults_use_postgres() -> None:
 
     assert settings.relational_backend == "postgres"
     assert settings.relational_database_url.startswith("postgresql+psycopg://")
+    assert settings.llm_max_tool_calls == 50
+    assert settings.ingestion_resolution_batch_size == 5
 
 
 def test_settings_sqlite_url(tmp_path) -> None:
@@ -15,6 +17,17 @@ def test_settings_sqlite_url(tmp_path) -> None:
     settings = Settings(_env_file=None, RELATIONAL_BACKEND="sqlite", SQLITE_PATH=str(sqlite_path))
 
     assert settings.relational_database_url == f"sqlite+pysqlite:///{sqlite_path.as_posix()}"
+
+
+def test_resolution_session_budget_and_batch_size_are_independent() -> None:
+    settings = Settings(
+        _env_file=None,
+        LLM_MAX_TOOL_CALLS="12",
+        INGESTION_RESOLUTION_BATCH_SIZE="7",
+    )
+
+    assert settings.llm_max_tool_calls == 12
+    assert settings.ingestion_resolution_batch_size == 7
 
 
 def test_chat_and_telegram_settings() -> None:

@@ -35,6 +35,7 @@ from my_digital_brain.ingestion.contracts import (
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalCompiler,
+    ResolutionProposalValidationError,
     ResolutionProposalValidator,
 )
 from my_digital_brain.ingestion.resolution_toolboxes import build_resolution_toolbox
@@ -58,17 +59,23 @@ class LLMResolutionProposalAgent:
         *,
         router: ModelRouter | None = None,
         model: str | None = None,
-        max_tool_calls: int = 50,
+        session_max_tool_calls: int = 50,
+        batch_size: int = 5,
         clarification_service: ClarificationService | None = None,
     ) -> None:
         self.provider = provider
         self.router = router
         self.model = model
         try:
-            configured_limit = int(max_tool_calls)
+            configured_limit = int(session_max_tool_calls)
         except (TypeError, ValueError):
             configured_limit = 50
-        self.max_tool_calls = max(1, configured_limit)
+        try:
+            configured_batch_size = int(batch_size)
+        except (TypeError, ValueError):
+            configured_batch_size = 5
+        self.session_max_tool_calls = max(1, configured_limit)
+        self.batch_size = max(1, configured_batch_size)
         self.clarification_service = clarification_service or ClarificationService()
 
     def propose(
@@ -148,8 +155,8 @@ class LLMResolutionProposalAgent:
             else None
         )
         prompt = self._system_prompt(step)
-        for batch_start in range(start_batch, len(step_candidates), self.max_tool_calls):
-            batch = step_candidates[batch_start : batch_start + self.max_tool_calls]
+        for batch_start in range(start_batch, len(step_candidates), self.batch_size):
+            batch = step_candidates[batch_start : batch_start + self.batch_size]
             # A resumed first batch already carries actions from earlier clarification
             # continuations. Validate the complete current-batch accumulator, not only
             # the actions captured during the latest provider invocation.
@@ -170,17 +177,29 @@ class LLMResolutionProposalAgent:
                 request_context=request_context,
                 continuation=continuation if batch_start == start_batch else None,
             )
+            batch_refs = self._candidate_refs(batch)
+            result = self._repair_incomplete_batch(
+                result=result,
+                step=step,
+                source_text=source_text,
+                context=context,
+                candidate_graph=candidate_graph,
+                packets=packets,
+                batch=batch,
+                batch_start=batch_start,
+                actions=actions,
+                action_start=action_start,
+                batch_refs=batch_refs,
+                toolbox=toolbox,
+                prompt=prompt,
+                route=route,
+                request_context=request_context,
+            )
             if isinstance(result, LLMSessionAwaitingTool):
                 return self._with_resolution_state(result, proposal)
             if not isinstance(result, LLMSessionCompleted):
                 raise ValueError(f"Resolution step '{step.value}' failed: {result.kind}")
             batch_actions = actions[action_start:]
-            batch_refs = self._candidate_refs(batch)
-            ResolutionProposalCompiler.require_complete_actions(
-                batch_actions,
-                batch_refs,
-                step.value,
-            )
             if compile_batches:
                 batch_result, batch_map = self._compile_batch(
                     actions=batch_actions,
@@ -223,7 +242,7 @@ class LLMResolutionProposalAgent:
                 f"Clarification candidate ref '{candidate_ref}' is not present in the "
                 "current node-resolution session."
             )
-        batch_start = candidate_index - (candidate_index % self.max_tool_calls)
+        batch_start = candidate_index - (candidate_index % self.batch_size)
         actions = self._actions_from_events(continuation)
         packet = self._clarification_packet(continuation, pending_call.call_id)
         if packet is None:
@@ -257,6 +276,102 @@ class LLMResolutionProposalAgent:
         if isinstance(proposal, LLMSessionAwaitingTool):
             return proposal
         return self._finalize_proposals(candidate_graph, proposal)
+
+    def _repair_incomplete_batch(
+        self,
+        *,
+        result: LLMSessionCompleted | LLMSessionAwaitingTool,
+        step: ResolutionStep,
+        source_text: str | None,
+        context: IngestionContextPackage,
+        candidate_graph: CandidateMemoryGraph,
+        packets: Sequence[EntityLookupContextPacket],
+        batch: Sequence[Any],
+        batch_start: int,
+        actions: list[ResolutionToolAction],
+        action_start: int,
+        batch_refs: set[str],
+        toolbox: Any,
+        prompt: str,
+        route: Any,
+        request_context: AIRequestContext,
+    ) -> LLMSessionCompleted | LLMSessionAwaitingTool:
+        """Continue the same session when a terminal turn omits batch actions."""
+
+        if isinstance(result, LLMSessionAwaitingTool):
+            return result
+        if not isinstance(result, LLMSessionCompleted):
+            raise ValueError(f"Resolution session failed: {result.kind}")
+
+        previous_missing: set[str] | None = None
+        tool_calls_used = len(result.tool_events)
+        current = result
+        while True:
+            current_refs = {action.candidate_ref for action in actions[action_start:]}
+            missing = batch_refs - current_refs
+            if not missing:
+                return current
+            if missing == previous_missing:
+                raise ResolutionProposalValidationError(
+                    [self._missing_action_message(missing, batch_refs)]
+                )
+            previous_missing = set(missing)
+            remaining_budget = self.session_max_tool_calls - tool_calls_used
+            if remaining_budget <= 0:
+                raise ResolutionProposalValidationError(
+                    [
+                        self._missing_action_message(missing, batch_refs)
+                        + " The session tool-call budget has been exhausted."
+                    ]
+                )
+            mapping = {
+                name: self._capture_handler(step, name, actions)
+                for name in toolbox.tools_by_name
+            }
+            current = self.provider.run_session(
+                LLMSessionRequest(
+                    system_prompt=prompt,
+                    messages=[
+                        *current.messages,
+                        ChatMessage(
+                            role="user",
+                            content=self._missing_action_message(missing, batch_refs),
+                        ),
+                    ],
+                    model=self.model or (route.model if route else None),
+                    temperature=0.1,
+                    toolbox=toolbox,
+                    tools_mapping=mapping,
+                    max_tool_calls=remaining_budget,
+                    session_id=current.session_id,
+                    context=request_context,
+                    metadata={
+                        "resolution_batch_start": batch_start,
+                        "resolution_batch_size": len(batch),
+                        "resolution_repair": True,
+                        "source_text": source_text,
+                        "candidate_graph_id": candidate_graph.candidate_graph_id,
+                        "packet_count": len(packets),
+                    },
+                )
+            )
+            if isinstance(current, LLMSessionAwaitingTool):
+                return current
+            tool_calls_used += len(current.tool_events)
+
+    @staticmethod
+    def _missing_action_message(
+        missing_refs: set[str],
+        batch_refs: set[str],
+    ) -> str:
+        completed_refs = sorted(batch_refs - missing_refs)
+        return (
+            "Your last assistant turn was incomplete for the current resolution batch. "
+            f"Completed action refs: {', '.join(completed_refs) or 'none'}. "
+            "Candidates still requiring exactly one terminal action: "
+            f"{', '.join(sorted(missing_refs))}. Use the available resolution tools now. "
+            "Do not finish with prose until every supplied candidate has one terminal action."
+        )
 
     def _run_batch(
         self,
@@ -308,7 +423,7 @@ class LLMResolutionProposalAgent:
                 temperature=0.1,
                 toolbox=toolbox,
                 tools_mapping=mapping,
-                max_tool_calls=self.max_tool_calls,
+                max_tool_calls=self.session_max_tool_calls,
                 session_id=(
                     continuation.session_id
                     if continuation is not None

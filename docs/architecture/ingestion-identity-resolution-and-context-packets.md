@@ -727,9 +727,11 @@ calls in one resolution step. The backend preserves every question and blocks
 the write plan until the current session has enough information to continue.
 
 LLM sessions use the general configurable tool-call ceiling
-`LLM_MAX_TOOL_CALLS`, which defaults to `50`. Consumers may provide a lower
-step-specific value when a future workflow requires it. The generic session
-runner uses `50` when no caller override is supplied.
+`LLM_MAX_TOOL_CALLS`, which defaults to `50`. Entity-resolution batching is a
+separate concern: `INGESTION_RESOLUTION_BATCH_SIZE` defaults to `5`. The batch
+size controls how many candidates are handled by one resolution session; it
+does not change the tool budget inside that session. Both values may be
+overridden by settings or function parameters.
 
 **Deliverables:**
 
@@ -759,6 +761,10 @@ runner uses `50` when no caller override is supplied.
 - Compile validated `create_memory`, `update_memory`, `create_relationship`,
   `update_relationship`, and `defer_or_ignore` actions into the existing
   backend write plan. Tool handlers never write to the graph.
+- If a terminal assistant turn ends before every candidate in the current
+  batch has one action, append a user-role validation message to the existing
+  session transcript and invoke the same session again with its toolbox. Do
+  not restart the ingestion pipeline or silently infer missing actions.
 - Preserve all `ask_clarification` requests in `IngestionResult.clarifications`
   and the session snapshot. The singular clarification field remains the
   backward-compatible first-item view.
@@ -773,7 +779,8 @@ runner uses `50` when no caller override is supplied.
 **Tests:**
 
 - multiple clarification calls in one resolution step are retained in order;
-- the per-step tool-call ceiling is configurable and capped at ten;
+- the per-session tool-call budget defaults to `50` and is independent from
+  the default resolution batch size of `5`;
 - memory and relationship create/update/defer actions produce the corresponding
   write-plan effects without direct tool execution;
 - clarification selects an existing node;
