@@ -49,7 +49,6 @@ def main() -> int:
         ),
         "env_file": args.env_file,
         "env_override": args.env_override,
-        "max_clarifications": args.max_clarifications,
         "clarification_interactions": [],
     }
     trace_events: list[dict[str, Any]] = []
@@ -60,7 +59,6 @@ def main() -> int:
             base_raw_text=base_raw_text,
             result=None,
             route=route,
-            max_clarifications=args.max_clarifications,
             structured_calls=provider.structured_calls,
             tool_calls=provider.tool_calls,
             trace_events=trace_events,
@@ -118,12 +116,6 @@ def parse_args() -> argparse.Namespace:
         help="Override already-set process environment variables with --env-file values.",
     )
     parser.add_argument("--timezone", default="Europe/Rome")
-    parser.add_argument(
-        "--max-clarifications",
-        type=int,
-        default=3,
-        help="Maximum terminal clarification rounds before writing the report anyway.",
-    )
     return parser.parse_args()
 
 
@@ -134,7 +126,6 @@ def _answer_clarifications_from_terminal(
     base_raw_text: str,
     result: Any,
     route: dict[str, Any],
-    max_clarifications: int,
     structured_calls: list[Any],
     tool_calls: list[Any],
     trace_events: list[dict[str, Any]],
@@ -142,10 +133,13 @@ def _answer_clarifications_from_terminal(
     interactions = route["clarification_interactions"]
     if result is None:
         result = service.process_source(source)
-    for attempt in range(1, max(0, max_clarifications) + 1):
+    attempt = 0
+    while True:
         pending_packet = _pending_clarification_packet(result)
         if pending_packet is None:
+            route["clarification_stop_reason"] = "no_pending_clarification"
             return source, result
+        attempt += 1
 
         question = pending_packet.questions[0]
         print("")
@@ -178,11 +172,11 @@ def _answer_clarifications_from_terminal(
             trace_events.append(event)
             route["clarification_stop_reason"] = "empty_answer"
             return source, None
-        clarification_service = ClarificationService()
-        _, answer_history = clarification_service.answer_text(pending_packet, answer)
         event["answer"] = answer
         trace_events.append(event)
         interactions.append({**event, "answer": answer})
+        clarification_service = ClarificationService()
+        _, answer_history = clarification_service.answer_text(pending_packet, answer)
         source = _source_with_clarification_history(
             source,
             base_raw_text=base_raw_text,
@@ -190,9 +184,7 @@ def _answer_clarifications_from_terminal(
             answer_history=answer_history,
             clarification_service=clarification_service,
         )
-        result = service.process_source(source)
-    route["clarification_stop_reason"] = "max_clarifications_reached"
-    return source, result
+        result = service.resume_pending(source, result, answer)
 
 
 def _pending_clarification_packet(result: Any) -> ClarificationPacket | None:
@@ -353,10 +345,13 @@ def _append_structured_calls(
 ) -> None:
     for offset, call in enumerate(structured_calls, start=1):
         call_index = start_index + offset
-        title = f"Structured Call {call_index}: {call.schema}"
+        title = f"LLM Session Call {call_index}: {call.schema}"
         lines.extend([title, "-" * len(title), ""])
         lines.append(f"Purpose: {call.purpose or 'unknown'}")
         lines.append(f"Model: {call.model or 'default route'}")
+        lines.append(f"Session ID: {call.session_id or 'session-local'}")
+        lines.append(f"Continuation: {call.continuation}")
+        lines.append(f"Tools: {', '.join(call.tools) if call.tools else '(none)'}")
         lines.append("")
         _append_text_block(lines, "System Prompt", call.system_prompt)
         _append_json_block(lines, "Messages", call.messages)
