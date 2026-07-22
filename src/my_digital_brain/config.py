@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -99,11 +99,10 @@ class Settings(BaseSettings):
         le=100_000,
         alias="IDENTITY_CONTEXT_MAX_TOTAL_CHARS",
     )
-    ingestion_resolution_max_tool_calls: int = Field(
-        default=10,
+    llm_max_tool_calls: int = Field(
+        default=50,
         ge=1,
-        le=10,
-        alias="INGESTION_RESOLUTION_MAX_TOOL_CALLS",
+        alias="LLM_MAX_TOOL_CALLS",
     )
 
     relational_backend: Literal["postgres", "sqlite"] = Field(
@@ -223,19 +222,11 @@ class Settings(BaseSettings):
     def telegram_allowed_user_id_set(self) -> set[str]:
         if not self.telegram_allowed_user_ids:
             return set()
-        return {
-            item.strip()
-            for item in self.telegram_allowed_user_ids.split(",")
-            if item.strip()
-        }
+        return {item.strip() for item in self.telegram_allowed_user_ids.split(",") if item.strip()}
 
     @property
     def frontend_cors_origin_list(self) -> list[str]:
-        return [
-            item.strip()
-            for item in self.frontend_cors_origins.split(",")
-            if item.strip()
-        ]
+        return [item.strip() for item in self.frontend_cors_origins.split(",") if item.strip()]
 
 
 @lru_cache(maxsize=1)
