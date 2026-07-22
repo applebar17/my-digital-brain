@@ -49,7 +49,11 @@ class ResolutionProposalValidator:
             action.candidate_ref not in candidate_refs
             and action.candidate_ref not in packet_by_candidate
         ):
-            errors.append(f"candidate_ref '{action.candidate_ref}' was not supplied for this step.")
+            errors.append(
+                f"candidate_ref '{action.candidate_ref}' was not supplied for this step. "
+                f"Assigned candidate IDs: {', '.join(sorted(candidate_refs))}. "
+                "Use one of the supplied IDs."
+            )
 
         refs_to_check = [
             ("target_ref", action.target_ref),
@@ -73,11 +77,15 @@ class ResolutionProposalValidator:
             ):
                 errors.append(f"{field_name} '{ref}' is outside the active graph/session scope.")
 
-        if action.tool_name in {
-            ResolutionToolName.UPDATE_NODE,
-            ResolutionToolName.UPDATE_MEMORY,
-            ResolutionToolName.UPDATE_RELATIONSHIP,
-        } and action.target_ref:
+        if (
+            action.tool_name
+            in {
+                ResolutionToolName.UPDATE_NODE,
+                ResolutionToolName.UPDATE_MEMORY,
+                ResolutionToolName.UPDATE_RELATIONSHIP,
+            }
+            and action.target_ref
+        ):
             self._require_existing(action.target_ref, errors, "target_ref")
         if action.tool_name in {
             ResolutionToolName.CREATE_RELATIONSHIP,
@@ -136,9 +144,15 @@ class ResolutionProposalCompiler:
         candidate_graph: CandidateMemoryGraph,
         packets: Iterable[EntityLookupContextPacket] = (),
         supplied_candidate_refs: Iterable[str] | None = None,
+        required_candidate_refs: Iterable[str] | None = None,
     ) -> ResolutionResult:
-        candidate_refs = set(supplied_candidate_refs or [])
-        candidate_refs.update(entity.local_ref for entity in candidate_graph.candidate_entities)
+        if supplied_candidate_refs is None:
+            candidate_refs = {entity.local_ref for entity in candidate_graph.candidate_entities}
+        else:
+            candidate_refs = set(supplied_candidate_refs)
+        required_refs = set(required_candidate_refs or [])
+        if not required_refs:
+            required_refs = {entity.local_ref for entity in candidate_graph.candidate_entities}
         packets_list = list(packets)
         validated = self.validate_actions(
             actions,
@@ -147,7 +161,11 @@ class ResolutionProposalCompiler:
         )
 
         node_actions = [action for action in validated if action.step == ResolutionStep.NODE]
-        entity_refs = {entity.local_ref for entity in candidate_graph.candidate_entities}
+        entity_refs = {
+            entity.local_ref
+            for entity in candidate_graph.candidate_entities
+            if entity.local_ref in required_refs
+        }
         self._require_actions_for_refs(node_actions, entity_refs, "node")
 
         decisions: list[ResolutionDecision] = []
@@ -191,8 +209,7 @@ class ResolutionProposalCompiler:
             metadata={
                 "policy": "llm_selected_action_backend_validated",
                 "validated_tool_actions": [
-                    action.model_dump(mode="json", exclude_none=True)
-                    for action in validated
+                    action.model_dump(mode="json", exclude_none=True) for action in validated
                 ],
             },
         )
@@ -255,6 +272,18 @@ class ResolutionProposalCompiler:
         )
 
     @staticmethod
+    def require_complete_actions(
+        actions: Iterable[ResolutionToolAction],
+        candidate_refs: Iterable[str],
+        step_name: str,
+    ) -> None:
+        """Require one terminal action for exactly the supplied batch refs."""
+
+        ResolutionProposalCompiler._require_actions_for_refs(
+            list(actions), set(candidate_refs), step_name
+        )
+
+    @staticmethod
     def _require_actions_for_refs(
         actions: list[ResolutionToolAction],
         candidate_refs: set[str],
@@ -264,11 +293,7 @@ class ResolutionProposalCompiler:
         by_ref: dict[str, list[ResolutionToolAction]] = {}
         for action in actions:
             by_ref.setdefault(action.candidate_ref, []).append(action)
-        duplicates = sorted(
-            ref
-            for ref, ref_actions in by_ref.items()
-            if len(ref_actions) > 1
-        )
+        duplicates = sorted(ref for ref, ref_actions in by_ref.items() if len(ref_actions) > 1)
         missing = sorted(candidate_refs - set(action_refs))
         if duplicates or missing:
             errors = []
@@ -278,7 +303,10 @@ class ResolutionProposalCompiler:
                 )
             if missing:
                 errors.append(
-                    f"No {step_name} action was supplied for: {', '.join(missing)}."
+                    f"No {step_name} action was supplied for: {', '.join(missing)}. "
+                    f"Assigned candidate IDs: {', '.join(sorted(candidate_refs))}. "
+                    "The resolution step returned no action tool call for these IDs. "
+                    "Provide exactly one terminal action for every supplied ID."
                 )
             raise ResolutionProposalValidationError(errors)
 
@@ -286,10 +314,15 @@ class ResolutionProposalCompiler:
         self,
         candidate_graph: CandidateMemoryGraph,
         result: ResolutionResult,
+        *,
+        candidate_refs: Iterable[str] | None = None,
     ) -> ResolvedEntityMap:
         decision_by_ref = {decision.candidate_ref: decision for decision in result.decisions}
+        selected_refs = set(candidate_refs or [])
         entries: list[ResolvedEntityMapEntry] = []
         for entity in candidate_graph.candidate_entities:
+            if selected_refs and entity.local_ref not in selected_refs:
+                continue
             decision = decision_by_ref.get(entity.local_ref)
             if decision is None:
                 raise ResolutionProposalValidationError(
@@ -358,6 +391,7 @@ class ResolutionProposalCompiler:
             decisions=decisions,
             metadata={"policy": "llm_selected_action_backend_validated"},
         )
+
 
 def _contains_protected_person_fields(payload: object) -> bool:
     if isinstance(payload, list):
