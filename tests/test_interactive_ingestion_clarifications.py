@@ -18,7 +18,7 @@ from my_digital_brain.ingestion.contracts import (
 from my_digital_brain.ingestion.enums import IngestionStatus, SourceChannel, SourceType
 
 
-def test_terminal_answer_runs_next_pipeline_pass_before_checking_next_question() -> None:
+def test_terminal_answer_resumes_the_paused_session_without_rerunning_pipeline() -> None:
     packet = build_clarification_packet(
         frame_id="frame-1",
         origin_state_id="node",
@@ -47,11 +47,21 @@ def test_terminal_answer_runs_next_pipeline_pass_before_checking_next_question()
 
     class Service:
         def __init__(self) -> None:
-            self.calls: list[dict[str, Any]] = []
+            self.process_calls: list[dict[str, Any]] = []
+            self.resume_calls: list[tuple[SourceRecordRef, IngestionResult, str]] = []
 
         def process_source(self, source: SourceRecordRef) -> IngestionResult:
-            self.calls.append(dict(source.metadata))
-            return pending if len(self.calls) == 1 else completed
+            self.process_calls.append(dict(source.metadata))
+            return pending
+
+        def resume_pending(
+            self,
+            source: SourceRecordRef,
+            result: IngestionResult,
+            answer: str,
+        ) -> IngestionResult:
+            self.resume_calls.append((source, result, answer))
+            return completed
 
     service = Service()
     source = SourceRecordRef(
@@ -69,13 +79,14 @@ def test_terminal_answer_runs_next_pipeline_pass_before_checking_next_question()
             base_raw_text=source.raw_text or "",
             result=None,
             route=route,
-            max_clarifications=3,
             structured_calls=[],
             tool_calls=[],
             trace_events=[],
         )
 
-    assert len(service.calls) == 2
+    assert len(service.process_calls) == 1
+    assert len(service.resume_calls) == 1
+    assert service.resume_calls[0][2] == "Amos Vignaroli"
     assert result is completed
     assert updated_source.metadata["model_facing_history"][-1] == {
         "role": "user",
