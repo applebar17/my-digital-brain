@@ -670,10 +670,10 @@ are not unrestricted graph access. Wave 5 permits multiple clarification tool
 calls in one resolution step. The backend preserves every question and blocks
 the write plan until the current session has enough information to continue.
 
-Each resolution step also has a configurable tool-call ceiling. The setting
-`INGESTION_RESOLUTION_MAX_TOOL_CALLS` defaults to `10` and cannot exceed `10`.
-The effective ceiling is the lower of this setting, the number required by the
-current candidate set, and any lower provider/client limit.
+LLM sessions use the general configurable tool-call ceiling
+`LLM_MAX_TOOL_CALLS`, which defaults to `50`. Consumers may provide a lower
+step-specific value when a future workflow requires it. The generic session
+runner uses `50` when no caller override is supplied.
 
 **Deliverables:**
 
