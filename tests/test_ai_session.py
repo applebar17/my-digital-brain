@@ -14,6 +14,7 @@ from my_digital_brain.ai.session import (
     LLMSessionCompleted,
     LLMSessionRequest,
     LLMSessionRunner,
+    continuation_with_tool_result,
 )
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tools.base import build_tool_index
@@ -183,25 +184,84 @@ def test_pending_tool_can_resume_from_the_same_transcript() -> None:
     )
 
     assert isinstance(first, LLMSessionAwaitingTool)
-    tool_message = ChatMessage(
-        role="tool",
-        tool_call_id="call-1",
-        content=ToolResult(status="ok", output="answer").model_dump_json(),
+    continuation = continuation_with_tool_result(
+        first.continuation,
+        ToolResult(status="ok", output="answer"),
     )
     resumed = LLMSessionRunner(transport).run(
         LLMSessionRequest(
             system_prompt="Ask when needed.",
-            messages=[*first.messages, tool_message],
+            messages=continuation.messages,
             toolbox=_toolbox("ask"),
             tools_mapping={"ask": lambda: ToolResult(status="pending", output="question")},
             session_id="session-1",
-            continuation=first.continuation,
+            continuation=continuation,
         )
     )
 
     assert isinstance(resumed, LLMSessionCompleted)
     assert resumed.content == "resumed"
     assert resumed.session_id == "session-1"
+
+
+def test_multiple_pending_tools_keep_chat_completion_transcript_valid() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(
+                role="assistant",
+                tool_calls=[_call("call-1", "ask"), _call("call-2", "ask")],
+            ),
+            ChatMessage(role="assistant", content="all clarifications answered"),
+        ]
+    )
+    answers = iter(["first answer", "second answer"])
+
+    def ask() -> ToolResult:
+        try:
+            return ToolResult(status="pending", output=next(answers))
+        except StopIteration:
+            return ToolResult(status="ok", output="answered")
+
+    request = LLMSessionRequest(
+        system_prompt="Ask both questions.",
+        toolbox=_toolbox("ask"),
+        tools_mapping={"ask": ask},
+        session_id="multi-pending",
+    )
+    first = LLMSessionRunner(transport).run(request)
+    assert isinstance(first, LLMSessionAwaitingTool)
+    assert first.continuation.pending_tool_call.call_id == "call-1"
+
+    second_continuation = continuation_with_tool_result(
+        first.continuation,
+        ToolResult(status="ok", output="first answer"),
+    )
+    second = LLMSessionRunner(transport).run(
+        request.model_copy(
+            update={
+                "messages": second_continuation.messages,
+                "continuation": second_continuation,
+            }
+        )
+    )
+    assert isinstance(second, LLMSessionAwaitingTool)
+    assert second.continuation.pending_tool_call.call_id == "call-2"
+    third_continuation = continuation_with_tool_result(
+        second.continuation,
+        ToolResult(status="ok", output="second answer"),
+    )
+    third = LLMSessionRunner(transport).run(
+        request.model_copy(
+            update={
+                "messages": third_continuation.messages,
+                "continuation": third_continuation,
+            }
+        )
+    )
+    assert isinstance(third, LLMSessionCompleted)
+    assert third.content == "all clarifications answered"
+    tool_messages = [message for message in third.messages if message.role == "tool"]
+    assert {message.tool_call_id for message in tool_messages} == {"call-1", "call-2"}
 
 
 def test_pending_batch_preserves_remaining_calls_until_resume() -> None:
