@@ -12,6 +12,7 @@ from ..models import ToolResult
 from ..schemas import ChatMessage
 from ..structured_schema import strict_response_format
 from .contracts import (
+    DEFAULT_MAX_TOOL_CALLS,
     LLMCompletionRequest,
     LLMCompletionResult,
     LLMSessionAwaitingTool,
@@ -104,6 +105,7 @@ class LLMSessionRunner:
                         remaining_tool_calls=remaining,
                         tool_events=events,
                         tool_calls_used=executed,
+                        metadata=dict(request.metadata),
                     )
                     return LLMSessionAwaitingTool(
                         session_id=session_id,
@@ -202,6 +204,7 @@ class LLMSessionRunner:
                     remaining_tool_calls=remaining,
                     tool_events=events,
                     tool_calls_used=executed,
+                    metadata=dict(continuation.metadata),
                 )
                 return LLMSessionAwaitingTool(
                     session_id=session_id,
@@ -268,13 +271,27 @@ class LLMSessionRunner:
             )
             if result.status == "pending":
                 remaining = [_pending_tool_call(call) for call in raw_calls[index + 1 :]]
+                for deferred in remaining:
+                    _upsert_tool_message(
+                        messages,
+                        deferred.call_id,
+                        ToolResult(
+                            status="deferred",
+                            output=(
+                                "This tool call is deferred until the current external "
+                                "interaction is answered."
+                            ),
+                        ),
+                    )
                 return pending_call, remaining, events, messages
-            messages.append(_tool_message(pending_call.call_id, result))
+            _upsert_tool_message(messages, pending_call.call_id, result)
         return None, remaining, events, messages
 
     def _cap_reached(self, request: LLMSessionRequest, executed: int) -> bool:
         limit = request.max_tool_calls
-        return limit is not None and limit >= 0 and executed >= limit
+        if limit is None:
+            limit = DEFAULT_MAX_TOOL_CALLS
+        return limit >= 0 and executed >= limit
 
     def _failure(
         self,
@@ -321,6 +338,19 @@ def _tool_message(call_id: str, result: ToolResult) -> ChatMessage:
         tool_call_id=call_id,
         content=result.model_dump_json(exclude_none=True),
     )
+
+
+def _upsert_tool_message(
+    messages: list[ChatMessage],
+    call_id: str,
+    result: ToolResult,
+) -> None:
+    replacement = _tool_message(call_id, result)
+    for index, message in enumerate(messages):
+        if message.role == "tool" and message.tool_call_id == call_id:
+            messages[index] = replacement
+            return
+    messages.append(replacement)
 
 
 def _repair_message(schema: type[BaseModel], exc: Exception) -> str:
