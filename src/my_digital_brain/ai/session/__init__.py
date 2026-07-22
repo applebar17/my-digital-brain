@@ -1,6 +1,8 @@
 """Unified provider-neutral LLM sessions."""
 
+from .continuation import continuation_with_tool_result
 from .contracts import (
+    DEFAULT_MAX_TOOL_CALLS,
     LLMCompletionRequest,
     LLMCompletionResult,
     LLMSessionAwaitingTool,
@@ -16,6 +18,7 @@ from .runner import LLMSessionRunner
 
 __all__ = [
     "LLMCompletionRequest",
+    "DEFAULT_MAX_TOOL_CALLS",
     "LLMCompletionResult",
     "LLMSessionAwaitingTool",
     "LLMSessionCompleted",
@@ -24,6 +27,7 @@ __all__ = [
     "LLMSessionRequest",
     "LLMSessionResult",
     "LLMSessionRunner",
+    "continuation_with_tool_result",
     "PendingToolCall",
     "ToolExecutionEvent",
 ]
