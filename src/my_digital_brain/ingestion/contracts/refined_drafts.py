@@ -42,7 +42,7 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
     )
 
     @model_validator(mode="after")
-    def _validate_useful_signal(self) -> "IngestionReasoningCheckpointDraft":
+    def _validate_useful_signal(self) -> IngestionReasoningCheckpointDraft:
         if not self.summary.strip():
             raise ValueError("Ingestion reasoning checkpoint requires a summary.")
         if not (
@@ -119,11 +119,9 @@ class EntityIngestionPlanDraft(IngestionModel):
     )
 
     @model_validator(mode="after")
-    def _validate_has_next_step(self) -> "EntityIngestionPlanDraft":
+    def _validate_has_next_step(self) -> EntityIngestionPlanDraft:
         if not (self.actions or self.context_gaps):
-            raise ValueError(
-                "Entity ingestion plan requires actions or context gaps."
-            )
+            raise ValueError("Entity ingestion plan requires actions or context gaps.")
         refs = [
             entity.local_ref
             for action in self.actions
@@ -133,7 +131,9 @@ class EntityIngestionPlanDraft(IngestionModel):
         duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
         if duplicates:
             raise ValueError(
-                "Entity planned local_refs must be unique: " + ", ".join(duplicates)
+                "Candidate ID collision in this session. "
+                f"Already assigned IDs: {', '.join(sorted(set(refs)))}. "
+                f"Colliding IDs: {', '.join(duplicates)}. Use a unique candidate ID."
             )
         return self
 
@@ -203,11 +203,9 @@ class MemoryLogIngestionPlanDraft(IngestionModel):
     )
 
     @model_validator(mode="after")
-    def _validate_has_next_step(self) -> "MemoryLogIngestionPlanDraft":
+    def _validate_has_next_step(self) -> MemoryLogIngestionPlanDraft:
         if not (self.actions or self.context_gaps):
-            raise ValueError(
-                "Memory-log ingestion plan requires actions or context gaps."
-            )
+            raise ValueError("Memory-log ingestion plan requires actions or context gaps.")
         refs = [
             memory_log.local_ref
             for action in self.actions
@@ -319,7 +317,9 @@ class RelationshipIngestionPlanDraft(IngestionModel):
     )
     missing_entities: list[MissingEntityRequiredDraft] = Field(
         default_factory=list,
-        description="Missing endpoints that must be entity-planned before blocked relationships resume.",
+        description=(
+            "Missing endpoints that must be entity-planned before blocked relationships resume."
+        ),
     )
     context_gaps: list[str] = Field(
         default_factory=list,
@@ -327,17 +327,15 @@ class RelationshipIngestionPlanDraft(IngestionModel):
     )
 
     @model_validator(mode="after")
-    def _validate_has_next_step(self) -> "RelationshipIngestionPlanDraft":
+    def _validate_has_next_step(self) -> RelationshipIngestionPlanDraft:
         if not (self.actions or self.missing_entities or self.context_gaps):
             raise ValueError(
-                "Relationship ingestion plan requires actions, missing entities, "
-                "or context gaps."
+                "Relationship ingestion plan requires actions, missing entities, or context gaps."
             )
         refs = [action.local_ref for action in self.actions if action.local_ref]
         duplicates = sorted({ref for ref in refs if refs.count(ref) > 1})
         if duplicates:
             raise ValueError(
-                "Relationship planned local_refs must be unique: "
-                + ", ".join(duplicates)
+                "Relationship planned local_refs must be unique: " + ", ".join(duplicates)
             )
         return self
