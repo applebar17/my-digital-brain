@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from my_digital_brain.ai.logging import log_event
@@ -14,8 +15,11 @@ from my_digital_brain.ai.schemas import AIRequestContext, ChatMessage
 from my_digital_brain.ai.session import (
     LLMSessionAwaitingTool,
     LLMSessionCompleted,
+    LLMSessionContinuation,
     LLMSessionRequest,
+    continuation_with_tool_result,
 )
+from my_digital_brain.chat.models import ClarificationPacket
 from my_digital_brain.clarification import ClarificationService
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
@@ -38,6 +42,13 @@ from my_digital_brain.ingestion.resolution_toolboxes import build_resolution_too
 logger = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class _ResolutionProposalRun:
+    actions: list[ResolutionToolAction] = field(default_factory=list)
+    batch_results: list[ResolutionResult] = field(default_factory=list)
+    batch_maps: list[ResolvedEntityMap] = field(default_factory=list)
+
+
 class LLMResolutionProposalAgent:
     """Collect model-selected actions without performing graph operations."""
 
@@ -47,7 +58,7 @@ class LLMResolutionProposalAgent:
         *,
         router: ModelRouter | None = None,
         model: str | None = None,
-        max_tool_calls: int = 10,
+        max_tool_calls: int = 50,
         clarification_service: ClarificationService | None = None,
     ) -> None:
         self.provider = provider
@@ -56,8 +67,8 @@ class LLMResolutionProposalAgent:
         try:
             configured_limit = int(max_tool_calls)
         except (TypeError, ValueError):
-            configured_limit = 10
-        self.max_tool_calls = min(10, max(1, configured_limit))
+            configured_limit = 50
+        self.max_tool_calls = max(1, configured_limit)
         self.clarification_service = clarification_service or ClarificationService()
 
     def propose(
@@ -69,6 +80,45 @@ class LLMResolutionProposalAgent:
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
     ) -> list[ResolutionToolAction] | LLMSessionAwaitingTool:
+        proposal = self._run_proposals(
+            step=step,
+            source_text=source_text,
+            context=context,
+            candidate_graph=candidate_graph,
+            packets=packets,
+        )
+        if isinstance(proposal, LLMSessionAwaitingTool):
+            return proposal
+        if not proposal.actions:
+            raise ValueError(
+                f"Resolution step '{step.value}' returned no action tool call. "
+                "The backend will not infer a fallback action."
+            )
+        log_event(
+            logger,
+            "ingestion.resolution.proposal.received",
+            component="ingestion",
+            resolution_step=step.value,
+            action_count=len(proposal.actions),
+            action_tools=[str(action.tool_name) for action in proposal.actions],
+        )
+        return proposal.actions
+
+    def _run_proposals(
+        self,
+        *,
+        step: ResolutionStep,
+        source_text: str | None,
+        context: IngestionContextPackage,
+        candidate_graph: CandidateMemoryGraph,
+        packets: Sequence[EntityLookupContextPacket],
+        start_batch: int = 0,
+        initial_actions: Iterable[ResolutionToolAction] = (),
+        initial_results: Iterable[ResolutionResult] = (),
+        initial_maps: Iterable[ResolvedEntityMap] = (),
+        continuation: LLMSessionContinuation | None = None,
+        compile_batches: bool = False,
+    ) -> _ResolutionProposalRun | LLMSessionAwaitingTool:
         toolbox = build_resolution_toolbox(step)
         step_candidates = self._step_candidates(step, candidate_graph)
         log_event(
@@ -81,7 +131,12 @@ class LLMResolutionProposalAgent:
             lookup_statuses=[str(packet.lookup.status) for packet in packets],
             available_tools=sorted(toolbox.tools_by_name),
         )
-        actions: list[ResolutionToolAction] = []
+        actions = list(initial_actions)
+        proposal = _ResolutionProposalRun(
+            actions=actions,
+            batch_results=list(initial_results),
+            batch_maps=list(initial_maps),
+        )
         request_context = AIRequestContext(
             purpose=f"ingestion_resolution_{step.value}",
             source_id=context.source_id,
@@ -93,67 +148,206 @@ class LLMResolutionProposalAgent:
             else None
         )
         prompt = self._system_prompt(step)
-        for batch_start in range(0, len(step_candidates), self.max_tool_calls):
+        for batch_start in range(start_batch, len(step_candidates), self.max_tool_calls):
             batch = step_candidates[batch_start : batch_start + self.max_tool_calls]
-            batch_refs = {
-                candidate.local_ref for candidate in batch if getattr(candidate, "local_ref", None)
-            }
-            batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
-            input_payload = {
-                "source_text": source_text,
-                "owner_context": owner_prompt_block(context.owner_snapshot),
-                "candidate_actions": [
-                    self._model_candidate_payload(candidate) for candidate in batch
-                ],
-                "identity_lookup_packets": [
-                    packet.model_dump(mode="json", exclude_none=True) for packet in batch_packets
-                ],
-                "available_tools": sorted(toolbox.tools_by_name),
-            }
-            mapping = {
-                name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
-            }
-            result = self.provider.run_session(
-                LLMSessionRequest(
-                    system_prompt=prompt,
-                    messages=[
-                        *self._clarification_history_messages(context),
-                        ChatMessage(
-                            role="user",
-                            content=(
-                                f"```json\n{json.dumps(input_payload, ensure_ascii=False)}\n```"
-                            ),
-                        ),
-                    ],
-                    model=self.model or (route.model if route else None),
-                    temperature=0.1,
-                    toolbox=toolbox,
-                    tools_mapping=mapping,
-                    max_tool_calls=len(batch),
-                    session_id=(
-                        f"resolution-{context.source_id or 'run'}-{step.value}-{batch_start}"
-                    ),
-                    context=request_context,
-                )
+            # A resumed first batch already carries actions from earlier clarification
+            # continuations. Validate the complete current-batch accumulator, not only
+            # the actions captured during the latest provider invocation.
+            action_start = (
+                0 if continuation is not None and batch_start == start_batch else len(actions)
+            )
+            result = self._run_batch(
+                step=step,
+                source_text=source_text,
+                context=context,
+                packets=packets,
+                batch=batch,
+                batch_start=batch_start,
+                actions=actions,
+                toolbox=toolbox,
+                prompt=prompt,
+                route=route,
+                request_context=request_context,
+                continuation=continuation if batch_start == start_batch else None,
             )
             if isinstance(result, LLMSessionAwaitingTool):
-                return result
+                return self._with_resolution_state(result, proposal)
             if not isinstance(result, LLMSessionCompleted):
                 raise ValueError(f"Resolution step '{step.value}' failed: {result.kind}")
-        if not actions:
-            raise ValueError(
-                f"Resolution step '{step.value}' returned no action tool call. "
-                "The backend will not infer a fallback action."
+            batch_actions = actions[action_start:]
+            batch_refs = self._candidate_refs(batch)
+            ResolutionProposalCompiler.require_complete_actions(
+                batch_actions,
+                batch_refs,
+                step.value,
             )
-        log_event(
-            logger,
-            "ingestion.resolution.proposal.received",
-            component="ingestion",
-            resolution_step=step.value,
-            action_count=len(actions),
-            action_tools=[str(action.tool_name) for action in actions],
+            if compile_batches:
+                batch_result, batch_map = self._compile_batch(
+                    actions=batch_actions,
+                    batch=batch,
+                    packets=packets,
+                    candidate_graph=candidate_graph,
+                    registry_snapshot=context.reference_registry_snapshot,
+                )
+                proposal.batch_results.append(batch_result)
+                proposal.batch_maps.append(batch_map)
+        return proposal
+
+    def resume_nodes(
+        self,
+        *,
+        source_text: str | None,
+        context: IngestionContextPackage,
+        candidate_graph: CandidateMemoryGraph,
+        packets: Sequence[EntityLookupContextPacket] = (),
+        continuation: LLMSessionContinuation,
+        answer_text: str,
+    ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
+        """Resume the paused node-resolution session after a user answer."""
+
+        if not context.reference_registry_snapshot:
+            raise ValueError("Node resolution requires the active reference registry snapshot.")
+        pending_call = continuation.pending_tool_call
+        candidate_ref = str(pending_call.arguments.get("candidate_ref") or "")
+        step_candidates = self._step_candidates(ResolutionStep.NODE, candidate_graph)
+        candidate_index = next(
+            (
+                index
+                for index, candidate in enumerate(step_candidates)
+                if candidate.local_ref == candidate_ref
+            ),
+            None,
         )
+        if candidate_index is None:
+            raise ValueError(
+                f"Clarification candidate ref '{candidate_ref}' is not present in the "
+                "current node-resolution session."
+            )
+        batch_start = candidate_index - (candidate_index % self.max_tool_calls)
+        actions = self._actions_from_events(continuation)
+        packet = self._clarification_packet(continuation, pending_call.call_id)
+        if packet is None:
+            raise ValueError(
+                f"Pending tool call '{pending_call.call_id}' has no clarification packet."
+            )
+        _, answer_history = self.clarification_service.answer_text(packet, answer_text)
+        tool_result = ToolResult(
+            status="ok",
+            output=f"User clarification answer: {answer_text.strip()}",
+            data={
+                "operation": "ask_clarification",
+                "answer": answer_text.strip(),
+                "history_delta": answer_history,
+            },
+        )
+        resumed = continuation_with_tool_result(
+            continuation,
+            tool_result,
+            history_messages=[ChatMessage.model_validate(message) for message in answer_history],
+        )
+        completed_results, completed_maps = self._continuation_batches(continuation)
+        proposal = self._run_proposals(
+            step=ResolutionStep.NODE,
+            source_text=source_text,
+            context=context,
+            candidate_graph=candidate_graph,
+            packets=packets,
+            start_batch=batch_start,
+            initial_actions=actions,
+            initial_results=completed_results,
+            initial_maps=completed_maps,
+            continuation=resumed,
+            compile_batches=True,
+        )
+        if isinstance(proposal, LLMSessionAwaitingTool):
+            return proposal
+        return self._finalize_proposals(candidate_graph, proposal)
+
+    def _run_batch(
+        self,
+        *,
+        step: ResolutionStep,
+        source_text: str | None,
+        context: IngestionContextPackage,
+        packets: Sequence[EntityLookupContextPacket],
+        batch: Sequence[Any],
+        batch_start: int,
+        actions: list[ResolutionToolAction],
+        toolbox: Any,
+        prompt: str,
+        route: Any,
+        request_context: AIRequestContext,
+        continuation: LLMSessionContinuation | None = None,
+    ) -> LLMSessionCompleted | LLMSessionAwaitingTool:
+        batch_refs = {
+            candidate.local_ref for candidate in batch if getattr(candidate, "local_ref", None)
+        }
+        batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
+        input_payload = {
+            "source_text": source_text,
+            "owner_context": owner_prompt_block(context.owner_snapshot),
+            "candidate_actions": [self._model_candidate_payload(candidate) for candidate in batch],
+            "identity_lookup_packets": [
+                packet.model_dump(mode="json", exclude_none=True) for packet in batch_packets
+            ],
+            "available_tools": sorted(toolbox.tools_by_name),
+        }
+        mapping = {
+            name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
+        }
+        if continuation is None:
+            messages = [
+                *self._clarification_history_messages(context),
+                ChatMessage(
+                    role="user",
+                    content=(f"```json\n{json.dumps(input_payload, ensure_ascii=False)}\n```"),
+                ),
+            ]
+        else:
+            messages = list(continuation.messages)
+        return self.provider.run_session(
+            LLMSessionRequest(
+                system_prompt=prompt,
+                messages=messages,
+                model=self.model or (route.model if route else None),
+                temperature=0.1,
+                toolbox=toolbox,
+                tools_mapping=mapping,
+                max_tool_calls=self.max_tool_calls,
+                session_id=(
+                    continuation.session_id
+                    if continuation is not None
+                    else f"resolution-{context.source_id or 'run'}-{step.value}-{batch_start}"
+                ),
+                context=request_context,
+                continuation=continuation,
+            )
+        )
+
+    @staticmethod
+    def _actions_from_events(
+        continuation: LLMSessionContinuation,
+    ) -> list[ResolutionToolAction]:
+        actions: list[ResolutionToolAction] = []
+        for event in continuation.tool_events:
+            data = event.result.data
+            if not isinstance(data, dict) or not isinstance(data.get("action"), dict):
+                continue
+            actions.append(ResolutionToolAction.model_validate(data["action"]))
         return actions
+
+    @staticmethod
+    def _clarification_packet(
+        continuation: LLMSessionContinuation,
+        call_id: str,
+    ) -> ClarificationPacket | None:
+        for event in reversed(continuation.tool_events):
+            if event.call_id != call_id:
+                continue
+            data = event.result.data
+            if isinstance(data, dict) and isinstance(data.get("clarification_packet"), dict):
+                return ClarificationPacket.model_validate(data["clarification_packet"])
+        return None
 
     def resolve_nodes(
         self,
@@ -165,23 +359,145 @@ class LLMResolutionProposalAgent:
     ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         if not context.reference_registry_snapshot:
             raise ValueError("Node resolution requires the active reference registry snapshot.")
-        registry = RunReferenceRegistry.from_snapshot(context.reference_registry_snapshot)
-        actions = self.propose(
+        proposal = self._run_proposals(
             step=ResolutionStep.NODE,
             source_text=source_text,
             context=context,
             candidate_graph=candidate_graph,
             packets=packets,
+            compile_batches=True,
         )
-        if isinstance(actions, LLMSessionAwaitingTool):
-            return actions
+        if isinstance(proposal, LLMSessionAwaitingTool):
+            return proposal
+        return self._finalize_proposals(candidate_graph, proposal)
+
+    @staticmethod
+    def _candidate_refs(candidates: Sequence[Any]) -> set[str]:
+        return {
+            candidate.local_ref for candidate in candidates if getattr(candidate, "local_ref", None)
+        }
+
+    def _compile_batch(
+        self,
+        *,
+        actions: Sequence[ResolutionToolAction],
+        batch: Sequence[Any],
+        packets: Sequence[EntityLookupContextPacket],
+        candidate_graph: CandidateMemoryGraph,
+        registry_snapshot: dict[str, Any],
+    ) -> tuple[ResolutionResult, ResolvedEntityMap]:
+        registry = RunReferenceRegistry.from_snapshot(registry_snapshot)
         compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
+        batch_refs = self._candidate_refs(batch)
+        batch_packets = [packet for packet in packets if packet.candidate_ref in batch_refs]
         result = compiler.compile(
             actions,
             candidate_graph=candidate_graph,
-            packets=packets,
+            packets=batch_packets,
+            supplied_candidate_refs=batch_refs,
+            required_candidate_refs=batch_refs,
         )
-        return compiler.build_entity_map(candidate_graph, result), result
+        return (
+            result,
+            compiler.build_entity_map(
+                candidate_graph,
+                result,
+                candidate_refs=batch_refs,
+            ),
+        )
+
+    @staticmethod
+    def _with_resolution_state(
+        pending: LLMSessionAwaitingTool,
+        proposal: _ResolutionProposalRun,
+    ) -> LLMSessionAwaitingTool:
+        continuation = pending.continuation.model_copy(
+            update={
+                "metadata": {
+                    **pending.continuation.metadata,
+                    "resolution_completed_results": [
+                        result.model_dump(mode="json") for result in proposal.batch_results
+                    ],
+                    "resolution_completed_maps": [
+                        entity_map.model_dump(mode="json") for entity_map in proposal.batch_maps
+                    ],
+                }
+            }
+        )
+        return pending.model_copy(update={"continuation": continuation}, deep=True)
+
+    @staticmethod
+    def _continuation_batches(
+        continuation: LLMSessionContinuation,
+    ) -> tuple[list[ResolutionResult], list[ResolvedEntityMap]]:
+        results = [
+            ResolutionResult.model_validate(item)
+            for item in continuation.metadata.get("resolution_completed_results", [])
+            if isinstance(item, dict)
+        ]
+        maps = [
+            ResolvedEntityMap.model_validate(item)
+            for item in continuation.metadata.get("resolution_completed_maps", [])
+            if isinstance(item, dict)
+        ]
+        if len(results) != len(maps):
+            raise ValueError("Resolution continuation has incomplete completed-batch state.")
+        return results, maps
+
+    @staticmethod
+    def _finalize_proposals(
+        candidate_graph: CandidateMemoryGraph,
+        proposal: _ResolutionProposalRun,
+    ) -> tuple[ResolvedEntityMap, ResolutionResult]:
+        expected_refs = [entity.local_ref for entity in candidate_graph.candidate_entities]
+        decisions = [decision for result in proposal.batch_results for decision in result.decisions]
+        decisions_by_ref: dict[str, list[Any]] = {}
+        for decision in decisions:
+            decisions_by_ref.setdefault(decision.candidate_ref, []).append(decision)
+        duplicate_refs = sorted(
+            ref for ref, entries in decisions_by_ref.items() if len(entries) > 1
+        )
+        missing_refs = sorted(set(expected_refs) - set(decisions_by_ref))
+        if duplicate_refs or missing_refs:
+            errors: list[str] = []
+            if duplicate_refs:
+                errors.append(
+                    "Resolution coverage contains duplicate completed batches for: "
+                    f"{', '.join(duplicate_refs)}."
+                )
+            if missing_refs:
+                errors.append(
+                    "Resolution coverage is incomplete. Missing completed batch results for: "
+                    f"{', '.join(missing_refs)}."
+                )
+            raise ValueError(" ".join(errors))
+
+        entries_by_ref = {
+            entry.local_ref: entry
+            for entity_map in proposal.batch_maps
+            for entry in entity_map.entries
+        }
+        missing_map_refs = sorted(set(expected_refs) - set(entries_by_ref))
+        if missing_map_refs:
+            raise ValueError(
+                f"Resolution entity-map coverage is incomplete for: {', '.join(missing_map_refs)}."
+            )
+        merged_result = ResolutionResult(
+            decisions=[decisions_by_ref[ref][0] for ref in expected_refs],
+            metadata={
+                "policy": "llm_selected_action_backend_validated_per_batch",
+                "validated_tool_actions": [
+                    action
+                    for result in proposal.batch_results
+                    for action in result.metadata.get("validated_tool_actions", [])
+                ],
+            },
+        )
+        merged_map = ResolvedEntityMap(
+            entries=[entries_by_ref[ref] for ref in expected_refs],
+            notes=["Merged from independently validated resolution batches."],
+        )
+        return merged_map, merged_result
 
     def _capture_handler(
         self,
