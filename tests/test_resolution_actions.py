@@ -27,6 +27,7 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import SourceChannel, SourceType
 from my_digital_brain.ingestion.prompt_builders import IngestionPromptBuilder
+from my_digital_brain.ingestion.resolution_agent import LLMResolutionProposalAgent
 from my_digital_brain.ingestion.resolution_context import (
     build_other_planned_context_packet,
 )
@@ -268,3 +269,11 @@ def test_prompt_adds_match_guidance_only_when_contextual_matches_exist() -> None
         "Contextual matches are evidence"
         in match_payload["resolution_context"]["match_resolution_guidance"]
     )
+
+
+def test_resolution_prompt_limits_defer_to_explicit_user_request() -> None:
+    prompt = LLMResolutionProposalAgent._system_prompt(ResolutionStep.NODE)
+
+    assert "ask for clarification when additional identity information" in prompt
+    assert "apply the answer to the structured candidate payload" in prompt
+    assert "Use defer_or_ignore only after an explicit user request" in prompt

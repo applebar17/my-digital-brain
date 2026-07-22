@@ -212,6 +212,15 @@ def test_prompt_builder_excludes_source_text_from_ingestion_payload() -> None:
     assert "raw_text" not in str(payload)
 
 
+def test_extraction_prompt_preserves_ambiguous_candidates_for_resolution() -> None:
+    prompt = IngestionPromptBuilder.extractor_system_prompt
+
+    assert "Preserve the best supported ambiguous name" in prompt
+    assert "ask for clarification before proposing a node action" in prompt
+    assert "apply the clarified value to the structured candidate fields" in prompt
+    assert "only when the user explicitly asks not to save or to defer" in prompt
+
+
 def test_focused_extractor_keeps_clarification_history_before_ingestion_instruction() -> None:
     provider = QueuedStructuredProvider(
         [

@@ -727,6 +727,13 @@ class LLMResolutionProposalAgent:
             "call ask_clarification. Stable Person "
             "traits belong in profile-memory actions, never direct Person properties. "
             "Use OWNER for first-person references and never create an owner. For every "
+            "ambiguous entity, ask for clarification when additional identity information "
+            "may be useful. After the user answers, apply the answer to the structured "
+            "candidate payload before creating or updating a node; do not put it only in "
+            "the reason. If the answer remains incomplete but the user has not asked to "
+            "discard or defer the candidate, use the best supported ambiguous identity. "
+            "Use defer_or_ignore only after an explicit user request not to save or defer. "
+            "For every "
             "candidate listed in this step, invoke exactly one terminal action tool: a "
             "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
             "only and do not omit a candidate action." + context_blocks

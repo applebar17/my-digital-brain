@@ -134,7 +134,11 @@ _tool_specs = {
     ),
     ResolutionToolName.DEFER_OR_IGNORE: _spec(
         ResolutionToolName.DEFER_OR_IGNORE,
-        "Defer or ignore the candidate when the current source does not justify a graph action.",
+        (
+            "Defer or ignore the candidate only when the user explicitly asks not to "
+            "save or to defer it. Otherwise use the best supported ambiguous identity "
+            "when clarification does not provide more detail."
+        ),
         ("candidate_ref", "reason", "evidence_refs"),
     ),
 }
