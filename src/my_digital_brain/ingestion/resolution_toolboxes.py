@@ -56,7 +56,11 @@ def _action_properties() -> dict[str, dict]:
         "to_ref": optional_string_property(
             "Supplied target endpoint ref, for relationship actions."
         ),
-        "payload": object_property("Proposal data grounded in the source and current context."),
+        "payload": object_property(
+            "Sparse structured patch for the candidate or graph object. "
+            "When a clarification changes a value, include the changed field "
+            "here; do not put it only in reason."
+        ),
         "reason": optional_string_property("Short source-grounded reason for the action."),
         "evidence_refs": array_property("Supplied evidence refs supporting the action."),
     }
@@ -92,14 +96,19 @@ _tool_specs = {
     ),
     ResolutionToolName.CREATE_NODE: _spec(
         ResolutionToolName.CREATE_NODE,
-        "Propose a new non-owner graph node using the candidate and source-grounded payload.",
+        (
+            "Propose a new non-owner graph node. Use payload as a sparse patch; "
+            "after clarification, include the clarified identity fields such as "
+            "display_name in payload."
+        ),
         ("candidate_ref", "payload", "reason", "evidence_refs"),
     ),
     ResolutionToolName.UPDATE_NODE: _spec(
         ResolutionToolName.UPDATE_NODE,
         (
             "Propose an additive update to one supplied existing node. Do not place "
-            "stable traits directly on Person."
+            "stable traits directly on Person. Use payload for every explicit "
+            "field change, including values supplied by clarification."
         ),
         ("candidate_ref", "target_ref", "payload", "reason", "evidence_refs"),
     ),

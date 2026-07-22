@@ -59,7 +59,12 @@ def tools_for_step(step: ResolutionStep | str) -> tuple[ResolutionToolName, ...]
 
 
 class ResolutionToolAction(IngestionModel):
-    """One model-requested graph action before backend reference translation."""
+    """One model-requested graph action before backend reference translation.
+
+    ``payload`` is a sparse, source-grounded patch. It carries structured
+    candidate changes, including values supplied by a clarification. The
+    backend never derives write data from ``reason`` or transcript text.
+    """
 
     step: ResolutionStep
     tool_name: ResolutionToolName
@@ -67,7 +72,13 @@ class ResolutionToolAction(IngestionModel):
     target_ref: str | None = None
     from_ref: str | None = None
     to_ref: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Sparse structured patch for the candidate or graph object. "
+            "Include clarification-derived values here."
+        ),
+    )
     reason: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
 

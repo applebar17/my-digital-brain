@@ -62,6 +62,56 @@ The planner proposes `Marco` as a Person candidate. The backend searches the gra
 6. **References are run-scoped.** Model-facing references are aliases valid for the current ingestion run. They are never persisted as graph IDs and never become a substitute for backend identity validation.
 7. **Context is bounded.** Candidate context contains only relevant, permitted information needed for disambiguation. It must not expose the entire graph neighborhood or unrestricted memory history.
 
+### Resolution Action Payload Contract
+
+`ResolutionToolAction.payload` is a sparse, structured patch for the
+candidate or graph object selected by the action. It is not a second complete
+candidate document, and the LLM does not need to repeat fields that are
+already present in the supplied candidate context.
+
+The payload has a direct write meaning:
+
+1. The backend validates the payload against the candidate label, protected
+   fields, reference scope, and normal graph-write rules.
+2. The backend overlays the validated patch on the candidate snapshot to
+   produce the effective candidate for the resolved map and write plan.
+3. The backend never extracts graph values from natural-language reasons,
+   clarification answers, or transcript text.
+
+For example, extraction may produce:
+
+```json
+{
+  "local_ref": "CANDIDATE_PERSON_004",
+  "display_name": "Amos",
+  "missing_fields": ["last_name"]
+}
+```
+
+After the user answers `Amos Vignaroli`, the next terminal action must carry
+the structured change:
+
+```json
+{
+  "candidate_ref": "CANDIDATE_PERSON_004",
+  "payload": {
+    "display_name": "Amos Vignaroli"
+  },
+  "reason": "The clarification identified Amos as Amos Vignaroli."
+}
+```
+
+The answer remains a tool result in the active LLM session, and the question
+and answer may be promoted to the master history. Neither transcript is a
+substitute for the structured payload. `reason` explains the decision and
+`evidence_refs` supports it; neither field mutates graph data.
+
+A terminal mutation with an empty payload is valid only when the supplied
+candidate already contains all data needed for that mutation. If a
+clarification supplies a new or corrected value, omitting that value from
+the payload is an incomplete proposal and must produce an actionable
+validation error. The backend must not infer the omitted value from prose.
+
 ## Pipeline Position
 
 The identity-resolution stage is inserted after entity planning and before entity extraction:
@@ -609,6 +659,10 @@ separate structured proposal/tool contract.
   rules or a scenario-to-action matrix.
 - Prevent direct Person-property mutation as an implicit result of identity
   matching.
+- Define action payloads as sparse candidate patches. When a clarification
+  changes a candidate field, require the LLM to include that field in the
+  terminal action payload; do not treat the clarification reason or transcript
+  as write data.
 - Compile validated model-facing proposals into the existing backend
   `ResolutionResult` and `ResolvedEntityMap` without performing a second
   semantic identity search.
@@ -652,6 +706,8 @@ history, and supplied candidate context to make that decision.
   rejected with actionable errors;
 - owner relationships use `OWNER` as the endpoint;
 - invalid proposals do not silently fall back to another action;
+- clarification-derived candidate values are present in the structured action
+  payload and reach the resolved map and write plan;
 - unrelated extraction flows retain their current behavior.
 
 **Exit criteria:** the LLM can choose a resolution outcome from a bounded
@@ -987,6 +1043,20 @@ When clarification is required:
    or separate clarification record is created.
 4. The LLM chooses `CREATE_NEW`, `ATTACH_TO_EXISTING`, or another clarification request.
 5. The backend revalidates the selected reference and refreshes the relevant node state before producing a write plan.
+
+When the answer changes the candidate data, the LLM must express that change
+in the terminal action payload. For example:
+
+```text
+Candidate before clarification: Amos
+User answer: Amos Vignaroli
+Terminal action: create_node
+Payload: {"display_name": "Amos Vignaroli"}
+```
+
+The backend applies that explicit patch. It does not parse `Amos Vignaroli`
+from the tool output or from the action reason, and it does not make the
+create-versus-update decision on the LLM's behalf.
 
 Example:
 
