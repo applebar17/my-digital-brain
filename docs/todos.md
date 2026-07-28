@@ -13,17 +13,25 @@ agent-invoked contradiction review handoff, and safe chat response rendering.
 Remaining work in this file is intentionally future-facing and should not be
 mixed into that MVP slice.
 
+Priority scale: `1` is highest priority and `5` is lowest priority. Priority
+describes implementation urgency, not product importance. Implemented sections
+remain documented for ownership and audit purposes but do not require a new
+priority.
+
 Potential follow-ups after hands-on usage:
+
+Priority: 4
 
 - Decide whether `agentic` chat mode becomes the default runtime mode.
 - Improve user-facing summaries after write-plan execution based on real UAT
   feedback.
 - Add more evaluation examples for contradiction clarification wording.
 
-## High Priority Agentic Fixes
+## Agentic And Ingestion Follow-Ups
 
-These items are not broad future enhancements. They are required to keep the
-implemented agentic runtime aligned with the locked architecture.
+These items are scoped follow-ups, ordered by the priority assigned to each
+area. They keep the implemented agentic and ingestion runtimes aligned with
+the locked architecture.
 
 ### Memory Storage Reasoning And User-Related Data
 
@@ -32,6 +40,7 @@ refinement baseline is locked in
 [Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
 Plug-in points, owner/user graph policy, and duplicate handling remain
 high-priority implementation follow-ups.
+Priority: 1
 
 - `reasoning_checkpoint` now exists as a reusable agentic state skeleton with:
   - purpose-specific reasoning guidelines in its input context;
@@ -108,6 +117,7 @@ Status: deferred. The current implementation keeps the taxonomy unchanged and
 uses `display_name` as the model-facing canonical identity field for node
 resolution. Future taxonomy work should define optional type-specific identity
 fields and retrieval behavior.
+Priority: 2
 
 - Add optional Person identity fields such as `given_name` and `family_name`
   without making a surname mandatory for mononyms or incomplete identities.
@@ -131,10 +141,132 @@ fields and retrieval behavior.
     provenance and owner scope, while only adding explicit owner edges when the
     relationship itself is semantically useful.
 
+### Identity Resolution And Context Packets
+
+Status: foundation implemented; cross-scenario hardening remains.
+Priority: 1
+
+- Audit deterministic lookup and bounded context hydration for exact, multiple,
+  fuzzy-only, and no-candidate results.
+- Consolidate all model-facing reference formats behind the single uppercase,
+  run-scoped registry. Reject invented, stale, cross-run, and cross-graph refs.
+- Verify that every resolution step receives the correct candidate packet and
+  relevant references outside the current batch without exposing graph IDs.
+- Test duplicate-risk flows after clarification: attach to an existing node,
+  create a new node, or keep the ambiguous name when the user has not asked to
+  discard it.
+- Revalidate references and graph state after clarification and before write
+  execution, including concurrent graph changes.
+- Keep the current decision boundary: the backend searches, validates, and
+  writes; the LLM selects the semantic action from supplied context.
+
+### Owner Profile Retrieval And Approval
+
+Status: design and baseline contracts implemented; end-to-end policy follow-up.
+Priority: 2
+
+- Verify that generic retrieval exposes only the minimal `OWNER` identity
+  snapshot, while profile data is loaded only for explicit profile purposes.
+- Complete approved-only profile retrieval for stable or user-confirmed
+  memories linked to the canonical owner.
+- Keep confirmation and rejection backend-owned, including promotion to
+  `prompt_allowed`, hidden-by-default proposals, and owner scoping.
+- Trigger profile vector refresh when approval changes eligibility; exclude
+  hidden, temporary, inferred-unconfirmed, archived, and confirmation-required
+  profile memories.
+- Test personality-duplication consumers as read-only users of the approved
+  snapshot, with no graph-write capability.
+
+### Clarification Contract And User Experience
+
+Status: deferred. The centralized `ask_clarification` tool exists, but its
+request contract and channel rendering still need to distinguish the main
+interaction scenarios. The LLM selects when clarification is useful; the
+backend validates and renders the structured request without making the
+semantic decision itself.
+Priority: 1
+
+- Define a typed clarification request with:
+  - a clarification kind, target refs, question, reason, and evidence refs;
+  - response modes such as `free_text`, `single_choice`, `multi_choice`,
+    `confirmation`, and `free_text_or_audio`;
+  - optional model-facing option refs, labels, short summaries, and a clear
+    `other`/custom-answer capability;
+  - channel-neutral answer fields for selected options, text, and audio
+    transcription or attachment references.
+- Support the no-match identity scenario: ask an open clarification without
+  graph options, for example: `Who is Amos? Provide the full name or a detail
+  that distinguishes him.` Allow typed or audio answers.
+- Support the duplicate-risk scenario: present existing candidate names and
+  compact summaries as selectable options plus an `Other` free-text choice,
+  for example: `Amos Bianchi`, `Amos Rossi`, `Other`.
+- Add and test additional UX scenarios:
+  - missing attribute: ask for one structured field such as surname, city, or
+    date;
+  - confirmation: ask whether a proposed event, place, or relationship should
+    be stored;
+  - contradiction/correction: show the current value and the proposed value;
+  - multi-participant or multi-target selection when one answer affects several
+    refs;
+  - temporal or place disambiguation with suggested values and custom input;
+  - explicit discard/defer, available only when the user requests it.
+- Keep graph IDs internal. Option refs must be model-facing registry refs and
+  must resolve through the active run/graph registry before use.
+- Keep clarification semantics centralized while allowing frontend, Telegram,
+  and terminal channels to render different controls. Preserve the question
+  and answer in the master internal history and the tool output in the active
+  LLM-session transcript.
+- Define validation and rendering behavior for empty answers, invalid option
+  refs, stale packets, repeated questions, audio-only answers, and answers that
+  do not resolve the target.
+- Add contract, serialization, channel-rendering, and end-to-end tests for all
+  clarification kinds. Do not add deterministic identity decisions to the
+  backend as part of this work.
+
+### Place Search And Geocoding
+
+Status: deferred. Place candidates currently rely on extracted names and do not
+have a dedicated enrichment flow.
+Priority: 3
+
+- Add a backend-owned place-search tool that accepts a candidate name and
+  optional city, country, source context, and user-provided hints.
+- Return deterministic place candidates from the selected provider with a
+  provider place ID, canonical name, formatted address, city, country,
+  latitude, longitude, Google Maps URL, and provider metadata.
+- Never let the LLM invent a maps URL or coordinates. The LLM may select one
+  supplied result, request clarification, or keep the place unresolved.
+- Define provider configuration, rate limits, caching, provenance, confidence,
+  and behavior when providers return no or multiple matches.
+- Store only approved enrichment on the Place node and retain the original
+  user wording and lookup evidence for correction and re-resolution.
+- Add tests for no match, one match, multiple matches, invalid provider data,
+  coordinate validation, URL construction, idempotency, and cross-graph scope.
+
+### Node-Media Linking Audit
+
+Status: deferred. Review the current media/source contracts and graph write
+paths before adding new media behavior.
+Priority: 4
+
+- Audit `MediaAsset`, source records, media-derived artifacts, and existing
+  node-media relationship types for one consistent ownership model.
+- Define whether media is linked directly to nodes, through Source, or both,
+  and when each link is created during ingestion.
+- Lock link properties such as role, evidence span, confidence, provenance,
+  extraction run, ordering, lifecycle, visibility, and idempotency key.
+- Verify support for one media asset linked to multiple nodes and one node
+  linked to multiple media assets without duplicate edges.
+- Check retrieval and vectorization behavior for media-linked nodes, including
+  archived, private, derived, and transcription-only media.
+- Add graph migration, write-plan, retrieval, permission, and end-to-end tests
+  before changing node-media persistence behavior.
+
 ### Agentic Frame Continuation Cleanup
 
 Status: active continuation is AgenticFrame-based. Legacy pending-process
 storage, models, and routing have been removed from production code.
+Priority: 2
 
 - Keep clarification continuation represented as an interrupted `AgenticFrame`
   with one open provider tool call.
@@ -148,6 +280,7 @@ storage, models, and routing have been removed from production code.
 ### State-Aware History Builder
 
 Status: implemented as a reusable foundation.
+Remaining history-projection and cross-channel audit: Priority 2.
 
 - `AgenticHistoryService` is the dedicated history/context-building service;
   `ChatRuntime` and `AgenticStateRunner` use it instead of assembling
@@ -186,6 +319,7 @@ Status: implemented as a reusable foundation.
 
 Status: message-delta foundation implemented; audit remains required after the
 ingestion runtime promotion.
+Priority: 2
 
 - Provider chat results now expose state-local `message_delta` entries produced
   during a tool loop: assistant `tool_calls`, matching `tool` outputs, and final
@@ -210,11 +344,30 @@ ingestion runtime promotion.
   fake conversation content or expose noisy internal traces to top-level model
   history.
 
+### Unified LLM Session Verification
+
+Status: canonical `run_session()` abstraction implemented; provider and
+cross-channel verification remain.
+Priority: 2
+
+- Run controlled OpenAI/Azure checks for text, structured output, tool loops,
+  structured-output repair, nested sessions, and pending clarification resume.
+- Verify the configurable session tool budget, including complete multi-call
+  batches and toolbox removal only on the next provider turn.
+- Confirm that agentic, ingestion, resolution, chat, and UAT consumers use the
+  unified session entrypoint and that removed generation entrypoints do not
+  return through compatibility wrappers.
+- Validate provider acceptance of generated tool schemas, verbose tool-error
+  recovery, and model routing for default, smart, and reasoning tasks.
+- Keep real-provider checks opt-in because they require credentials and incur
+  provider cost.
+
 ### Prompt Inventory And Cleanup
 
 Status: active prompts are code-managed constants mirrored to the file-backed
 `PromptRegistry` templates for compatibility. See
 `docs/ai-engineering/prompt-inventory.md` for state ownership.
+Priority: 2
 
 - Active runtime state prompts:
   `conversation_entry`, `memory_query`, `memory_ingestion`,
@@ -234,6 +387,7 @@ Status: active prompts are code-managed constants mirrored to the file-backed
 
 Status: planner-first runtime was removed in favor of the reasoning-first
 `IngestionService`. Keep this audit item open until the next full review.
+Priority: 2
 
 - Verify no prompt, test, script, or docs path still describes the old
   mention-scan-first ingestion planner as active runtime behavior.
@@ -318,17 +472,9 @@ Status: implemented for the frame-based runtime.
 - State configs, prompt text, and the tool registry must stay aligned with this
   ownership policy.
 
-## Real Provider Smoke Tests
-
-- Add controlled OpenAI/Azure smoke tests after local behavior is stable.
-- Validate provider acceptance of generated tool schemas.
-- Validate tool-call loop behavior with one simple state/tool pair.
-- Validate verbose tool errors steer model recovery.
-- Validate model routing for default, smart, and reasoning state tasks.
-- Keep these tests opt-in because they require real credentials and provider
-  cost.
-
 ## Retrieval Rendering Follow-Up
+
+Priority: 4
 
 - Compare Otsu thresholding, knee detection, Jenks natural breaks, and small 1D
   clustering approaches for selecting which retrieval hits should drive graph
@@ -350,6 +496,7 @@ Status: baseline implemented.
   disabled by default locally.
 
 Remaining follow-up after real trace review:
+Priority: 3
 
 - Attach richer sanitized metadata for:
   - state id
@@ -367,11 +514,14 @@ Remaining follow-up after real trace review:
 - Review whether the existing local JSONL logs are sufficient as compact local
   traces, or whether a separate state-transition trace artifact is still useful.
 
-## Medium Priority UX And Conversation Flow
+## UX And Conversation Flow
+
+Priority: 4
 
 - Structured clarification question flow is implemented as a baseline:
-  - allowed agentic states call `request_user_clarification`;
-  - backend stores a compact pending process plus a resumable snapshot;
+  - allowed agentic states call the centralized clarification tool;
+  - the active `AgenticFrame`/LLM-session continuation holds the resumable
+    snapshot;
   - web chat renders clickable options plus free-text answers;
   - structured answer packets are validated by the backend;
   - resumed states receive compact clarification-answer summaries, not raw UI
@@ -386,6 +536,8 @@ Remaining follow-up after real trace review:
 
 ## Post-UAT Hardening
 
+Priority: 3
+
 - Review confirmation policy after real user testing.
 - Tighten risky mutation behavior only after observing actual chat patterns.
 - Add stricter safety checks if UAT shows agent over-eagerness.
@@ -397,6 +549,7 @@ Remaining follow-up after real trace review:
 
 Status: design captured in
 [MemoryLog vectorization and node update flow](dev-plans/11-node-log-vectorization-and-update-flow.md).
+Priority: 3
 
 Follow-up implementation work:
 
