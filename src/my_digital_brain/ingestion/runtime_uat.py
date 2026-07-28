@@ -7,16 +7,19 @@ from collections.abc import Sequence
 from my_digital_brain.ingestion.contracts import (
     CandidateEntity,
     GraphContextPack,
+    GraphContextRenderPurpose,
     IngestionResult,
     SourceRecordRef,
     ValidationIssue,
 )
-from my_digital_brain.ingestion.contracts import GraphContextRenderPurpose
 from my_digital_brain.ingestion.enums import IngestionStatus
 from my_digital_brain.ingestion.runtime_helpers import (
     ensure_candidate_source_ref as _ensure_candidate_source_ref,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     predefined_entity_extraction_plan as _predefined_entity_extraction_plan,
 )
+
 
 class IngestionUATMixin:
     def process_source_with_entity_candidates(
@@ -33,9 +36,7 @@ class IngestionUATMixin:
         """
 
         graph_context_pack = (
-            graph_context_pack.model_copy(
-                update={"source_id": source.source_id}, deep=True
-            )
+            graph_context_pack.model_copy(update={"source_id": source.source_id}, deep=True)
             if graph_context_pack is not None
             else self.graph_context_builder.build(source)
         )
@@ -60,8 +61,7 @@ class IngestionUATMixin:
             graph_context_pack,
         )
         entity_candidates = [
-            _ensure_candidate_source_ref(candidate, source)
-            for candidate in entity_candidates
+            _ensure_candidate_source_ref(candidate, source) for candidate in entity_candidates
         ]
         entity_candidate_graph = self.assembler.assemble(
             source,
@@ -70,18 +70,20 @@ class IngestionUATMixin:
         )
         validation = self.validator.validate_candidate_graph(entity_candidate_graph)
         if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={"reasoning": reasoning_view},
-                reasoning=reasoning,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "predefined_entity_validation"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views={"reasoning": reasoning_view},
+                    reasoning=reasoning,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    validation_errors=validation.issues,
+                    metadata={"ingestion_stage": "predefined_entity_validation"},
+                )
+            )
 
         try:
             entity_resolution = self._resolve_entity_candidates(
@@ -103,24 +105,28 @@ class IngestionUATMixin:
                         deep=True,
                     )
                 )
-            resolved_entity_map, resolution = entity_resolution
+            resolved_entity_map, node_resolution = entity_resolution
         except (ValueError, RuntimeError) as exc:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views={"reasoning": reasoning_view},
-                reasoning=reasoning,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                validation_errors=[ValidationIssue(
-                    field_path="resolution_proposals",
-                    message=str(exc),
-                    code="resolution_proposal_invalid",
-                )],
-                metadata={"ingestion_stage": "uat_entity_resolution"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views={"reasoning": reasoning_view},
+                    reasoning=reasoning,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    validation_errors=[
+                        ValidationIssue(
+                            field_path="resolution_proposals",
+                            message=str(exc),
+                            code="resolution_proposal_invalid",
+                        )
+                    ],
+                    metadata={"ingestion_stage": "uat_entity_resolution"},
+                )
+            )
         memory_result = self._prepare_memory_logs(
             source=source,
             graph_context_pack=graph_context_pack,
@@ -156,21 +162,23 @@ class IngestionUATMixin:
             memory_log_packet,
         )
         if isinstance(relationship_plan, IngestionResult):
-            return self._finish(relationship_plan.model_copy(
-                update={
-                    "graph_context_pack": graph_context_pack,
-                    "graph_context_views": graph_context_views,
-                    "reasoning": reasoning,
-                    "entity_extraction_plan": entity_extraction_plan,
-                    "entity_candidates": list(entity_candidates),
-                    "entity_candidate_graph": entity_candidate_graph,
-                    "resolved_entity_map": resolved_entity_map,
-                    "memory_log_plan": memory_log_plan,
-                    "memory_log_extraction_plan": memory_log_extraction_plan,
-                    "memory_logs": memory_logs,
-                },
-                deep=True,
-            ))
+            return self._finish(
+                relationship_plan.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": graph_context_views,
+                        "reasoning": reasoning,
+                        "entity_extraction_plan": entity_extraction_plan,
+                        "entity_candidates": list(entity_candidates),
+                        "entity_candidate_graph": entity_candidate_graph,
+                        "resolved_entity_map": resolved_entity_map,
+                        "memory_log_plan": memory_log_plan,
+                        "memory_log_extraction_plan": memory_log_extraction_plan,
+                        "memory_logs": memory_logs,
+                    },
+                    deep=True,
+                )
+            )
         return self._complete_relationship_candidate_preparation(
             source=source,
             graph_context_pack=graph_context_pack,
@@ -181,6 +189,7 @@ class IngestionUATMixin:
             entity_candidates=list(entity_candidates),
             entity_candidate_graph=entity_candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            node_resolution=node_resolution,
             memory_log_plan=memory_log_plan,
             memory_log_extraction_plan=memory_log_extraction_plan,
             memory_logs=memory_logs,

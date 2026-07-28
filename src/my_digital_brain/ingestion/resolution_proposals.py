@@ -344,6 +344,12 @@ class ResolutionProposalCompiler:
     ) -> ResolvedEntityMap:
         decision_by_ref = {decision.candidate_ref: decision for decision in result.decisions}
         selected_refs = set(candidate_refs or [])
+        action_by_ref = {
+            action.candidate_ref: action
+            for raw_action in result.metadata.get("validated_tool_actions", [])
+            if isinstance(raw_action, dict)
+            for action in [ResolutionToolAction.model_validate(raw_action)]
+        }
         entries: list[ResolvedEntityMapEntry] = []
         for entity in candidate_graph.candidate_entities:
             if selected_refs and entity.local_ref not in selected_refs:
@@ -367,11 +373,17 @@ class ResolutionProposalCompiler:
             else:
                 status = ResolvedEntityStatus.REJECTED
                 graph_alias = None
+            action = action_by_ref.get(entity.local_ref)
+            display_label = entity.display_name or entity.description
+            if action is not None:
+                action_display_name = action.payload.get("display_name")
+                if isinstance(action_display_name, str) and action_display_name.strip():
+                    display_label = action_display_name.strip()
             entries.append(
                 ResolvedEntityMapEntry(
                     local_ref=entity.local_ref,
                     status=status,
-                    display_label=entity.display_name or entity.description,
+                    display_label=display_label,
                     entity_type=entity.entity_type,
                     graph_alias=graph_alias,
                     resolution_reason=(decision.reasons[0] if decision.reasons else None),

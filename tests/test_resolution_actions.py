@@ -85,6 +85,15 @@ def test_toolboxes_are_scoped_to_the_resolution_step() -> None:
         "defer_or_ignore",
     ]
 
+    create_node = next(
+        tool
+        for tool in build_resolution_toolbox(ResolutionStep.NODE).tools
+        if tool["function"]["name"] == "create_node"
+    )
+    payload_schema = create_node["function"]["parameters"]["properties"]["payload"]
+    assert set(payload_schema["properties"]) == {"display_name", "aliases"}
+    assert set(payload_schema["required"]) == {"display_name", "aliases"}
+
 
 def test_tool_action_rejects_wrong_step_tool_and_runtime_clarification() -> None:
     with pytest.raises(ValidationError, match="not available"):
@@ -92,6 +101,14 @@ def test_tool_action_rejects_wrong_step_tool_and_runtime_clarification() -> None
             step=ResolutionStep.NODE,
             tool_name=ResolutionToolName.CREATE_MEMORY,
             candidate_ref="CANDIDATE_PERSON_001",
+        )
+
+    with pytest.raises(ValidationError, match="requires a non-empty payload.display_name"):
+        ResolutionToolAction(
+            step=ResolutionStep.NODE,
+            tool_name=ResolutionToolName.CREATE_NODE,
+            candidate_ref="CANDIDATE_PERSON_001",
+            payload={"display_name": ""},
         )
     with pytest.raises(ValidationError, match="runtime interruption tool"):
         ResolutionToolAction(
@@ -140,6 +157,7 @@ def test_compiler_allows_cross_batch_evidence_but_requires_current_batch_action(
         step=ResolutionStep.NODE,
         tool_name=ResolutionToolName.CREATE_NODE,
         candidate_ref="CANDIDATE_PERSON_001",
+        payload={"display_name": "Marco"},
         evidence_refs=["CANDIDATE_PERSON_008"],
     )
     compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
@@ -203,7 +221,7 @@ def test_validator_rejects_invented_refs_and_owner_creation() -> None:
         step=ResolutionStep.NODE,
         tool_name=ResolutionToolName.CREATE_NODE,
         candidate_ref="CANDIDATE_PERSON_001",
-        payload={"is_owner": True},
+        payload={"display_name": "Marco", "is_owner": True},
     )
     with pytest.raises(ResolutionProposalValidationError, match="cannot create an owner"):
         validator.validate(action, supplied_candidate_refs={"CANDIDATE_PERSON_001"})
@@ -221,7 +239,7 @@ def test_validator_rejects_invented_refs_and_owner_creation() -> None:
         step=ResolutionStep.NODE,
         tool_name=ResolutionToolName.CREATE_NODE,
         candidate_ref="CANDIDATE_PERSON_001",
-        payload={"node_id": "person:marco"},
+        payload={"display_name": "Marco", "node_id": "person:marco"},
     )
     with pytest.raises(ResolutionProposalValidationError, match="Stable Person"):
         validator.validate(backend_id_payload, supplied_candidate_refs={"CANDIDATE_PERSON_001"})

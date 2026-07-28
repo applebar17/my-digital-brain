@@ -17,13 +17,16 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLog,
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
+    ResolutionResult,
     ResolvedEntityMap,
     SourceRecordRef,
 )
 from my_digital_brain.ingestion.enums import IngestionStatus
+from my_digital_brain.ingestion.planning_contexts import (
+    build_memory_log_packet,
+    build_resolved_entity_packet,
+)
 from my_digital_brain.ingestion.refined_relationships import build_relationship_extraction_plan
-from my_digital_brain.ingestion.planning_contexts import build_resolved_entity_packet
-from my_digital_brain.ingestion.planning_contexts import build_memory_log_packet
 from my_digital_brain.ingestion.runtime_helpers import (
     memory_log_extraction_plan as _memory_log_extraction_plan,
 )
@@ -70,19 +73,21 @@ class IngestionCandidateFlowMixin:
             entity_packet,
         )
         if isinstance(memory_log_plan, IngestionResult):
-            return self._finish(memory_log_plan.model_copy(
-                update={
-                    "graph_context_pack": graph_context_pack,
-                    "graph_context_views": graph_context_views,
-                    "reasoning": reasoning,
-                    "entity_plan": entity_plan,
-                    "entity_extraction_plan": entity_extraction_plan,
-                    "entity_candidates": list(entity_candidates),
-                    "entity_candidate_graph": entity_candidate_graph,
-                    "resolved_entity_map": resolved_entity_map,
-                },
-                deep=True,
-            ))
+            return self._finish(
+                memory_log_plan.model_copy(
+                    update={
+                        "graph_context_pack": graph_context_pack,
+                        "graph_context_views": graph_context_views,
+                        "reasoning": reasoning,
+                        "entity_plan": entity_plan,
+                        "entity_extraction_plan": entity_extraction_plan,
+                        "entity_candidates": list(entity_candidates),
+                        "entity_candidate_graph": entity_candidate_graph,
+                        "resolved_entity_map": resolved_entity_map,
+                    },
+                    deep=True,
+                )
+            )
         memory_log_extraction_plan = _memory_log_extraction_plan(
             source,
             graph_context_pack,
@@ -118,23 +123,25 @@ class IngestionCandidateFlowMixin:
             )
         memory_logs, extraction_issues = memory_extraction
         if extraction_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                validation_errors=extraction_issues,
-                metadata={"ingestion_stage": "memory_log_candidate_preparation"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    validation_errors=extraction_issues,
+                    metadata={"ingestion_stage": "memory_log_candidate_preparation"},
+                )
+            )
 
         candidate_graph = self._assemble_final_candidate_graph(
             source,
@@ -146,24 +153,26 @@ class IngestionCandidateFlowMixin:
         )
         validation = self.validator.validate_candidate_graph(candidate_graph)
         if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                candidate_graph=candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "memory_log_validation"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    candidate_graph=candidate_graph,
+                    validation_errors=validation.issues,
+                    metadata={"ingestion_stage": "memory_log_validation"},
+                )
+            )
 
         memory_log_packet = build_memory_log_packet(memory_logs)
         return (
@@ -187,6 +196,7 @@ class IngestionCandidateFlowMixin:
         entity_candidates: Sequence[CandidateEntity],
         entity_candidate_graph: CandidateMemoryGraph,
         resolved_entity_map: ResolvedEntityMap,
+        node_resolution: ResolutionResult,
         memory_log_plan: MemoryLogIngestionPlanDraft,
         memory_log_extraction_plan: ExtractionPlan,
         memory_logs: list[MemoryLog],
@@ -222,6 +232,7 @@ class IngestionCandidateFlowMixin:
                 supplemental_extraction_plans,
                 supplemental_candidates,
                 resolved_entity_map,
+                node_resolution,
             ) = missing_result
             if relationship_view is None:
                 relationship_view = self.context_renderer.render(
@@ -241,25 +252,27 @@ class IngestionCandidateFlowMixin:
                 memory_log_packet,
             )
             if isinstance(relationship_plan, IngestionResult):
-                return self._finish(relationship_plan.model_copy(
-                    update={
-                        "graph_context_pack": graph_context_pack,
-                        "graph_context_views": graph_context_views,
-                        "reasoning": reasoning,
-                        "entity_plan": entity_plan,
-                        "entity_extraction_plan": entity_extraction_plan,
-                        "entity_candidates": list(entity_candidates),
-                        "entity_candidate_graph": entity_candidate_graph,
-                        "supplemental_entity_plans": supplemental_plans,
-                        "supplemental_entity_extraction_plans": supplemental_extraction_plans,
-                        "supplemental_entity_candidates": supplemental_candidates,
-                        "resolved_entity_map": resolved_entity_map,
-                        "memory_log_plan": memory_log_plan,
-                        "memory_log_extraction_plan": memory_log_extraction_plan,
-                        "memory_logs": memory_logs,
-                    },
-                    deep=True,
-                ))
+                return self._finish(
+                    relationship_plan.model_copy(
+                        update={
+                            "graph_context_pack": graph_context_pack,
+                            "graph_context_views": graph_context_views,
+                            "reasoning": reasoning,
+                            "entity_plan": entity_plan,
+                            "entity_extraction_plan": entity_extraction_plan,
+                            "entity_candidates": list(entity_candidates),
+                            "entity_candidate_graph": entity_candidate_graph,
+                            "supplemental_entity_plans": supplemental_plans,
+                            "supplemental_entity_extraction_plans": supplemental_extraction_plans,
+                            "supplemental_entity_candidates": supplemental_candidates,
+                            "resolved_entity_map": resolved_entity_map,
+                            "memory_log_plan": memory_log_plan,
+                            "memory_log_extraction_plan": memory_log_extraction_plan,
+                            "memory_logs": memory_logs,
+                        },
+                        deep=True,
+                    )
+                )
 
         all_entity_candidates = [*entity_candidates, *supplemental_candidates]
         if relationship_plan.missing_entities:
@@ -271,27 +284,29 @@ class IngestionCandidateFlowMixin:
                 None,
                 [*all_entity_candidates, *memory_logs],
             )
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.PLANNED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                candidate_graph=candidate_graph,
-                metadata={"ingestion_stage": "relationship_missing_entity_blocked"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.PLANNED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    candidate_graph=candidate_graph,
+                    metadata={"ingestion_stage": "relationship_missing_entity_blocked"},
+                )
+            )
 
         plan_build = build_relationship_extraction_plan(
             source,
@@ -300,61 +315,63 @@ class IngestionCandidateFlowMixin:
             resolved_entity_map,
         )
         if plan_build.validation_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                validation_errors=plan_build.validation_issues,
-                metadata={"ingestion_stage": "relationship_candidate_preparation"},
-            ))
-
-        relationship_candidates, extraction_issues = (
-            self._extract_relationship_candidates(
-                source,
-                graph_context_pack,
-                plan_build.extraction_plan,
-                resolved_entity_map,
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    relationship_extraction_plan=plan_build.extraction_plan,
+                    validation_errors=plan_build.validation_issues,
+                    metadata={"ingestion_stage": "relationship_candidate_preparation"},
+                )
             )
+
+        relationship_candidates, extraction_issues = self._extract_relationship_candidates(
+            source,
+            graph_context_pack,
+            plan_build.extraction_plan,
+            resolved_entity_map,
         )
         if extraction_issues:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                relationship_candidates=relationship_candidates,
-                validation_errors=extraction_issues,
-                metadata={"ingestion_stage": "relationship_candidate_preparation"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    relationship_extraction_plan=plan_build.extraction_plan,
+                    relationship_candidates=relationship_candidates,
+                    validation_errors=extraction_issues,
+                    metadata={"ingestion_stage": "relationship_candidate_preparation"},
+                )
+            )
 
         candidate_graph = self._assemble_final_candidate_graph(
             source,
@@ -366,30 +383,32 @@ class IngestionCandidateFlowMixin:
         )
         validation = self.validator.validate_candidate_graph(candidate_graph)
         if not validation.is_valid:
-            return self._finish(IngestionResult(
-                source_id=source.source_id,
-                status=IngestionStatus.VALIDATION_FAILED,
-                graph_context_pack=graph_context_pack,
-                graph_context_views=graph_context_views,
-                reasoning=reasoning,
-                entity_plan=entity_plan,
-                entity_extraction_plan=entity_extraction_plan,
-                entity_candidates=list(entity_candidates),
-                entity_candidate_graph=entity_candidate_graph,
-                supplemental_entity_plans=supplemental_plans,
-                supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                supplemental_entity_candidates=supplemental_candidates,
-                resolved_entity_map=resolved_entity_map,
-                memory_log_plan=memory_log_plan,
-                memory_log_extraction_plan=memory_log_extraction_plan,
-                memory_logs=memory_logs,
-                relationship_plan=relationship_plan,
-                relationship_extraction_plan=plan_build.extraction_plan,
-                relationship_candidates=relationship_candidates,
-                candidate_graph=candidate_graph,
-                validation_errors=validation.issues,
-                metadata={"ingestion_stage": "candidate_graph_validation"},
-            ))
+            return self._finish(
+                IngestionResult(
+                    source_id=source.source_id,
+                    status=IngestionStatus.VALIDATION_FAILED,
+                    graph_context_pack=graph_context_pack,
+                    graph_context_views=graph_context_views,
+                    reasoning=reasoning,
+                    entity_plan=entity_plan,
+                    entity_extraction_plan=entity_extraction_plan,
+                    entity_candidates=list(entity_candidates),
+                    entity_candidate_graph=entity_candidate_graph,
+                    supplemental_entity_plans=supplemental_plans,
+                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                    supplemental_entity_candidates=supplemental_candidates,
+                    resolved_entity_map=resolved_entity_map,
+                    memory_log_plan=memory_log_plan,
+                    memory_log_extraction_plan=memory_log_extraction_plan,
+                    memory_logs=memory_logs,
+                    relationship_plan=relationship_plan,
+                    relationship_extraction_plan=plan_build.extraction_plan,
+                    relationship_candidates=relationship_candidates,
+                    candidate_graph=candidate_graph,
+                    validation_errors=validation.issues,
+                    metadata={"ingestion_stage": "candidate_graph_validation"},
+                )
+            )
 
         return self._complete_write(
             source=source,
@@ -404,6 +423,7 @@ class IngestionCandidateFlowMixin:
             supplemental_entity_extraction_plans=supplemental_extraction_plans,
             supplemental_entity_candidates=supplemental_candidates,
             resolved_entity_map=resolved_entity_map,
+            node_resolution=node_resolution,
             memory_log_plan=memory_log_plan,
             memory_log_extraction_plan=memory_log_extraction_plan,
             memory_logs=memory_logs,
@@ -412,4 +432,3 @@ class IngestionCandidateFlowMixin:
             relationship_candidates=relationship_candidates,
             candidate_graph=candidate_graph,
         )
-

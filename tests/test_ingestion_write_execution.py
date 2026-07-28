@@ -22,8 +22,11 @@ from my_digital_brain.ingestion.contracts import (
     GraphContextPack,
     GraphWritePlan,
     IngestionContextPackage,
+    IngestionReasoningCheckpointDraft,
     MemoryLog,
+    MemoryLogIngestionPlanDraft,
     MemoryLogLink,
+    RelationshipIngestionPlanDraft,
     ResolutionDecision,
     ResolutionResult,
     SourceRecordRef,
@@ -198,6 +201,114 @@ def test_write_plan_builder_keeps_aliases_for_alias_bearing_node_labels() -> Non
     plan = GraphWritePlanBuilder().build(candidate_graph, _create_resolution(candidate_graph))
 
     assert plan.nodes_to_create[0].properties["aliases"] == ["Marco"]
+
+
+def test_write_plan_builder_applies_validated_node_identity_payload() -> None:
+    candidate_graph = _candidate_graph(
+        [
+            CandidateEntity(
+                local_ref="CANDIDATE_PERSON_001",
+                entity_type="Person",
+                display_name="Amos",
+                source_refs=["source-1"],
+            ),
+        ],
+    )
+    resolution = ResolutionResult(
+        decisions=[
+            ResolutionDecision(
+                candidate_ref="CANDIDATE_PERSON_001",
+                decision_type=ResolutionDecisionType.CREATE,
+            ),
+        ],
+        metadata={
+            "validated_tool_actions": [
+                {
+                    "step": "node",
+                    "tool_name": "create_node",
+                    "candidate_ref": "CANDIDATE_PERSON_001",
+                    "payload": {
+                        "display_name": "Amos Vignaroli",
+                        "aliases": ["Amos"],
+                    },
+                    "evidence_refs": ["CANDIDATE_PERSON_001"],
+                },
+            ],
+        },
+    )
+
+    plan = GraphWritePlanBuilder().build(candidate_graph, resolution)
+
+    assert plan.nodes_to_create[0].properties["display_name"] == "Amos Vignaroli"
+    assert plan.nodes_to_create[0].properties["aliases"] == ["Amos"]
+
+
+def test_completion_preserves_node_actions_when_later_resolution_actions_are_merged() -> None:
+    entity = CandidateEntity(
+        local_ref="CANDIDATE_PERSON_001",
+        entity_type="Person",
+        display_name="Amos",
+        source_refs=["source-1"],
+    )
+    memory = MemoryLog(
+        local_ref="MEMORY_LOG_001",
+        log_text="I met Amos.",
+        host_target_ids=[entity.local_ref],
+        source_refs=["source-1"],
+    )
+    candidate_graph = _candidate_graph([entity], memory_logs=[memory])
+    graph = FakeGraphService()
+    service = _reasoning_first_service(
+        graph=graph,
+        provider_payloads=_single_person_payloads("Amos"),
+        write_plan_builder=GraphWritePlanBuilder(),
+    )
+    source = _source()
+    context_pack = service.graph_context_builder.build(source)
+    context = IngestionContextPackage(
+        source_id=source.source_id,
+        reference_registry_snapshot=context_pack.reference_registry_snapshot,
+    )
+    resolved_map, node_resolution = service.resolution_agent.resolve_nodes(
+        source_text=source.raw_text,
+        context=context,
+        candidate_graph=candidate_graph,
+    )
+
+    result = service._complete_write(
+        source=source,
+        graph_context_pack=context_pack,
+        graph_context_views={},
+        reasoning=IngestionReasoningCheckpointDraft(
+            summary="The source contains one person and one memory log.",
+            entity_notes=["Amos is a person candidate."],
+        ),
+        entity_plan=None,
+        entity_extraction_plan=_plan(),
+        entity_candidates=[entity],
+        entity_candidate_graph=candidate_graph,
+        supplemental_entity_plans=[],
+        supplemental_entity_extraction_plans=[],
+        supplemental_entity_candidates=[],
+        resolved_entity_map=resolved_map,
+        node_resolution=node_resolution,
+        memory_log_plan=MemoryLogIngestionPlanDraft(
+            context_gaps=["Memory log supplied by the test fixture."],
+        ),
+        memory_log_extraction_plan=_plan(),
+        memory_logs=[memory],
+        relationship_plan=RelationshipIngestionPlanDraft(
+            context_gaps=["No relationship candidates in the test fixture."],
+        ),
+        relationship_extraction_plan=_plan(),
+        relationship_candidates=[],
+        candidate_graph=candidate_graph,
+    )
+
+    assert result.status == IngestionStatus.WRITE_PLAN_READY
+    assert result.write_plan is not None
+    assert result.write_plan.nodes_to_create[0].properties["display_name"] == "Amos"
+    assert len(result.write_plan.memory_logs_to_create) == 1
 
 
 def test_write_plan_builder_uses_existing_resolution_for_relationship_endpoints() -> None:

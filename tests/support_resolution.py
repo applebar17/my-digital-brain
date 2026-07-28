@@ -52,6 +52,7 @@ class FixedResolutionAgent:
                         step=ResolutionStep.NODE,
                         tool_name=ResolutionToolName.CREATE_NODE,
                         candidate_ref=entity.local_ref,
+                        payload={"display_name": entity.display_name or entity.local_ref},
                     ),
                 )
         compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))

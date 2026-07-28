@@ -103,11 +103,23 @@ class ResolutionToolAction(IngestionModel):
             raise ValueError(
                 "ask_clarification is a runtime interruption tool and is not a graph action."
             )
-        if self.tool_name in {
-            ResolutionToolName.UPDATE_NODE,
-            ResolutionToolName.UPDATE_MEMORY,
-            ResolutionToolName.UPDATE_RELATIONSHIP,
-        } and not self.target_ref:
+        if self.tool_name == ResolutionToolName.CREATE_NODE:
+            display_name = self.payload.get("display_name")
+            if not isinstance(display_name, str) or not display_name.strip():
+                raise ValueError(
+                    f"create_node for {self.candidate_ref} requires a non-empty "
+                    "payload.display_name. Include the effective display name after "
+                    "clarification; do not put it only in reason."
+                )
+        if (
+            self.tool_name
+            in {
+                ResolutionToolName.UPDATE_NODE,
+                ResolutionToolName.UPDATE_MEMORY,
+                ResolutionToolName.UPDATE_RELATIONSHIP,
+            }
+            and not self.target_ref
+        ):
             raise ValueError(f"{self.tool_name} requires target_ref.")
 
         if self.tool_name in {

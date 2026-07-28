@@ -22,6 +22,7 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLog,
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
+    ResolutionResult,
     ResolutionStep,
     ResolvedEntityMap,
     SourceRecordRef,
@@ -69,6 +70,7 @@ class IngestionCompletionMixin:
         supplemental_entity_extraction_plans: list[ExtractionPlan],
         supplemental_entity_candidates: list[CandidateEntity],
         resolved_entity_map: ResolvedEntityMap,
+        node_resolution: ResolutionResult,
         memory_log_plan: MemoryLogIngestionPlanDraft,
         memory_log_extraction_plan: ExtractionPlan,
         memory_logs: list[MemoryLog],
@@ -133,7 +135,7 @@ class IngestionCompletionMixin:
                 context.reference_registry_snapshot,
             )
             compiler = ResolutionProposalCompiler(ResolutionProposalValidator(registry))
-            resolution = compiler.result_from_entity_map(resolved_entity_map)
+            resolution = node_resolution
             for step, candidates in (
                 (
                     ResolutionStep.MEMORY,

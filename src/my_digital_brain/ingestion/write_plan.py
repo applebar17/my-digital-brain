@@ -14,11 +14,11 @@ from my_digital_brain.ingestion.contracts import (
 )
 from my_digital_brain.ingestion.enums import GraphWritePlanStatus, ResolutionDecisionType
 from my_digital_brain.ingestion.exceptions import IngestionValidationError
-from my_digital_brain.ingestion.write_plan_serializers import GraphWriteSerializersMixin
 from my_digital_brain.ingestion.resolution_write_actions import ResolutionWriteActions
 from my_digital_brain.ingestion.write_plan_helpers import (
     _memory_log_links,
 )
+from my_digital_brain.ingestion.write_plan_serializers import GraphWriteSerializersMixin
 
 
 def _required_action(
@@ -75,7 +75,14 @@ class GraphWritePlanBuilder(GraphWriteSerializersMixin):
                 ResolutionDecisionType.KEEP_PENDING,
             }:
                 continue
+            action = _required_action(
+                resolution_actions,
+                ResolutionStep.NODE,
+                entity.local_ref,
+            )
             write = self._entity_write(candidate_graph.source_id, entity)
+            if action is not None:
+                write = ResolutionWriteActions.apply_node_payload(write, action)
             nodes_to_create.append(write)
             planned_ref_ids[entity.local_ref] = str(write.properties["id"])
             idempotency_keys.append(write.idempotency_key or "")

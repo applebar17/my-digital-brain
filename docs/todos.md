@@ -100,7 +100,25 @@ high-priority implementation follow-ups.
   - keep owner scoping/provenance fields on memory-bearing nodes and sources so
     ordinary facts do not need noisy edges to the owner by default;
   - avoid burying user-specific facts in arbitrary metadata when they affect
-    retrieval, correction, privacy, prompting, or graph traversal.
+  retrieval, correction, privacy, prompting, or graph traversal.
+
+### Typed Node Identity Fields
+
+Status: deferred. The current implementation keeps the taxonomy unchanged and
+uses `display_name` as the model-facing canonical identity field for node
+resolution. Future taxonomy work should define optional type-specific identity
+fields and retrieval behavior.
+
+- Add optional Person identity fields such as `given_name` and `family_name`
+  without making a surname mandatory for mononyms or incomplete identities.
+- Define type-specific canonical fields for Event, Place, Organization, Object,
+  and other named node types instead of relying on one generic field everywhere.
+- Define normalization and lookup behavior for full names, aliases, nicknames,
+  compound surnames, and incomplete names.
+- Extend candidate contracts, graph models, tool payload schemas, migrations,
+  identity lookup, context rendering, and tests together.
+- Preserve `display_name` as the universal human-readable rendering field even
+  after structured identity fields are introduced.
 - Answer and codify: how do we allow user-related data storage?
   - durable traits, preferences, habits, communication style, and goals should
     become `ProfileMemory` records linked to the owner;

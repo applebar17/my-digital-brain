@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-import logging
 from typing import Any
 
-from my_digital_brain.ai.logging import log_event
-from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.agentic import (
     AgenticMemoryLogExtractionService,
     AgenticPlanningService,
     AgenticReasoningService,
     AgenticToolExecutionContext,
 )
+from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.session import LLMSessionAwaitingTool
 from my_digital_brain.ingestion.assembly import CandidateMemoryGraphAssembler
 from my_digital_brain.ingestion.candidate_context import (
     BoundedCandidateContextHydrator,
@@ -31,6 +31,7 @@ from my_digital_brain.ingestion.contracts import (
     MemoryLog,
     MemoryLogIngestionPlanDraft,
     RelationshipIngestionPlanDraft,
+    ResolutionResult,
     ResolvedEntityMap,
     SourceRecordRef,
     ValidationIssue,
@@ -43,6 +44,7 @@ from my_digital_brain.ingestion.identity_lookup import (
     DeterministicIdentityLookupService,
     IdentityLookupError,
 )
+from my_digital_brain.ingestion.pending import pending_from_session
 from my_digital_brain.ingestion.protocols import (
     FocusedExtractor,
     GraphVectorizationService,
@@ -50,23 +52,26 @@ from my_digital_brain.ingestion.protocols import (
     GraphWritePlanExecutor,
     ResolutionProposalAgent,
 )
-from my_digital_brain.ingestion.resolution_proposals import ResolutionProposalValidationError
-from my_digital_brain.ingestion.pending import pending_from_session
-from my_digital_brain.ingestion.validation import IngestionValidator
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
+from my_digital_brain.ingestion.resolution_proposals import ResolutionProposalValidationError
+from my_digital_brain.ingestion.runtime_candidate_flow import IngestionCandidateFlowMixin
+from my_digital_brain.ingestion.runtime_completion import IngestionCompletionMixin
 from my_digital_brain.ingestion.runtime_helpers import (
     DEFAULT_EXTRACTION_DRAFT_BATCH_SIZE,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     context_package_for_services as _context_package_for_services,
+)
+from my_digital_brain.ingestion.runtime_helpers import (
     entity_extraction_plan as _entity_extraction_plan,
 )
-from my_digital_brain.ingestion.runtime_completion import IngestionCompletionMixin
-from my_digital_brain.ingestion.runtime_candidate_flow import IngestionCandidateFlowMixin
 from my_digital_brain.ingestion.runtime_pipeline import IngestionPipelineMixin
 from my_digital_brain.ingestion.runtime_stages import (
     IngestionExtractionMixin,
     IngestionPlanningMixin,
 )
 from my_digital_brain.ingestion.runtime_uat import IngestionUATMixin
+from my_digital_brain.ingestion.validation import IngestionValidator
 
 ExecutionContextFactory = Callable[[SourceRecordRef], AgenticToolExecutionContext]
 logger = logging.getLogger(__name__)
@@ -95,9 +100,7 @@ class IngestionService(
     identity_lookup_service: DeterministicIdentityLookupService | None = None
     candidate_context_hydrator: BoundedCandidateContextHydrator | None = None
     resolution_agent: ResolutionProposalAgent | None = None
-    assembler: CandidateMemoryGraphAssembler = field(
-        default_factory=CandidateMemoryGraphAssembler
-    )
+    assembler: CandidateMemoryGraphAssembler = field(default_factory=CandidateMemoryGraphAssembler)
     validator: IngestionValidator = field(default_factory=IngestionValidator)
     write_plan_builder: GraphWritePlanBuilder | None = None
     write_plan_executor: GraphWritePlanExecutor | None = None
@@ -128,8 +131,7 @@ class IngestionService(
                 registry=registry,
             )
         existing = {
-            packet.candidate_ref: packet
-            for packet in graph_context_pack.identity_lookup_packets
+            packet.candidate_ref: packet for packet in graph_context_pack.identity_lookup_packets
         }
         existing.update({packet.candidate_ref: packet for packet in packets})
         graph_context_pack.identity_lookup_packets = list(existing.values())
@@ -142,8 +144,7 @@ class IngestionService(
             source_id=source.source_id,
             packet_count=len(graph_context_pack.identity_lookup_packets),
             packet_statuses=[
-                str(packet.lookup.status)
-                for packet in graph_context_pack.identity_lookup_packets
+                str(packet.lookup.status) for packet in graph_context_pack.identity_lookup_packets
             ],
         )
 
@@ -209,6 +210,7 @@ class IngestionService(
             list[ExtractionPlan],
             list[CandidateEntity],
             ResolvedEntityMap,
+            ResolutionResult,
         ]
         | IngestionResult
     ):
@@ -235,31 +237,35 @@ class IngestionService(
             try:
                 self._attach_identity_lookup_packets(source, graph_context_pack, missing_plan)
             except (IdentityLookupError, CandidateContextHydrationError) as exc:
-                return self._finish(IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    graph_context_pack=graph_context_pack,
-                    graph_context_views=graph_context_views,
-                    reasoning=reasoning,
-                    entity_plan=entity_plan,
-                    entity_extraction_plan=entity_extraction_plan,
-                    entity_candidates=entity_candidates,
-                    entity_candidate_graph=entity_candidate_graph,
-                    supplemental_entity_plans=supplemental_plans,
-                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=supplemental_candidates,
-                    resolved_entity_map=resolved_entity_map,
-                    memory_log_plan=memory_log_plan,
-                    memory_log_extraction_plan=memory_log_extraction_plan,
-                    memory_logs=memory_logs,
-                    relationship_plan=relationship_plan,
-                    validation_errors=[ValidationIssue(
-                        field_path="identity_lookup",
-                        message=str(exc),
-                        code="identity_lookup_failed",
-                    )],
-                    metadata={"ingestion_stage": "missing_entity_identity_lookup"},
-                ))
+                return self._finish(
+                    IngestionResult(
+                        source_id=source.source_id,
+                        status=IngestionStatus.VALIDATION_FAILED,
+                        graph_context_pack=graph_context_pack,
+                        graph_context_views=graph_context_views,
+                        reasoning=reasoning,
+                        entity_plan=entity_plan,
+                        entity_extraction_plan=entity_extraction_plan,
+                        entity_candidates=entity_candidates,
+                        entity_candidate_graph=entity_candidate_graph,
+                        supplemental_entity_plans=supplemental_plans,
+                        supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                        supplemental_entity_candidates=supplemental_candidates,
+                        resolved_entity_map=resolved_entity_map,
+                        memory_log_plan=memory_log_plan,
+                        memory_log_extraction_plan=memory_log_extraction_plan,
+                        memory_logs=memory_logs,
+                        relationship_plan=relationship_plan,
+                        validation_errors=[
+                            ValidationIssue(
+                                field_path="identity_lookup",
+                                message=str(exc),
+                                code="identity_lookup_failed",
+                            )
+                        ],
+                        metadata={"ingestion_stage": "missing_entity_identity_lookup"},
+                    )
+                )
             supplemental_plan = _entity_extraction_plan(
                 source,
                 graph_context_pack,
@@ -278,27 +284,29 @@ class IngestionService(
                 supplemental_plan,
             )
             if extraction_issues:
-                return self._finish(IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    graph_context_pack=graph_context_pack,
-                    graph_context_views=graph_context_views,
-                    reasoning=reasoning,
-                    entity_plan=entity_plan,
-                    entity_extraction_plan=entity_extraction_plan,
-                    entity_candidates=entity_candidates,
-                    entity_candidate_graph=entity_candidate_graph,
-                    supplemental_entity_plans=supplemental_plans,
-                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=supplemental_candidates,
-                    resolved_entity_map=resolved_entity_map,
-                    memory_log_plan=memory_log_plan,
-                    memory_log_extraction_plan=memory_log_extraction_plan,
-                    memory_logs=memory_logs,
-                    relationship_plan=relationship_plan,
-                    validation_errors=extraction_issues,
-                    metadata={"ingestion_stage": "missing_entity_candidate_preparation"},
-                ))
+                return self._finish(
+                    IngestionResult(
+                        source_id=source.source_id,
+                        status=IngestionStatus.VALIDATION_FAILED,
+                        graph_context_pack=graph_context_pack,
+                        graph_context_views=graph_context_views,
+                        reasoning=reasoning,
+                        entity_plan=entity_plan,
+                        entity_extraction_plan=entity_extraction_plan,
+                        entity_candidates=entity_candidates,
+                        entity_candidate_graph=entity_candidate_graph,
+                        supplemental_entity_plans=supplemental_plans,
+                        supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                        supplemental_entity_candidates=supplemental_candidates,
+                        resolved_entity_map=resolved_entity_map,
+                        memory_log_plan=memory_log_plan,
+                        memory_log_extraction_plan=memory_log_extraction_plan,
+                        memory_logs=memory_logs,
+                        relationship_plan=relationship_plan,
+                        validation_errors=extraction_issues,
+                        metadata={"ingestion_stage": "missing_entity_candidate_preparation"},
+                    )
+                )
             supplemental_graph = self.assembler.assemble(
                 source,
                 supplemental_plan,
@@ -306,30 +314,32 @@ class IngestionService(
             )
             validation = self.validator.validate_candidate_graph(supplemental_graph)
             if not validation.is_valid:
-                return self._finish(IngestionResult(
-                    source_id=source.source_id,
-                    status=IngestionStatus.VALIDATION_FAILED,
-                    graph_context_pack=graph_context_pack,
-                    graph_context_views=graph_context_views,
-                    reasoning=reasoning,
-                    entity_plan=entity_plan,
-                    entity_extraction_plan=entity_extraction_plan,
-                    entity_candidates=entity_candidates,
-                    entity_candidate_graph=entity_candidate_graph,
-                    supplemental_entity_plans=supplemental_plans,
-                    supplemental_entity_extraction_plans=supplemental_extraction_plans,
-                    supplemental_entity_candidates=[
-                        *supplemental_candidates,
-                        *candidates,
-                    ],
-                    resolved_entity_map=resolved_entity_map,
-                    memory_log_plan=memory_log_plan,
-                    memory_log_extraction_plan=memory_log_extraction_plan,
-                    memory_logs=memory_logs,
-                    relationship_plan=relationship_plan,
-                    validation_errors=validation.issues,
-                    metadata={"ingestion_stage": "missing_entity_validation"},
-                ))
+                return self._finish(
+                    IngestionResult(
+                        source_id=source.source_id,
+                        status=IngestionStatus.VALIDATION_FAILED,
+                        graph_context_pack=graph_context_pack,
+                        graph_context_views=graph_context_views,
+                        reasoning=reasoning,
+                        entity_plan=entity_plan,
+                        entity_extraction_plan=entity_extraction_plan,
+                        entity_candidates=entity_candidates,
+                        entity_candidate_graph=entity_candidate_graph,
+                        supplemental_entity_plans=supplemental_plans,
+                        supplemental_entity_extraction_plans=supplemental_extraction_plans,
+                        supplemental_entity_candidates=[
+                            *supplemental_candidates,
+                            *candidates,
+                        ],
+                        resolved_entity_map=resolved_entity_map,
+                        memory_log_plan=memory_log_plan,
+                        memory_log_extraction_plan=memory_log_extraction_plan,
+                        memory_logs=memory_logs,
+                        relationship_plan=relationship_plan,
+                        validation_errors=validation.issues,
+                        metadata={"ingestion_stage": "missing_entity_validation"},
+                    )
+                )
             supplemental_candidates.extend(candidates)
 
         combined_entity_graph = self._assemble_final_candidate_graph(
@@ -405,4 +415,5 @@ class IngestionService(
             supplemental_extraction_plans,
             supplemental_candidates,
             updated_resolved_map,
+            resolution,
         )

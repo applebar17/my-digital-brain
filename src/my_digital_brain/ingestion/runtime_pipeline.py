@@ -12,6 +12,7 @@ from my_digital_brain.ingestion.candidate_context import CandidateContextHydrati
 from my_digital_brain.ingestion.contracts import (
     GraphContextRenderPurpose,
     IngestionResult,
+    ResolutionResult,
     SourceRecordRef,
     ValidationIssue,
 )
@@ -72,7 +73,7 @@ class IngestionPipelineMixin:
                         ),
                     )
                 )
-            resolved_entity_map, _ = resolution
+            resolved_entity_map, node_resolution = resolution
         except (ResolutionProposalValidationError, ValueError) as exc:
             return self._finish(
                 pending_result.model_copy(
@@ -101,6 +102,7 @@ class IngestionPipelineMixin:
             entity_candidates=pending_result.entity_candidates,
             entity_candidate_graph=pending_result.entity_candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            node_resolution=node_resolution,
         )
 
     @traceable(name="Ingestion Process Source", run_type="chain")
@@ -290,6 +292,7 @@ class IngestionPipelineMixin:
             entity_candidates=entity_candidates,
             entity_candidate_graph=candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            node_resolution=node_resolution,
         )
 
     def _continue_after_node_resolution(
@@ -304,6 +307,7 @@ class IngestionPipelineMixin:
         entity_candidates,
         entity_candidate_graph,
         resolved_entity_map,
+        node_resolution: ResolutionResult,
     ) -> IngestionResult:
         memory_result = self._prepare_memory_logs(
             source=source,
@@ -368,6 +372,7 @@ class IngestionPipelineMixin:
             entity_candidates=entity_candidates,
             entity_candidate_graph=entity_candidate_graph,
             resolved_entity_map=resolved_entity_map,
+            node_resolution=node_resolution,
             memory_log_plan=memory_log_plan,
             memory_log_extraction_plan=memory_log_extraction_plan,
             memory_logs=memory_logs,

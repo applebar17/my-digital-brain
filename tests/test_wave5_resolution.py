@@ -97,7 +97,7 @@ def test_resolution_agent_batches_candidates_at_the_tool_call_ceiling() -> None:
                         "arguments": json.dumps(
                             {
                                 "candidate_ref": candidate["local_ref"],
-                                "payload": {},
+                                "payload": {"display_name": "Resolved candidate"},
                                 "reason": "test",
                                 "evidence_refs": [],
                             }
@@ -312,7 +312,7 @@ def test_resolution_agent_resumes_the_same_session_after_clarification() -> None
                         "arguments": json.dumps(
                             {
                                 "candidate_ref": "CANDIDATE_PERSON_001",
-                                "payload": {},
+                                "payload": {"display_name": "Amos Vignaroli"},
                                 "reason": "The user identified Amos.",
                                 "evidence_refs": ["CANDIDATE_PERSON_001"],
                             }
@@ -560,7 +560,7 @@ def _resolution_tool_call(call_id: str, name: str, candidate_ref: str) -> dict:
         "evidence_refs": [candidate_ref],
     }
     if name == "create_node":
-        arguments["payload"] = {}
+        arguments["payload"] = {"display_name": "Resolved candidate"}
     else:
         arguments["question"] = "Which person is this?"
         arguments["options"] = ["The supplied person", "A different person"]

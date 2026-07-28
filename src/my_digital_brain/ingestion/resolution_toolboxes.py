@@ -46,7 +46,30 @@ def resolution_toolbox_for_task(task_type: str) -> ToolBox | None:
     return None
 
 
-def _action_properties() -> dict[str, dict]:
+def _action_properties(name: ResolutionToolName) -> dict[str, dict]:
+    payload = object_property(
+        "Sparse structured patch for the candidate or graph object. "
+        "When a clarification changes a value, include the changed field "
+        "here; do not put it only in reason."
+    )
+    if name in {ResolutionToolName.CREATE_NODE, ResolutionToolName.UPDATE_NODE}:
+        payload = {
+            "type": "object",
+            "description": (
+                "Structured node identity patch. display_name is required and must "
+                "contain the effective human-readable name after clarification. "
+                "For a Person, use display_name; the backend maps it to the target "
+                "node label. Include known aliases when useful."
+            ),
+            "properties": {
+                "display_name": string_property(
+                    "Effective human-readable node name after applying clarification."
+                ),
+                "aliases": array_property(
+                    "Known aliases or nicknames; use an empty array when none are known."
+                ),
+            },
+        }
     return {
         "candidate_ref": string_property("Candidate ref supplied in the current context."),
         "target_ref": optional_string_property("Existing supplied ref to update, when applicable."),
@@ -56,11 +79,7 @@ def _action_properties() -> dict[str, dict]:
         "to_ref": optional_string_property(
             "Supplied target endpoint ref, for relationship actions."
         ),
-        "payload": object_property(
-            "Sparse structured patch for the candidate or graph object. "
-            "When a clarification changes a value, include the changed field "
-            "here; do not put it only in reason."
-        ),
+        "payload": payload,
         "reason": optional_string_property("Short source-grounded reason for the action."),
         "evidence_refs": array_property("Supplied evidence refs supporting the action."),
     }
@@ -71,7 +90,7 @@ def _spec(
     description: str,
     fields: tuple[str, ...],
 ) -> dict:
-    properties = _action_properties()
+    properties = _action_properties(name)
     return tool_spec(
         name.value,
         description,
