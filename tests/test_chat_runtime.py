@@ -357,7 +357,7 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
                     {
                         "question_id": packet.questions[0].question_id,
                         "selected_option_ids": [option_id],
-                        "free_text": None,
+                        "text": None,
                     }
                 ],
             },
@@ -406,7 +406,7 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
                 "question_id": "question-2",
                 "question": "What context should I keep?",
                 "options": [],
-                "free_text_allowed": True,
+                "allow_custom_answer": True,
             },
         ],
     )
@@ -430,7 +430,7 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
                     {
                         "question_id": "question-1",
                         "selected_option_ids": ["option-marco-university"],
-                        "free_text": None,
+                        "text": None,
                     }
                 ],
             },
@@ -472,7 +472,7 @@ def test_clarification_answer_endpoint_accumulates_multi_question_progress_befor
                     {
                         "question_id": "question-2",
                         "selected_option_ids": [],
-                        "free_text": "Keep that we met in Milan.",
+                        "text": "Keep that we met in Milan.",
                     }
                 ],
             },
@@ -527,7 +527,7 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
                     {
                         "question_id": packet.questions[0].question_id,
                         "selected_option_ids": [option_id],
-                        "free_text": "Marco from university.",
+                        "text": "Marco from university.",
                     }
                 ],
             },
@@ -582,7 +582,7 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
                     {
                         "question_id": packet.questions[0].question_id,
                         "selected_option_ids": ["invented-option"],
-                        "free_text": None,
+                        "text": None,
                     }
                 ],
             },

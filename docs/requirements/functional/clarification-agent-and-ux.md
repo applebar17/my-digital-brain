@@ -340,8 +340,11 @@ Activities:
 - Make custom answers enabled by default.
 - Define option labels, compact summaries, model-facing target refs, and the
   `Other` option semantics.
-- Define how parallel questions retain independent question IDs and answer
-  associations.
+- Group up to five parallel questions in one packet with independent question
+  IDs and answer associations.
+- Allow channels to present grouped questions sequentially without changing
+  packet or question identity.
+- Represent audio answers with an opaque media reference and normalized text.
 
 Exit criteria:
 
@@ -526,17 +529,11 @@ This requirement does not introduce:
 The following decisions remain open and must be resolved during implementation
 without weakening the mandatory requirements above:
 
-1. The exact JSON shape for media answers, including whether audio is returned
-   as a media reference, a transcription, or both.
-2. Whether parallel questions are always displayed together or may be
-   presented sequentially by a channel while retaining their question IDs.
-3. The precise graph lookup fields and limits exposed by
+1. The precise graph lookup fields and limits exposed by
    `lookup_candidates` and `get_candidate_context`.
-4. Whether the clarification agent receives the entire master history or a
+2. Whether the clarification agent receives the entire master history or a
    backend-built bounded projection when context limits require it.
-5. Whether `pick_one` and `pick_many` are sufficient names for the initial UX
-   toolbox or should use domain-neutral names such as `select_option`.
-6. The retention and expiry policy for abandoned clarification sessions.
+3. The retention and expiry policy for abandoned clarification sessions.
 
 These are implementation and product-detail decisions. They must not become
 new deterministic pipeline gates or create parallel clarification flows.

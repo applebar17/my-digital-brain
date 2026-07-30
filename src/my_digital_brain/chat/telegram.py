@@ -174,10 +174,15 @@ class TelegramWebhookAdapter:
         if question.options:
             lines.append("")
             lines.append("Suggested answers:")
-            lines.extend(f"- {option.label}" for option in question.options)
-        if question.free_text_allowed:
+            lines.extend(
+                f"- {option.label}: {option.summary}"
+                if option.summary
+                else f"- {option.label}"
+                for option in question.options
+            )
+        if question.allow_custom_answer:
             lines.append("")
-            lines.append("You can reply with your own answer.")
+            lines.append("Other: you can reply with your own text or audio answer.")
         return "\n".join(lines).strip()
 
     def render_clarification_reply_markup(

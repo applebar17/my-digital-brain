@@ -134,7 +134,7 @@ def test_telegram_adapter_renders_plain_clarification_without_options() -> None:
                 "question_id": "question-1",
                 "question": "What should I remember?",
                 "options": [],
-                "free_text_allowed": True,
+                "allow_custom_answer": True,
             }
         ],
     )
@@ -147,7 +147,9 @@ def test_telegram_adapter_renders_plain_clarification_without_options() -> None:
 
     rendered = TelegramWebhookAdapter().render_send_message(response, chat_id="100")
 
-    assert rendered.text == "What should I remember?\n\nYou can reply with your own answer."
+    assert rendered.text == (
+        "What should I remember?\n\nOther: you can reply with your own text or audio answer."
+    )
     assert rendered.reply_markup is None
 
 
@@ -186,7 +188,7 @@ def test_telegram_webhook_routes_free_text_to_active_clarification() -> None:
                 "question_id": "question-1",
                 "question": "What should I remember?",
                 "options": [],
-                "free_text_allowed": True,
+                "allow_custom_answer": True,
             }
         ],
     )
@@ -213,7 +215,7 @@ def test_telegram_webhook_routes_free_text_to_active_clarification() -> None:
     )
     assert "Marco from Milan." in answer_message.text
     assert (
-        answer_message.metadata["clarification_answer_packet"]["answers"][0]["free_text"]
+        answer_message.metadata["clarification_answer_packet"]["answers"][0]["text"]
         == "Marco from Milan."
     )
 
@@ -250,7 +252,7 @@ def test_telegram_webhook_routes_callback_to_selected_clarification_option() -> 
     )
     answer = answer_message.metadata["clarification_answer_packet"]["answers"][0]
     assert answer["selected_option_ids"] == ["option-marco-university"]
-    assert "free_text" not in answer
+    assert "text" not in answer
 
 
 def test_telegram_webhook_rejects_free_text_when_clarification_disallows_it() -> None:
@@ -274,7 +276,7 @@ def test_telegram_webhook_rejects_free_text_when_clarification_disallows_it() ->
                         "label": "Marco from university",
                     }
                 ],
-                "free_text_allowed": False,
+                "allow_custom_answer": False,
             }
         ],
     )
@@ -291,7 +293,7 @@ def test_telegram_webhook_rejects_free_text_when_clarification_disallows_it() ->
     )
 
     assert response.status_code == 400
-    assert "does not accept free-text" in response.json()["detail"]
+    assert "does not accept custom answers" in response.json()["detail"]
 
 
 def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:

@@ -8,9 +8,11 @@ from .contracts import (
     ClarificationAnswer,
     ClarificationAnswerPacket,
     ClarificationHistoryMessage,
+    ClarificationKind,
     ClarificationOption,
     ClarificationPacket,
     ClarificationQuestion,
+    ClarificationResponseMode,
 )
 
 
@@ -24,6 +26,7 @@ def build_clarification_packet(
     tool_name: str | None = None,
     target_refs: list[str] | None = None,
     history_delta: list[dict[str, Any]] | None = None,
+    allowed_refs: set[str] | None = None,
 ) -> ClarificationPacket:
     packet = ClarificationPacket(
         frame_id=frame_id,
@@ -35,22 +38,41 @@ def build_clarification_packet(
             ClarificationQuestion(
                 question_id=str(question.get("question_id") or new_uuid()),
                 question=str(question.get("question") or "").strip(),
+                kind=ClarificationKind(
+                    str(question.get("kind") or ClarificationKind.MISSING_ATTRIBUTE.value)
+                ),
+                response_mode=ClarificationResponseMode(
+                    str(
+                        question.get("response_mode")
+                        or (
+                            ClarificationResponseMode.SINGLE_CHOICE.value
+                            if question.get("options")
+                            and not bool(question.get("allow_custom_answer", True))
+                            else (
+                                ClarificationResponseMode.CHOICE_OR_TEXT.value
+                                if question.get("options")
+                                else ClarificationResponseMode.TEXT_OR_AUDIO.value
+                            )
+                        )
+                    )
+                ),
                 options=[
                     ClarificationOption(
                         option_id=str(option.get("option_id") or new_uuid()),
                         target_ref=option.get("target_ref"),
                         label=str(option.get("label") or "").strip(),
-                        description=option.get("description"),
+                        summary=option.get("summary"),
                         recommended=bool(option.get("recommended", False)),
                     )
                     for option in question.get("options", [])
                     if str(option.get("label") or "").strip()
                 ][:5],
-                free_text_allowed=bool(question.get("free_text_allowed", True)),
+                target_refs=list(question.get("target_refs") or []),
+                evidence_refs=list(question.get("evidence_refs") or []),
+                allow_custom_answer=bool(question.get("allow_custom_answer", True)),
                 required=bool(question.get("required", True)),
-                selection_mode=str(question.get("selection_mode") or "single"),
             )
-            for question in questions[:3]
+            for question in questions[:5]
             if str(question.get("question") or "").strip()
         ],
         target_refs=target_refs or [],
@@ -58,6 +80,7 @@ def build_clarification_packet(
             ClarificationHistoryMessage.model_validate(item) for item in (history_delta or [])
         ],
     )
+    packet.validate_model_refs(allowed_refs)
     if not packet.history_delta:
         packet = packet.model_copy(
             update={
@@ -101,19 +124,47 @@ def validate_clarification_answers(
             raise ChatValidationError(
                 "Clarification answer referenced unknown option ids: " + ", ".join(unknown_options),
             )
-        if question.selection_mode == "single" and len(answer.selected_option_ids) > 1:
+        if (
+            question.response_mode
+            in {
+                "single_choice",
+                "confirmation",
+                "choice_or_text",
+            }
+            and len(answer.selected_option_ids) > 1
+        ):
             raise ChatValidationError(
                 f"Question {answer.question_id} accepts only one selected option.",
             )
-        has_free_text = bool((answer.free_text or "").strip())
+        has_text = bool((answer.text or "").strip())
+        has_audio = bool((answer.audio_media_ref or "").strip())
+        has_normalized_text = bool((answer.normalized_text or "").strip())
         has_option = bool(answer.selected_option_ids)
-        if question.required and not has_free_text and not has_option:
+        if question.response_mode in {"free_text", "text_or_audio"} and has_option:
             raise ChatValidationError(
-                f"Question {answer.question_id} requires an option or free-text answer.",
+                f"Question {answer.question_id} does not accept choice options.",
             )
-        if has_free_text and not question.free_text_allowed:
+        if (
+            question.response_mode == "multiple_choice"
+            and not has_option
+            and not (has_text or has_audio)
+        ):
             raise ChatValidationError(
-                f"Question {answer.question_id} does not accept free-text answers.",
+                f"Question {answer.question_id} requires at least one selected option.",
+            )
+        if (
+            question.required
+            and not has_text
+            and not has_audio
+            and not has_normalized_text
+            and not has_option
+        ):
+            raise ChatValidationError(
+                f"Question {answer.question_id} requires an option, text, or audio answer.",
+            )
+        if (has_text or has_audio or has_normalized_text) and not question.allow_custom_answer:
+            raise ChatValidationError(
+                f"Question {answer.question_id} does not accept custom answers.",
             )
 
 
@@ -196,15 +247,18 @@ def resolved_clarifications_from_answers(
             for option in question.options
             if option.option_id in answer.selected_option_ids
         ]
-        free_text = (answer.free_text or "").strip()
-        answer_text = free_text or ", ".join(option["label"] for option in selected)
+        text = (answer.text or "").strip()
+        normalized_text = (answer.normalized_text or "").strip()
+        answer_text = normalized_text or text or ", ".join(option["label"] for option in selected)
         resolved.append(
             {
                 "question_id": question.question_id,
                 "question": question.question,
                 "answer": answer_text,
                 "selected_options": selected,
-                "free_text": free_text or None,
+                "text": text or None,
+                "normalized_text": normalized_text or None,
+                "audio_media_ref": answer.audio_media_ref,
                 "source": "user",
                 "authoritative": True,
             }
@@ -224,9 +278,11 @@ def summarize_clarification_answers(
         parts = []
         if labels:
             parts.append("selected " + ", ".join(labels))
-        free_text = (answer.free_text or "").strip()
-        if free_text:
-            parts.append(f'free text "{free_text}"')
+        text = (answer.normalized_text or answer.text or "").strip()
+        if text:
+            parts.append(f'custom answer "{text}"')
+        if answer.audio_media_ref:
+            parts.append("audio answer")
         rendered = "; ".join(parts) if parts else "no answer"
         lines.append(f"- {question.question}: {rendered}")
     return "\n".join(lines)
@@ -237,10 +293,13 @@ def render_clarification_questions(packet: ClarificationPacket) -> str:
     for index, question in enumerate(packet.questions, start=1):
         lines.append(f"{index}. {question.question}")
         if question.options:
-            option_labels = ", ".join(option.label for option in question.options)
+            option_labels = ", ".join(
+                f"{option.label} ({option.summary})" if option.summary else option.label
+                for option in question.options
+            )
             lines.append(f"   Options: {option_labels}")
-        if question.free_text_allowed:
-            lines.append("   Free text is allowed.")
+        if question.allow_custom_answer:
+            lines.append("   Other: custom text or audio is allowed.")
     return "\n".join(lines)
 
 

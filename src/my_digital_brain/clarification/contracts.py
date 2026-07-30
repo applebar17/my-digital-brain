@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from my_digital_brain.core.ids import new_uuid
 
@@ -14,6 +16,25 @@ class ClarificationModel(BaseModel):
         populate_by_name=True,
         use_enum_values=True,
     )
+
+
+class ClarificationKind(StrEnum):
+    IDENTITY_NO_MATCH = "identity_no_match"
+    IDENTITY_AMBIGUOUS = "identity_ambiguous"
+    MISSING_ATTRIBUTE = "missing_attribute"
+    CONFIRM_PROPOSAL = "confirm_proposal"
+    CORRECT_CONFLICT = "correct_conflict"
+    RELATIONSHIP_TARGET = "relationship_target"
+    EXPLICIT_DISCARD = "explicit_discard"
+
+
+class ClarificationResponseMode(StrEnum):
+    FREE_TEXT = "free_text"
+    SINGLE_CHOICE = "single_choice"
+    MULTIPLE_CHOICE = "multiple_choice"
+    CONFIRMATION = "confirmation"
+    CHOICE_OR_TEXT = "choice_or_text"
+    TEXT_OR_AUDIO = "text_or_audio"
 
 
 class ClarificationDoubt(ClarificationModel):
@@ -84,17 +105,53 @@ class ClarificationOption(ClarificationModel):
     option_id: str = Field(default_factory=new_uuid)
     target_ref: str | None = None
     label: str = Field(min_length=1)
-    description: str | None = None
+    summary: str | None = None
     recommended: bool = False
 
 
 class ClarificationQuestion(ClarificationModel):
     question_id: str = Field(default_factory=new_uuid)
     question: str = Field(min_length=1)
+    kind: ClarificationKind
+    response_mode: ClarificationResponseMode
     options: list[ClarificationOption] = Field(default_factory=list, max_length=5)
-    free_text_allowed: bool = True
+    target_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    allow_custom_answer: bool = True
     required: bool = True
-    selection_mode: str = Field(default="single", pattern="^(single|multiple)$")
+
+    @model_validator(mode="after")
+    def _validate_semantics(self) -> ClarificationQuestion:
+        mode = str(self.response_mode)
+        if (
+            self.response_mode
+            in {
+                ClarificationResponseMode.FREE_TEXT,
+                ClarificationResponseMode.TEXT_OR_AUDIO,
+            }
+            and self.options
+        ):
+            raise ValueError(f"{mode} questions cannot provide choice options.")
+        if (
+            self.response_mode
+            in {
+                ClarificationResponseMode.SINGLE_CHOICE,
+                ClarificationResponseMode.MULTIPLE_CHOICE,
+                ClarificationResponseMode.CONFIRMATION,
+                ClarificationResponseMode.CHOICE_OR_TEXT,
+            }
+            and not self.options
+        ):
+            raise ValueError(f"{mode} questions require options.")
+        if self.response_mode == ClarificationResponseMode.CONFIRMATION and len(self.options) != 2:
+            raise ValueError("Confirmation questions require exactly two options.")
+        if not self.allow_custom_answer and self.response_mode in {
+            ClarificationResponseMode.FREE_TEXT,
+            ClarificationResponseMode.TEXT_OR_AUDIO,
+            ClarificationResponseMode.CHOICE_OR_TEXT,
+        }:
+            raise ValueError("Free-form response modes cannot disable custom answers.")
+        return self
 
 
 class ClarificationHistoryMessage(ClarificationModel):
@@ -109,22 +166,79 @@ class ClarificationPacket(ClarificationModel):
     tool_name: str | None = None
     origin_state_id: str
     reason: str
-    questions: list[ClarificationQuestion] = Field(min_length=1, max_length=3)
+    questions: list[ClarificationQuestion] = Field(min_length=1, max_length=5)
     target_refs: list[str] = Field(default_factory=list)
     history_delta: list[ClarificationHistoryMessage] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_question_ids(self) -> ClarificationPacket:
+        question_ids = [question.question_id for question in self.questions]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Clarification question IDs must be unique within a packet.")
+        option_ids = [
+            option.option_id for question in self.questions for option in question.options
+        ]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError("Clarification option IDs must be unique within a packet.")
+        return self
+
+    def validate_model_refs(self, allowed_refs: set[str] | None = None) -> None:
+        refs = [
+            *self.target_refs,
+            *[
+                ref
+                for question in self.questions
+                for ref in [
+                    *question.target_refs,
+                    *question.evidence_refs,
+                    *[option.target_ref for option in question.options],
+                ]
+                if ref
+            ],
+        ]
+        persisted_ids = [ref for ref in refs if _looks_like_persisted_id(ref)]
+        if persisted_ids:
+            raise ValueError(
+                "Clarification packets may contain model-facing refs only; "
+                f"persisted graph IDs found: {sorted(set(persisted_ids))}."
+            )
+        if allowed_refs is not None:
+            unknown = sorted(set(refs) - allowed_refs)
+            if unknown:
+                raise ValueError(
+                    "Clarification packet contains refs not supplied in the active context: "
+                    f"{unknown}."
+                )
 
 
 class ClarificationAnswer(ClarificationModel):
     question_id: str
     selected_option_ids: list[str] = Field(default_factory=list)
-    free_text: str | None = None
+    text: str | None = None
+    audio_media_ref: str | None = None
+    normalized_text: str | None = None
 
 
 class ClarificationAnswerPacket(ClarificationModel):
     packet_id: str
     frame_id: str
     tool_call_id: str
-    answers: list[ClarificationAnswer] = Field(min_length=1, max_length=3)
+    answers: list[ClarificationAnswer] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def _validate_answer_ids(self) -> ClarificationAnswerPacket:
+        question_ids = [answer.question_id for answer in self.answers]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Clarification answers must contain unique question IDs.")
+        return self
+
+
+def _looks_like_persisted_id(value: str) -> bool:
+    try:
+        UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return ":" in value or value.startswith("neo4j-")
 
 
 def clarification_doubts_schema() -> dict[str, Any]:

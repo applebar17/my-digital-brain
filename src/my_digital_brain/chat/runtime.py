@@ -453,7 +453,8 @@ class ChatRuntime:
         message: IncomingChatMessage,
         *,
         selected_option_id: str | None = None,
-        free_text: str | None = None,
+        text: str | None = None,
+        audio_media_ref: str | None = None,
         expected_frame_id: str | None = None,
         expected_question_id: str | None = None,
     ) -> ChatResponse:
@@ -472,7 +473,8 @@ class ChatRuntime:
         answer = ClarificationAnswer(
             question_id=question.question_id,
             selected_option_ids=[selected_option_id] if selected_option_id else [],
-            free_text=(free_text or None),
+            text=(text or None),
+            audio_media_ref=(audio_media_ref or None),
         )
         answer_packet = ClarificationAnswerPacket(
             packet_id=packet.packet_id,

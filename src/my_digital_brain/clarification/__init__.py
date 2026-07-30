@@ -3,11 +3,13 @@ from my_digital_brain.clarification.contracts import (
     ClarificationAnswerPacket,
     ClarificationDoubt,
     ClarificationHandoffRequest,
+    ClarificationKind,
     ClarificationOption,
     ClarificationPacket,
     ClarificationQuestion,
     ClarificationResolutionEntry,
     ClarificationResolutionReport,
+    ClarificationResponseMode,
     ClarificationSessionInput,
 )
 
@@ -16,10 +18,12 @@ __all__ = [
     "ClarificationAnswerPacket",
     "ClarificationDoubt",
     "ClarificationHandoffRequest",
+    "ClarificationKind",
     "ClarificationOption",
     "ClarificationPacket",
     "ClarificationQuestion",
     "ClarificationResolutionEntry",
     "ClarificationResolutionReport",
+    "ClarificationResponseMode",
     "ClarificationSessionInput",
 ]

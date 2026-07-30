@@ -64,10 +64,15 @@ def receive_telegram_webhook(
 
         message = adapter.normalize_update(update)
         _, active_frame = runtime.active_clarification_frame_for_message(message)
-        if active_frame is not None and message.text:
+        if active_frame is not None and (message.text or message.media_refs):
             response = runtime.answer_active_clarification(
                 message,
-                free_text=message.text,
+                text=message.text,
+                audio_media_ref=(
+                    message.media_refs[0].storage_ref
+                    if message.media_refs
+                    else None
+                ),
             )
         else:
             response = runtime.handle_message(message)
