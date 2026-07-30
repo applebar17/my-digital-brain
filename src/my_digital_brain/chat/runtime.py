@@ -12,7 +12,7 @@ from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
-from my_digital_brain.chat.clarification import (
+from my_digital_brain.clarification.interaction import (
     answer_packet_from_progress,
     merge_clarification_progress,
     render_clarification_questions,
@@ -35,10 +35,9 @@ from my_digital_brain.chat.models import (
     ConversationSession,
     ConversationSessionList,
     ConversationSessionDetail,
-    ClarificationAnswer,
-    ClarificationAnswerPacket,
     IncomingChatMessage,
 )
+from my_digital_brain.clarification.contracts import ClarificationAnswer, ClarificationAnswerPacket
 from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
 from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 from my_digital_brain.core.owner_context import OwnerSnapshot

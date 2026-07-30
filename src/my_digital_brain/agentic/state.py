@@ -264,4 +264,28 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
             max_tool_calls=50,
             model_task="profile_duplication",
         ),
+        AgenticStateId.CLARIFICATION_AGENT: AgenticStateConfig(
+            state_id=AgenticStateId.CLARIFICATION_AGENT,
+            purpose="Resolve caller-supplied doubts through read-only context and user interaction.",
+            prompt_id="clarification_agent",
+            required_context_type="ClarificationSessionInput",
+            produced_context_type="ClarificationResolutionReport",
+            allowed_tools=[
+                "get_context_package",
+                "get_entity_detail",
+                "get_neighborhood_view",
+                "get_target_evidence",
+            ],
+            forbidden_tools=[
+                "ask_clarification",
+                "execute_graph_write_plan",
+                "create_graph_node",
+                "patch_graph_node",
+                "create_memory_log",
+                "upsert_graph_relationship",
+                "raw_graph_query",
+            ],
+            max_tool_calls=50,
+            model_task="clarification_agent",
+        ),
     }

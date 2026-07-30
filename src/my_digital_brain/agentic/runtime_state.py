@@ -489,12 +489,38 @@ class AgenticStateRunner:
                     "tool_call_id": pending_result.call_id,
                     "tool_name": pending_result.name,
                     "messages": messages,
+                    "session_continuation": self._session_continuation_metadata(
+                        result.continuation,
+                    ),
                     "clarification_packet": packet,
                     "parent_frame_id": parent_frame_id,
                     "parent_tool_call_id": invocation.execution_context.parent_tool_call_id,
                 },
             },
         )
+
+
+    @staticmethod
+    def _session_continuation_metadata(continuation: Any) -> dict[str, Any]:
+        """Persist resumable tool state without duplicating the transcript."""
+
+        return {
+            "session_id": continuation.session_id,
+            "pending_tool_call": continuation.pending_tool_call.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+            "remaining_tool_calls": [
+                call.model_dump(mode="json", exclude_none=True)
+                for call in continuation.remaining_tool_calls
+            ],
+            "tool_events": [
+                event.model_dump(mode="json", exclude_none=True)
+                for event in continuation.tool_events
+            ],
+            "tool_calls_used": continuation.tool_calls_used,
+            "metadata": dict(continuation.metadata),
+        }
 
     def continue_state_from_messages(
         self,

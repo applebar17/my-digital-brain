@@ -7,8 +7,8 @@ from my_digital_brain.chat.enums import ChatDiagnosticLevel, ChatResponseStatus
 from my_digital_brain.chat.models import (
     ChatDiagnostic,
     ChatResponse,
-    ClarificationPacket,
 )
+from my_digital_brain.clarification.contracts import ClarificationPacket
 
 
 def render_agentic_chat_response(

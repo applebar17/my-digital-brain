@@ -20,6 +20,7 @@ from my_digital_brain.graph.models import (
     RelationshipResult,
 )
 from my_digital_brain.prompts import PromptRegistry
+from my_digital_brain.ai.models import ToolResult
 
 
 
@@ -415,40 +416,78 @@ def test_missing_dependency_returns_verbose_tool_error() -> None:
     assert "Configure AgenticToolExecutionContext.graph_service" in result.error.hint
 
 
-def test_ask_clarification_creates_frame_packet() -> None:
+def test_ask_clarification_hands_off_detailed_doubts() -> None:
+    class ChildRuntime:
+        def run_child_frame(self, **kwargs: Any) -> ToolResult:
+            payload = kwargs["child_payload"]
+            return ToolResult(
+                status="pending",
+                output="Clarification agent started.",
+                data={
+                    "operation": "ask_clarification",
+                    "handoff": payload.handoff.model_dump(mode="json"),
+                },
+            )
+
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
-    execution_context = _execution_context(frame_id="frame-1")
+    execution_context = _execution_context(frame_id="frame-1", agentic_runtime=ChildRuntime())
     mapping = build_agentic_tool_mapping(config, execution_context)
 
     result = mapping["ask_clarification"](
-        reason="Two people named Marco are plausible.",
-        target_refs=["NODE_000001", "NODE_000002"],
-        questions=[
+        doubts=[
             {
-                "question": "Which Marco do you mean?",
-                "options": [
-                    {"label": "Marco from university", "recommended": True},
-                    {"label": "Marco from work", "description": "Former coworker"},
-                ],
-                "free_text_allowed": True,
-                "required": True,
-                "selection_mode": "single",
+                "doubt_id": "DOUBT_001",
+                "doubt": "Two people named Marco are plausible.",
+                "refs": ["NODE_000001", "NODE_000002"],
+                "missing_information": "Which context identifies Marco.",
+                "why_blocking": "The target cannot be selected safely.",
+                "evidence_refs": ["MEMORY_000001"],
             }
         ],
     )
 
     assert result.status == "pending"
     assert result.data["operation"] == "ask_clarification"
-    assert result.data["frame_id"] == "frame-1"
-    packet = result.data["clarification_packet"]
-    assert "pending_process" not in result.data
-    assert packet["frame_id"] == "frame-1"
-    assert packet["origin_state_id"] == AgenticStateId.GRAPH_UPDATE.value
-    assert packet["questions"][0]["options"][0]["label"] == "Marco from university"
-    assert packet["history_delta"][0]["role"] == "assistant"
-    assert "Which Marco do you mean?" in packet["history_delta"][0]["content"]
-    assert result.data["history_delta"] == packet["history_delta"]
+    assert result.data["handoff"]["doubts"][0]["doubt_id"] == "DOUBT_001"
+    assert result.data["handoff"]["invoker_state_id"] == AgenticStateId.GRAPH_UPDATE.value
     assert execution_context.tool_events[0].status == "pending"
+
+
+def test_ask_clarification_rejects_refs_missing_from_current_registry() -> None:
+    class ChildRuntime:
+        def run_child_frame(self, **kwargs: Any) -> ToolResult:
+            raise AssertionError("invalid refs must not start a child frame")
+
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    execution_context = _execution_context(
+        frame_id="frame-1",
+        agentic_runtime=ChildRuntime(),
+        current_payload={
+            "reference_registry_snapshot": {
+                "entries": [{"ref": "CANDIDATE_PERSON_001"}],
+            },
+        },
+    )
+    mapping = build_agentic_tool_mapping(config, execution_context)
+
+    result = mapping["ask_clarification"](
+        doubts=[
+            {
+                "doubt_id": "DOUBT_001",
+                "doubt": "The supplied person reference is not available.",
+                "refs": ["CANDIDATE_PERSON_999"],
+                "missing_information": "The correct candidate reference.",
+                "why_blocking": "The agent cannot ground the clarification.",
+                "evidence_refs": [],
+            }
+        ],
+    )
+
+    assert result.status == "recoverable_error"
+    assert result.data["error_code"] == "invalid_clarification_reference"
+    assert result.data["validation_details"]["invalid_refs"] == [
+        "CANDIDATE_PERSON_999"
+    ]
 
 
 def test_ask_clarification_is_not_exposed_to_conversation_entry() -> None:

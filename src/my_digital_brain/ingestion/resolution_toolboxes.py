@@ -10,6 +10,7 @@ from my_digital_brain.agentic.tools.specs import (
     tool_spec,
 )
 from my_digital_brain.ai.tools import ToolBox, build_tool_index
+from my_digital_brain.clarification.contracts import clarification_doubts_schema
 from my_digital_brain.ingestion.contracts import ResolutionStep, ResolutionToolName, tools_for_step
 
 
@@ -102,16 +103,13 @@ _tool_specs = {
     ResolutionToolName.ASK_CLARIFICATION: tool_spec(
         ResolutionToolName.ASK_CLARIFICATION.value,
         (
-            "Ask the user for clarification when the supplied context cannot support "
-            "a safe action. This interrupts the current step and is not a graph action."
+            "Hand off detailed doubts to the dedicated clarification agent when the "
+            "supplied context cannot support an informed action."
         ),
         properties={
-            "candidate_ref": string_property("Candidate ref supplied in the current context."),
-            "question": string_property("User-facing clarification question."),
-            "options": array_property("Short answer options."),
-            "reason": optional_string_property("Why the current context is insufficient."),
-            "evidence_refs": array_property("Supplied evidence refs supporting the question."),
+            "doubts": clarification_doubts_schema(),
         },
+        required=["doubts"],
     ),
     ResolutionToolName.CREATE_NODE: _spec(
         ResolutionToolName.CREATE_NODE,

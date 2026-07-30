@@ -9,7 +9,7 @@ from render_uat_refined_ingestion_trace_interactive import (
     _answer_clarifications_from_terminal,
 )
 
-from my_digital_brain.chat.clarification import build_clarification_packet
+from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.ingestion.contracts import (
     IngestionPendingInteraction,
     IngestionResult,

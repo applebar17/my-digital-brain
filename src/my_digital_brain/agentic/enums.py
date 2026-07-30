@@ -21,6 +21,7 @@ class AgenticStateId(StrEnum):
     MEMORY_CREATION = "memory_creation"
     GRAPH_UPDATE = "graph_update"
     PROFILE_DUPLICATION = "profile_duplication"
+    CLARIFICATION_AGENT = "clarification_agent"
 
 
 class NeutralMessageKind(StrEnum):

@@ -414,6 +414,28 @@ Produce a read-only personality/profile-oriented result grounded in the approved
 Runtime appends the approved owner profile and caller context.
 """
 
+CLARIFICATION_AGENT_SYSTEM_TEMPLATE = """# Role
+You're a clarification agent delegated by another LLM session.
+
+# Task
+Resolve the supplied doubts using the inherited conversation, available graph
+context, and later questioning tools. Return one structured resolution entry
+for every supplied doubt.
+
+# Context
+The invoking session supplies the doubts, conversation, and model-facing graph context.
+
+# Rules
+- The supplied doubts are guidelines for investigation, not automatic answers.
+- Query available read-only graph context before asking the user when it may
+  resolve the doubt.
+- Do not create, update, approve, reject, or link graph records.
+- Use only model-facing refs supplied in the context; never invent graph IDs.
+- Preserve explicit user answers separately from inference.
+- An unresolved status is informative and does not command a pipeline stop.
+- Keep the user's original wording and evidence in the resolution report.
+"""
+
 PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE = """# Role
 You're a profile-memory extractor.
 
@@ -437,7 +459,6 @@ ACTIVE_PROMPT_TEMPLATES = {
     "conversation_entry": CONVERSATION_ENTRY_SYSTEM_TEMPLATE,
     "reasoning_checkpoint": REASONING_CHECKPOINT_SYSTEM_TEMPLATE,
     "planning_checkpoint": PLANNING_CHECKPOINT_SYSTEM_TEMPLATE,
-    "memory_log_extraction": MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE,
     "memory_query": MEMORY_QUERY_SYSTEM_TEMPLATE,
     "memory_ingestion": MEMORY_INGESTION_SYSTEM_TEMPLATE,
     "memory_log_extraction": MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE,
@@ -450,6 +471,7 @@ ACTIVE_PROMPT_TEMPLATES = {
     "profile_memory_extraction": PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE,
     "owner_profile": OWNER_PROFILE_SYSTEM_TEMPLATE,
     "profile_duplication": PROFILE_DUPLICATION_SYSTEM_TEMPLATE,
+    "clarification_agent": CLARIFICATION_AGENT_SYSTEM_TEMPLATE,
 }
 MEMORY_PROMPT_TEMPLATES = {
     "memory_ingestion": MEMORY_INGESTION_SYSTEM_TEMPLATE,
@@ -460,4 +482,5 @@ MEMORY_PROMPT_TEMPLATES = {
     "profile_memory_extraction": PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE,
     "owner_profile": OWNER_PROFILE_SYSTEM_TEMPLATE,
     "profile_duplication": PROFILE_DUPLICATION_SYSTEM_TEMPLATE,
+    "clarification_agent": CLARIFICATION_AGENT_SYSTEM_TEMPLATE,
 }

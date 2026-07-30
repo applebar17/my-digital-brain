@@ -29,10 +29,15 @@ from my_digital_brain.agentic.tools import (
 )
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.tracing import traceable
+from my_digital_brain.clarification.contracts import (
+    ClarificationResolutionReport,
+    ClarificationSessionInput,
+)
 from my_digital_brain.core.ids import new_uuid
 
 if TYPE_CHECKING:
-    from my_digital_brain.chat.models import AgenticFrame, ClarificationAnswerPacket
+    from my_digital_brain.chat.models import AgenticFrame
+    from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
 
 
 @dataclass(slots=True)
@@ -73,13 +78,18 @@ class AgenticRuntime:
                 )
             return result
 
-        state_result = self.state_runner.run_state(
-            AgenticStateInvocation(
-                state_id=current_state,
-                context_payload=current_payload,
-                execution_context=execution_context,
-            ),
+        invocation = AgenticStateInvocation(
+            state_id=current_state,
+            context_payload=current_payload,
+            execution_context=execution_context,
         )
+        if current_state == AgenticStateId.CLARIFICATION_AGENT:
+            state_result = self.state_runner.run_structured_state(
+                invocation,
+                output_schema=ClarificationResolutionReport,
+            )
+        else:
+            state_result = self.state_runner.run_state(invocation)
         state_results.append(state_result)
         compact_trace.append(_compact_state_trace(state_result))
 
@@ -91,6 +101,9 @@ class AgenticRuntime:
                     "state_id": interruption_metadata.get("state_id"),
                     "tool_call_id": interruption_metadata.get("tool_call_id"),
                     "tool_name": interruption_metadata.get("tool_name"),
+                    "session_continuation": interruption_metadata.get(
+                        "session_continuation"
+                    ),
                     "clarification_packet": interruption_metadata.get("clarification_packet"),
                     "parent_frame_id": interruption_metadata.get("parent_frame_id"),
                 }
@@ -137,6 +150,12 @@ class AgenticRuntime:
                 },
             )
 
+        result_metadata: dict[str, Any] = {}
+        if current_state == AgenticStateId.CLARIFICATION_AGENT:
+            result_metadata["clarification_report"] = state_result.structured_output
+            result_metadata["resolved_clarifications"] = (
+                state_result.structured_output or {}
+            ).get("entries", [])
         return AgenticRunResult(
             final_text=state_result.assistant_text
             or self.state_runner.history_service.state_result_summary(state_result),
@@ -144,6 +163,7 @@ class AgenticRuntime:
             state_results=state_results,
             status=state_result.status,
             compact_trace=compact_trace,
+            metadata=result_metadata,
         )
 
     def _run_memory_ingestion_planning(
@@ -236,6 +256,36 @@ class AgenticRuntime:
                     ),
                 },
             )
+        report_payload = result.metadata.get("clarification_report")
+        if isinstance(child_payload, ClarificationSessionInput):
+            try:
+                report = ClarificationResolutionReport.model_validate(report_payload)
+                report.validate_against(child_payload.handoff)
+            except Exception as exc:
+                return ToolResult(
+                    status="recoverable_error",
+                    output=f"Clarification resolution report is invalid: {exc}",
+                    data={
+                        "operation": tool_name,
+                        "error_code": "invalid_clarification_resolution_report",
+                        "diagnostics": [
+                            {
+                                "level": "error",
+                                "code": "invalid_clarification_resolution_report",
+                                "message": str(exc),
+                                "retryable": True,
+                            }
+                        ],
+                    },
+                )
+        self._persist_completed_child_frame(
+            child_context,
+            conversation_context,
+            child_payload=child_payload,
+            child_result=result,
+            child_state=child_state,
+            tool_name=tool_name,
+        )
         summary = result.final_text or "Child frame completed."
         resolved_clarifications = list(result.metadata.get("resolved_clarifications") or [])
         return ToolResult(
@@ -253,8 +303,54 @@ class AgenticRuntime:
                     result, "refreshed_vector_scopes"
                 ),
                 "resolved_clarifications": resolved_clarifications,
+                "clarification_report": result.metadata.get("clarification_report"),
                 "diagnostics": result.compact_trace,
             },
+        )
+
+    def _persist_completed_child_frame(
+        self,
+        child_execution_context: AgenticToolExecutionContext,
+        conversation_context: ConversationContext,
+        *,
+        child_payload: Any,
+        child_result: AgenticRunResult,
+        child_state: AgenticStateId,
+        tool_name: str,
+    ) -> None:
+        if child_execution_context.chat_store is None:
+            return
+        from my_digital_brain.chat.models import AgenticFrame
+
+        messages: list[dict[str, Any]] = []
+        if isinstance(child_payload, ClarificationSessionInput):
+            messages.extend(child_payload.master_history)
+        for state_result in child_result.state_results:
+            messages.extend(
+                message.model_dump(mode="json", exclude_none=True)
+                for message in state_result.message_delta
+            )
+        child_execution_context.chat_store.save_agentic_frame(
+            child_execution_context.session_id or conversation_context.context_id,
+            AgenticFrame(
+                frame_id=child_execution_context.frame_id or new_uuid(),
+                session_id=child_execution_context.session_id
+                or conversation_context.context_id,
+                state_id=child_state.value,
+                status="completed",
+                messages=messages,
+                context_payload=_frame_context_payload(child_payload, conversation_context),
+                compact_trace=list(child_result.compact_trace),
+                parent_frame_id=child_execution_context.parent_frame_id,
+                parent_tool_call_id=child_execution_context.parent_tool_call_id,
+                metadata={
+                    "child_tool_name": tool_name,
+                    "completed_state_status": child_result.status,
+                    "clarification_report": child_result.metadata.get(
+                        "clarification_report"
+                    ),
+                },
+            ),
         )
 
     def _persist_waiting_child_frame(
@@ -345,7 +441,7 @@ class AgenticRuntime:
                         ),
                     )
             except Exception:
-                from my_digital_brain.chat.models import ClarificationPacket
+                from my_digital_brain.clarification.contracts import ClarificationPacket
 
                 packet_payload = child_interruption.get("clarification_packet")
                 packet = (
@@ -466,7 +562,7 @@ class AgenticRuntime:
         )
         execution_context.conversation_context = conversation_context
         if resolved_clarifications is None and frame.clarification_packet is not None:
-            from my_digital_brain.chat.clarification import resolved_clarifications_from_answers
+            from my_digital_brain.clarification.interaction import resolved_clarifications_from_answers
 
             resolved_clarifications = resolved_clarifications_from_answers(
                 frame.clarification_packet,
@@ -685,7 +781,8 @@ class AgenticRuntime:
         *,
         base_messages: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        from my_digital_brain.chat.models import AgenticFrame, ClarificationPacket
+        from my_digital_brain.chat.models import AgenticFrame
+        from my_digital_brain.clarification.contracts import ClarificationPacket
 
         interruption = dict(state_result.metadata.get("interruption") or {})
         frame_id = str(interruption.get("frame_id") or execution_context.frame_id or new_uuid())
@@ -719,6 +816,7 @@ class AgenticRuntime:
                 "interrupted_state": _state_value(state_result.state_id),
                 "tool_call_id": interruption.get("tool_call_id"),
                 "tool_name": interruption.get("tool_name"),
+                "session_continuation": interruption.get("session_continuation") or {},
             },
         )
         if execution_context.chat_store is not None:

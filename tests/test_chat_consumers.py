@@ -13,9 +13,10 @@ from my_digital_brain.ai.session import (
     LLMSessionRunner,
 )
 from my_digital_brain.api.routes import telegram as telegram_routes
-from my_digital_brain.chat.clarification import build_clarification_packet
+from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.chat.enums import ChatChannel, ChatResponseStatus
-from my_digital_brain.chat.models import AgenticFrame, ChatResponse, ClarificationPacket
+from my_digital_brain.chat.models import AgenticFrame, ChatResponse
+from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.chat.telegram import TelegramWebhookAdapter

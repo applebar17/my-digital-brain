@@ -1,3 +1,25 @@
-from my_digital_brain.clarification.service import ClarificationService
+from my_digital_brain.clarification.contracts import (
+    ClarificationAnswer,
+    ClarificationAnswerPacket,
+    ClarificationDoubt,
+    ClarificationHandoffRequest,
+    ClarificationOption,
+    ClarificationPacket,
+    ClarificationQuestion,
+    ClarificationResolutionEntry,
+    ClarificationResolutionReport,
+    ClarificationSessionInput,
+)
 
-__all__ = ["ClarificationService"]
+__all__ = [
+    "ClarificationAnswer",
+    "ClarificationAnswerPacket",
+    "ClarificationDoubt",
+    "ClarificationHandoffRequest",
+    "ClarificationOption",
+    "ClarificationPacket",
+    "ClarificationQuestion",
+    "ClarificationResolutionEntry",
+    "ClarificationResolutionReport",
+    "ClarificationSessionInput",
+]

@@ -15,6 +15,7 @@ from my_digital_brain.agentic.tools.specs import (
     tool_spec,
 )
 from my_digital_brain.ai.models import ToolSpec
+from my_digital_brain.clarification.contracts import clarification_doubts_schema
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         AgenticStateId.PLANNING_CHECKPOINT,
         AgenticStateId.MEMORY_LOG_EXTRACTION,
     ]
+    clarification_states = [AgenticStateId.CLARIFICATION_AGENT]
 
     return [
         _definition(
@@ -157,9 +159,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         _definition(
             "ask_clarification",
             (
-                "Ask the user one to three direct, user-friendly clarification questions "
-                "when the current state cannot continue safely. Questions must be "
-                "short, specific, and free of internal summaries or schema language."
+                "Hand off one or more detailed doubts to the dedicated clarification "
+                "agent. Describe the uncertainty, supplied refs, missing information, "
+                "and why it matters. Do not write the user-facing question here."
             ),
             states=[
                 AgenticStateId.GRAPH_UPDATE,
@@ -171,14 +173,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 AgenticStateId.MEMORY_LOG_EXTRACTION,
             ],
             properties={
-                "reason": string_property(
-                    "Internal reason user input is required before continuing. "
-                    "Do not include this as user-facing copy.",
-                ),
-                "target_refs": array_property("Candidate refs, graph aliases, or targets involved."),
-                "questions": _clarification_questions_property(),
+                "doubts": clarification_doubts_schema(),
             },
-            required=["reason", "questions"],
+            required=["doubts"],
         ),
         *_graph_read_definitions(
             memory_query_states,
@@ -188,6 +185,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             contradiction_states,
             reasoning_states,
             planning_states,
+            clarification_states,
         ),
         _definition(
             "resolve_graph_update_targets",
@@ -275,6 +273,7 @@ def _graph_read_definitions(
     contradiction_states: list[AgenticStateId],
     reasoning_states: list[AgenticStateId],
     planning_states: list[AgenticStateId],
+    clarification_states: list[AgenticStateId],
 ) -> list[AgenticToolDefinition]:
     return [
         _definition(
@@ -287,6 +286,7 @@ def _graph_read_definitions(
                 *graph_update_states,
                 *reasoning_states,
                 *planning_states,
+                *clarification_states,
             ],
             properties={
                 "node_id": string_property("Seed node id."),
@@ -306,6 +306,7 @@ def _graph_read_definitions(
                 *graph_update_states,
                 *reasoning_states,
                 *planning_states,
+                *clarification_states,
             ],
             properties=_node_detail_properties(),
             required=["node_id"],
@@ -349,6 +350,7 @@ def _graph_read_definitions(
                 *graph_update_states,
                 *reasoning_states,
                 *planning_states,
+                *clarification_states,
             ],
             properties={
                 "seed_id": string_property("Seed node id."),
@@ -383,6 +385,7 @@ def _graph_read_definitions(
                 *contradiction_states,
                 *reasoning_states,
                 *planning_states,
+                *clarification_states,
             ],
             properties={
                 "target_id": string_property("Target node id."),
@@ -430,51 +433,6 @@ def _node_detail_properties() -> dict[str, dict]:
         "include_history": boolean_property("Include history records.", default=False),
         "include_archived": boolean_property("Include archived records.", default=False),
         "limit": integer_property("Maximum records.", default=50),
-    }
-
-
-def _clarification_questions_property() -> dict:
-    return {
-        "type": "array",
-        "description": (
-            "One to three short questions written exactly as they should appear to the user. "
-            "Use the user's language. Ask the real missing detail directly; do not summarize why you are asking."
-        ),
-        "minItems": 1,
-        "maxItems": 3,
-        "items": {
-            "type": "object",
-            "properties": {
-                "question": string_property("Direct user-facing question rendered verbatim. Good: What is Alessia's full name? Good: Which beach or beach club did you go to that afternoon? Bad: Clarify the exact place to improve node quality."),
-                "options": {
-                    "type": "array",
-                    "description": "Concise suggested answers rendered directly to the user. Free text remains allowed.",
-                    "maxItems": 5,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "label": string_property("Short answer label."),
-                            "description": optional_string_property(
-                                "Optional explanation for this answer.",
-                            ),
-                            "recommended": boolean_property(
-                                "Whether this is the recommended default option.",
-                                default=False,
-                            ),
-                        },
-                    },
-                },
-                "free_text_allowed": boolean_property(
-                    "Whether the user may answer with free text.",
-                    default=True,
-                ),
-                "required": boolean_property(
-                    "Whether this question must be answered to continue.",
-                    default=True,
-                ),
-                "selection_mode": string_property("Use single for v1 unless truly multiple."),
-            },
-        },
     }
 
 

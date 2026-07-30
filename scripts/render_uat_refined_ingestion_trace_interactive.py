@@ -15,8 +15,7 @@ from uat_refined_trace_common import (
 )
 
 from my_digital_brain.agentic import AgenticHistoryService
-from my_digital_brain.chat.models import ClarificationPacket
-from my_digital_brain.clarification import ClarificationService
+from my_digital_brain.clarification.contracts import ClarificationPacket
 
 DEFAULT_OUTPUT = Path("docs/uat/refined-ingestion-trace.txt")
 logger = logging.getLogger("uat_ingestion_trace")
@@ -176,8 +175,12 @@ def _answer_clarifications_from_terminal(
         event["answer"] = answer
         trace_events.append(event)
         interactions.append({**event, "answer": answer})
-        clarification_service = ClarificationService()
-        _, answer_history = clarification_service.answer_text(pending_packet, answer)
+        answer_history = [
+            {
+                "role": "user",
+                "content": f"Clarification answer: {answer}",
+            }
+        ]
         source = _source_with_clarification_history(
             source,
             base_raw_text=base_raw_text,

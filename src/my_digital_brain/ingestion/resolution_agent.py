@@ -19,8 +19,7 @@ from my_digital_brain.ai.session import (
     LLMSessionRequest,
     continuation_with_tool_result,
 )
-from my_digital_brain.chat.models import ClarificationPacket
-from my_digital_brain.clarification import ClarificationService
+from my_digital_brain.clarification.contracts import ClarificationHandoffRequest
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
@@ -64,7 +63,6 @@ class LLMResolutionProposalAgent:
         model: str | None = None,
         session_max_tool_calls: int = 50,
         batch_size: int = 5,
-        clarification_service: ClarificationService | None = None,
     ) -> None:
         self.provider = provider
         self.router = router
@@ -79,7 +77,6 @@ class LLMResolutionProposalAgent:
             configured_batch_size = 5
         self.session_max_tool_calls = max(1, configured_limit)
         self.batch_size = max(1, configured_batch_size)
-        self.clarification_service = clarification_service or ClarificationService()
 
     def propose(
         self,
@@ -239,7 +236,11 @@ class LLMResolutionProposalAgent:
         if not context.reference_registry_snapshot:
             raise ValueError("Node resolution requires the active reference registry snapshot.")
         pending_call = continuation.pending_tool_call
-        candidate_ref = str(pending_call.arguments.get("candidate_ref") or "")
+        doubts = pending_call.arguments.get("doubts") or []
+        candidate_ref = ""
+        if doubts and isinstance(doubts[0], dict):
+            refs = doubts[0].get("refs") or []
+            candidate_ref = str(refs[0] if refs else "")
         step_candidates = self._step_candidates(ResolutionStep.NODE, candidate_graph)
         candidate_index = next(
             (
@@ -256,12 +257,6 @@ class LLMResolutionProposalAgent:
             )
         batch_start = candidate_index - (candidate_index % self.batch_size)
         actions = self._actions_from_events(continuation)
-        packet = self._clarification_packet(continuation, pending_call.call_id)
-        if packet is None:
-            raise ValueError(
-                f"Pending tool call '{pending_call.call_id}' has no clarification packet."
-            )
-        self.clarification_service.answer_text(packet, answer_text)
         tool_result = ToolResult(
             status="ok",
             output=f"User clarification answer: {answer_text.strip()}",
@@ -458,19 +453,6 @@ class LLMResolutionProposalAgent:
             actions.append(ResolutionToolAction.model_validate(data["action"]))
         return actions
 
-    @staticmethod
-    def _clarification_packet(
-        continuation: LLMSessionContinuation,
-        call_id: str,
-    ) -> ClarificationPacket | None:
-        for event in reversed(continuation.tool_events):
-            if event.call_id != call_id:
-                continue
-            data = event.result.data
-            if isinstance(data, dict) and isinstance(data.get("clarification_packet"), dict):
-                return ClarificationPacket.model_validate(data["clarification_packet"])
-        return None
-
     def resolve_nodes(
         self,
         *,
@@ -631,20 +613,17 @@ class LLMResolutionProposalAgent:
     ) -> Any:
         def capture(**kwargs: Any) -> ToolResult:
             if name == ResolutionToolName.ASK_CLARIFICATION.value:
-                return self.clarification_service.ask(
-                    reason=str(kwargs.get("reason") or "The current context is ambiguous."),
-                    questions=[
-                        {
-                            "question": kwargs.get("question"),
-                            "options": [
-                                {"label": option}
-                                for option in kwargs.get("options", [])
-                                if str(option).strip()
-                            ],
-                        }
-                    ],
-                    target_refs=[str(kwargs["candidate_ref"])],
-                    state_id=step.value,
+                handoff = ClarificationHandoffRequest(
+                    doubts=kwargs.get("doubts") or [],
+                    invoker_state_id=step.value,
+                )
+                return ToolResult(
+                    status="pending",
+                    output="Clarification agent handoff is awaiting user interaction.",
+                    data={
+                        "operation": "ask_clarification",
+                        "handoff": handoff.model_dump(mode="json", exclude_none=True),
+                    },
                 )
             try:
                 action = ResolutionToolAction(

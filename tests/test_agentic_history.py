@@ -16,7 +16,7 @@ from my_digital_brain.agentic import (
 from my_digital_brain.agentic.contexts import PlanningContext, SourceContext
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult
 from my_digital_brain.ai.schemas import ChatMessage
-from my_digital_brain.chat.clarification import build_clarification_packet
+from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.chat.enums import ConversationMessageRole
 from my_digital_brain.chat.models import ConversationMessage
 

@@ -10,13 +10,13 @@ from my_digital_brain.chat.enums import (
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
     AgenticFrame,
-    ClarificationPacket,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionSummary,
     utc_now,
 )
+from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.chat.store import (
     _can_autotitle,
     _clean_title,

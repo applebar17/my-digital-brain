@@ -17,9 +17,11 @@ from my_digital_brain.agentic.contexts import (
 )
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
-from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
-from my_digital_brain.clarification import ClarificationService
+from my_digital_brain.clarification.contracts import (
+    ClarificationHandoffRequest,
+    ClarificationSessionInput,
+)
 
 
 GRAPH_UPDATE_CREATABLE_LABELS = {
@@ -81,7 +83,6 @@ class AgenticToolExecutionContext:
     agentic_runtime: Any | None = None
     conversation_context: Any | None = None
     current_payload: Any | None = None
-    clarification_service: ClarificationService | None = None
 
 
 class AgenticToolBindings:
@@ -318,27 +319,57 @@ class AgenticToolBindings:
 
     def _handle_ask_clarification(
         self,
-        reason: str,
-        questions: list[dict[str, Any]],
-        target_refs: list[str] | None = None,
+        doubts: list[dict[str, Any]],
     ) -> ToolResult:
-        service = self.context.clarification_service or ClarificationService()
+        runtime = self.context.agentic_runtime
+        if runtime is None:
+            return _missing_dependency("ask_clarification", "agentic_runtime")
         try:
-            return service.ask(
-                reason=reason,
-                questions=questions,
-                frame_id=self.context.frame_id,
-                state_id=self.context.state_id or "unknown",
-                target_refs=target_refs or [],
+            invalid_refs = _invalid_handoff_refs(
+                doubts,
+                current_payload=self.context.current_payload,
+                metadata=self.context.metadata,
+            )
+            if invalid_refs:
+                return _update_tool_error(
+                    "ask_clarification",
+                    "invalid_clarification_reference",
+                    "Clarification doubts contain refs that are not available in the current run.",
+                    "Use only model-facing refs supplied in the current context.",
+                    retryable=True,
+                    details={"invalid_refs": invalid_refs},
+                )
+            conversation = self._conversation_context()
+            handoff = ClarificationHandoffRequest(
+                doubts=doubts,
+                invoker_state_id=self.context.state_id or "unknown",
+                invoker_tool_call_id=self.context.current_tool_call_id,
+                parent_frame_id=self.context.frame_id,
+            )
+            session_input = ClarificationSessionInput(
+                handoff=handoff,
+                conversation=conversation,
+                master_history=_master_history_messages(conversation),
+                context_payload=_serialize(self.context.current_payload) or {},
+                session_id=self.context.session_id or conversation.context_id,
+                parent_frame_id=self.context.frame_id,
+                parent_tool_call_id=self.context.current_tool_call_id,
+            )
+            return runtime.run_child_frame(
+                parent_execution_context=self.context,
+                conversation_context=conversation,
+                child_state=AgenticStateId.CLARIFICATION_AGENT,
+                child_payload=session_input,
+                tool_name="ask_clarification",
             )
         except Exception as exc:
             return _tool_error(
                 "ask_clarification",
-                "invalid_clarification_packet",
-                f"Clarification questions failed validation: {exc}",
+                "invalid_clarification_handoff",
+                f"Clarification handoff failed validation: {exc}",
                 (
-                    "Pass one to three short, direct user-facing questions. Each "
-                    "question may include up to five concise option labels."
+                    "Pass detailed doubts with stable refs, missing information, "
+                    "and the reason each doubt matters."
                 ),
                 retryable=True,
                 details={"exception_type": exc.__class__.__name__},
@@ -965,6 +996,48 @@ def _owner_snapshot_from_retrieval(retrieval: dict[str, Any]) -> OwnerSnapshot |
     return None
 
 
+def _invalid_handoff_refs(
+    doubts: list[dict[str, Any]],
+    *,
+    current_payload: Any | None,
+    metadata: dict[str, Any],
+) -> list[str]:
+    """Validate refs when the current payload exposes a backend registry snapshot."""
+
+    payload = _serialize(current_payload)
+    snapshots: list[dict[str, Any]] = []
+    _collect_registry_snapshots(payload, snapshots)
+    _collect_registry_snapshots(metadata, snapshots)
+    if not snapshots:
+        return []
+    snapshot = snapshots[0]
+    allowed = {
+        str(entry.get("ref"))
+        for entry in snapshot.get("entries", [])
+        if isinstance(entry, dict) and entry.get("ref")
+    }
+    referenced = {
+        str(ref)
+        for doubt in doubts
+        if isinstance(doubt, dict)
+        for ref in [*(doubt.get("refs") or []), *(doubt.get("evidence_refs") or [])]
+        if ref
+    }
+    return sorted(referenced - allowed)
+
+
+def _collect_registry_snapshots(value: Any, output: list[dict[str, Any]]) -> None:
+    if isinstance(value, dict):
+        snapshot = value.get("reference_registry_snapshot")
+        if isinstance(snapshot, dict):
+            output.append(snapshot)
+        for child in value.values():
+            _collect_registry_snapshots(child, output)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_registry_snapshots(child, output)
+
+
 
 def _update_tool_result(
     tool_name: str,
@@ -1104,6 +1177,19 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
     return value
+
+
+def _master_history_messages(conversation: Any) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    for message in [*(getattr(conversation, "history", []) or []), getattr(conversation, "current_message", None)]:
+        if message is None:
+            continue
+        content = str(getattr(message, "content", "") or "").strip()
+        kind = str(getattr(getattr(message, "kind", None), "value", getattr(message, "kind", "")))
+        role = "user" if kind == "user" else "assistant" if kind == "assistant" else ""
+        if content and role:
+            messages.append({"role": role, "content": content})
+    return messages
 
 
 def _missing_dependency(tool_name: str, dependency: str) -> ToolResult:

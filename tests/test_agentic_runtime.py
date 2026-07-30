@@ -35,7 +35,7 @@ from my_digital_brain.ai.session import (
     LLMSessionResult,
     LLMSessionRunner,
 )
-from my_digital_brain.chat.models import ClarificationAnswerPacket
+from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 
@@ -413,241 +413,60 @@ def test_missing_graph_dependency_produces_tool_error_without_crashing() -> None
     assert "graph_service" in result.tool_events[0].error["hint"]
 
 
-def test_clarification_tool_interrupts_without_error_status() -> None:
+def test_clarification_handoff_uses_structured_child_state() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {
-                "content": "I need to ask a clarification.",
+                "content": "Handing off the identity doubt.",
                 "tool": "ask_clarification",
                 "arguments": {
-                    "reason": "Two memory targets are plausible.",
-                    "target_refs": ["NODE_000001", "NODE_000002"],
-                    "questions": [
+                    "doubts": [
                         {
-                            "question": "Which target should I use?",
-                            "options": [
-                                {"label": "First target", "recommended": True},
-                                {"label": "Second target"},
-                            ],
-                            "free_text_allowed": True,
-                            "required": True,
-                            "selection_mode": "single",
+                            "doubt_id": "DOUBT_001",
+                            "doubt": "Marco has two possible graph matches.",
+                            "refs": ["NODE_000001", "NODE_000002"],
+                            "missing_information": "Which context identifies Marco.",
+                            "why_blocking": "The target is ambiguous.",
+                            "evidence_refs": ["MEMORY_000001"],
                         }
-                    ],
+                    ]
                 },
             }
-        ]
-    )
-    runner = _runner(provider)
-    update_context = GraphUpdateContext(
-        source_text="Marco was from university.",
-        conversation=_conversation("Which Marco?"),
-    )
-
-    result = runner.run_state(
-        AgenticStateInvocation(
-            state_id=AgenticStateId.GRAPH_UPDATE,
-            context_payload=update_context,
-            execution_context=AgenticToolExecutionContext(),
-        )
-    )
-
-    assert result.status == "interrupted"
-    assert result.tool_events[0].status == "pending"
-    interruption = result.metadata["interruption"]
-    assert interruption["tool_name"] == "ask_clarification"
-    assert interruption["tool_call_id"] == "call-1"
-    assert interruption["clarification_packet"]["tool_call_id"] == "call-1"
-    assert interruption["clarification_packet"]["questions"][0]["question"] == (
-        "Which target should I use?"
-    )
-    assert result.message_delta[0].tool_calls[0]["function"]["name"] == ("ask_clarification")
-
-
-def test_graph_update_clarification_resumes_same_frame() -> None:
-    provider = ScriptedToolCallingProvider(
-        [
+        ],
+        structured_payloads=[
             {
-                "content": "Need target detail.",
-                "tool": "ask_clarification",
-                "arguments": {
-                    "reason": "Need to confirm which Marco to update.",
-                    "target_refs": ["node-marco", "node-marco-work"],
-                    "questions": [
-                        {
-                            "question": "Which Marco should be updated?",
-                            "options": [
-                                {"label": "Marco from university", "recommended": True},
-                                {"label": "Marco from work"},
-                            ],
-                            "free_text_allowed": True,
-                            "required": True,
-                            "selection_mode": "single",
-                        }
-                    ],
-                },
-            },
-            {"content": "Graph update resumed."},
-        ]
-    )
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel="web",
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
+                "entries": [
+                    {
+                        "doubt_id": "DOUBT_001",
+                        "status": "unresolved",
+                        "remaining_uncertainty": "No user answer yet.",
+                    }
+                ],
+                "summary": "The doubt remains unresolved.",
+            }
+        ],
     )
     runtime = AgenticRuntime(_runner(provider))
-    execution_context = AgenticToolExecutionContext(
-        graph_service=FakeGraphService(),
-        chat_store=store,
-        session_id=session.session_id,
-        conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-
-    interrupted = runtime.run(
-        _conversation("Marco was from university, not work."),
-        execution_context,
+    result = runtime.run(
+        _conversation("Marco has two possible identities."),
+        AgenticToolExecutionContext(
+            session_id="session-1",
+            conversation_id="conversation-1",
+            owner_id="owner-1",
+            agentic_runtime=runtime,
+        ),
         start_state=AgenticStateId.GRAPH_UPDATE,
         start_payload=GraphUpdateContext(
-            source_text="Marco was from university, not work.",
-            conversation=_conversation("Marco was from university, not work."),
+            source_text="Marco has two possible identities.",
+            conversation=_conversation("Marco has two possible identities."),
         ),
     )
 
-    assert interrupted.status == "interrupted"
-    frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
-    packet = frame.clarification_packet
-    assert packet is not None
-    option_id = packet.questions[0].options[0].option_id
-
-    resumed = runtime.resume_frame(
-        frame,
-        AgenticToolExecutionContext(
-            graph_service=FakeGraphService(),
-            chat_store=store,
-            session_id=session.session_id,
-            conversation_id="conversation-1",
-            owner_id="owner-1",
-        ),
-        clarification_answer_summary="Clarification answers: Marco from university.",
-        answer_packet=ClarificationAnswerPacket(
-            packet_id=packet.packet_id,
-            frame_id=packet.frame_id,
-            tool_call_id=packet.tool_call_id or "",
-            answers=[
-                {
-                    "question_id": packet.questions[0].question_id,
-                    "selected_option_ids": [option_id],
-                    "free_text": None,
-                }
-            ],
-        ),
-    )
-
-    assert resumed.status == "ok"
-    assert resumed.final_text == "Graph update resumed."
-    assert store.get_agentic_frame(frame.frame_id).status == "completed"
-
-
-def test_child_clarification_persists_parent_as_waiting_child_and_resumes_parent() -> None:
-    provider = ScriptedToolCallingProvider(
-        [
-            {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
-            {
-                "content": "Need clarification.",
-                "tool": "ask_clarification",
-                "arguments": {
-                    "reason": "Marco is ambiguous.",
-                    "target_refs": ["node_new_0001"],
-                    "questions": [
-                        {
-                            "question": "Which Marco should I use?",
-                            "options": [{"label": "Marco from university"}],
-                            "free_text_allowed": True,
-                            "required": True,
-                            "selection_mode": "single",
-                        }
-                    ],
-                },
-            },
-            {"content": "Creation child resumed."},
-            {"content": "Ingestion parent resumed."},
-            {"content": "Conversation parent resumed."},
-        ],
-        structured_payloads=_memory_ingestion_structured_payloads(),
-    )
-    store = InMemoryChatSessionStore()
-    session = store.get_or_create_session(
-        channel="web",
-        external_conversation_id="conversation-1",
-        owner_id="owner-1",
-    )
-    runtime = AgenticRuntime(_runner(provider))
-
-    interrupted = runtime.run(
-        _conversation("Remember Marco from university."),
-        AgenticToolExecutionContext(
-            chat_store=store,
-            session_id=session.session_id,
-            conversation_id="conversation-1",
-            owner_id="owner-1",
-        ),
-    )
-
-    assert interrupted.status == "interrupted"
-    child_frame = store.get_agentic_frame(interrupted.interruption["frame_id"])
-    assert child_frame.state_id == AgenticStateId.MEMORY_INGESTION.value
-    assert child_frame.status == "interrupted"
-    assert child_frame.clarification_packet is not None
-    parent_frame = store.get_agentic_frame(child_frame.parent_frame_id or "")
-    assert parent_frame.status == "waiting_child"
-    assert parent_frame.active_tool_name == "ingest_memory"
-    top_parent_frame = parent_frame
-    assert top_parent_frame.state_id == AgenticStateId.CONVERSATION_ENTRY.value
-    assert top_parent_frame.status == "waiting_child"
-    assert top_parent_frame.active_tool_name == "ingest_memory"
-    assert store.get_active_agentic_frame(session.session_id).frame_id == child_frame.frame_id
-
-    packet = child_frame.clarification_packet
-    question = packet.questions[0]
-    resumed = runtime.resume_frame(
-        child_frame,
-        AgenticToolExecutionContext(
-            chat_store=store,
-            session_id=session.session_id,
-            conversation_id="conversation-1",
-            owner_id="owner-1",
-        ),
-        clarification_answer_summary="Clarification answers: Marco from university.",
-        answer_packet=ClarificationAnswerPacket(
-            packet_id=packet.packet_id,
-            frame_id=packet.frame_id,
-            tool_call_id=packet.tool_call_id or "",
-            answers=[
-                {
-                    "question_id": question.question_id,
-                    "selected_option_ids": [question.options[0].option_id],
-                    "free_text": None,
-                }
-            ],
-        ),
-    )
-
-    assert resumed.status == "ok"
-    assert resumed.final_text == "Ingestion parent resumed."
-    assert store.get_agentic_frame(child_frame.frame_id).status == "completed"
-    completed_parent = store.get_agentic_frame(top_parent_frame.frame_id)
-    assert completed_parent.status == "completed"
-    parent_tool_messages = [
-        message for message in completed_parent.messages if message.get("role") == "tool"
-    ]
-    assert len(parent_tool_messages) == 2
-    parent_tool_payload = json.loads(parent_tool_messages[-1]["content"])
-    assert parent_tool_payload["data"]["child_frame_id"]
-    assert parent_tool_payload["data"]["child_status"] == "ok"
-    assert parent_tool_payload["data"]["resolved_clarifications"]
-    assert "state_result" not in parent_tool_payload["data"]
+    assert result.status == "ok"
+    event = result.state_results[0].tool_events[0]
+    assert event.tool_name == "ask_clarification"
+    assert event.status == "ok"
+    assert event.data["clarification_report"]["entries"][0]["status"] == "unresolved"
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:

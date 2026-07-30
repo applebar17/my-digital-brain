@@ -11,10 +11,10 @@ from my_digital_brain.chat.exceptions import ChatValidationError
 from my_digital_brain.chat.models import (
     ChatModel,
     ChatResponse,
-    ClarificationPacket,
     IncomingChatMessage,
     IncomingMediaRef,
 )
+from my_digital_brain.clarification.contracts import ClarificationPacket
 
 
 class TelegramSendMessage(ChatModel):

@@ -236,11 +236,16 @@ def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
                                 "name": "ask_clarification",
                                 "arguments": json.dumps(
                                     {
-                                        "candidate_ref": "CANDIDATE_PERSON_001",
-                                        "question": "Qual è il cognome?",
-                                        "options": ["Non ricordo"],
-                                        "reason": "The identity is incomplete.",
-                                        "evidence_refs": ["CANDIDATE_PERSON_001"],
+                                        "doubts": [
+                                            {
+                                                "doubt_id": "DOUBT_001",
+                                                "doubt": "Amos has no identifying surname.",
+                                                "refs": ["CANDIDATE_PERSON_001"],
+                                                "missing_information": "Surname",
+                                                "why_blocking": "The identity is incomplete.",
+                                                "evidence_refs": ["CANDIDATE_PERSON_001"],
+                                            }
+                                        ]
                                     }
                                 ),
                             },
@@ -293,11 +298,16 @@ def test_resolution_agent_resumes_the_same_session_after_clarification() -> None
                         "name": "ask_clarification",
                         "arguments": json.dumps(
                             {
-                                "candidate_ref": "CANDIDATE_PERSON_001",
-                                "question": "Qual è il cognome?",
-                                "options": [],
-                                "reason": "The identity is incomplete.",
-                                "evidence_refs": ["CANDIDATE_PERSON_001"],
+                                "doubts": [
+                                    {
+                                        "doubt_id": "DOUBT_001",
+                                        "doubt": "Amos has no identifying surname.",
+                                        "refs": ["CANDIDATE_PERSON_001"],
+                                        "missing_information": "Surname",
+                                        "why_blocking": "The identity is incomplete.",
+                                        "evidence_refs": ["CANDIDATE_PERSON_001"],
+                                    }
+                                ]
                             }
                         ),
                     },
@@ -554,16 +564,27 @@ def test_resolution_accumulates_actions_across_multiple_clarification_continuati
 
 
 def _resolution_tool_call(call_id: str, name: str, candidate_ref: str) -> dict:
-    arguments = {
-        "candidate_ref": candidate_ref,
-        "reason": "The supplied evidence supports this resolution.",
-        "evidence_refs": [candidate_ref],
-    }
+    if name == "ask_clarification":
+        arguments = {
+            "doubts": [
+                {
+                    "doubt_id": f"DOUBT_{candidate_ref}",
+                    "doubt": "The candidate identity needs user clarification.",
+                    "refs": [candidate_ref],
+                    "missing_information": "Identity information.",
+                    "why_blocking": "The candidate cannot be resolved safely yet.",
+                    "evidence_refs": [candidate_ref],
+                }
+            ]
+        }
+    else:
+        arguments = {
+            "candidate_ref": candidate_ref,
+            "reason": "The supplied evidence supports this resolution.",
+            "evidence_refs": [candidate_ref],
+        }
     if name == "create_node":
         arguments["payload"] = {"display_name": "Resolved candidate"}
-    else:
-        arguments["question"] = "Which person is this?"
-        arguments["options"] = ["The supplied person", "A different person"]
     return {
         "id": call_id,
         "type": "function",

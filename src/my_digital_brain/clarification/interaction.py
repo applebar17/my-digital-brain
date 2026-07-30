@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from my_digital_brain.chat.exceptions import ChatValidationError
-from my_digital_brain.chat.models import (
+from my_digital_brain.core.ids import new_uuid
+
+from .contracts import (
     ClarificationAnswer,
     ClarificationAnswerPacket,
     ClarificationHistoryMessage,
@@ -11,8 +12,6 @@ from my_digital_brain.chat.models import (
     ClarificationPacket,
     ClarificationQuestion,
 )
-from my_digital_brain.chat.enums import ConversationMessageRole
-from my_digital_brain.core.ids import new_uuid
 
 
 def build_clarification_packet(
@@ -39,6 +38,7 @@ def build_clarification_packet(
                 options=[
                     ClarificationOption(
                         option_id=str(option.get("option_id") or new_uuid()),
+                        target_ref=option.get("target_ref"),
                         label=str(option.get("label") or "").strip(),
                         description=option.get("description"),
                         recommended=bool(option.get("recommended", False)),
@@ -55,8 +55,7 @@ def build_clarification_packet(
         ],
         target_refs=target_refs or [],
         history_delta=[
-            ClarificationHistoryMessage.model_validate(item)
-            for item in (history_delta or [])
+            ClarificationHistoryMessage.model_validate(item) for item in (history_delta or [])
         ],
     )
     if not packet.history_delta:
@@ -64,7 +63,7 @@ def build_clarification_packet(
             update={
                 "history_delta": [
                     ClarificationHistoryMessage(
-                        role=ConversationMessageRole.ASSISTANT,
+                        role="assistant",
                         content=render_clarification_questions(packet),
                     )
                 ]
@@ -74,11 +73,12 @@ def build_clarification_packet(
     return packet
 
 
-
 def validate_clarification_answers(
     packet: ClarificationPacket,
     answers: ClarificationAnswerPacket,
 ) -> None:
+    from my_digital_brain.chat.exceptions import ChatValidationError
+
     if answers.packet_id != packet.packet_id:
         raise ChatValidationError("Clarification answer packet does not match the active packet.")
     if answers.frame_id != packet.frame_id:
@@ -90,9 +90,7 @@ def validate_clarification_answers(
     for answer in answers.answers:
         question = questions.get(answer.question_id)
         if question is None:
-            raise ChatValidationError(
-                f"Unknown clarification question id: {answer.question_id}",
-            )
+            raise ChatValidationError(f"Unknown clarification question id: {answer.question_id}")
         allowed_options = {option.option_id for option in question.options}
         unknown_options = [
             option_id
@@ -101,8 +99,7 @@ def validate_clarification_answers(
         ]
         if unknown_options:
             raise ChatValidationError(
-                "Clarification answer referenced unknown option ids: "
-                + ", ".join(unknown_options),
+                "Clarification answer referenced unknown option ids: " + ", ".join(unknown_options),
             )
         if question.selection_mode == "single" and len(answer.selected_option_ids) > 1:
             raise ChatValidationError(
@@ -137,7 +134,6 @@ def merge_clarification_progress(
             mode="json",
             exclude_none=True,
         )
-
     question_ids = [question.question_id for question in packet.questions]
     answered_question_ids = [
         question_id for question_id in question_ids if question_id in answers_by_question_id
@@ -159,6 +155,8 @@ def answer_packet_from_progress(
     packet: ClarificationPacket,
     progress: dict[str, Any],
 ) -> ClarificationAnswerPacket:
+    from my_digital_brain.chat.exceptions import ChatValidationError
+
     answers_by_question_id = progress.get("answers_by_question_id")
     if not isinstance(answers_by_question_id, dict):
         raise ChatValidationError("Clarification progress does not contain answers.")
@@ -178,7 +176,6 @@ def answer_packet_from_progress(
     )
 
 
-
 def resolved_clarifications_from_answers(
     packet: ClarificationPacket,
     answers: ClarificationAnswerPacket,
@@ -192,6 +189,7 @@ def resolved_clarifications_from_answers(
         selected = [
             {
                 "option_id": option.option_id,
+                "target_ref": option.target_ref,
                 "label": option.label,
                 "recommended": option.recommended,
             }
@@ -212,6 +210,7 @@ def resolved_clarifications_from_answers(
             }
         )
     return resolved
+
 
 def summarize_clarification_answers(
     packet: ClarificationPacket,

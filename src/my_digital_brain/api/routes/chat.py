@@ -9,11 +9,11 @@ from my_digital_brain.chat.enums import ChatChannel, ConversationStatus
 from my_digital_brain.chat.exceptions import ChatNotFoundError, ChatValidationError
 from my_digital_brain.chat.models import (
     ChatResponse,
-    ClarificationAnswerPacket,
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionList,
 )
+from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
 from my_digital_brain.chat.factory import build_chat_runtime
 from my_digital_brain.chat.relational_store import RelationalChatSessionStore
 from my_digital_brain.chat.runtime import ChatRuntime
