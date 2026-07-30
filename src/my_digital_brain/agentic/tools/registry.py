@@ -305,7 +305,9 @@ def _clarification_tool_definitions(
             "type": "object",
             "properties": {
                 "label": string_property("Compact option label."),
-                "summary": optional_string_property("Compact context summary."),
+                "summary": optional_string_property(
+                    "Brief context subtitle, at most 160 characters. Required for ambiguous identity, conflict, or relationship-target choices."
+                ),
                 "target_ref": optional_string_property(
                     "Supplied model-facing ref, when applicable."
                 ),

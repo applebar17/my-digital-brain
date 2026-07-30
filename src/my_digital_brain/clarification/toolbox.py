@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from my_digital_brain.ai.models import ToolResult
 
@@ -15,6 +15,7 @@ from .contracts import (
     ClarificationModel,
     ClarificationPacket,
     ClarificationResponseMode,
+    option_summaries_required,
 )
 from .interaction import build_clarification_packet
 
@@ -28,7 +29,7 @@ class ClarificationQuestionOption(ClarificationModel):
     """LLM-supplied option data; the backend assigns its option id."""
 
     label: str = Field(min_length=1)
-    summary: str | None = None
+    summary: str | None = Field(default=None, max_length=160)
     target_ref: str | None = None
     recommended: bool = False
 
@@ -41,6 +42,20 @@ class ClarificationQuestionRequest(ClarificationModel):
     evidence_refs: list[str] = Field(default_factory=list)
     options: list[ClarificationQuestionOption] = Field(default_factory=list, max_length=5)
     allow_custom_answer: bool = True
+
+    @model_validator(mode="after")
+    def _validate_option_summaries(self) -> ClarificationQuestionRequest:
+        if option_summaries_required(self.kind):
+            missing_summaries = [
+                option.label
+                for option in self.options
+                if not option.summary or not option.summary.strip()
+            ]
+            if missing_summaries:
+                raise ValueError(
+                    f"Disambiguation options require brief summaries: {missing_summaries}."
+                )
+        return self
 
 
 @dataclass(slots=True)

@@ -187,6 +187,43 @@ def test_question_tools_enforce_semantic_modes_and_custom_answers() -> None:
     assert invalid.status == "error"
 
 
+def test_disambiguation_options_require_brief_subtitles() -> None:
+    service, _ = _service()
+    result = service.build_question(
+        tool_name="pick_one",
+        request={
+            "question": "Which Amos is this?",
+            "kind": "identity_ambiguous",
+            "reason": "Several identities may match.",
+            "options": [
+                {"label": "Amos Rossi", "summary": None, "target_ref": "OWNER"},
+            ],
+        },
+        frame_id="frame-1",
+        tool_call_id="call-3",
+        origin_state_id="clarification_agent",
+    )
+    assert result.status == "error"
+    assert "brief summaries" in result.error.message
+
+    long_summary = "x" * 161
+    too_long = service.build_question(
+        tool_name="pick_one",
+        request={
+            "question": "Which Amos is this?",
+            "kind": "identity_ambiguous",
+            "reason": "Several identities may match.",
+            "options": [
+                {"label": "Amos Rossi", "summary": long_summary, "target_ref": "OWNER"},
+            ],
+        },
+        frame_id="frame-1",
+        tool_call_id="call-4",
+        origin_state_id="clarification_agent",
+    )
+    assert too_long.status == "error"
+
+
 def test_agentic_factory_builds_strict_wave2_schemas() -> None:
     state = default_state_configs()[AgenticStateId.CLARIFICATION_AGENT]
     toolbox = build_agentic_toolbox(state)

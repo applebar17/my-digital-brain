@@ -187,7 +187,13 @@ def test_answers_support_text_audio_and_custom_correction() -> None:
                 question="Which Amos is this?",
                 kind=ClarificationKind.IDENTITY_AMBIGUOUS,
                 response_mode=ClarificationResponseMode.CHOICE_OR_TEXT,
-                options=[ClarificationOption(option_id="option-1", label="Amos Bianchi")],
+                options=[
+                    ClarificationOption(
+                        option_id="option-1",
+                        label="Amos Bianchi",
+                        summary="Friend from elementary school",
+                    )
+                ],
             )
         ],
     )

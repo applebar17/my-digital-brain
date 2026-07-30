@@ -37,6 +37,19 @@ class ClarificationResponseMode(StrEnum):
     TEXT_OR_AUDIO = "text_or_audio"
 
 
+OPTION_SUMMARY_REQUIRED_KINDS = frozenset(
+    {
+        ClarificationKind.IDENTITY_AMBIGUOUS,
+        ClarificationKind.CORRECT_CONFLICT,
+        ClarificationKind.RELATIONSHIP_TARGET,
+    }
+)
+
+
+def option_summaries_required(kind: ClarificationKind | str) -> bool:
+    return kind in OPTION_SUMMARY_REQUIRED_KINDS
+
+
 class ClarificationDoubt(ClarificationModel):
     doubt_id: str = Field(default_factory=new_uuid)
     doubt: str = Field(min_length=1)
@@ -105,7 +118,7 @@ class ClarificationOption(ClarificationModel):
     option_id: str = Field(default_factory=new_uuid)
     target_ref: str | None = None
     label: str = Field(min_length=1)
-    summary: str | None = None
+    summary: str | None = Field(default=None, max_length=160)
     recommended: bool = False
 
 
@@ -145,6 +158,16 @@ class ClarificationQuestion(ClarificationModel):
             raise ValueError(f"{mode} questions require options.")
         if self.response_mode == ClarificationResponseMode.CONFIRMATION and len(self.options) != 2:
             raise ValueError("Confirmation questions require exactly two options.")
+        if option_summaries_required(self.kind):
+            missing_summaries = [
+                option.label
+                for option in self.options
+                if not option.summary or not option.summary.strip()
+            ]
+            if missing_summaries:
+                raise ValueError(
+                    f"Disambiguation options require brief summaries: {missing_summaries}."
+                )
         if not self.allow_custom_answer and self.response_mode in {
             ClarificationResponseMode.FREE_TEXT,
             ClarificationResponseMode.TEXT_OR_AUDIO,
