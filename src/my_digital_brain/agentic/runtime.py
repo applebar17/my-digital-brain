@@ -101,9 +101,7 @@ class AgenticRuntime:
                     "state_id": interruption_metadata.get("state_id"),
                     "tool_call_id": interruption_metadata.get("tool_call_id"),
                     "tool_name": interruption_metadata.get("tool_name"),
-                    "session_continuation": interruption_metadata.get(
-                        "session_continuation"
-                    ),
+                    "session_continuation": interruption_metadata.get("session_continuation"),
                     "clarification_packet": interruption_metadata.get("clarification_packet"),
                     "parent_frame_id": interruption_metadata.get("parent_frame_id"),
                 }
@@ -153,9 +151,9 @@ class AgenticRuntime:
         result_metadata: dict[str, Any] = {}
         if current_state == AgenticStateId.CLARIFICATION_AGENT:
             result_metadata["clarification_report"] = state_result.structured_output
-            result_metadata["resolved_clarifications"] = (
-                state_result.structured_output or {}
-            ).get("entries", [])
+            result_metadata["resolved_clarifications"] = (state_result.structured_output or {}).get(
+                "entries", []
+            )
         return AgenticRunResult(
             final_text=state_result.assistant_text
             or self.state_runner.history_service.state_result_summary(state_result),
@@ -204,6 +202,7 @@ class AgenticRuntime:
             message_id=parent_execution_context.message_id,
             current_text=parent_execution_context.current_text,
             conversation_history_refs=list(parent_execution_context.conversation_history_refs),
+            reference_registry=parent_execution_context.reference_registry,
             metadata=dict(parent_execution_context.metadata),
             frame_id=new_uuid(),
             parent_frame_id=parent_execution_context.frame_id,
@@ -243,6 +242,7 @@ class AgenticRuntime:
                     "child_frame_id": interrupted_child_frame_id,
                     "child_state_id": interrupted_child_state_id,
                     "tool_call_id": interruption.get("tool_call_id"),
+                    "tool_call_ids": interruption.get("tool_call_ids", []),
                     "tool_name": interruption.get("tool_name"),
                     "clarification_packet": interruption.get("clarification_packet"),
                     "summary": result.final_text or "Child frame needs clarification.",
@@ -334,8 +334,7 @@ class AgenticRuntime:
             child_execution_context.session_id or conversation_context.context_id,
             AgenticFrame(
                 frame_id=child_execution_context.frame_id or new_uuid(),
-                session_id=child_execution_context.session_id
-                or conversation_context.context_id,
+                session_id=child_execution_context.session_id or conversation_context.context_id,
                 state_id=child_state.value,
                 status="completed",
                 messages=messages,
@@ -346,9 +345,7 @@ class AgenticRuntime:
                 metadata={
                     "child_tool_name": tool_name,
                     "completed_state_status": child_result.status,
-                    "clarification_report": child_result.metadata.get(
-                        "clarification_report"
-                    ),
+                    "clarification_report": child_result.metadata.get("clarification_report"),
                 },
             ),
         )
@@ -545,7 +542,8 @@ class AgenticRuntime:
         answer_packet: ClarificationAnswerPacket,
         resolved_clarifications: list[dict[str, Any]] | None = None,
     ) -> AgenticRunResult:
-        if not frame.active_tool_call_id:
+        pending_tool_call_ids = _frame_pending_tool_call_ids(frame)
+        if not pending_tool_call_ids:
             return AgenticRunResult(
                 final_text="The saved agentic frame has no open tool call to resume.",
                 visited_states=[AgenticStateId(frame.state_id)],
@@ -562,7 +560,9 @@ class AgenticRuntime:
         )
         execution_context.conversation_context = conversation_context
         if resolved_clarifications is None and frame.clarification_packet is not None:
-            from my_digital_brain.clarification.interaction import resolved_clarifications_from_answers
+            from my_digital_brain.clarification.interaction import (
+                resolved_clarifications_from_answers,
+            )
 
             resolved_clarifications = resolved_clarifications_from_answers(
                 frame.clarification_packet,
@@ -584,12 +584,17 @@ class AgenticRuntime:
                 "resolved_clarifications": resolved_clarifications,
             },
         )
-        tool_message = {
-            "role": "tool",
-            "tool_call_id": frame.active_tool_call_id,
-            "content": tool_result.model_dump_json(exclude_none=True),
-        }
-        resumed_messages = [*frame.messages, tool_message]
+        resumed_messages = [
+            *frame.messages,
+            *[
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": tool_result.model_dump_json(exclude_none=True),
+                }
+                for tool_call_id in pending_tool_call_ids
+            ],
+        ]
         state_id = AgenticStateId(frame.state_id)
         state_result = self.state_runner.continue_state_from_messages(
             state_id=state_id,
@@ -817,6 +822,13 @@ class AgenticRuntime:
                 "tool_call_id": interruption.get("tool_call_id"),
                 "tool_name": interruption.get("tool_name"),
                 "session_continuation": interruption.get("session_continuation") or {},
+                "pending_tool_call_ids": [
+                    str(call.get("call_id"))
+                    for call in (interruption.get("session_continuation") or {}).get(
+                        "pending_tool_calls", []
+                    )
+                    if isinstance(call, dict) and call.get("call_id")
+                ],
             },
         )
         if execution_context.chat_store is not None:
@@ -825,6 +837,7 @@ class AgenticRuntime:
             "frame_id": frame.frame_id,
             "state_id": frame.state_id,
             "tool_call_id": frame.active_tool_call_id,
+            "tool_call_ids": list(frame.metadata.get("pending_tool_call_ids") or []),
             "tool_name": frame.active_tool_name,
             "clarification_packet": (
                 frame.clarification_packet.model_dump(mode="json", exclude_none=True)
@@ -889,3 +902,16 @@ class AgenticRuntime:
         return self.state_runner.history_service.source_conversation_context(
             source_text=fallback_text,
         )
+
+
+def _frame_pending_tool_call_ids(frame: Any) -> list[str]:
+    metadata = getattr(frame, "metadata", {}) or {}
+    ids = [str(value) for value in metadata.get("pending_tool_call_ids") or [] if value]
+    if ids:
+        return ids
+    continuation = metadata.get("session_continuation") or {}
+    return [
+        str(call.get("call_id"))
+        for call in continuation.get("pending_tool_calls", [])
+        if isinstance(call, dict) and call.get("call_id")
+    ] or ([str(frame.active_tool_call_id)] if frame.active_tool_call_id else [])

@@ -17,11 +17,12 @@ from my_digital_brain.agentic.contexts import (
 )
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
-from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.clarification.contracts import (
     ClarificationHandoffRequest,
     ClarificationSessionInput,
 )
+from my_digital_brain.clarification.toolbox import ClarificationToolService
+from my_digital_brain.core.owner_context import OwnerSnapshot
 
 
 GRAPH_UPDATE_CREATABLE_LABELS = {
@@ -83,6 +84,7 @@ class AgenticToolExecutionContext:
     agentic_runtime: Any | None = None
     conversation_context: Any | None = None
     current_payload: Any | None = None
+    reference_registry: Any | None = None
 
 
 class AgenticToolBindings:
@@ -375,6 +377,103 @@ class AgenticToolBindings:
                 details={"exception_type": exc.__class__.__name__},
             )
 
+    def _handle_lookup_candidates(
+        self,
+        candidate_ref: str,
+        entity_type: str,
+        display_name: str | None = None,
+        aliases: list[str] | None = None,
+        typed_identity_values: Any | None = None,
+        max_candidates: int = 5,
+    ) -> ToolResult:
+        if isinstance(typed_identity_values, list):
+            typed_identity_values = {
+                str(item.get("key")): list(item.get("values") or [])
+                for item in typed_identity_values
+                if isinstance(item, dict) and item.get("key")
+            }
+        result = self._clarification_tools().lookup_candidates(
+            candidate_ref=candidate_ref,
+            entity_type=entity_type,
+            display_name=display_name,
+            aliases=aliases,
+            typed_identity_values=typed_identity_values,
+            max_candidates=max_candidates,
+        )
+        self._sync_reference_registry()
+        return result
+
+    def _handle_get_candidate_context(
+        self,
+        refs: list[str],
+        include_relationships: bool = True,
+        include_evidence: bool = True,
+        limit: int = 5,
+    ) -> ToolResult:
+        result = self._clarification_tools().get_candidate_context(
+            refs=refs,
+            include_relationships=include_relationships,
+            include_evidence=include_evidence,
+            limit=limit,
+        )
+        self._sync_reference_registry()
+        return result
+
+    def _handle_get_relationship_context(
+        self,
+        from_ref: str,
+        to_ref: str,
+        relationship_type: str | None = None,
+        limit: int = 5,
+    ) -> ToolResult:
+        result = self._clarification_tools().get_relationship_context(
+            from_ref=from_ref,
+            to_ref=to_ref,
+            relationship_type=relationship_type,
+            limit=limit,
+        )
+        self._sync_reference_registry()
+        return result
+
+    def _handle_pick_one(self, **kwargs: Any) -> ToolResult:
+        return self._question_tool("pick_one", kwargs)
+
+    def _handle_pick_many(self, **kwargs: Any) -> ToolResult:
+        return self._question_tool("pick_many", kwargs)
+
+    def _handle_confirm(self, **kwargs: Any) -> ToolResult:
+        return self._question_tool("confirm", kwargs)
+
+    def _handle_ask_text(self, **kwargs: Any) -> ToolResult:
+        return self._question_tool("ask_text", kwargs)
+
+    def _handle_ask_text_or_audio(self, **kwargs: Any) -> ToolResult:
+        return self._question_tool("ask_text_or_audio", kwargs)
+
+    def _question_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
+        return self._clarification_tools().build_question(
+            tool_name=tool_name,
+            request=arguments,
+            frame_id=self.context.frame_id or self.context.session_id or "session-local",
+            tool_call_id=self.context.current_tool_call_id,
+            origin_state_id=self.context.state_id or "clarification_agent",
+        )
+
+    def _clarification_tools(self) -> ClarificationToolService:
+        registry = self.context.reference_registry or _registry_from_context(self.context)
+        self.context.reference_registry = registry
+        return ClarificationToolService(
+            graph_service=self.context.graph_service,
+            reference_registry=registry,
+            owner_manager=self.context.metadata.get("owner_manager"),
+            owner_graph_node_id=self.context.owner_id,
+        )
+
+    def _sync_reference_registry(self) -> None:
+        registry = self.context.reference_registry
+        if registry is not None:
+            self.context.metadata["reference_registry_snapshot"] = registry.snapshot()
+
     def _handle_get_context_package(
         self,
         node_id: str,
@@ -502,9 +601,7 @@ class AgenticToolBindings:
             )
             payload = _serialize(view)
             contacts = [
-                node
-                for node in payload.get("nodes", [])
-                if node.get("label") == "ContactPoint"
+                node for node in payload.get("nodes", []) if node.get("label") == "ContactPoint"
             ]
             return {"node_id": node_id, "contacts": contacts}
 
@@ -698,7 +795,12 @@ class AgenticToolBindings:
                 )
             refreshed = self._refresh_vectors(
                 "create_memory_log",
-                [log_id, *host_ids, *(involved_target_ids or []), *(relationship_context_target_ids or [])],
+                [
+                    log_id,
+                    *host_ids,
+                    *(involved_target_ids or []),
+                    *(relationship_context_target_ids or []),
+                ],
             )
             return _update_tool_result(
                 "create_memory_log",
@@ -908,9 +1010,8 @@ class AgenticToolBindings:
             return _update_exception_result("create_relationship_state", exc)
 
     def _refresh_vectors(self, tool_name: str, target_ids: list[str]) -> dict[str, Any]:
-        service = (
-            self.context.vectorization_service
-            or getattr(self.context.ingestion_service, "vectorization_service", None)
+        service = self.context.vectorization_service or getattr(
+            self.context.ingestion_service, "vectorization_service", None
         )
         if service is None:
             return {
@@ -931,7 +1032,9 @@ class AgenticToolBindings:
                 scopes = [payload["collection"]]
             return {
                 "refreshed_vector_scopes": scopes or [],
-                "diagnostics": [{"level": "info", "code": "vector_refresh_done", "result": payload}],
+                "diagnostics": [
+                    {"level": "info", "code": "vector_refresh_done", "result": payload}
+                ],
             }
         except Exception as exc:
             return {
@@ -973,7 +1076,9 @@ def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPack
     for index, package in enumerate(packages[:5], start=1):
         if isinstance(package, dict):
             package_id = str(package.get("package_id") or f"retrieval_package_{index}")
-            aliases[package_id] = str(package.get("target_id") or package.get("seed_id") or package_id)
+            aliases[package_id] = str(
+                package.get("target_id") or package.get("seed_id") or package_id
+            )
             candidate_matches.append(package)
     hits = result.get("hits") or []
     for hit in hits[:10]:
@@ -1026,6 +1131,20 @@ def _invalid_handoff_refs(
     return sorted(referenced - allowed)
 
 
+def _registry_from_context(
+    context: AgenticToolExecutionContext,
+) -> Any:
+    from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
+
+    snapshots: list[dict[str, Any]] = []
+    _collect_registry_snapshots(_serialize(context.current_payload), snapshots)
+    _collect_registry_snapshots(context.metadata, snapshots)
+    if not snapshots:
+        raise ValueError("The active run reference registry is not present in the context.")
+    snapshot = snapshots[0]
+    return RunReferenceRegistry.from_snapshot(snapshot)
+
+
 def _collect_registry_snapshots(value: Any, output: list[dict[str, Any]]) -> None:
     if isinstance(value, dict):
         snapshot = value.get("reference_registry_snapshot")
@@ -1036,7 +1155,6 @@ def _collect_registry_snapshots(value: Any, output: list[dict[str, Any]]) -> Non
     elif isinstance(value, list):
         for child in value:
             _collect_registry_snapshots(child, output)
-
 
 
 def _update_tool_result(
@@ -1145,7 +1263,7 @@ def _parse_json_object(tool_name: str, value: str) -> dict[str, Any] | ToolResul
             tool_name,
             "invalid_json_object",
             "properties_json must decode to an object.",
-            "Retry with a JSON object, for example {\"status\":\"active\"}.",
+            'Retry with a JSON object, for example {"status":"active"}.',
             retryable=True,
             details={"decoded_type": type(parsed).__name__},
         )
@@ -1181,7 +1299,10 @@ def _serialize(value: Any) -> Any:
 
 def _master_history_messages(conversation: Any) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
-    for message in [*(getattr(conversation, "history", []) or []), getattr(conversation, "current_message", None)]:
+    for message in [
+        *(getattr(conversation, "history", []) or []),
+        getattr(conversation, "current_message", None),
+    ]:
         if message is None:
             continue
         content = str(getattr(message, "content", "") or "").strip()
@@ -1201,7 +1322,6 @@ def _missing_dependency(tool_name: str, dependency: str) -> ToolResult:
         retryable=False,
         details={"missing_dependency": dependency},
     )
-
 
 
 def _exception_result(tool_name: str, exc: Exception) -> ToolResult:

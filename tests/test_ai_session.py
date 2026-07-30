@@ -14,7 +14,7 @@ from my_digital_brain.ai.session import (
     LLMSessionCompleted,
     LLMSessionRequest,
     LLMSessionRunner,
-    continuation_with_tool_result,
+    continuation_with_tool_results,
 )
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tools.base import build_tool_index
@@ -184,9 +184,9 @@ def test_pending_tool_can_resume_from_the_same_transcript() -> None:
     )
 
     assert isinstance(first, LLMSessionAwaitingTool)
-    continuation = continuation_with_tool_result(
+    continuation = continuation_with_tool_results(
         first.continuation,
-        ToolResult(status="ok", output="answer"),
+        {"call-1": ToolResult(status="ok", output="answer")},
     )
     resumed = LLMSessionRunner(transport).run(
         LLMSessionRequest(
@@ -214,13 +214,9 @@ def test_multiple_pending_tools_keep_chat_completion_transcript_valid() -> None:
             ChatMessage(role="assistant", content="all clarifications answered"),
         ]
     )
-    answers = iter(["first answer", "second answer"])
 
     def ask() -> ToolResult:
-        try:
-            return ToolResult(status="pending", output=next(answers))
-        except StopIteration:
-            return ToolResult(status="ok", output="answered")
+        return ToolResult(status="pending", output="question")
 
     request = LLMSessionRequest(
         system_prompt="Ask both questions.",
@@ -230,11 +226,17 @@ def test_multiple_pending_tools_keep_chat_completion_transcript_valid() -> None:
     )
     first = LLMSessionRunner(transport).run(request)
     assert isinstance(first, LLMSessionAwaitingTool)
-    assert first.continuation.pending_tool_call.call_id == "call-1"
+    assert [call.call_id for call in first.continuation.pending_tool_calls] == [
+        "call-1",
+        "call-2",
+    ]
 
-    second_continuation = continuation_with_tool_result(
+    second_continuation = continuation_with_tool_results(
         first.continuation,
-        ToolResult(status="ok", output="first answer"),
+        {
+            "call-1": ToolResult(status="ok", output="first answer"),
+            "call-2": ToolResult(status="ok", output="second answer"),
+        },
     )
     second = LLMSessionRunner(transport).run(
         request.model_copy(
@@ -244,23 +246,9 @@ def test_multiple_pending_tools_keep_chat_completion_transcript_valid() -> None:
             }
         )
     )
-    assert isinstance(second, LLMSessionAwaitingTool)
-    assert second.continuation.pending_tool_call.call_id == "call-2"
-    third_continuation = continuation_with_tool_result(
-        second.continuation,
-        ToolResult(status="ok", output="second answer"),
-    )
-    third = LLMSessionRunner(transport).run(
-        request.model_copy(
-            update={
-                "messages": third_continuation.messages,
-                "continuation": third_continuation,
-            }
-        )
-    )
-    assert isinstance(third, LLMSessionCompleted)
-    assert third.content == "all clarifications answered"
-    tool_messages = [message for message in third.messages if message.role == "tool"]
+    assert isinstance(second, LLMSessionCompleted)
+    assert second.content == "all clarifications answered"
+    tool_messages = [message for message in second.messages if message.role == "tool"]
     assert {message.tool_call_id for message in tool_messages} == {"call-1", "call-2"}
 
 
@@ -289,31 +277,105 @@ def test_pending_batch_preserves_remaining_calls_until_resume() -> None:
     )
 
     assert isinstance(first, LLMSessionAwaitingTool)
-    assert [call.call_id for call in first.continuation.remaining_tool_calls] == ["call-2"]
+    assert first.continuation.pending_tool_calls[0].call_id == "call-1"
+    assert seen == ["recorded"]
+    resumed_continuation = continuation_with_tool_results(
+        first.continuation,
+        {"call-1": ToolResult(status="ok", output="answered")},
+    )
     resumed = LLMSessionRunner(transport).run(
         LLMSessionRequest(
             system_prompt="Resolve both calls.",
-            messages=[
-                *first.messages,
-                ChatMessage(
-                    role="tool",
-                    tool_call_id="call-1",
-                    content=ToolResult(status="ok", output="answered").model_dump_json(),
-                ),
-            ],
+            messages=resumed_continuation.messages,
             toolbox=_toolbox("ask", "record"),
             tools_mapping={
                 "ask": lambda: ToolResult(status="pending", output="question"),
                 "record": lambda: seen.append("recorded"),
             },
             session_id="batch-session",
-            continuation=first.continuation,
+            continuation=resumed_continuation,
         )
     )
 
     assert isinstance(resumed, LLMSessionCompleted)
     assert seen == ["recorded"]
     assert resumed.content == "all done"
+
+
+def test_six_parallel_question_calls_are_rejected_without_dropping_calls() -> None:
+    calls = [_call(f"question-{index}", "question") for index in range(6)]
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", tool_calls=calls),
+            ChatMessage(role="assistant", content="I will split the questions."),
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Ask questions.",
+            toolbox=_toolbox("question"),
+            tools_mapping={
+                "question": lambda: ToolResult(
+                    status="pending",
+                    output="question",
+                    data={"interaction_group": "clarification_questions"},
+                )
+            },
+        )
+    )
+
+    assert isinstance(result, LLMSessionCompleted)
+    errors = [message for message in result.messages if message.role == "tool"]
+    assert len(errors) == 6
+    assert all("clarification_packet_limit_exceeded" in message.content for message in errors)
+
+
+def test_parallel_question_calls_share_one_pending_packet() -> None:
+    packet = {
+        "frame_id": "frame-1",
+        "origin_state_id": "clarification_agent",
+        "reason": "Resolve the supplied doubt.",
+        "questions": [
+            {
+                "question": "Who is Amos?",
+                "kind": "missing_attribute",
+                "response_mode": "text_or_audio",
+            }
+        ],
+    }
+    transport = ScriptedTransport(
+        [
+            ChatMessage(
+                role="assistant",
+                tool_calls=[_call("question-1", "question"), _call("question-2", "question")],
+            )
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Ask questions.",
+            toolbox=_toolbox("question"),
+            tools_mapping={
+                "question": lambda: ToolResult(
+                    status="pending",
+                    output="question",
+                    data={
+                        "interaction_group": "clarification_questions",
+                        "clarification_packet": packet,
+                    },
+                )
+            },
+        )
+    )
+
+    assert isinstance(result, LLMSessionAwaitingTool)
+    assert len(result.continuation.pending_tool_calls) == 2
+    assert len(result.continuation.pending_interaction["clarification_packet"]["questions"]) == 2
+    assert result.continuation.pending_interaction["clarification_packet"][
+        "tool_call_id"
+    ].startswith("clarification-group-")
 
 
 def test_invalid_structured_output_gets_one_repair_turn() -> None:

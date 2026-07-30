@@ -8,6 +8,13 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from my_digital_brain.clarification.contracts import (
+    ClarificationHistoryMessage,
+    ClarificationPacket,
+)
+from my_digital_brain.clarification.interaction import render_clarification_questions
+from my_digital_brain.core.ids import new_uuid
+
 from ..models import ToolResult
 from ..schemas import ChatMessage
 from ..structured_schema import strict_response_format
@@ -89,7 +96,7 @@ class LLMSessionRunner:
                         "The model returned tool calls but this session has no tool mapping.",
                         last_metadata,
                     )
-                pending, remaining, new_events, new_messages = self._execute_batch(
+                pending, pending_interaction, new_events, new_messages = self._execute_batch(
                     request,
                     tool_calls,
                     messages,
@@ -97,12 +104,12 @@ class LLMSessionRunner:
                 events.extend(new_events)
                 messages = new_messages
                 executed += len(tool_calls)
-                if pending is not None:
+                if pending:
                     continuation = LLMSessionContinuation(
                         session_id=session_id,
                         messages=messages,
-                        pending_tool_call=pending,
-                        remaining_tool_calls=remaining,
+                        pending_tool_calls=pending,
+                        pending_interaction=pending_interaction,
                         tool_events=events,
                         tool_calls_used=executed,
                         metadata=dict(request.metadata),
@@ -169,11 +176,15 @@ class LLMSessionRunner:
         session_id = request.session_id or continuation.session_id
         messages = list(request.messages or continuation.messages)
         events = list(continuation.tool_events)
-        if not any(
-            message.role == "tool"
-            and message.tool_call_id == continuation.pending_tool_call.call_id
+        pending_ids = {call.call_id for call in continuation.pending_tool_calls}
+        completed_ids = {
+            message.tool_call_id
             for message in messages
-        ):
+            if message.role == "tool"
+            and message.tool_call_id in pending_ids
+            and not _tool_message_is_pending(message)
+        }
+        if completed_ids != pending_ids:
             return LLMSessionAwaitingTool(
                 session_id=session_id,
                 messages=messages,
@@ -181,38 +192,6 @@ class LLMSessionRunner:
                 tool_events=events,
             )
         executed = continuation.tool_calls_used
-        for pending in continuation.remaining_tool_calls:
-            tool_call = {
-                "id": pending.call_id,
-                "function": {
-                    "name": pending.name,
-                    "arguments": json.dumps(pending.arguments, ensure_ascii=True),
-                },
-            }
-            next_pending, remaining, new_events, messages = self._execute_batch(
-                request,
-                [tool_call],
-                messages,
-            )
-            events.extend(new_events)
-            executed += 1
-            if next_pending is not None:
-                next_continuation = LLMSessionContinuation(
-                    session_id=session_id,
-                    messages=messages,
-                    pending_tool_call=next_pending,
-                    remaining_tool_calls=remaining,
-                    tool_events=events,
-                    tool_calls_used=executed,
-                    metadata=dict(continuation.metadata),
-                )
-                return LLMSessionAwaitingTool(
-                    session_id=session_id,
-                    messages=messages,
-                    continuation=next_continuation,
-                    tool_events=events,
-                )
-
         resumed_request = request.model_copy(
             update={"continuation": None, "session_id": session_id}
         )
@@ -251,41 +230,69 @@ class LLMSessionRunner:
         raw_calls: list[Any],
         messages: list[ChatMessage],
     ) -> tuple[
-        PendingToolCall | None,
         list[PendingToolCall],
+        dict[str, Any],
         list[ToolExecutionEvent],
         list[ChatMessage],
     ]:
         events: list[ToolExecutionEvent] = []
-        remaining: list[PendingToolCall] = []
-        for index, raw_call in enumerate(raw_calls):
+        pending_calls: list[PendingToolCall] = []
+        pending_events: list[ToolExecutionEvent] = []
+        for raw_call in raw_calls:
             pending_call = _pending_tool_call(raw_call)
             result = self.tool_executor.execute(pending_call, request.tools_mapping)
-            events.append(
-                ToolExecutionEvent(
-                    call_id=pending_call.call_id,
-                    name=pending_call.name,
-                    arguments=pending_call.arguments,
-                    result=result,
-                )
+            event = ToolExecutionEvent(
+                call_id=pending_call.call_id,
+                name=pending_call.name,
+                arguments=pending_call.arguments,
+                result=result,
             )
+            events.append(event)
             if result.status == "pending":
-                remaining = [_pending_tool_call(call) for call in raw_calls[index + 1 :]]
-                for deferred in remaining:
-                    _upsert_tool_message(
-                        messages,
-                        deferred.call_id,
-                        ToolResult(
-                            status="deferred",
-                            output=(
-                                "This tool call is deferred until the current external "
-                                "interaction is answered."
-                            ),
-                        ),
-                    )
-                return pending_call, remaining, events, messages
+                pending_calls.append(pending_call)
+                pending_events.append(event)
             _upsert_tool_message(messages, pending_call.call_id, result)
-        return None, remaining, events, messages
+        if _question_batch_overflow(pending_events):
+            message = (
+                "This assistant turn requested more than five clarification questions. "
+                "No question was discarded; split the questions across later turns."
+            )
+            details = {
+                "requested_question_count": len(pending_events),
+                "tool_call_ids": [call.call_id for call in pending_calls],
+            }
+            for event in pending_events:
+                event.result = ToolResult(
+                    status="error",
+                    output=message,
+                    error={
+                        "code": "clarification_packet_limit_exceeded",
+                        "message": message,
+                        "hint": "Retry with at most five questioning tool calls in this turn.",
+                        "retryable": True,
+                        "details": details,
+                    },
+                )
+                _upsert_tool_message(messages, event.call_id, event.result)
+            return [], {}, events, messages
+
+        interaction = {
+            "tool_call_ids": [call.call_id for call in pending_calls],
+            "results": [
+                event.result.model_dump(mode="json", exclude_none=True) for event in pending_events
+            ],
+        }
+        packet = _combined_clarification_packet(pending_events)
+        if packet is not None:
+            interaction["clarification_packet"] = packet
+            for event in pending_events:
+                event.result.data = {
+                    **(event.result.data or {}),
+                    "clarification_packet": packet,
+                    "tool_call_ids": [call.call_id for call in pending_calls],
+                }
+                _upsert_tool_message(messages, event.call_id, event.result)
+        return pending_calls, interaction, events, messages
 
     def _cap_reached(self, request: LLMSessionRequest, executed: int) -> bool:
         limit = request.max_tool_calls
@@ -338,6 +345,63 @@ def _tool_message(call_id: str, result: ToolResult) -> ChatMessage:
         tool_call_id=call_id,
         content=result.model_dump_json(exclude_none=True),
     )
+
+
+def _tool_message_is_pending(message: ChatMessage) -> bool:
+    try:
+        payload = json.loads(message.content or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("status") == "pending"
+
+
+def _question_batch_overflow(events: list[ToolExecutionEvent]) -> bool:
+    return (
+        sum(
+            1
+            for event in events
+            if isinstance(event.result.data, dict)
+            and event.result.data.get("interaction_group") == "clarification_questions"
+        )
+        > 5
+    )
+
+
+def _combined_clarification_packet(
+    events: list[ToolExecutionEvent],
+) -> dict[str, Any] | None:
+    packets: list[ClarificationPacket] = []
+    for event in events:
+        raw = event.result.data if isinstance(event.result.data, dict) else {}
+        packet = raw.get("clarification_packet")
+        if packet is None:
+            continue
+        packets.append(ClarificationPacket.model_validate(packet))
+    if not packets:
+        return None
+    first = packets[0]
+    combined = first.model_copy(
+        update={
+            "packet_id": new_uuid(),
+            "tool_call_id": (
+                first.tool_call_id if len(packets) == 1 else f"clarification-group-{new_uuid()}"
+            ),
+            "tool_name": "clarification_questions",
+            "questions": [question for packet in packets for question in packet.questions],
+            "target_refs": list(
+                dict.fromkeys(ref for packet in packets for ref in packet.target_refs)
+            ),
+            "history_delta": [],
+        },
+        deep=True,
+    )
+    combined.history_delta = [
+        ClarificationHistoryMessage(
+            role="assistant",
+            content=render_clarification_questions(combined),
+        )
+    ]
+    return combined.model_dump(mode="json", exclude_none=True)
 
 
 def _upsert_tool_message(

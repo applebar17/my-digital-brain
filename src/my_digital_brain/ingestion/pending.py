@@ -14,8 +14,11 @@ def pending_from_session(
     *,
     stage: str,
 ) -> IngestionPendingInteraction:
-    pending_call = result.continuation.pending_tool_call
-    packet = _clarification_packet(result.tool_events, pending_call.call_id)
+    pending_calls = result.continuation.pending_tool_calls
+    pending_call = pending_calls[0]
+    packet = result.continuation.pending_interaction.get("clarification_packet")
+    if not isinstance(packet, dict):
+        packet = _clarification_packet(result.tool_events, pending_call.call_id)
     return IngestionPendingInteraction(
         stage=stage,
         session_id=result.session_id,
@@ -24,7 +27,11 @@ def pending_from_session(
         messages=result.messages,
         clarification_packet=packet,
         continuation=result.continuation,
-        metadata={"source": "llm_session"},
+        metadata={
+            "source": "llm_session",
+            "tool_call_ids": [call.call_id for call in pending_calls],
+            "pending_interaction": result.continuation.pending_interaction,
+        },
     )
 
 
@@ -38,9 +45,7 @@ def pending_from_agentic(
     interruption = result.metadata.get("interruption") or {}
     packet = interruption.get("clarification_packet")
     messages = [
-        message
-        for message in interruption.get("messages") or []
-        if isinstance(message, dict)
+        message for message in interruption.get("messages") or [] if isinstance(message, dict)
     ]
     return IngestionPendingInteraction(
         stage=stage,

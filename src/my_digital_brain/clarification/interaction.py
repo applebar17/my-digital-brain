@@ -66,13 +66,13 @@ def build_clarification_packet(
                     )
                     for option in question.get("options", [])
                     if str(option.get("label") or "").strip()
-                ][:5],
+                ],
                 target_refs=list(question.get("target_refs") or []),
                 evidence_refs=list(question.get("evidence_refs") or []),
                 allow_custom_answer=bool(question.get("allow_custom_answer", True)),
                 required=bool(question.get("required", True)),
             )
-            for question in questions[:5]
+            for question in questions
             if str(question.get("question") or "").strip()
         ],
         target_refs=target_refs or [],

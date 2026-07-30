@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from collections.abc import Iterable
 
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.state import AgenticStateConfig
@@ -43,7 +43,9 @@ class AgenticToolRegistry:
         except KeyError as exc:
             raise ValueError(f"Agentic tool is not registered: {name}") from exc
 
-    def definitions_for_state(self, state_config: AgenticStateConfig) -> list[AgenticToolDefinition]:
+    def definitions_for_state(
+        self, state_config: AgenticStateConfig
+    ) -> list[AgenticToolDefinition]:
         state_id = _state_value(state_config.state_id)
         forbidden = set(state_config.forbidden_tools)
         definitions: list[AgenticToolDefinition] = []
@@ -177,6 +179,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             },
             required=["doubts"],
         ),
+        *_clarification_tool_definitions(clarification_states),
         *_graph_read_definitions(
             memory_query_states,
             memory_ingestion_states,
@@ -214,7 +217,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 ),
                 "media_refs": array_property("MediaAsset ids or external media refs."),
                 "log_kind": optional_string_property("Log kind, such as update or correction."),
-                "source_kind": optional_string_property("Source kind, such as chat or user_update."),
+                "source_kind": optional_string_property(
+                    "Source kind, such as chat or user_update."
+                ),
                 "happened_at": optional_string_property("Optional ISO event/update time."),
             },
             required=["log_text", "host_target_ids"],
@@ -247,7 +252,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "relationship_type": string_property("Supported relationship type."),
                 "from_id": string_property("Source graph node id."),
                 "to_id": string_property("Target graph node id."),
-                "properties_json": string_property("JSON object containing relationship properties."),
+                "properties_json": string_property(
+                    "JSON object containing relationship properties."
+                ),
             },
             required=["relationship_type", "from_id", "to_id", "properties_json"],
         ),
@@ -261,6 +268,157 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "make_current": boolean_property("Mark this state as current.", default=True),
             },
             required=["context_id", "properties_json", "make_current"],
+        ),
+    ]
+
+
+def _clarification_tool_definitions(
+    clarification_states: list[AgenticStateId],
+) -> list[AgenticToolDefinition]:
+    question_properties = {
+        "question": string_property("User-facing question to ask."),
+        "kind": {
+            "type": "string",
+            "enum": [
+                "identity_no_match",
+                "identity_ambiguous",
+                "missing_attribute",
+                "confirm_proposal",
+                "correct_conflict",
+                "relationship_target",
+                "explicit_discard",
+            ],
+            "description": "Semantic clarification kind.",
+        },
+        "reason": string_property("Why this question is needed."),
+        "target_refs": array_property("Model-facing target refs from the supplied context."),
+        "evidence_refs": array_property("Model-facing evidence refs from the supplied context."),
+        "allow_custom_answer": boolean_property(
+            "Allow a custom text or audio correction.",
+            default=True,
+        ),
+    }
+    option_property = {
+        "type": "array",
+        "description": "At most five choices. Do not create an Other option.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "label": string_property("Compact option label."),
+                "summary": optional_string_property("Compact context summary."),
+                "target_ref": optional_string_property(
+                    "Supplied model-facing ref, when applicable."
+                ),
+                "recommended": boolean_property(
+                    "Whether this option is recommended.", default=False
+                ),
+            },
+            "required": ["label", "summary", "target_ref", "recommended"],
+            "additionalProperties": False,
+        },
+        "minItems": 1,
+        "maxItems": 5,
+    }
+
+    def question(name: str, description: str, response_hint: str) -> AgenticToolDefinition:
+        return _definition(
+            name,
+            f"{description} {response_hint} Ask at most five questions in one assistant turn; "
+            "parallel calls become one packet. Do not create an Other option.",
+            states=clarification_states,
+            properties={**question_properties, "options": option_property},
+            required=[*question_properties, "options"],
+        )
+
+    return [
+        _definition(
+            "lookup_candidates",
+            "Run a bounded structured identity lookup. The backend executes the search; never generate Cypher. "
+            "Use five candidates by default and no more than ten.",
+            states=clarification_states,
+            properties={
+                "candidate_ref": string_property("Known candidate ref being investigated."),
+                "entity_type": string_property("Taxonomy label such as Person or Place."),
+                "display_name": optional_string_property("Mentioned display name."),
+                "aliases": array_property("Mentioned aliases."),
+                "typed_identity_values": {
+                    "type": "array",
+                    "description": "Typed identity values as key/value entries.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": string_property("Identity field name."),
+                            "values": array_property("Identity values."),
+                        },
+                        "required": ["key", "values"],
+                        "additionalProperties": False,
+                    },
+                },
+                "max_candidates": integer_property(
+                    "Maximum candidates to return.",
+                    default=5,
+                    maximum=10,
+                ),
+            },
+            required=[
+                "candidate_ref",
+                "entity_type",
+                "display_name",
+                "aliases",
+                "typed_identity_values",
+                "max_candidates",
+            ],
+        ),
+        _definition(
+            "get_candidate_context",
+            "Retrieve bounded read-only context for supplied model-facing node refs. Persisted graph IDs are not accepted.",
+            states=clarification_states,
+            properties={
+                "refs": array_property("Known model-facing node refs."),
+                "include_relationships": boolean_property(
+                    "Include compact relationships.", default=True
+                ),
+                "include_evidence": boolean_property("Include compact evidence.", default=True),
+                "limit": integer_property("Maximum context items per ref.", default=5, maximum=20),
+            },
+            required=["refs", "include_relationships", "include_evidence", "limit"],
+        ),
+        _definition(
+            "get_relationship_context",
+            "Retrieve bounded read-only relationship context between supplied model-facing node refs.",
+            states=clarification_states,
+            properties={
+                "from_ref": string_property("Supplied model-facing source node ref."),
+                "to_ref": string_property("Supplied model-facing target node ref."),
+                "relationship_type": optional_string_property("Optional relationship type filter."),
+                "limit": integer_property("Maximum relationships.", default=5, maximum=20),
+            },
+            required=["from_ref", "to_ref", "relationship_type", "limit"],
+        ),
+        question(
+            "pick_one",
+            "Ask the user to select exactly one supplied option.",
+            "Custom answers remain available unless explicitly disabled.",
+        ),
+        question(
+            "pick_many",
+            "Ask the user to select one or more supplied options.",
+            "Custom answers remain available unless explicitly disabled.",
+        ),
+        question(
+            "confirm",
+            "Ask the user to confirm a proposal using exactly two supplied options.",
+            "Use this only for a genuine confirmation question.",
+        ),
+        question(
+            "ask_text",
+            "Ask the user for a free-form clarification.",
+            "Text and audio answers are accepted by the channel contract.",
+        ),
+        question(
+            "ask_text_or_audio",
+            "Ask the user for a free-form clarification with text or audio.",
+            "The backend normalizes either modality for the child session.",
         ),
     ]
 

@@ -373,6 +373,32 @@ Activities:
   specific responses.
 - Resolve the final names and payload shape for selection tools.
 
+Locked Wave 2 limits and interaction behavior:
+
+- `lookup_candidates` accepts the candidate ref, entity type, display name,
+  aliases, typed identity values, and a bounded candidate limit. The default is
+  five candidates and the hard maximum is ten.
+- `get_candidate_context` and `get_relationship_context` accept model-facing
+  refs only and return bounded projections without persisted graph IDs.
+- The five questioning tools are exposed only to `CLARIFICATION_AGENT` and
+  enforce their semantic response mode in the backend mapping.
+- Parallel questioning calls from one assistant turn are aggregated into one
+  packet. A packet contains at most five questions.
+- The LLM is instructed in both the clarification-agent prompt and questioning
+  tool descriptions that five is the packet limit. The generic session tool
+  budget remains 50 and is independent from the packet limit.
+- If more than five questioning calls are returned in one assistant turn, the
+  backend returns a retryable structured error for every call, names the full
+  call set, and creates no partial packet. The model must split the questions
+  in a later turn; no question is silently discarded.
+- The complete assistant tool batch is executed before an external pause.
+  Read-only results and all pending question calls remain in the same
+  transcript. Resumption supplies one result for every pending call in the
+  grouped continuation.
+- A grouped continuation is the canonical session contract for external
+  interactions. It contains the pending call list, interaction payload,
+  transcript, tool events, and session metadata.
+
 Exit criteria:
 
 - The clarification agent can query context without generating Cypher.
@@ -529,11 +555,9 @@ This requirement does not introduce:
 The following decisions remain open and must be resolved during implementation
 without weakening the mandatory requirements above:
 
-1. The precise graph lookup fields and limits exposed by
-   `lookup_candidates` and `get_candidate_context`.
-2. Whether the clarification agent receives the entire master history or a
+1. Whether the clarification agent receives the entire master history or a
    backend-built bounded projection when context limits require it.
-3. The retention and expiry policy for abandoned clarification sessions.
+2. The retention and expiry policy for abandoned clarification sessions.
 
 These are implementation and product-detail decisions. They must not become
 new deterministic pipeline gates or create parallel clarification flows.

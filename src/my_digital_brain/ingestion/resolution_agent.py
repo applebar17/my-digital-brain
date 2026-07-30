@@ -17,7 +17,7 @@ from my_digital_brain.ai.session import (
     LLMSessionCompleted,
     LLMSessionContinuation,
     LLMSessionRequest,
-    continuation_with_tool_result,
+    continuation_with_tool_results,
 )
 from my_digital_brain.clarification.contracts import ClarificationHandoffRequest
 from my_digital_brain.core.owner_context import owner_prompt_block
@@ -235,7 +235,7 @@ class LLMResolutionProposalAgent:
 
         if not context.reference_registry_snapshot:
             raise ValueError("Node resolution requires the active reference registry snapshot.")
-        pending_call = continuation.pending_tool_call
+        pending_call = continuation.pending_tool_calls[0]
         doubts = pending_call.arguments.get("doubts") or []
         candidate_ref = ""
         if doubts and isinstance(doubts[0], dict):
@@ -265,7 +265,10 @@ class LLMResolutionProposalAgent:
                 "answer": answer_text.strip(),
             },
         )
-        resumed = continuation_with_tool_result(continuation, tool_result)
+        resumed = continuation_with_tool_results(
+            continuation,
+            {call.call_id: tool_result for call in continuation.pending_tool_calls},
+        )
         completed_results, completed_maps = self._continuation_batches(continuation)
         proposal = self._run_proposals(
             step=ResolutionStep.NODE,

@@ -272,8 +272,8 @@ def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
     )
 
     assert isinstance(result, LLMSessionAwaitingTool)
-    assert result.continuation.pending_tool_call.name == "ask_clarification"
-    assert result.continuation.pending_tool_call.call_id == "clarify-1"
+    assert result.continuation.pending_tool_calls[0].name == "ask_clarification"
+    assert result.continuation.pending_tool_calls[0].call_id == "clarify-1"
 
 
 def test_resolution_agent_resumes_the_same_session_after_clarification() -> None:

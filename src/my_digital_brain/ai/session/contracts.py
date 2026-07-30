@@ -70,8 +70,8 @@ class LLMSessionContinuation(BaseModel):
 
     session_id: str
     messages: list[ChatMessage]
-    pending_tool_call: PendingToolCall
-    remaining_tool_calls: list[PendingToolCall] = Field(default_factory=list)
+    pending_tool_calls: list[PendingToolCall] = Field(min_length=1)
+    pending_interaction: dict[str, Any] = Field(default_factory=dict)
     tool_events: list[ToolExecutionEvent] = Field(default_factory=list)
     tool_calls_used: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)

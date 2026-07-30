@@ -266,15 +266,21 @@ def default_state_configs() -> dict[AgenticStateId, AgenticStateConfig]:
         ),
         AgenticStateId.CLARIFICATION_AGENT: AgenticStateConfig(
             state_id=AgenticStateId.CLARIFICATION_AGENT,
-            purpose="Resolve caller-supplied doubts through read-only context and user interaction.",
+            purpose=(
+                "Resolve caller-supplied doubts through read-only context and user interaction."
+            ),
             prompt_id="clarification_agent",
             required_context_type="ClarificationSessionInput",
             produced_context_type="ClarificationResolutionReport",
             allowed_tools=[
-                "get_context_package",
-                "get_entity_detail",
-                "get_neighborhood_view",
-                "get_target_evidence",
+                "lookup_candidates",
+                "get_candidate_context",
+                "get_relationship_context",
+                "pick_one",
+                "pick_many",
+                "confirm",
+                "ask_text",
+                "ask_text_or_audio",
             ],
             forbidden_tools=[
                 "ask_clarification",

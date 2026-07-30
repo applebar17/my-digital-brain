@@ -436,11 +436,11 @@ class AgenticStateRunner:
     ) -> AgenticStateRunResult:
         frame_id = invocation.execution_context.frame_id or new_uuid()
         messages = [_chat_message_to_frame_dict(message) for message in result.messages]
-        pending_result = result.continuation.pending_tool_call
-        packet = None
-        pending_events = [
-            event for event in result.tool_events if event.call_id == pending_result.call_id
-        ]
+        pending_results = result.continuation.pending_tool_calls
+        pending_result = pending_results[0]
+        packet = result.continuation.pending_interaction.get("clarification_packet")
+        pending_ids = {call.call_id for call in pending_results}
+        pending_events = [event for event in result.tool_events if event.call_id in pending_ids]
         pending_data = (
             pending_events[-1].result.data
             if pending_events and isinstance(pending_events[-1].result.data, dict)
@@ -488,6 +488,7 @@ class AgenticStateRunner:
                     ),
                     "tool_call_id": pending_result.call_id,
                     "tool_name": pending_result.name,
+                    "tool_call_ids": [call.call_id for call in pending_results],
                     "messages": messages,
                     "session_continuation": self._session_continuation_metadata(
                         result.continuation,
@@ -499,21 +500,17 @@ class AgenticStateRunner:
             },
         )
 
-
     @staticmethod
     def _session_continuation_metadata(continuation: Any) -> dict[str, Any]:
         """Persist resumable tool state without duplicating the transcript."""
 
         return {
             "session_id": continuation.session_id,
-            "pending_tool_call": continuation.pending_tool_call.model_dump(
-                mode="json",
-                exclude_none=True,
-            ),
-            "remaining_tool_calls": [
+            "pending_tool_calls": [
                 call.model_dump(mode="json", exclude_none=True)
-                for call in continuation.remaining_tool_calls
+                for call in continuation.pending_tool_calls
             ],
+            "pending_interaction": dict(continuation.pending_interaction),
             "tool_events": [
                 event.model_dump(mode="json", exclude_none=True)
                 for event in continuation.tool_events

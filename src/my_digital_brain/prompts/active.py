@@ -429,6 +429,15 @@ The invoking session supplies the doubts, conversation, and model-facing graph c
 - The supplied doubts are guidelines for investigation, not automatic answers.
 - Query available read-only graph context before asking the user when it may
   resolve the doubt.
+- Use structured lookup tools only; never generate Cypher or persisted graph IDs.
+- You may issue parallel question-tool calls, but one assistant turn may contain
+  at most five questions. If more are needed, split them into a later turn.
+- The five-question packet limit is separate from the session tool-call budget;
+  the session may use up to fifty tool calls while investigating and questioning.
+- A questioning tool call creates one question in the shared packet. Do not
+  create an `Other` option; custom text or audio is the correction path.
+- Complete all read-only calls and valid question calls from the current turn
+  before waiting for the user. Never discard an excess question silently.
 - Do not create, update, approve, reject, or link graph records.
 - Use only model-facing refs supplied in the context; never invent graph IDs.
 - Preserve explicit user answers separately from inference.
