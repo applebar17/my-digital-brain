@@ -19,7 +19,6 @@ from my_digital_brain.ai.session import (
     LLMSessionRunner,
 )
 from my_digital_brain.api.routes import chat as chat_routes
-from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatResponseStatus,
@@ -30,9 +29,10 @@ from my_digital_brain.chat.models import (
     ConversationMessage,
     IncomingChatMessage,
 )
-from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.clarification.contracts import ClarificationPacket
+from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.config import Settings
 
 
@@ -297,6 +297,10 @@ def test_agentic_runtime_mode_returns_direct_assistant_response_and_persists_it(
     assert response.metadata["visited_states"] == ["conversation_entry"]
     assert detail.messages[-1].role == "assistant"
     assert detail.messages[-1].text == "I can help with that."
+    assert detail.session.metadata["master_llm_history"] == [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "I can help with that."},
+    ]
 
 
 def test_agentic_ingestion_runs_without_pending_process_surface() -> None:
@@ -375,6 +379,9 @@ def test_clarification_answer_endpoint_validates_and_resumes_agentic_frame() -> 
     assert messages[-2].metadata["ui_hidden"] is True
     assert messages[-2].metadata["message_kind"] == "clarification_answer"
     assert store.get_agentic_frame(packet.frame_id).status == "completed"
+    master_history = store.get_session(session.session_id).metadata["master_llm_history"]
+    assert {"role": "assistant", "content": "Which Marco do you mean?"} in master_history
+    assert {"role": "user", "content": "Marco from university"} in master_history
 
 
 def test_clarification_answer_endpoint_accumulates_multi_question_progress_before_resuming() -> (

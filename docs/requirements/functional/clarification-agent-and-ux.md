@@ -431,31 +431,39 @@ Exit criteria:
 - Every question tool has one canonical backend mapping and one packet format.
 - Tool contract tests reject invalid, stale, cross-run, and cross-graph refs.
 
-### Wave 3: Clarification-Agent Session Handoff
+### Wave 3: Master History And Clarification Retention
 
-**Goal:** Replace direct question construction with a resumable child LLM
-session.
+**Goal:** Make the shared master LLM history explicit and preserve clarification
+child-session context across resumed calls.
+
+The handoff, grouped continuation, read-only context, and questioning toolbox
+are established by Waves 0–2. This wave does not add another clarification
+store or provider token-compaction behavior.
 
 Activities:
 
-- Make `ask_clarification` start the clarification-agent session.
-- Pass master history, doubts, relevant context, system instructions, and the
-  clarification toolbox into that session.
-- Run the child session through the shared LLM session/tool loop.
-- Pause only for external user interaction and resume by appending the answer
-  and tool output to the existing session history.
-- Support multiple sequential or parallel questions within one child session.
-- Define persistence and expiry for abandoned clarification sessions.
-- Resolve whether the child receives full master history or a bounded backend
-  projection when provider context limits require one.
+- Persist the canonical `master_llm_history` in existing chat-session metadata.
+- Seed it from visible user/assistant chat messages when absent.
+- Keep only ordered `{role, content}` entries in the model-facing history.
+- Exclude system prompts, tool calls, tool schemas, graph lookups, packet and
+  option IDs, provider diagnostics, and clarification-agent reasoning.
+- Pass a snapshot of master history into each clarification child session.
+- Keep the complete resumed child transcript in `AgenticFrame.messages`.
+- Promote clarification question/answer pairs only after the child session
+  completes, preserving question order and normalized audio text.
+- Keep backend-only source and promotion keys in separate session metadata so
+  repeated completion cannot duplicate exchanges.
+- Continue using the existing `AgenticFrame.expires_at` retention mechanism for
+  abandoned sessions without adding a dedicated cleanup subsystem.
 
 Exit criteria:
 
-- No clarification path invokes the old deterministic question builder.
-- User answers resume the existing child session rather than restarting an
-  ingestion or rebuilding the original invoker session.
-- Multiple questions can be answered independently and preserved correctly.
-- Session continuation tests verify complete transcript preservation.
+- Master history is persisted and inherited without raw internal tool noise.
+- Clarification child resumes use the saved transcript rather than rebuilding
+  from the original user message.
+- Completed clarification exchanges are promoted exactly once and in order.
+- Pending child sessions do not modify master history.
+- Existing frame parent/child linkage and expiry behavior remain unchanged.
 
 ### Wave 4: Channel And API Integration
 
@@ -483,24 +491,21 @@ Exit criteria:
 - Channel integration tests cover buttons, custom text, parallel questions, and
   terminal input.
 
-### Wave 5: History Promotion And Invoker Resume
+### Wave 5: Resolution Report And Invoker Resume
 
 **Goal:** Connect the completed clarification report back to the original LLM
   session without context loss or context pollution.
 
 Activities:
 
-- Promote only the assistant question and user answer to master history.
-- Keep question-tool details, graph lookups, and internal agent reasoning in
-  the child session transcript.
 - Return the structured resolution report as the `ask_clarification` tool
   output to the invoker.
 - Ensure clarified values are available to the invoker's next structured
   proposal.
 - Verify that the invoker can create, update, attach, ask again, or defer based
   on the report and its own instructions.
-- Preserve provenance and original user wording in the report and history
-  promotion.
+- Preserve provenance and original user wording in the report and the Wave 3
+  master-history promotion.
 
 Exit criteria:
 

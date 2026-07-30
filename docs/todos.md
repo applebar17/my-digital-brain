@@ -179,14 +179,13 @@ Priority: 2
 
 ### Clarification Contract And User Experience
 
-Status: deferred. The centralized `ask_clarification` tool exists, but its
-request contract and channel rendering still need to distinguish the main
-interaction scenarios. The LLM selects when clarification is useful; the
-backend validates and renders the structured request without making the
-semantic decision itself.
+Status: implemented through Wave 2. The canonical handoff, channel-neutral
+packet, read-only clarification toolbox, grouped continuation, and semantic
+question tools are active. Wave 3 owns persistent master-history promotion and
+child-session retention.
 Priority: 1
 
-- Define a typed clarification request with:
+- Continue refining the typed clarification request with:
   - a clarification kind, target refs, question, reason, and evidence refs;
   - response modes such as `free_text`, `single_choice`, `multi_choice`,
     `confirmation`, and `free_text_or_audio`;
@@ -213,9 +212,9 @@ Priority: 1
 - Keep graph IDs internal. Option refs must be model-facing registry refs and
   must resolve through the active run/graph registry before use.
 - Keep clarification semantics centralized while allowing frontend, Telegram,
-  and terminal channels to render different controls. Preserve the question
-  and answer in the master internal history and the tool output in the active
-  LLM-session transcript.
+  and terminal channels to render different controls. Wave 3 owns promotion of
+  clean question/answer pairs to the persisted master history; tool output and
+  internal traces remain in the active LLM-session transcript.
 - Define validation and rendering behavior for empty answers, invalid option
   refs, stale packets, repeated questions, audio-only answers, and answers that
   do not resolve the target.
@@ -269,9 +268,9 @@ storage, models, and routing have been removed from production code.
 Priority: 2
 
 - Keep clarification continuation represented as an interrupted `AgenticFrame`
-  with one open provider tool call.
-- Resume by appending exactly one matching provider `tool` message to the saved
-  frame history.
+  with grouped pending provider tool calls when a parallel batch is active.
+- Resume by appending one matching provider `tool` message for every pending
+  call to the saved frame history.
 - Keep parent frames in `waiting_child` while child frames ask clarification.
 - Keep user-facing clarification UI separate from normal chat bubbles.
 - Do not reintroduce pending-process lifecycle concepts, review states, pause,
@@ -313,7 +312,11 @@ Remaining history-projection and cross-channel audit: Priority 2.
     policy while still passing the required output schema to the provider;
   - backend-only metadata, IDs, transport fields, and raw tool traces should
     remain excluded unless a state explicitly asks for a compact diagnostic
-    view.
+  view.
+- Add a future context-compaction service/function that activates after a
+  configurable provider-context threshold, preserves recent messages and
+  important clarification exchanges, and emits no backend metadata. This is
+  intentionally outside the current implementation wave.
 
 ### Contextual Tool Handoff Audit
 

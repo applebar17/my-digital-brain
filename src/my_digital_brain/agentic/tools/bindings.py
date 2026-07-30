@@ -1298,6 +1298,19 @@ def _serialize(value: Any) -> Any:
 
 
 def _master_history_messages(conversation: Any) -> list[dict[str, str]]:
+    metadata = getattr(conversation, "metadata", {}) or {}
+    persisted_history = metadata.get("master_llm_history")
+    if isinstance(persisted_history, list):
+        return [
+            {
+                "role": str(item["role"]),
+                "content": str(item["content"]),
+            }
+            for item in persisted_history
+            if isinstance(item, dict)
+            and item.get("role") in {"user", "assistant"}
+            and item.get("content")
+        ]
     messages: list[dict[str, str]] = []
     for message in [
         *(getattr(conversation, "history", []) or []),

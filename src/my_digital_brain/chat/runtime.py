@@ -1,17 +1,39 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
 import logging
+from contextlib import nullcontext
+
 from my_digital_brain.agentic.contexts import (
     ChannelSessionMetadata,
+)
+from my_digital_brain.agentic.contexts import (
     ConversationContext as AgenticConversationContext,
 )
 from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
-from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
+from my_digital_brain.chat.enums import (
+    ChatChannel,
+    ChatDiagnosticLevel,
+    ChatResponseStatus,
+    ConversationMessageRole,
+    ConversationStatus,
+)
+from my_digital_brain.chat.exceptions import ChatValidationError
+from my_digital_brain.chat.models import (
+    ChatDiagnostic,
+    ChatResponse,
+    ConversationMessage,
+    ConversationSession,
+    ConversationSessionDetail,
+    ConversationSessionList,
+    IncomingChatMessage,
+)
+from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
+from my_digital_brain.clarification.contracts import ClarificationAnswer, ClarificationAnswerPacket
 from my_digital_brain.clarification.interaction import (
     answer_packet_from_progress,
     merge_clarification_progress,
@@ -20,29 +42,9 @@ from my_digital_brain.clarification.interaction import (
     summarize_clarification_answers,
     validate_clarification_answers,
 )
-from my_digital_brain.chat.enums import (
-    ChatChannel,
-    ChatDiagnosticLevel,
-    ChatResponseStatus,
-    ConversationStatus,
-    ConversationMessageRole,
-)
-from my_digital_brain.chat.exceptions import ChatValidationError
-from my_digital_brain.chat.models import (
-    ChatResponse,
-    ChatDiagnostic,
-    ConversationMessage,
-    ConversationSession,
-    ConversationSessionList,
-    ConversationSessionDetail,
-    IncomingChatMessage,
-)
-from my_digital_brain.clarification.contracts import ClarificationAnswer, ClarificationAnswerPacket
-from my_digital_brain.chat.store import ChatSessionStore, InMemoryChatSessionStore
-from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.core.profile_context import OwnerProfileSnapshot
-
+from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +135,7 @@ class ChatRuntime:
         source_text: str | None,
         history_refs: list[str],
     ) -> None:
-        self.store.append_message(
+        stored_message = self.store.append_message(
             ConversationMessage(
                 session_id=session_id,
                 role=ConversationMessageRole.ASSISTANT,
@@ -166,6 +168,14 @@ class ChatRuntime:
                 },
             ),
         )
+        if response.clarification_packet is None and response.primary_text.strip():
+            session = self.store.get_session(session_id)
+            session = self.history_service.append_master_message(
+                session,
+                {"role": "assistant", "content": response.primary_text},
+                source_key=f"message:{stored_message.message_id}",
+            )
+            self.store.save_session(session)
 
     def _assistant_history_text(self, response: ChatResponse) -> str:
         if response.clarification_packet is not None:
@@ -311,7 +321,9 @@ class ChatRuntime:
             answer_packet,
         )
         partial_answer_summary = summarize_clarification_answers(packet, answer_packet)
-        partial_resolved_clarifications = resolved_clarifications_from_answers(packet, answer_packet)
+        partial_resolved_clarifications = resolved_clarifications_from_answers(
+            packet, answer_packet
+        )
 
         self.store.append_message(
             ConversationMessage(
@@ -370,7 +382,9 @@ class ChatRuntime:
         complete_answer_packet = answer_packet_from_progress(packet, progress)
         validate_clarification_answers(packet, complete_answer_packet)
         answer_summary = summarize_clarification_answers(packet, complete_answer_packet)
-        resolved_clarifications = resolved_clarifications_from_answers(packet, complete_answer_packet)
+        resolved_clarifications = resolved_clarifications_from_answers(
+            packet, complete_answer_packet
+        )
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
@@ -409,6 +423,12 @@ class ChatRuntime:
             answer_packet=complete_answer_packet,
             resolved_clarifications=resolved_clarifications,
         )
+        session = self.history_service.promote_completed_clarification(
+            session,
+            packet,
+            complete_answer_packet,
+        )
+        self.store.save_session(session)
         log_event(
             logger,
             "chat.clarification.resumed",
@@ -436,7 +456,6 @@ class ChatRuntime:
             history_refs=self._history_refs(session.session_id, []),
         )
         return response
-
 
     def active_clarification_frame_for_message(
         self,
@@ -469,7 +488,9 @@ class ChatRuntime:
             frame.metadata.get("clarification_progress"),
         )
         if expected_question_id is not None and question.question_id != expected_question_id:
-            raise ChatValidationError("Telegram clarification answer targeted a different question.")
+            raise ChatValidationError(
+                "Telegram clarification answer targeted a different question."
+            )
         answer = ClarificationAnswer(
             question_id=question.question_id,
             selected_option_ids=[selected_option_id] if selected_option_id else [],
@@ -496,7 +517,9 @@ class ChatRuntime:
             if session.owner_id != message.owner_id:
                 raise ChatValidationError("Chat session does not belong to the message owner.")
             if session.channel != ChatChannel(message.channel):
-                raise ChatValidationError("Chat session channel does not match the message channel.")
+                raise ChatValidationError(
+                    "Chat session channel does not match the message channel."
+                )
             if session.status == ConversationStatus.ARCHIVED:
                 raise ChatValidationError("Archived chat sessions cannot receive new messages.")
             return session
@@ -557,6 +580,12 @@ class ChatRuntime:
         session_id: str,
     ) -> AgenticConversationContext:
         text = (message.text or "").strip()
+        session = self.store.get_session(session_id)
+        session = self.history_service.ensure_master_history(
+            session,
+            self.store.list_messages(session_id, limit=100),
+        )
+        self.store.save_session(session)
         return self.history_service.build_conversation_context(
             current_text=text,
             history_records=self.store.list_messages(session_id, limit=100),
@@ -575,7 +604,10 @@ class ChatRuntime:
                     "media_count": len(message.media_refs),
                 },
             ),
-            metadata={"runtime_mode": "agentic"},
+            metadata={
+                "runtime_mode": "agentic",
+                "master_llm_history": self.history_service.master_history(session),
+            },
             fallback_current_text="Media message",
             exclude_record_ids={message.message_id},
         )

@@ -16,9 +16,10 @@ from my_digital_brain.agentic import (
 from my_digital_brain.agentic.contexts import PlanningContext, SourceContext
 from my_digital_brain.agentic.runtime_models import AgenticStateRunResult
 from my_digital_brain.ai.schemas import ChatMessage
+from my_digital_brain.chat.enums import ChatChannel, ConversationMessageRole
+from my_digital_brain.chat.models import ConversationMessage, ConversationSession
+from my_digital_brain.clarification.contracts import ClarificationAnswer, ClarificationAnswerPacket
 from my_digital_brain.clarification.interaction import build_clarification_packet
-from my_digital_brain.chat.enums import ConversationMessageRole
-from my_digital_brain.chat.models import ConversationMessage
 
 
 def test_history_service_builds_internal_conversation_and_prompt_safe_payload() -> None:
@@ -116,6 +117,138 @@ def test_history_service_promotes_clarification_question_without_options() -> No
         {"role": "assistant", "content": "Who is Amos?"},
         {"role": "user", "content": "Amos Vignaroli"},
     ]
+
+
+def test_history_service_seeds_persistent_master_history_without_internal_messages() -> None:
+    service = AgenticHistoryService()
+    session = ConversationSession(
+        session_id="session-1",
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    messages = [
+        _message("system-1", ConversationMessageRole.SYSTEM, "System instructions."),
+        _message("user-1", ConversationMessageRole.USER, "Store this memory."),
+        _message("assistant-1", ConversationMessageRole.ASSISTANT, "I will store it."),
+        ConversationMessage(
+            message_id="hidden-1",
+            session_id=session.session_id,
+            role=ConversationMessageRole.ASSISTANT,
+            text="Which Amos do you mean?",
+            metadata={"ui_hidden": True, "message_kind": "clarification_prompt"},
+        ),
+        ConversationMessage(
+            message_id="tool-1",
+            session_id=session.session_id,
+            role=ConversationMessageRole.ASSISTANT,
+            text='{"packet_id":"internal"}',
+            metadata={"ui_hidden": True, "message_kind": "tool_output"},
+        ),
+    ]
+
+    updated = service.ensure_master_history(session, messages)
+
+    assert updated.metadata["master_llm_history"] == [
+        {"role": "user", "content": "Store this memory."},
+        {"role": "assistant", "content": "I will store it."},
+    ]
+    assert "internal" not in str(updated.metadata["master_llm_history"])
+    assert "packet_id" not in str(updated.metadata["master_llm_history"])
+
+
+def test_history_service_syncs_new_visible_messages_without_duplication() -> None:
+    service = AgenticHistoryService()
+    session = ConversationSession(
+        session_id="session-1",
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    first_turn = [
+        _message("user-1", ConversationMessageRole.USER, "Store Amos."),
+        _message("assistant-1", ConversationMessageRole.ASSISTANT, "I will store it."),
+    ]
+    updated = service.ensure_master_history(session, first_turn)
+    second_turn = [
+        *first_turn,
+        _message("user-2", ConversationMessageRole.USER, "Add his surname."),
+    ]
+
+    updated = service.ensure_master_history(updated, second_turn)
+    repeated = service.ensure_master_history(updated, second_turn)
+
+    assert repeated.metadata["master_llm_history"] == [
+        {"role": "user", "content": "Store Amos."},
+        {"role": "assistant", "content": "I will store it."},
+        {"role": "user", "content": "Add his surname."},
+    ]
+
+
+def test_history_service_promotes_completed_clarification_once_and_normalizes_audio() -> None:
+    service = AgenticHistoryService()
+    session = ConversationSession(
+        session_id="session-1",
+        channel=ChatChannel.WEB,
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+        metadata={"master_llm_history": [{"role": "user", "content": "Store Amos."}]},
+    )
+    packet = build_clarification_packet(
+        frame_id="frame-1",
+        tool_call_id="call-1",
+        origin_state_id="clarification_agent",
+        reason="Several identities may match.",
+        questions=[
+            {
+                "question_id": "question-1",
+                "question": "Which Amos do you mean?",
+                "kind": "identity_ambiguous",
+                "options": [
+                    {
+                        "option_id": "option-1",
+                        "label": "Amos Rossi",
+                        "summary": "Friend from elementary school",
+                    }
+                ],
+            },
+            {
+                "question_id": "question-2",
+                "question": "What is his surname?",
+                "kind": "missing_attribute",
+                "options": [],
+            },
+        ],
+    )
+    answers = ClarificationAnswerPacket(
+        packet_id=packet.packet_id,
+        frame_id=packet.frame_id,
+        tool_call_id=packet.tool_call_id or "",
+        answers=[
+            ClarificationAnswer(
+                question_id="question-1",
+                selected_option_ids=["option-1"],
+            ),
+            ClarificationAnswer(
+                question_id="question-2",
+                audio_media_ref="media:audio-1",
+                normalized_text="Amos Vignaroli",
+            ),
+        ],
+    )
+
+    updated = service.promote_completed_clarification(session, packet, answers)
+    repeated = service.promote_completed_clarification(updated, packet, answers)
+
+    assert repeated.metadata["master_llm_history"] == [
+        {"role": "user", "content": "Store Amos."},
+        {"role": "assistant", "content": "Which Amos do you mean?"},
+        {"role": "user", "content": "Amos Rossi"},
+        {"role": "assistant", "content": "What is his surname?"},
+        {"role": "user", "content": "Amos Vignaroli"},
+    ]
+    assert "media:audio-1" not in str(repeated.metadata["master_llm_history"])
+    assert len(repeated.metadata["master_llm_history_promotion_keys"]) == 2
 
 
 def test_history_service_appends_source_once_to_master_history() -> None:

@@ -34,10 +34,17 @@ PROMPT_CONTEXT_EXCLUDED_KEYS = {
     "conversation",
     "current_message",
     "history",
+    "master_llm_history",
+    "master_llm_history_promotion_keys",
+    "master_llm_history_source_keys",
     "model_user_message",
     "raw_text",
     "source_text",
 }
+
+MASTER_LLM_HISTORY_KEY = "master_llm_history"
+MASTER_LLM_HISTORY_SOURCE_KEYS_KEY = "master_llm_history_source_keys"
+MASTER_LLM_HISTORY_PROMOTION_KEYS_KEY = "master_llm_history_promotion_keys"
 
 
 @dataclass(slots=True)
@@ -117,6 +124,122 @@ class AgenticHistoryService:
             current_time=current_time or _utc_now(),
             timezone=timezone,
         )
+
+    def ensure_master_history(
+        self,
+        session: Any,
+        visible_messages: Iterable[Any],
+    ) -> Any:
+        """Synchronize visible chat messages into the persisted master history."""
+
+        metadata = dict(getattr(session, "metadata", {}) or {})
+        history = self._sanitize_master_history(metadata.get(MASTER_LLM_HISTORY_KEY, []))
+        source_keys = [
+            str(value)
+            for value in metadata.get(MASTER_LLM_HISTORY_SOURCE_KEYS_KEY, [])
+            if str(value).strip()
+        ]
+        known_source_keys = set(source_keys)
+        unmatched_history = list(history) if not source_keys else []
+
+        for message in visible_messages:
+            projected = self._visible_master_message(message)
+            if projected is None:
+                continue
+            source_key = self._source_key_for_message(message, projected)
+            if source_key in known_source_keys:
+                continue
+            if unmatched_history:
+                try:
+                    unmatched_history.remove(projected)
+                except ValueError:
+                    pass
+                else:
+                    source_keys.append(source_key)
+                    known_source_keys.add(source_key)
+                    continue
+            history.append(projected)
+            source_keys.append(source_key)
+            known_source_keys.add(source_key)
+
+        metadata[MASTER_LLM_HISTORY_KEY] = history
+        metadata[MASTER_LLM_HISTORY_SOURCE_KEYS_KEY] = source_keys
+        metadata.setdefault(MASTER_LLM_HISTORY_PROMOTION_KEYS_KEY, [])
+        return session.model_copy(update={"metadata": metadata}, deep=True)
+
+    def master_history(self, session: Any) -> list[dict[str, str]]:
+        metadata = getattr(session, "metadata", {}) or {}
+        return self._sanitize_master_history(metadata.get(MASTER_LLM_HISTORY_KEY, []))
+
+    def append_master_message(
+        self,
+        session: Any,
+        message: Any,
+        *,
+        source_key: str,
+    ) -> Any:
+        projected = self._master_history_message(message)
+        if projected is None or not source_key.strip():
+            return session
+        metadata = dict(getattr(session, "metadata", {}) or {})
+        history = self._sanitize_master_history(metadata.get(MASTER_LLM_HISTORY_KEY, []))
+        source_keys = [
+            str(value)
+            for value in metadata.get(MASTER_LLM_HISTORY_SOURCE_KEYS_KEY, [])
+            if str(value).strip()
+        ]
+        if source_key not in source_keys:
+            history.append(projected)
+            source_keys.append(source_key)
+        metadata[MASTER_LLM_HISTORY_KEY] = history
+        metadata[MASTER_LLM_HISTORY_SOURCE_KEYS_KEY] = source_keys
+        metadata.setdefault(MASTER_LLM_HISTORY_PROMOTION_KEYS_KEY, [])
+        return session.model_copy(update={"metadata": metadata}, deep=True)
+
+    def promote_completed_clarification(
+        self,
+        session: Any,
+        packet: Any,
+        answer_packet: Any,
+    ) -> Any:
+        """Promote clean question/answer pairs once a child session completes."""
+
+        metadata = dict(getattr(session, "metadata", {}) or {})
+        history = self._sanitize_master_history(metadata.get(MASTER_LLM_HISTORY_KEY, []))
+        source_keys = [
+            str(value)
+            for value in metadata.get(MASTER_LLM_HISTORY_SOURCE_KEYS_KEY, [])
+            if str(value).strip()
+        ]
+        promotion_keys = [
+            str(value)
+            for value in metadata.get(MASTER_LLM_HISTORY_PROMOTION_KEYS_KEY, [])
+            if str(value).strip()
+        ]
+        answers = {
+            str(getattr(answer, "question_id", "")): answer
+            for answer in getattr(answer_packet, "answers", ())
+        }
+        for question in getattr(packet, "questions", ()):
+            question_id = str(getattr(question, "question_id", ""))
+            promotion_key = f"clarification:{getattr(packet, 'packet_id', '')}:{question_id}"
+            answer = answers.get(question_id)
+            answer_text = self._clarification_answer_text(question, answer)
+            question_text = str(getattr(question, "question", "") or "").strip()
+            if not question_text or not answer_text or promotion_key in promotion_keys:
+                continue
+            history.extend(
+                [
+                    {"role": "assistant", "content": question_text},
+                    {"role": "user", "content": answer_text},
+                ],
+            )
+            promotion_keys.append(promotion_key)
+
+        metadata[MASTER_LLM_HISTORY_KEY] = history
+        metadata[MASTER_LLM_HISTORY_SOURCE_KEYS_KEY] = source_keys
+        metadata[MASTER_LLM_HISTORY_PROMOTION_KEYS_KEY] = promotion_keys
+        return session.model_copy(update={"metadata": metadata}, deep=True)
 
     def neutral_message_from_record(self, record: Any) -> NeutralConversationMessage | None:
         text = str(getattr(record, "text", "") or "").strip()
@@ -440,9 +563,62 @@ class AgenticHistoryService:
             return None
         role = str(message.get("role") or "").strip()
         content = message.get("content")
-        if role not in {"user", "assistant", "developer", "tool"} or not content:
+        if role not in {"user", "assistant"} or not content:
             return None
         return {"role": role, "content": str(content)}
+
+    def _sanitize_master_history(self, value: Any) -> list[dict[str, str]]:
+        if not isinstance(value, list):
+            return []
+        return [
+            projected
+            for item in value
+            if (projected := self._master_history_message(item)) is not None
+        ]
+
+    def _visible_master_message(self, message: Any) -> dict[str, str] | None:
+        if hasattr(message, "model_dump"):
+            message = message.model_dump(mode="json", exclude_none=True)
+        if not isinstance(message, dict):
+            return None
+        metadata = message.get("metadata")
+        if isinstance(metadata, dict) and (
+            metadata.get("ui_hidden")
+            or metadata.get("message_kind") in {"clarification_prompt", "clarification_answer"}
+        ):
+            return None
+        role = message.get("role")
+        text = message.get("content") or message.get("text")
+        return self._master_history_message({"role": _enum_value(role), "content": text})
+
+    @staticmethod
+    def _source_key_for_message(message: Any, projected: dict[str, str]) -> str:
+        if hasattr(message, "model_dump"):
+            message = message.model_dump(mode="json", exclude_none=True)
+        if isinstance(message, dict):
+            for key in ("message_id", "channel_message_id"):
+                value = str(message.get(key) or "").strip()
+                if value:
+                    return f"message:{value}"
+        return f"content:{projected['role']}:{projected['content']}"
+
+    @staticmethod
+    def _clarification_answer_text(question: Any, answer: Any) -> str:
+        if answer is None:
+            return ""
+        normalized = str(getattr(answer, "normalized_text", "") or "").strip()
+        if normalized:
+            return normalized
+        text = str(getattr(answer, "text", "") or "").strip()
+        if text:
+            return text
+        selected = set(getattr(answer, "selected_option_ids", ()) or ())
+        labels = [
+            str(getattr(option, "label", "") or "").strip()
+            for option in getattr(question, "options", ())
+            if getattr(option, "option_id", None) in selected
+        ]
+        return ", ".join(label for label in labels if label)
 
     def _drop_backend_only_keys(self, value: Any) -> Any:
         if isinstance(value, dict):
