@@ -179,58 +179,23 @@ Priority: 2
 
 ### Clarification Contract And User Experience
 
-Status: implemented through Wave 2. The canonical handoff, channel-neutral
-packet, read-only clarification toolbox, grouped continuation, and semantic
-question tools are active. Wave 3 owns persistent master-history promotion and
-child-session retention.
+Status: implemented through Wave 6. The canonical handoff, channel-neutral
+packet, read-only clarification toolbox, grouped continuation, semantic
+question tools, master-history promotion, child-session retention, channel
+integration, resolution report propagation, and shared prompt policy are active.
 Priority: 1
 
-- Continue refining the typed clarification request with:
-  - a clarification kind, target refs, question, reason, and evidence refs;
-  - response modes such as `free_text`, `single_choice`, `multi_choice`,
-    `confirmation`, and `free_text_or_audio`;
-  - optional model-facing option refs, labels, short summaries, and a clear
-    `other`/custom-answer capability;
-  - channel-neutral answer fields for selected options, text, and audio
-    transcription or attachment references.
-- Support the no-match identity scenario: ask an open clarification without
-  graph options, for example: `Who is Amos? Provide the full name or a detail
-  that distinguishes him.` Allow typed or audio answers.
-- Support the duplicate-risk scenario: present existing candidate names and
-  compact summaries as selectable options plus an `Other` free-text choice,
-  for example: `Amos Bianchi`, `Amos Rossi`, `Other`.
-- Add and test additional UX scenarios:
-  - missing attribute: ask for one structured field such as surname, city, or
-    date;
-  - confirmation: ask whether a proposed event, place, or relationship should
-    be stored;
-  - contradiction/correction: show the current value and the proposed value;
-  - multi-participant or multi-target selection when one answer affects several
-    refs;
-  - temporal or place disambiguation with suggested values and custom input;
-  - explicit discard/defer, available only when the user requests it.
-- Keep graph IDs internal. Option refs must be model-facing registry refs and
-  must resolve through the active run/graph registry before use.
-- Keep clarification semantics centralized while allowing frontend, Telegram,
-  and terminal channels to render different controls. Wave 3 owns promotion of
-  clean question/answer pairs to the persisted master history; tool output and
-  internal traces remain in the active LLM-session transcript.
-- Align the web, Telegram, and terminal consumers with the canonical Wave 1
-  packet and answer fields. Web keeps a packet locally for back/edit navigation
-  and submits it once; Telegram and terminal submit one answer at a time.
-- Return structured clarification API errors with stable codes and retry
-  metadata for stale, mismatched, empty, and invalid answers.
+- Expand prompt and UAT evaluations for multilingual wording, duplicate-risk
+  choices, missing fields, corrections, confirmations, relationship targets,
+  and multiple independent questions.
 - Defer browser media capture, media upload/storage, and transcription
   integration until a later clarification-media wave.
-- Preserve the complete `ClarificationResolutionReport` through child,
-  parent, and nested parent tool outputs. Derived resolved-answer lists must
-  not replace the report as the source of truth.
-- Define validation and rendering behavior for empty answers, invalid option
-  refs, stale packets, repeated questions, audio-only answers, and answers that
-  do not resolve the target.
-- Add contract, serialization, channel-rendering, and end-to-end tests for all
-  clarification kinds. Do not add deterministic identity decisions to the
-  backend as part of this work.
+- Keep the shared clarification policy aligned when new clarification-capable
+  agent states or resolution scenarios are introduced. Prompt guidance must
+  remain non-deterministic: the LLM chooses the semantic action and statuses
+  never become backend gates.
+- Preserve the current rule that backend validation protects structure and
+  references while the LLM chooses semantic identity actions.
 
 ### Place Search And Geocoding
 

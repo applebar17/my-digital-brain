@@ -11,9 +11,9 @@ from my_digital_brain.agentic import (
     MemoryLogMemoryPlan,
     MemoryPlanAction,
     MemoryPlanActionType,
+    MemoryPlanningPhase,
     MemoryPlanPacket,
     MemoryPlanStep,
-    MemoryPlanningPhase,
     NodeMemoryPlan,
     NodePlanPacket,
     NodeReasoningHighlights,
@@ -21,8 +21,8 @@ from my_digital_brain.agentic import (
     PlannedRefPacket,
     ReasoningHighlights,
 )
-from my_digital_brain.prompts import ACTIVE_PROMPT_TEMPLATES, MEMORY_PROMPT_TEMPLATES, PromptRegistry
-
+from my_digital_brain.prompts import ACTIVE_PROMPT_TEMPLATES, PromptRegistry
+from my_digital_brain.prompts.clarification_policy import CLARIFICATION_POLICY
 
 UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
@@ -72,7 +72,7 @@ def test_active_prompt_family_is_lean_and_clean() -> None:
         assert "# Role" in rendered
         assert "# Task" in rendered
         assert "# Context" in rendered
-        assert len(template) < 1800
+        assert len(template) < 2600
         assert not UUID_RE.search(rendered)
         lowered = rendered.lower()
         for phrase in noise_phrases:
@@ -119,6 +119,45 @@ def test_active_prompt_behavior_boundaries_are_present() -> None:
 
     assert "Tool error" in update
     assert "Ask a direct clarification" in update
+
+
+def test_clarification_policy_is_shared_by_capable_prompts_only() -> None:
+    capable = {
+        "reasoning_checkpoint",
+        "planning_checkpoint",
+        "memory_ingestion",
+        "memory_log_extraction",
+        "memory_node_planning",
+        "memory_log_planning",
+        "memory_edge_planning",
+        "memory_creation",
+        "graph_update",
+        "contradiction_review",
+        "clarification_agent",
+    }
+    for prompt_id, template in ACTIVE_PROMPT_TEMPLATES.items():
+        if prompt_id in capable:
+            assert CLARIFICATION_POLICY in template
+        else:
+            assert CLARIFICATION_POLICY not in template
+
+
+def test_clarification_agent_contains_human_friendly_scenario_guidance() -> None:
+    prompt = PromptRegistry().load("clarification_agent").template
+
+    for phrase in (
+        "No match",
+        "Duplicate",
+        "Missing field",
+        "Correction",
+        "Confirmation",
+        "Relationship endpoint",
+    ):
+        assert phrase in prompt
+    assert "pipeline gate" in prompt
+    assert "custom answers enabled" in prompt
+    assert "normalized text remains user evidence" in prompt
+    assert "match report entries by `doubt_id`" in prompt
 
 
 def test_dense_republic_day_uat_shape_uses_many_logs_and_ref_edges() -> None:

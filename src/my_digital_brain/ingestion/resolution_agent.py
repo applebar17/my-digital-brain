@@ -41,6 +41,7 @@ from my_digital_brain.ingestion.resolution_proposals import (
     ResolutionProposalValidator,
 )
 from my_digital_brain.ingestion.resolution_toolboxes import build_resolution_toolbox
+from my_digital_brain.prompts.clarification_policy import CLARIFICATION_POLICY
 
 logger = logging.getLogger(__name__)
 
@@ -718,7 +719,9 @@ class LLMResolutionProposalAgent:
             "For every "
             "candidate listed in this step, invoke exactly one terminal action tool: a "
             "mutation, defer_or_ignore, or ask_clarification. Do not finish with prose "
-            "only and do not omit a candidate action." + context_blocks
+            "only and do not omit a candidate action.\n\n"
+            + CLARIFICATION_POLICY
+            + context_blocks
         )
 
     @staticmethod

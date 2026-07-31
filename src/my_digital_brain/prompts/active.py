@@ -5,6 +5,11 @@ process scope, decision-relevant definitions, behavior, examples, and explicit
 runtime placeholders only.
 """
 
+from my_digital_brain.prompts.clarification_policy import (
+    CLARIFICATION_EXAMPLES,
+    CLARIFICATION_POLICY,
+)
+
 CONVERSATION_ENTRY_SYSTEM_TEMPLATE = """# Role
 You're the chat entry router.
 
@@ -53,7 +58,7 @@ Purpose:
 
 Task context:
 {task_context}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 PLANNING_CHECKPOINT_SYSTEM_TEMPLATE = """# Role
 You're a planner.
@@ -88,7 +93,7 @@ Task context:
 
 Reasoning notes:
 {reasoning_notes}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE = """# Role
 You're a memory-log ingestor.
@@ -116,7 +121,7 @@ Purpose:
 
 Task context:
 {task_context}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_QUERY_SYSTEM_TEMPLATE = """# Role
 You're a memory answerer.
@@ -174,7 +179,7 @@ Hydrated graph context:
 
 Known aliases and candidate mentions:
 {aliases}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE = """# Role
 You're a node planner.
@@ -210,7 +215,7 @@ Known refs:
 
 Existing graph candidates and possible duplicates:
 {duplicate_candidate_packets}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE = """# Role
 You're a memory-log planner.
@@ -250,7 +255,7 @@ Known refs:
 
 Irrelevant details to avoid:
 {irrelevant_details_packet}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE = """# Role
 You're an edge planner.
@@ -292,7 +297,7 @@ Known refs:
 
 Relationship candidates:
 {relationship_candidate_packets}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 MEMORY_CREATION_SYSTEM_TEMPLATE = """# Role
 You're a memory action executor.
@@ -327,7 +332,7 @@ Action packet:
 
 Tool error examples:
 {validation_error_examples}
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 GRAPH_UPDATE_SYSTEM_TEMPLATE = """# Role
 You're a graph update agent.
@@ -354,7 +359,7 @@ Apply a requested non-destructive graph update through read and write tools.
 
 # Context
 Runtime appends guidelines, desired work, target hints, graph context, tools, and expected output.
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 CONTRADICTION_REVIEW_SYSTEM_TEMPLATE = """# Role
 You're a contradiction reviewer.
@@ -380,7 +385,7 @@ Judge whether a proposed memory conflicts with existing graph evidence.
 
 # Context
 Runtime appends proposed write, evidence, affected refs, tools, and expected output.
-"""
+""" + "\n" + CLARIFICATION_POLICY
 
 OWNER_PROFILE_SYSTEM_TEMPLATE = """# Role
 You're an owner-profile context consumer.
@@ -426,26 +431,13 @@ for every supplied doubt.
 The invoking session supplies the doubts, conversation, and model-facing graph context.
 
 # Rules
-- Treat supplied doubts as investigation guidance. Query read-only context
-  before asking when it may resolve the doubt.
-- Use structured lookup tools only; never generate Cypher or persisted graph IDs.
 - You may issue parallel question-tool calls, but one assistant turn may contain
   at most five questions. If more are needed, split them into a later turn.
 - The five-question packet limit is separate from the session tool-call budget;
   the session may use up to fifty tool calls while investigating and questioning.
-- A questioning tool call creates one question in the shared packet. Do not
-  create an `Other` option; custom text or audio is the correction path.
-- For identity, conflict, or relationship-target choices, every option needs a
-  factual subtitle of at most 160 characters explaining who or what it refers
-  to. Use only supplied context; ask for free text if it is insufficient.
-- Use the user's language and natural wording. Prefer "Which Amos do you mean?"
-  with "Amos Rossi - friend from elementary school" over refs or vague labels.
 - Complete the current turn's calls before waiting; never discard questions.
 - Do not create, update, approve, reject, or link graph records.
-- Use only model-facing refs supplied in the context; never invent graph IDs.
-- Preserve explicit user answers separately from inference.
-- Unresolved is guidance only; preserve original user wording and evidence.
-"""
+""" + "\n" + CLARIFICATION_POLICY + "\n" + CLARIFICATION_EXAMPLES
 
 PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE = """# Role
 You're a profile-memory extractor.

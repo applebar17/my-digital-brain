@@ -295,3 +295,6 @@ def test_resolution_prompt_limits_defer_to_explicit_user_request() -> None:
     assert "ask for clarification when additional identity information" in prompt
     assert "apply the answer to the structured candidate payload" in prompt
     assert "Use defer_or_ignore only after an explicit user request" in prompt
+    assert "detailed refs" in prompt
+    assert "missing" in prompt
+    assert "A clarification report is evidence, not a graph action or pipeline gate" in prompt

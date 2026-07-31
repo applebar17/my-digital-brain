@@ -539,27 +539,34 @@ Exit criteria:
 
 ### Wave 6: Prompt Policy And Agent Behavior
 
+**Status:** implemented. A shared clarification policy is composed into every
+clarification-capable agent prompt, while the conversation router and
+read-only memory-answer prompt remain unchanged.
+
 **Goal:** Make all relevant agents use the clarification capability
   consistently while leaving semantic decisions with the LLM.
 
 Activities:
 
-- Add the shared clarification guidelines to the clarification agent.
-- Update invoker prompts to provide detailed doubts and consume structured
-  resolution reports.
-- Teach agents to query context before asking, ask focused questions, accept
-  text/audio corrections, and keep custom answers enabled.
-- Teach agents to distinguish explicit answers from inference.
-- Teach agents to continue intelligently after `unresolved` or
-  `partially_resolved` reports rather than relying on backend gates.
-- Add scenario examples for no-match identity, duplicate candidates, missing
-  fields, correction, confirmation, and relationship endpoints.
+- A single reusable policy guides context inspection, detailed doubt handoffs,
+  model-facing reference safety, custom answers, explicit-versus-inferred data,
+  defer/ignore behavior, and continuation after reports.
+- Invoker prompts consume the complete report by `doubt_id`, apply clarified
+  values to structured fields, and choose the next action without restarting.
+- The clarification agent receives compact examples for no-match identity,
+  duplicate candidates, missing fields, correction, confirmation, and
+  relationship endpoints.
+- Questions remain concise, user-language, and human-friendly; duplicate
+  options use brief factual subtitles and never expose internal refs.
+- Resolution statuses remain informational guidance. They do not create
+  deterministic pipeline stops or semantic identity decisions.
 
 Exit criteria:
 
-- Reasoning, planning, extraction, resolution, and chat consumers use the
-  canonical clarification handoff behavior.
-- Prompt tests verify consistent tool selection and answer application.
+- Reasoning, planning, extraction, resolution, and clarification consumers use
+  the canonical handoff behavior.
+- Prompt tests verify consistent tool selection, detailed doubt construction,
+  report consumption, and answer application.
 - No prompt instructs the backend to make the semantic identity decision.
 
 ### Wave 7: Hardening, Observability, And Cleanup
