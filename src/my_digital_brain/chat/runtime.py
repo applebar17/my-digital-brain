@@ -467,6 +467,24 @@ class ChatRuntime:
             complete_answer_packet,
         )
         self.store.save_session(session)
+        report = result.metadata.get("clarification_report")
+        report_entries = report.get("entries") if isinstance(report, dict) else None
+        log_event(
+            logger,
+            "clarification.report.completed",
+            component="chat",
+            session_id=session.session_id,
+            frame_id=frame.frame_id,
+            entry_count=len(report_entries) if isinstance(report_entries, list) else None,
+        )
+        log_event(
+            logger,
+            "clarification.master_history.promoted",
+            component="chat",
+            session_id=session.session_id,
+            frame_id=frame.frame_id,
+            question_count=len(complete_answer_packet.answers),
+        )
         log_event(
             logger,
             "chat.clarification.resumed",

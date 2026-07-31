@@ -7,17 +7,12 @@ import type { RenderedChatMessage } from "../types";
 
 export function processUpdatesFromSession(detail: ConversationSessionDetail): string[] {
   const updates = [`Session ${detail.session.status}`];
-  const active = detail.pending_process?.process_ref;
-  if (active) {
-    updates.push(`Pending ${active.kind}: ${active.status}`);
-    if (active.question) {
-      updates.push(active.question);
+  const frame = detail.active_agentic_frame;
+  if (frame) {
+    updates.push(`Agentic frame ${frame.status}`);
+    if (frame.clarification_packet) {
+      updates.push(`${frame.clarification_packet.questions.length} clarification question(s)`);
     }
-  }
-  const paused =
-    detail.pending_processes?.filter((item) => item.process_ref.status === "paused") ?? [];
-  if (paused.length > 0) {
-    updates.push(`${paused.length} paused process${paused.length === 1 ? "" : "es"} available`);
   }
   return updates;
 }

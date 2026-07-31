@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
 
-from my_digital_brain.ai.models import ToolError, ToolResult
 from my_digital_brain.agentic.contexts import (
     GraphContextPackage,
     GraphUpdateContext,
@@ -17,13 +17,14 @@ from my_digital_brain.agentic.contexts import (
 )
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
+from my_digital_brain.ai.logging import log_event
+from my_digital_brain.ai.models import ToolError, ToolResult
 from my_digital_brain.clarification.contracts import (
     ClarificationHandoffRequest,
     ClarificationSessionInput,
 )
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 from my_digital_brain.core.owner_context import OwnerSnapshot
-
 
 GRAPH_UPDATE_CREATABLE_LABELS = {
     "Person",
@@ -47,6 +48,8 @@ GRAPH_UPDATE_CREATABLE_LABELS = {
     "MediaAsset",
     "ContradictionRecord",
 }
+
+logger = logging.getLogger(__name__)
 
 GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = {
     "MERGED_NODE",
@@ -356,6 +359,15 @@ class AgenticToolBindings:
                 session_id=self.context.session_id or conversation.context_id,
                 parent_frame_id=self.context.frame_id,
                 parent_tool_call_id=self.context.current_tool_call_id,
+            )
+            log_event(
+                logger,
+                "clarification.handoff.created",
+                component="agentic_tools",
+                session_id=self.context.session_id,
+                frame_id=self.context.frame_id,
+                state_id=self.context.state_id,
+                doubt_count=len(doubts),
             )
             return runtime.run_child_frame(
                 parent_execution_context=self.context,

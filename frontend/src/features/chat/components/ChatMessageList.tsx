@@ -1,20 +1,16 @@
 import { useEffect, useRef } from "react";
 import { EmptyState } from "../../../components/EmptyState";
-import type { PendingProcessRef } from "../../../types/chat";
 import { ChatMessageBubble } from "./ChatMessageBubble";
-import { PendingProcessNotice } from "./PendingProcessNotice";
 import type { RenderedChatMessage } from "../types";
 
 interface ChatMessageListProps {
   messages: RenderedChatMessage[];
-  pendingProcess?: PendingProcessRef | null;
   isProcessing?: boolean;
   processUpdates?: string[];
 }
 
 export function ChatMessageList({
   messages,
-  pendingProcess,
   isProcessing = false,
   processUpdates = []
 }: ChatMessageListProps) {
@@ -22,7 +18,7 @@ export function ChatMessageList({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages.length, pendingProcess, isProcessing, processUpdates.length]);
+  }, [messages.length, isProcessing, processUpdates.length]);
 
   return (
     <section className="memory-chat-thread" aria-live="polite">
@@ -37,7 +33,6 @@ export function ChatMessageList({
       ) : (
         messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)
       )}
-      <PendingProcessNotice pendingProcess={pendingProcess} />
       <ProcessingWidget isVisible={isProcessing || processUpdates.length > 0} updates={processUpdates} />
       <div ref={endRef} />
     </section>

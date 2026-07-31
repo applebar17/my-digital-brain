@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from my_digital_brain.agentic import (
     AgenticStateId,
@@ -185,6 +186,35 @@ def test_question_tools_enforce_semantic_modes_and_custom_answers() -> None:
         origin_state_id="clarification_agent",
     )
     assert invalid.status == "error"
+
+
+def test_clarification_tool_events_are_structured_and_redacted(caplog) -> None:
+    service, _ = _service()
+    caplog.set_level(logging.INFO)
+
+    lookup = service.lookup_candidates(
+        candidate_ref="CANDIDATE_PERSON_001",
+        entity_type="Person",
+        display_name="Amos",
+    )
+    question = service.build_question(
+        tool_name="ask_text",
+        request={
+            "question": "Who is Amos?",
+            "kind": "identity_no_match",
+            "reason": "The identity is incomplete.",
+        },
+        frame_id="frame-1",
+        tool_call_id="call-1",
+        origin_state_id="clarification_agent",
+    )
+
+    assert lookup.status == "ok"
+    assert question.status == "pending"
+    events = [record.getMessage() for record in caplog.records]
+    assert "clarification.lookup.completed" in events
+    assert "clarification.question_packet.created" in events
+    assert "Amos Vignaroli" not in " ".join(events)
 
 
 def test_disambiguation_options_require_brief_subtitles() -> None:

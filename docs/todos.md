@@ -188,6 +188,8 @@ Priority: 1
 - Expand prompt and UAT evaluations for multilingual wording, duplicate-risk
   choices, missing fields, corrections, confirmations, relationship targets,
   and multiple independent questions.
+- Keep frontend clarification status/error behavior aligned with the canonical
+  frame and packet contracts as new response modes are introduced.
 - Defer browser media capture, media upload/storage, and transcription
   integration until a later clarification-media wave.
 - Keep the shared clarification policy aligned when new clarification-capable

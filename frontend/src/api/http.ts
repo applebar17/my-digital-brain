@@ -19,6 +19,32 @@ export class ApiError extends Error {
   }
 }
 
+export interface ClarificationApiError {
+  code: string;
+  message: string;
+  packetId?: string;
+  frameId?: string;
+  questionIds: string[];
+  retryable: boolean;
+  details: Record<string, unknown>;
+}
+
+export function clarificationApiError(error: unknown): ClarificationApiError | null {
+  if (!(error instanceof ApiError) || !isRecord(error.detail)) {
+    return null;
+  }
+  const detail = error.detail;
+  return {
+    code: stringValue(detail.code) ?? "clarification_answer_invalid",
+    message: stringValue(detail.message) ?? "The clarification answer could not be submitted.",
+    packetId: stringValue(detail.packet_id),
+    frameId: stringValue(detail.frame_id),
+    questionIds: stringArray(detail.question_ids),
+    retryable: detail.retryable !== false,
+    details: isRecord(detail.details) ? detail.details : {}
+  };
+}
+
 export function formatApiError(error: unknown, fallback: string): string {
   if (error instanceof ApiError && isRecord(error.detail)) {
     const message = typeof error.detail.message === "string" ? error.detail.message : undefined;
@@ -80,4 +106,14 @@ async function readPayload(response: Response): Promise<unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }

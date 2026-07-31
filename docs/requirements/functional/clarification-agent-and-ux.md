@@ -571,22 +571,32 @@ Exit criteria:
 
 ### Wave 7: Hardening, Observability, And Cleanup
 
+**Status:** implemented. Backend continuation, channel contracts, structured
+observability, frontend clarification components, context redaction, and
+directly superseded clarification paths have been hardened.
+
 **Goal:** Verify the complete behavior and remove directly superseded code.
 
 Activities:
 
-- Add end-to-end tests for all initial scenarios, channels, media modalities,
-  parallel questions, continuation, and invoker resume.
-- Add traces for handoff, child-session turns, graph lookups, question packets,
-  user answers, history promotion, and resolution reports.
-- Verify that statuses are informational and do not create hidden stops or
-  automatic pipeline branches.
-- Audit context sizes and remove unnecessary packet fields from model-facing
-  history.
-- Remove old clarification builders, duplicate mappings, obsolete tests, and
-  deprecated contracts once their replacements are active.
-- Run formatting, static checks, compilation, focused tests, full tests, and
-  refined-ingestion UAT regression.
+- The web client uses the active agentic frame and clarification packet as its
+  only clarification lifecycle source; stale pending-process UI contracts are
+  removed.
+- Web clarification questions enforce response modes locally, preserve packet
+  progress and edits, render option summaries, and show structured retryable or
+  terminal errors inline and in the status bar.
+- Web, Telegram, and terminal use the same canonical packet and answer
+  contracts. Wave 7 validates text-based flows; media capture and transcription
+  remain deferred.
+- Structured events cover handoff, lookup, question packets, answers, report
+  completion, resume, and master-history promotion without raw answers or graph
+  IDs in general observability payloads.
+- Model-facing context and report propagation are audited for redaction,
+  complete report delivery, and absence of hidden status gates.
+- Unused clarification classifier templates, duplicate mappings, and stale
+  frontend pending-process paths are removed after reference verification.
+- Backend tests, frontend typecheck/build, compilation, and refined-ingestion
+  regression checks are required for completion.
 
 Exit criteria:
 
@@ -614,9 +624,10 @@ This requirement does not introduce:
 The following decisions remain open and must be resolved during implementation
 without weakening the mandatory requirements above:
 
-1. Whether the clarification agent receives the entire master history or a
-   backend-built bounded projection when context limits require it.
-2. The retention and expiry policy for abandoned clarification sessions.
+1. Token-threshold context compaction remains deferred; the clarification agent
+   continues to inherit the existing master-history snapshot.
+2. Abandoned clarification sessions continue to use the existing
+   `AgenticFrame.expires_at` retention behavior; no new cleanup worker is added.
 
 These are implementation and product-detail decisions. They must not become
 new deterministic pipeline gates or create parallel clarification flows.

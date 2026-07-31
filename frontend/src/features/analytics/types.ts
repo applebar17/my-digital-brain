@@ -17,10 +17,3 @@ export interface AnalyticsRankedItem {
   subtitle: string;
   count: number;
 }
-
-export interface PendingProcessItem {
-  id: string;
-  kind: string;
-  status: string;
-  detail: string;
-}

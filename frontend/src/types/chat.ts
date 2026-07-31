@@ -1,7 +1,7 @@
 export type ChatResponseStatus =
   | "ok"
   | "accepted"
-  | "needs_user_input"
+  | "awaiting_clarification"
   | "failed"
   | "cancelled";
 
@@ -26,19 +26,9 @@ export interface WebChatMessageRequest {
   text?: string | null;
   media_refs?: IncomingMediaRef[];
   reply_to_message_id?: string | null;
-  pending_process_id?: string | null;
   conversation_history_refs?: string[];
   received_at?: string;
   metadata?: Record<string, unknown>;
-}
-
-export interface PendingProcessRef {
-  process_id: string;
-  kind: string;
-  status: string;
-  question?: string | null;
-  expires_at?: string | null;
-  metadata: Record<string, unknown>;
 }
 
 export interface ClarificationOption {
@@ -155,7 +145,6 @@ export interface ChatResponse {
   session_id: string;
   status: ChatResponseStatus;
   primary_text: string;
-  pending_process?: PendingProcessRef | null;
   clarification_packet?: ClarificationPacket | null;
   actions: ChatAction[];
   evidence: ChatEvidenceRef[];
@@ -171,7 +160,6 @@ export interface ConversationSession {
   owner_id: string;
   title: string;
   status: string;
-  active_pending_process_id?: string | null;
   active_agentic_frame_id?: string | null;
   last_message_at?: string | null;
   archived_at?: string | null;
@@ -188,17 +176,7 @@ export interface ConversationMessage {
   text?: string | null;
   media_refs: IncomingMediaRef[];
   source_ref?: string | null;
-  pending_process_id?: string | null;
   created_at: string;
-  metadata: Record<string, unknown>;
-}
-
-export interface PendingProcessContext {
-  process_ref: PendingProcessRef;
-  context: Record<string, unknown>;
-  conversation_history_refs: string[];
-  created_at: string;
-  updated_at: string;
   metadata: Record<string, unknown>;
 }
 
@@ -224,8 +202,6 @@ export interface AgenticFrame {
 export interface ConversationSessionDetail {
   session: ConversationSession;
   messages: ConversationMessage[];
-  pending_process?: PendingProcessContext | null;
-  pending_processes?: PendingProcessContext[];
   active_agentic_frame?: AgenticFrame | null;
 }
 
@@ -236,9 +212,7 @@ export interface ConversationSessionSummary {
   owner_id: string;
   title: string;
   status: string;
-  active_pending_process_id?: string | null;
   active_agentic_frame_id?: string | null;
-  pending_process_status?: string | null;
   last_message_preview?: string | null;
   last_message_at?: string | null;
   archived_at?: string | null;

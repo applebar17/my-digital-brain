@@ -3,13 +3,11 @@ import { AnalyticsHeader } from "../features/analytics/components/AnalyticsHeade
 import { DistributionBars } from "../features/analytics/components/DistributionBars";
 import { IntegrityPanel } from "../features/analytics/components/IntegrityPanel";
 import { MetricStrip } from "../features/analytics/components/MetricStrip";
-import { PendingProcessesPanel } from "../features/analytics/components/PendingProcessesPanel";
 import { RankedNodeList } from "../features/analytics/components/RankedNodeList";
 import type {
   AnalyticsDistributionItem,
   AnalyticsMetric,
-  AnalyticsRankedItem,
-  PendingProcessItem
+  AnalyticsRankedItem
 } from "../features/analytics/types";
 
 const metrics: AnalyticsMetric[] = [
@@ -30,11 +28,6 @@ const metrics: AnalyticsMetric[] = [
     detail: "No live review source",
     tone: "warning"
   },
-  {
-    label: "Pending",
-    value: "0",
-    detail: "Pending-process feed not wired"
-  }
 ];
 
 const nodeDistribution: AnalyticsDistributionItem[] = [
@@ -60,8 +53,6 @@ const centralNodes: AnalyticsRankedItem[] = [
   }
 ];
 
-const pendingProcesses: PendingProcessItem[] = [];
-
 export function AnalyticsView() {
   return (
     <div className="workspace analytics-workspace memory-analytics-workspace">
@@ -85,9 +76,6 @@ export function AnalyticsView() {
           <IntegrityPanel contradictions={0} staleItems={0} orphanedRefs={0} />
         </AnalyticsCard>
 
-        <AnalyticsCard title="Pending Processes" eyebrow="Runtime">
-          <PendingProcessesPanel items={pendingProcesses} />
-        </AnalyticsCard>
       </div>
     </div>
   );

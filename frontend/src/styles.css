@@ -1466,9 +1466,55 @@ p {
   line-height: 18px;
 }
 
+.memory-clarification-error {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--outline-variant));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-container-lowest));
+  color: var(--on-surface);
+}
+
+.memory-clarification-error strong,
+.memory-clarification-error small {
+  color: var(--danger);
+}
+
+.memory-clarification-error p {
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.memory-clarification-error-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.memory-clarification-error-actions button {
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--danger);
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .memory-clarification-question {
   display: grid;
   gap: var(--space-3);
+}
+
+.memory-clarification-kind {
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .memory-clarification-question h3 {

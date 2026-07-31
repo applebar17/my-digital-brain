@@ -1,5 +1,3 @@
-import type { PendingProcessRef } from "../../types/chat";
-
 export interface RenderedChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -9,9 +7,26 @@ export interface RenderedChatMessage {
 }
 
 export interface ChatRuntimeState {
-  pendingProcess?: PendingProcessRef | null;
-  activeClarification?: boolean;
+  status: ChatRuntimeStatus;
   isSending: boolean;
   statusMessage?: string;
+  clarificationError?: ClarificationUiError;
   errorMessage?: string;
+}
+
+export type ChatRuntimeStatus =
+  | "active"
+  | "processing"
+  | "awaiting_clarification"
+  | "completed"
+  | "error";
+
+export interface ClarificationUiError {
+  code: string;
+  message: string;
+  packetId?: string;
+  frameId?: string;
+  questionIds: string[];
+  retryable: boolean;
+  details: Record<string, unknown>;
 }

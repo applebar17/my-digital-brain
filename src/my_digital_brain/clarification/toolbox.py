@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import Field, model_validator
 
+from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 
 from .context_projection import project_entity_detail, project_relationship, relationship_matches
@@ -23,6 +25,8 @@ DEFAULT_LOOKUP_LIMIT = 5
 MAX_LOOKUP_LIMIT = 10
 DEFAULT_CONTEXT_LIMIT = 5
 MAX_CONTEXT_LIMIT = 20
+
+logger = logging.getLogger(__name__)
 
 
 class ClarificationQuestionOption(ClarificationModel):
@@ -114,6 +118,14 @@ class ClarificationToolService:
                 owner_graph_node_id=self.owner_graph_node_id,
                 max_candidates=limit,
             ).lookup(request, registry=registry)
+            log_event(
+                logger,
+                "clarification.lookup.completed",
+                component="clarification_toolbox",
+                candidate_ref=candidate_ref,
+                status=str(result.status),
+                candidate_count=len(result.candidates),
+            )
             return ToolResult(
                 status="ok",
                 output="Structured candidate lookup completed.",
@@ -267,6 +279,15 @@ class ClarificationToolService:
                         ],
                     },
                 ],
+            )
+            log_event(
+                logger,
+                "clarification.question_packet.created",
+                component="clarification_toolbox",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                tool_name=tool_name,
+                question_count=len(packet.questions),
             )
             return _pending_question_result(packet)
         except Exception as exc:

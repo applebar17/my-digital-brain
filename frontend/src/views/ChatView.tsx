@@ -8,7 +8,7 @@ import {
   submitClarificationAnswers,
   updateChatSession
 } from "../api/chat";
-import { formatApiError } from "../api/http";
+import { clarificationApiError, formatApiError } from "../api/http";
 import {
   defaultConversationId,
   aiTraceDebugEnabled,
@@ -22,7 +22,11 @@ import { ChatMessageList } from "../features/chat/components/ChatMessageList";
 import { ClarificationQuestionBox } from "../features/chat/components/ClarificationQuestionBox";
 import { ChatStatusBar } from "../features/chat/components/ChatStatusBar";
 import { ChatTopbar } from "../features/chat/components/ChatTopbar";
-import type { ChatRuntimeState, RenderedChatMessage } from "../features/chat/types";
+import type {
+  ChatRuntimeState,
+  ClarificationUiError,
+  RenderedChatMessage
+} from "../features/chat/types";
 import {
   createClientMessageId,
   messagesFromSession,
@@ -34,8 +38,7 @@ import type {
   ClarificationPacket,
   ClarificationProgress,
   ConversationSessionDetail,
-  ConversationSessionSummary,
-  PendingProcessRef
+  ConversationSessionSummary
 } from "../types/chat";
 
 const tokenStorageKey = "my-digital-brain.web-chat-token";
@@ -43,7 +46,6 @@ const tokenStorageKey = "my-digital-brain.web-chat-token";
 export function ChatView() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<RenderedChatMessage[]>([]);
-  const [pendingProcess, setPendingProcess] = useState<PendingProcessRef | null>(null);
   const [clarificationPacket, setClarificationPacket] = useState<ClarificationPacket | null>(null);
   const [clarificationProgress, setClarificationProgress] = useState<ClarificationProgress | null>(
     null
@@ -58,14 +60,23 @@ export function ChatView() {
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [clarificationError, setClarificationError] = useState<ClarificationUiError>();
   const [token] = useState(() => localStorage.getItem(tokenStorageKey) ?? defaultWebChatToken);
 
   const runtime: ChatRuntimeState = {
-    pendingProcess,
-    activeClarification: Boolean(clarificationPacket),
+    status: clarificationError || errorMessage
+      ? "error"
+      : clarificationPacket
+        ? "awaiting_clarification"
+        : isSending
+          ? "processing"
+          : statusMessage?.startsWith("Response received")
+            ? "completed"
+            : "active",
     isSending,
     statusMessage,
-    errorMessage
+    errorMessage,
+    clarificationError
   };
 
   useEffect(() => {
@@ -110,7 +121,6 @@ export function ChatView() {
         if (isCancelled) {
           return;
         }
-        setPendingProcess(detail.pending_process?.process_ref ?? null);
         setClarificationPacket(clarificationPacketFromSession(detail));
         setClarificationProgress(clarificationProgressFromSession(detail));
         setProcessUpdates(processUpdatesFromSession(detail));
@@ -148,6 +158,7 @@ export function ChatView() {
     setMessages((current) => [...current, userMessage]);
     setIsSending(true);
     setErrorMessage(undefined);
+    setClarificationError(undefined);
     setProcessUpdates(["Message sent", "Waiting for backend processing..."]);
     setStatusMessage("Sending message...");
 
@@ -160,14 +171,12 @@ export function ChatView() {
           owner_id: defaultOwnerId,
           message_id: messageId,
           text,
-          pending_process_id: pendingProcess?.process_id ?? undefined,
           conversation_history_refs: messages.map((message) => message.id)
         },
         token
       );
 
       setSessionId(response.session_id);
-      setPendingProcess(response.pending_process ?? null);
       setClarificationPacket(response.clarification_packet ?? null);
       setClarificationProgress(clarificationProgressFromResponse(response));
       await reloadSession(response.session_id, response);
@@ -180,7 +189,7 @@ export function ChatView() {
       setProcessUpdates([`Response received: ${response.status}`]);
       window.setTimeout(() => setProcessUpdates([]), 2600);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to send message.");
+      setErrorMessage(formatApiError(error, "Unable to send message."));
       setStatusMessage(undefined);
     } finally {
       setIsSending(false);
@@ -202,6 +211,7 @@ export function ChatView() {
     setActiveConversationId(chat.external_conversation_id);
     setSessionId(chat.session_id);
     setErrorMessage(undefined);
+    setClarificationError(undefined);
     setStatusMessage(options.setLoadedStatus ? "Loading conversation..." : undefined);
     setProcessUpdates([]);
     try {
@@ -237,7 +247,6 @@ export function ChatView() {
       setActiveConversationId(session.external_conversation_id);
       setSessionId(session.session_id);
       setMessages([]);
-      setPendingProcess(null);
       setClarificationPacket(null);
       setClarificationProgress(null);
       await refreshRecentChats();
@@ -284,7 +293,6 @@ export function ChatView() {
     setActiveConversationId(detail.session.external_conversation_id);
     setSessionId(detail.session.session_id);
     setMessages(messagesFromSession(detail.messages));
-    setPendingProcess(detail.pending_process?.process_ref ?? null);
     setClarificationPacket(clarificationPacketFromSession(detail));
     setClarificationProgress(clarificationProgressFromSession(detail));
   }
@@ -296,6 +304,7 @@ export function ChatView() {
     const messageId = createClientMessageId();
     setIsSending(true);
     setErrorMessage(undefined);
+    setClarificationError(undefined);
     setStatusMessage("Submitting clarification...");
     setProcessUpdates(["Clarification answers submitted", "Resuming backend process..."]);
     try {
@@ -310,7 +319,6 @@ export function ChatView() {
         },
         token
       );
-      setPendingProcess(response.pending_process ?? null);
       setClarificationPacket(response.clarification_packet ?? null);
       setClarificationProgress(clarificationProgressFromResponse(response));
       await reloadSession(response.session_id, response);
@@ -319,7 +327,20 @@ export function ChatView() {
       setProcessUpdates([`Response received: ${response.status}`]);
       window.setTimeout(() => setProcessUpdates([]), 2600);
     } catch (error) {
-      setErrorMessage(formatApiError(error, "Unable to submit clarification."));
+      const structuredError = clarificationApiError(error);
+      if (structuredError) {
+        setClarificationError({
+          code: structuredError.code,
+          message: structuredError.message,
+          packetId: structuredError.packetId,
+          frameId: structuredError.frameId,
+          questionIds: structuredError.questionIds,
+          retryable: structuredError.retryable,
+          details: structuredError.details
+        });
+      } else {
+        setErrorMessage(formatApiError(error, "Unable to submit clarification."));
+      }
       setStatusMessage(undefined);
     } finally {
       setIsSending(false);
@@ -344,7 +365,6 @@ export function ChatView() {
           setSessionId(undefined);
           setActiveConversationId(defaultConversationId);
           setMessages([]);
-          setPendingProcess(null);
           setClarificationPacket(null);
           setClarificationProgress(null);
           setProcessUpdates([]);
@@ -400,7 +420,6 @@ export function ChatView() {
         <main className="memory-chat-main">
           <ChatMessageList
             messages={messages}
-            pendingProcess={pendingProcess}
             isProcessing={isSending}
             processUpdates={processUpdates}
           />
@@ -409,7 +428,16 @@ export function ChatView() {
               <ClarificationQuestionBox
                 packet={clarificationPacket}
                 progress={clarificationProgress}
+                error={clarificationError}
                 isSubmitting={isSending}
+                onRecover={
+                  sessionId
+                    ? () => {
+                        setClarificationError(undefined);
+                        void reloadSession(sessionId);
+                      }
+                    : undefined
+                }
                 onSubmit={(packet) => void handleSubmitClarification(packet)}
               />
             </div>
@@ -427,14 +455,6 @@ function clarificationPacketFromSession(
   const framePacket = detail.active_agentic_frame?.clarification_packet;
   if (isClarificationPacket(framePacket)) {
     return framePacket;
-  }
-  const contextPacket = detail.pending_process?.context.clarification_packet;
-  if (isClarificationPacket(contextPacket)) {
-    return contextPacket;
-  }
-  const metadataPacket = detail.pending_process?.process_ref.metadata.clarification_packet;
-  if (isClarificationPacket(metadataPacket)) {
-    return metadataPacket;
   }
   return null;
 }
