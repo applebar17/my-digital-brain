@@ -22,7 +22,11 @@ from my_digital_brain.chat.enums import (
     ConversationMessageRole,
     ConversationStatus,
 )
-from my_digital_brain.chat.exceptions import ChatValidationError
+from my_digital_brain.chat.exceptions import (
+    ChatNotFoundError,
+    ChatValidationError,
+    ClarificationValidationError,
+)
 from my_digital_brain.chat.models import (
     ChatDiagnostic,
     ChatResponse,
@@ -292,19 +296,53 @@ class ChatRuntime:
         answer_packet: ClarificationAnswerPacket,
     ) -> ChatResponse:
         if self.agentic_runtime is None:
-            raise ChatValidationError("Clarification continuation requires an AgenticRuntime.")
+            raise ClarificationValidationError(
+                "Clarification continuation requires an AgenticRuntime.",
+                code="clarification_runtime_unavailable",
+                retryable=False,
+            )
         session = self.store.get_session(session_id)
         if session.owner_id != owner_id:
-            raise ChatValidationError("Chat session does not belong to the request owner.")
+            raise ClarificationValidationError(
+                "Chat session does not belong to the request owner.",
+                code="clarification_owner_mismatch",
+                retryable=False,
+            )
         if not hasattr(self.store, "get_agentic_frame"):
-            raise ChatValidationError("The chat store does not support agentic frames.")
-        frame = self.store.get_agentic_frame(answer_packet.frame_id)
+            raise ClarificationValidationError(
+                "The chat store does not support agentic frames.",
+                code="clarification_frame_store_unavailable",
+                retryable=False,
+            )
+        try:
+            frame = self.store.get_agentic_frame(answer_packet.frame_id)
+        except ChatNotFoundError as exc:
+            raise ClarificationValidationError(
+                "The clarification frame is stale or no longer available.",
+                code="clarification_frame_stale",
+                frame_id=answer_packet.frame_id,
+                retryable=False,
+            ) from exc
         if frame.session_id != session.session_id:
-            raise ChatValidationError("Clarification answers must target this chat session.")
+            raise ClarificationValidationError(
+                "Clarification answers must target this chat session.",
+                code="clarification_frame_session_mismatch",
+                frame_id=frame.frame_id,
+                retryable=False,
+            )
         if frame.status != "interrupted":
-            raise ChatValidationError("Clarification frame is not waiting for user input.")
+            raise ClarificationValidationError(
+                "Clarification frame is not waiting for user input.",
+                code="clarification_frame_not_waiting",
+                frame_id=frame.frame_id,
+            )
         if frame.clarification_packet is None:
-            raise ChatValidationError("The agentic frame has no active clarification packet.")
+            raise ClarificationValidationError(
+                "The agentic frame has no active clarification packet.",
+                code="clarification_packet_missing",
+                frame_id=frame.frame_id,
+                retryable=False,
+            )
         packet = frame.clarification_packet
         validate_clarification_answers(packet, answer_packet)
         log_event(
@@ -479,17 +517,27 @@ class ChatRuntime:
     ) -> ChatResponse:
         session, frame = self.active_clarification_frame_for_message(message)
         if frame is None or frame.clarification_packet is None:
-            raise ChatValidationError("There is no active clarification for this chat.")
+            raise ClarificationValidationError(
+                "There is no active clarification for this chat.",
+                code="clarification_not_active",
+            )
         if expected_frame_id is not None and frame.frame_id != expected_frame_id:
-            raise ChatValidationError("Telegram clarification answer targeted a different frame.")
+            raise ClarificationValidationError(
+                "Telegram clarification answer targeted a different frame.",
+                code="clarification_frame_mismatch",
+                frame_id=frame.frame_id,
+            )
         packet = frame.clarification_packet
         question = _current_clarification_question(
             packet,
             frame.metadata.get("clarification_progress"),
         )
         if expected_question_id is not None and question.question_id != expected_question_id:
-            raise ChatValidationError(
-                "Telegram clarification answer targeted a different question."
+            raise ClarificationValidationError(
+                "Telegram clarification answer targeted a different question.",
+                code="clarification_question_mismatch",
+                frame_id=frame.frame_id,
+                question_ids=[question.question_id],
             )
         answer = ClarificationAnswer(
             question_id=question.question_id,

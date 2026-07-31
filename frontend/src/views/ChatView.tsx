@@ -8,6 +8,7 @@ import {
   submitClarificationAnswers,
   updateChatSession
 } from "../api/chat";
+import { formatApiError } from "../api/http";
 import {
   defaultConversationId,
   aiTraceDebugEnabled,
@@ -318,7 +319,7 @@ export function ChatView() {
       setProcessUpdates([`Response received: ${response.status}`]);
       window.setTimeout(() => setProcessUpdates([]), 2600);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to submit clarification.");
+      setErrorMessage(formatApiError(error, "Unable to submit clarification."));
       setStatusMessage(undefined);
     } finally {
       setIsSending(false);

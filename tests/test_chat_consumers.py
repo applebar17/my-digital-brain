@@ -13,14 +13,14 @@ from my_digital_brain.ai.session import (
     LLMSessionRunner,
 )
 from my_digital_brain.api.routes import telegram as telegram_routes
-from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.chat.enums import ChatChannel, ChatResponseStatus
 from my_digital_brain.chat.models import AgenticFrame, ChatResponse
-from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.chat.telegram import TelegramWebhookAdapter
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
+from my_digital_brain.clarification.contracts import ClarificationPacket
+from my_digital_brain.clarification.interaction import build_clarification_packet
 from my_digital_brain.config import Settings
 
 
@@ -228,7 +228,7 @@ def test_telegram_webhook_routes_callback_to_selected_clarification_option() -> 
         external_conversation_id="100",
         owner_id="42",
     )
-    packet = _save_interrupted_frame(store, session.session_id)
+    _save_interrupted_frame(store, session.session_id)
     runtime = ChatRuntime(
         store=store,
         agentic_runtime=AgenticRuntime(AgenticStateRunner(provider=provider)),
@@ -293,7 +293,8 @@ def test_telegram_webhook_rejects_free_text_when_clarification_disallows_it() ->
     )
 
     assert response.status_code == 400
-    assert "does not accept custom answers" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "clarification_custom_answer_not_allowed"
+    assert "does not accept custom answers" in response.json()["detail"]["message"]
 
 
 def test_telegram_webhook_rejects_missing_secret_and_unknown_sender() -> None:

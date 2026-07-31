@@ -43,18 +43,39 @@ export interface PendingProcessRef {
 
 export interface ClarificationOption {
   option_id: string;
+  target_ref?: string | null;
   label: string;
-  description?: string | null;
+  summary?: string | null;
   recommended: boolean;
 }
+
+export type ClarificationKind =
+  | "identity_no_match"
+  | "identity_ambiguous"
+  | "missing_attribute"
+  | "confirm_proposal"
+  | "correct_conflict"
+  | "relationship_target"
+  | "explicit_discard";
+
+export type ClarificationResponseMode =
+  | "free_text"
+  | "single_choice"
+  | "multiple_choice"
+  | "confirmation"
+  | "choice_or_text"
+  | "text_or_audio";
 
 export interface ClarificationQuestion {
   question_id: string;
   question: string;
+  kind: ClarificationKind;
+  response_mode: ClarificationResponseMode;
   options: ClarificationOption[];
-  free_text_allowed: boolean;
+  target_refs: string[];
+  evidence_refs: string[];
+  allow_custom_answer: boolean;
   required: boolean;
-  selection_mode: "single" | "multiple";
 }
 
 export interface ClarificationHistoryMessage {
@@ -77,7 +98,9 @@ export interface ClarificationPacket {
 export interface ClarificationAnswer {
   question_id: string;
   selected_option_ids: string[];
-  free_text?: string | null;
+  text?: string | null;
+  audio_media_ref?: string | null;
+  normalized_text?: string | null;
 }
 
 export interface ClarificationAnswerPacket {

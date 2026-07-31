@@ -147,7 +147,13 @@ def _answer_clarifications_from_terminal(
         print(f"Stage: {pending_packet.origin_state_id}")
         print(f"Question: {question.question}")
         if question.options:
-            print("Options: " + ", ".join(option.label for option in question.options))
+            print(
+                "Options: "
+                + ", ".join(
+                    f"{option.label} ({option.summary})" if option.summary else option.label
+                    for option in question.options
+                )
+            )
         if pending_packet.target_refs:
             print(f"Target refs: {', '.join(pending_packet.target_refs)}")
         event = {

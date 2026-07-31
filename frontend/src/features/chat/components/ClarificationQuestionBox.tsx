@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
+  ClarificationAnswer,
   ClarificationAnswerPacket,
   ClarificationPacket,
   ClarificationProgress,
@@ -19,67 +20,104 @@ export function ClarificationQuestionBox({
   isSubmitting = false,
   onSubmit
 }: ClarificationQuestionBoxProps) {
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [freeText, setFreeText] = useState<Record<string, string>>({});
-  const currentQuestion = useMemo(
-    () => resolveCurrentQuestion(packet, progress),
-    [packet, progress]
-  );
-  const currentIndex = packet && currentQuestion
-    ? packet.questions.findIndex((question) => question.question_id === currentQuestion.question_id)
-    : -1;
+  const [answers, setAnswers] = useState<Record<string, ClarificationAnswer>>({});
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    setSelected({});
-    setFreeText({});
-  }, [packet?.packet_id, currentQuestion?.question_id]);
-
-  const canSubmit = useMemo(() => {
-    if (!packet || !currentQuestion || !onSubmit) {
-      return false;
+    if (!packet) {
+      setAnswers({});
+      setCurrentIndex(0);
+      return;
     }
-    if (!currentQuestion.required) {
-      return true;
-    }
-    return (
-      (selected[currentQuestion.question_id]?.length ?? 0) > 0 ||
-      Boolean(freeText[currentQuestion.question_id]?.trim())
+    const saved = progress?.packet_id === packet.packet_id
+      ? progress.answers_by_question_id
+      : {};
+    setAnswers(saved as Record<string, ClarificationAnswer>);
+    const firstUnanswered = packet.questions.findIndex(
+      (question) => !saved[question.question_id]
     );
-  }, [currentQuestion, freeText, onSubmit, packet, selected]);
+    setCurrentIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
+  }, [packet?.packet_id]);
 
-  if (!packet || !currentQuestion) {
+  useEffect(() => {
+    if (!packet || progress?.packet_id !== packet.packet_id) {
+      return;
+    }
+    setAnswers(progress.answers_by_question_id as Record<string, ClarificationAnswer>);
+    const firstUnanswered = packet.questions.findIndex(
+      (question) => !progress.answers_by_question_id[question.question_id]
+    );
+    if (firstUnanswered >= 0) {
+      setCurrentIndex(firstUnanswered);
+    }
+  }, [packet, progress]);
+
+  const question = packet?.questions[currentIndex] ?? null;
+  const currentAnswer = question ? answers[question.question_id] : undefined;
+  const canContinue = question ? answerIsValid(question, currentAnswer) : false;
+  const isLastQuestion = packet ? currentIndex === packet.questions.length - 1 : false;
+
+  const selectedOptionIds = useMemo(
+    () => new Set(currentAnswer?.selected_option_ids ?? []),
+    [currentAnswer?.selected_option_ids]
+  );
+
+  if (!packet || !question) {
     return null;
   }
 
-  function toggleOption(question: ClarificationQuestion, optionId: string) {
-    setSelected((current) => {
-      const values = current[question.question_id] ?? [];
-      if (question.selection_mode === "multiple") {
-        const nextValues = values.includes(optionId)
-          ? values.filter((item) => item !== optionId)
-          : [...values, optionId];
-        return { ...current, [question.question_id]: nextValues };
-      }
-      return { ...current, [question.question_id]: values.includes(optionId) ? [] : [optionId] };
+  const activePacket = packet;
+  const activeQuestion = question;
+
+  function updateAnswer(next: ClarificationAnswer) {
+    setAnswers((current) => ({ ...current, [activeQuestion.question_id]: next }));
+  }
+
+  function toggleOption(optionId: string) {
+    const current = currentAnswer?.selected_option_ids ?? [];
+    const multiple = activeQuestion.response_mode === "multiple_choice";
+    const next = multiple
+      ? current.includes(optionId)
+        ? current.filter((item) => item !== optionId)
+        : [...current, optionId]
+      : current.includes(optionId)
+        ? []
+        : [optionId];
+    updateAnswer({
+      question_id: activeQuestion.question_id,
+      selected_option_ids: next,
+      text: currentAnswer?.text ?? null
     });
   }
 
-  function submitAnswers() {
-    const question = currentQuestion;
-    if (!packet || !question || !canSubmit || isSubmitting) {
+  function updateText(text: string) {
+    updateAnswer({
+      question_id: activeQuestion.question_id,
+      selected_option_ids: currentAnswer?.selected_option_ids ?? [],
+      text: text || null
+    });
+  }
+
+  function continueToNext() {
+    if (!canContinue || isSubmitting) {
+      return;
+    }
+    if (!isLastQuestion) {
+      setCurrentIndex((current) => current + 1);
       return;
     }
     onSubmit({
-      packet_id: packet.packet_id,
-      frame_id: packet.frame_id,
-      tool_call_id: packet.tool_call_id ?? "",
-      answers: [
-        {
-          question_id: question.question_id,
-          selected_option_ids: selected[question.question_id] ?? [],
-          free_text: freeText[question.question_id]?.trim() || null
-        }
-      ]
+      packet_id: activePacket.packet_id,
+      frame_id: activePacket.frame_id,
+      tool_call_id: activePacket.tool_call_id ?? "",
+      answers: activePacket.questions.map(
+        (item) =>
+          answers[item.question_id] ?? {
+            question_id: item.question_id,
+            selected_option_ids: [],
+            text: null
+          }
+      )
     });
   }
 
@@ -87,19 +125,15 @@ export function ClarificationQuestionBox({
     <aside className="memory-clarification-box" aria-live="polite">
       <div className="memory-clarification-header">
         <strong>Quick question</strong>
+        <span>{currentIndex + 1} / {activePacket.questions.length}</span>
       </div>
 
-      <section className="memory-clarification-question" key={currentQuestion.question_id}>
-        <h3>
-          <span className="memory-clarification-count">
-            {Math.max(currentIndex + 1, 1)} / {packet.questions.length}
-          </span>
-          <span className="memory-clarification-question-text">{currentQuestion.question}</span>
-        </h3>
-        {currentQuestion.options.length > 0 ? (
+      <section className="memory-clarification-question" key={activeQuestion.question_id}>
+        <h3 className="memory-clarification-question-text">{activeQuestion.question}</h3>
+        {activeQuestion.options.length > 0 ? (
           <div className="memory-clarification-options">
-            {currentQuestion.options.map((option) => {
-              const isSelected = selected[currentQuestion.question_id]?.includes(option.option_id);
+            {activeQuestion.options.map((option) => {
+              const isSelected = selectedOptionIds.has(option.option_id);
               return (
                 <button
                   className={`memory-clarification-option ${
@@ -107,62 +141,55 @@ export function ClarificationQuestionBox({
                   } ${option.recommended ? "is-recommended" : ""}`}
                   disabled={isSubmitting}
                   key={option.option_id}
-                  onClick={() => toggleOption(currentQuestion, option.option_id)}
+                  onClick={() => toggleOption(option.option_id)}
                   type="button"
                 >
                   <span>{option.label}</span>
                   {option.recommended ? <em>Recommended</em> : null}
-                  {option.description ? <small>{option.description}</small> : null}
+                  {option.summary ? <small>{option.summary}</small> : null}
                 </button>
               );
             })}
           </div>
         ) : null}
-        {currentQuestion.free_text_allowed ? (
+        {activeQuestion.allow_custom_answer ? (
           <textarea
-            aria-label={`Free text answer for ${currentQuestion.question}`}
+            aria-label={`Text answer for ${activeQuestion.question}`}
             disabled={isSubmitting}
-            onChange={(event) =>
-              setFreeText((current) => ({
-                ...current,
-                [currentQuestion.question_id]: event.target.value
-              }))
-            }
+            onChange={(event) => updateText(event.target.value)}
             placeholder="Or answer in your own words..."
-            value={freeText[currentQuestion.question_id] ?? ""}
+            value={currentAnswer?.text ?? ""}
           />
         ) : null}
       </section>
 
       <div className="memory-clarification-actions">
-        <button disabled={!canSubmit || isSubmitting} onClick={submitAnswers} type="button">
-          {isSubmitting ? "Submitting..." : "Submit answer"}
+        <button
+          disabled={currentIndex === 0 || isSubmitting}
+          onClick={() => setCurrentIndex((current) => current - 1)}
+          type="button"
+        >
+          Back
+        </button>
+        <button disabled={!canContinue || isSubmitting} onClick={continueToNext} type="button">
+          {isSubmitting ? "Submitting..." : isLastQuestion ? "Submit answers" : "Next"}
         </button>
       </div>
     </aside>
   );
 }
 
-function resolveCurrentQuestion(
-  packet?: ClarificationPacket | null,
-  progress?: ClarificationProgress | null
-): ClarificationQuestion | null {
-  if (!packet) {
-    return null;
+function answerIsValid(
+  question: ClarificationQuestion,
+  answer: ClarificationAnswer | undefined
+): boolean {
+  if (!answer) {
+    return !question.required;
   }
-  if (progress?.packet_id === packet.packet_id && progress.is_complete) {
-    return null;
+  const hasOption = answer.selected_option_ids.length > 0;
+  const hasText = Boolean(answer.text?.trim());
+  if (!question.required) {
+    return true;
   }
-  if (progress?.current_question_id) {
-    return (
-      packet.questions.find((question) => question.question_id === progress.current_question_id) ??
-      null
-    );
-  }
-  const answered = new Set(progress?.answered_question_ids ?? []);
-  return (
-    packet.questions.find((question) => !answered.has(question.question_id)) ??
-    packet.questions[0] ??
-    null
-  );
+  return hasOption || (question.allow_custom_answer && hasText);
 }

@@ -215,6 +215,13 @@ Priority: 1
   and terminal channels to render different controls. Wave 3 owns promotion of
   clean question/answer pairs to the persisted master history; tool output and
   internal traces remain in the active LLM-session transcript.
+- Align the web, Telegram, and terminal consumers with the canonical Wave 1
+  packet and answer fields. Web keeps a packet locally for back/edit navigation
+  and submits it once; Telegram and terminal submit one answer at a time.
+- Return structured clarification API errors with stable codes and retry
+  metadata for stale, mismatched, empty, and invalid answers.
+- Defer browser media capture, media upload/storage, and transcription
+  integration until a later clarification-media wave.
 - Define validation and rendering behavior for empty answers, invalid option
   refs, stale packets, repeated questions, audio-only answers, and answers that
   do not resolve the target.

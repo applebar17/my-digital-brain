@@ -100,20 +100,44 @@ def validate_clarification_answers(
     packet: ClarificationPacket,
     answers: ClarificationAnswerPacket,
 ) -> None:
-    from my_digital_brain.chat.exceptions import ChatValidationError
+    from my_digital_brain.chat.exceptions import ClarificationValidationError
 
     if answers.packet_id != packet.packet_id:
-        raise ChatValidationError("Clarification answer packet does not match the active packet.")
+        raise ClarificationValidationError(
+            "Clarification answer packet does not match the active packet.",
+            code="clarification_packet_mismatch",
+            packet_id=packet.packet_id,
+            frame_id=packet.frame_id,
+            details={"received_packet_id": answers.packet_id},
+        )
     if answers.frame_id != packet.frame_id:
-        raise ChatValidationError("Clarification answer frame id does not match.")
+        raise ClarificationValidationError(
+            "Clarification answer frame id does not match.",
+            code="clarification_frame_mismatch",
+            packet_id=packet.packet_id,
+            frame_id=packet.frame_id,
+            details={"received_frame_id": answers.frame_id},
+        )
     if packet.tool_call_id and answers.tool_call_id != packet.tool_call_id:
-        raise ChatValidationError("Clarification answer tool call id does not match.")
+        raise ClarificationValidationError(
+            "Clarification answer tool call id does not match.",
+            code="clarification_tool_call_mismatch",
+            packet_id=packet.packet_id,
+            frame_id=packet.frame_id,
+            details={"received_tool_call_id": answers.tool_call_id},
+        )
 
     questions = {question.question_id: question for question in packet.questions}
     for answer in answers.answers:
         question = questions.get(answer.question_id)
         if question is None:
-            raise ChatValidationError(f"Unknown clarification question id: {answer.question_id}")
+            raise ClarificationValidationError(
+                f"Unknown clarification question id: {answer.question_id}",
+                code="clarification_question_unknown",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
+            )
         allowed_options = {option.option_id for option in question.options}
         unknown_options = [
             option_id
@@ -121,8 +145,13 @@ def validate_clarification_answers(
             if option_id not in allowed_options
         ]
         if unknown_options:
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 "Clarification answer referenced unknown option ids: " + ", ".join(unknown_options),
+                code="clarification_option_unknown",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
+                details={"unknown_option_ids": unknown_options},
             )
         if (
             question.response_mode
@@ -133,24 +162,36 @@ def validate_clarification_answers(
             }
             and len(answer.selected_option_ids) > 1
         ):
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 f"Question {answer.question_id} accepts only one selected option.",
+                code="clarification_option_cardinality",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
             )
         has_text = bool((answer.text or "").strip())
         has_audio = bool((answer.audio_media_ref or "").strip())
         has_normalized_text = bool((answer.normalized_text or "").strip())
         has_option = bool(answer.selected_option_ids)
         if question.response_mode in {"free_text", "text_or_audio"} and has_option:
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 f"Question {answer.question_id} does not accept choice options.",
+                code="clarification_response_mode_mismatch",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
             )
         if (
             question.response_mode == "multiple_choice"
             and not has_option
             and not (has_text or has_audio)
         ):
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 f"Question {answer.question_id} requires at least one selected option.",
+                code="clarification_answer_required",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
             )
         if (
             question.required
@@ -159,12 +200,20 @@ def validate_clarification_answers(
             and not has_normalized_text
             and not has_option
         ):
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 f"Question {answer.question_id} requires an option, text, or audio answer.",
+                code="clarification_answer_required",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
             )
         if (has_text or has_audio or has_normalized_text) and not question.allow_custom_answer:
-            raise ChatValidationError(
+            raise ClarificationValidationError(
                 f"Question {answer.question_id} does not accept custom answers.",
+                code="clarification_custom_answer_not_allowed",
+                packet_id=packet.packet_id,
+                frame_id=packet.frame_id,
+                question_ids=[answer.question_id],
             )
 
 

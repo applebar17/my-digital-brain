@@ -473,23 +473,35 @@ Exit criteria:
 Activities:
 
 - Expose the channel-neutral question packet through the application API.
-- Accept option selections, free text, audio media refs, and normalized audio
-  transcriptions through one answer contract.
-- Render the packet in the web frontend, Telegram, and terminal/UAT consumer.
-- Keep custom text available when options are displayed.
+- Keep the API on the canonical answer contract and return structured errors
+  for invalid, stale, empty, mismatched, or unauthorized answers.
+- Render one active question at a time in every channel while preserving the
+  complete packet and question associations.
+- In the web frontend, keep packet answers locally, support back/edit
+  navigation, and submit one complete packet after the last question.
+- In Telegram and terminal/UAT, submit each answer immediately and render the
+  next unanswered question from the resumed response.
+- Keep custom text available when the contract allows it and show option
+  summaries in every channel.
 - Ensure channel adapters do not reconstruct semantic decisions or duplicate
   validation logic.
 - Preserve question IDs, packet IDs, and answer associations across retries or
   delayed responses.
+- Defer audio/media capture, upload, storage, and transcription integration to
+  a later wave; this wave only preserves the canonical transport fields.
 
 Exit criteria:
 
 - A user can answer every initial response mode through each supported channel
   where that input modality exists.
 - Invalid, stale, empty, and mismatched answers receive structured diagnostics.
-- Audio answers are normalized into the same agent-facing answer shape as text.
-- Channel integration tests cover buttons, custom text, parallel questions, and
-  terminal input.
+- Web users can move forward and backward through a packet without losing or
+  overwriting answers.
+- Telegram and terminal users receive the next question after each answer.
+- Channel integration tests cover buttons, custom text, sequential packets,
+  and terminal input.
+- No browser media capture or transcription behavior is introduced in this
+  wave.
 
 ### Wave 5: Resolution Report And Invoker Resume
 

@@ -6,19 +6,23 @@ from pydantic import BaseModel, ConfigDict
 
 from my_digital_brain.api.routes.graph import get_graph_service
 from my_digital_brain.chat.enums import ChatChannel, ConversationStatus
-from my_digital_brain.chat.exceptions import ChatNotFoundError, ChatValidationError
+from my_digital_brain.chat.exceptions import (
+    ChatNotFoundError,
+    ChatValidationError,
+    ClarificationValidationError,
+)
+from my_digital_brain.chat.factory import build_chat_runtime
 from my_digital_brain.chat.models import (
     ChatResponse,
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionList,
 )
-from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
-from my_digital_brain.chat.factory import build_chat_runtime
 from my_digital_brain.chat.relational_store import RelationalChatSessionStore
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import ChatSessionStore
 from my_digital_brain.chat.web import WebChatAdapter, WebChatMessageRequest
+from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
 from my_digital_brain.config import Settings, get_settings
 from my_digital_brain.graph.service import GraphService
 from my_digital_brain.storage.relational import RelationalSessionProvider
@@ -97,6 +101,19 @@ def require_web_chat_auth(
 
 
 def chat_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ClarificationValidationError):
+        return HTTPException(
+            status_code=400,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "packet_id": exc.packet_id,
+                "frame_id": exc.frame_id,
+                "question_ids": exc.question_ids,
+                "retryable": exc.retryable,
+                "details": exc.details,
+            },
+        )
     if isinstance(exc, ChatValidationError):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, ChatNotFoundError):

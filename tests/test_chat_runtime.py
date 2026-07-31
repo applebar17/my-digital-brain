@@ -598,7 +598,9 @@ def test_clarification_answer_endpoint_rejects_unknown_option_id() -> None:
     )
 
     assert response.status_code == 400
-    assert "unknown option ids" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "clarification_option_unknown"
+    assert "unknown option ids" in response.json()["detail"]["message"]
+    assert response.json()["detail"]["details"]["unknown_option_ids"] == ["invented-option"]
 
 
 def test_web_chat_api_requires_bearer_token_and_posts_message() -> None:

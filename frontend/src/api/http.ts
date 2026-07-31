@@ -19,6 +19,20 @@ export class ApiError extends Error {
   }
 }
 
+export function formatApiError(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && isRecord(error.detail)) {
+    const message = typeof error.detail.message === "string" ? error.detail.message : undefined;
+    const code = typeof error.detail.code === "string" ? error.detail.code : undefined;
+    if (message && code) {
+      return `${message} (${code})`;
+    }
+    if (message) {
+      return message;
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export async function apiRequest<T>(
   path: string,
   { method = "GET", query, body, bearerToken }: ApiRequestOptions = {}
