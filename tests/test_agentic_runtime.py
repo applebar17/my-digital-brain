@@ -11,6 +11,7 @@ from my_digital_brain.agentic import (
     AgenticStateId,
     AgenticStateInvocation,
     AgenticStateRunner,
+    AgenticStateRunResult,
     AgenticToolExecutionContext,
     ChannelSessionMetadata,
     ConversationContext,
@@ -35,7 +36,7 @@ from my_digital_brain.ai.session import (
     LLMSessionResult,
     LLMSessionRunner,
 )
-from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
+from my_digital_brain.chat.models import AgenticFrame
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 
@@ -467,6 +468,93 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
     assert event.tool_name == "ask_clarification"
     assert event.status == "ok"
     assert event.data["clarification_report"]["entries"][0]["status"] == "unresolved"
+
+
+def test_resumed_child_report_reaches_parent_invoker_tool_output() -> None:
+    provider = ScriptedToolCallingProvider([{"content": "Create Amos Vignaroli."}])
+    runtime = AgenticRuntime(_runner(provider))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    conversation = _conversation("Remember that I met Amos.")
+    report = {
+        "entries": [
+            {
+                "doubt_id": "DOUBT_001",
+                "status": "resolved",
+                "user_answers": ["Amos Vignaroli"],
+                "clarified_values": {"display_name": "Amos Vignaroli"},
+                "evidence_refs": ["CANDIDATE_PERSON_001"],
+            }
+        ],
+        "summary": "Amos was identified as Amos Vignaroli.",
+    }
+    parent = AgenticFrame(
+        frame_id="parent-frame-1",
+        session_id=session.session_id,
+        state_id=AgenticStateId.GRAPH_UPDATE.value,
+        status="interrupted",
+        messages=[
+            {"role": "system", "content": "Graph update instructions."},
+            {"role": "user", "content": "Remember that I met Amos."},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call-clarification",
+                        "type": "function",
+                        "function": {
+                            "name": "ask_clarification",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+            },
+        ],
+        context_payload={"conversation": conversation.model_dump(mode="json")},
+        active_tool_call_id="call-clarification",
+        active_tool_name="ask_clarification",
+    )
+    child = AgenticFrame(
+        frame_id="child-frame-1",
+        session_id=session.session_id,
+        state_id=AgenticStateId.CLARIFICATION_AGENT.value,
+        status="completed",
+        parent_frame_id=parent.frame_id,
+        parent_tool_call_id="call-clarification",
+        metadata={"clarification_report": report},
+    )
+    store.save_agentic_frame(session.session_id, parent)
+    execution_context = AgenticToolExecutionContext(
+        chat_store=store,
+        session_id=session.session_id,
+        frame_id=parent.frame_id,
+        agentic_runtime=runtime,
+        conversation_context=conversation,
+    )
+
+    result = runtime._resume_parent_frame(
+        parent,
+        child_frame=child,
+        child_result=AgenticStateRunResult(
+            state_id=AgenticStateId.CLARIFICATION_AGENT,
+            status="ok",
+        ),
+        execution_context=execution_context,
+    )
+
+    assert result.status == "ok"
+    assert result.metadata["clarification_report"] == report
+    assert result.metadata["resolved_clarifications"][0]["clarified_values"] == {
+        "display_name": "Amos Vignaroli"
+    }
+    tool_message = provider.calls[0]["request"].messages[-1]
+    assert tool_message.role == "tool"
+    assert "Amos Vignaroli" in tool_message.content
+    assert "clarified_values" in tool_message.content
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:

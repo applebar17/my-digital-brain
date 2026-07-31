@@ -257,10 +257,12 @@ class AgenticRuntime:
                 },
             )
         report_payload = result.metadata.get("clarification_report")
+        clarification_report: dict[str, Any] | None = None
         if isinstance(child_payload, ClarificationSessionInput):
             try:
                 report = ClarificationResolutionReport.model_validate(report_payload)
                 report.validate_against(child_payload.handoff)
+                clarification_report = report.model_dump(mode="json", exclude_none=True)
             except Exception as exc:
                 return ToolResult(
                     status="recoverable_error",
@@ -303,7 +305,8 @@ class AgenticRuntime:
                     result, "refreshed_vector_scopes"
                 ),
                 "resolved_clarifications": resolved_clarifications,
-                "clarification_report": result.metadata.get("clarification_report"),
+                "clarification_report": clarification_report
+                or result.metadata.get("clarification_report"),
                 "diagnostics": result.compact_trace,
             },
         )
@@ -606,6 +609,13 @@ class AgenticRuntime:
             },
         )
         compact_trace = [_compact_state_trace(state_result)]
+        clarification_report = _clarification_report_from_state_result(state_result)
+        if clarification_report is None:
+            clarification_report = frame.metadata.get("clarification_report")
+        if not resolved_clarifications:
+            resolved_clarifications = _resolved_clarifications_from_report(
+                clarification_report,
+            )
         if state_result.status == "interrupted":
             interruption = self._persist_interrupted_frame(
                 state_result,
@@ -644,6 +654,7 @@ class AgenticRuntime:
                     child_frame=frame,
                     child_result=state_result,
                     execution_context=execution_context,
+                    clarification_report=clarification_report,
                 )
         return AgenticRunResult(
             final_text=(
@@ -657,6 +668,7 @@ class AgenticRuntime:
             metadata={
                 "resumed_frame_id": frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
+                "clarification_report": clarification_report,
             },
         )
 
@@ -667,6 +679,7 @@ class AgenticRuntime:
         child_frame: AgenticFrame,
         child_result: AgenticStateRunResult,
         execution_context: AgenticToolExecutionContext,
+        clarification_report: dict[str, Any] | None = None,
     ) -> AgenticRunResult:
         if not parent.active_tool_call_id:
             return AgenticRunResult(
@@ -677,9 +690,16 @@ class AgenticRuntime:
                 compact_trace=[_compact_state_trace(child_result)],
             )
         summary = self.state_runner.history_service.state_result_summary(child_result)
+        clarification_report = (
+            clarification_report
+            or child_frame.metadata.get("clarification_report")
+            or child_result.metadata.get("clarification_report")
+            or _clarification_report_from_state_result(child_result)
+        )
         resolved_clarifications = list(
             child_frame.metadata.get("resolved_clarifications")
             or child_result.metadata.get("resolved_clarifications")
+            or _resolved_clarifications_from_report(clarification_report)
             or []
         )
         tool_result = ToolResult(
@@ -692,6 +712,7 @@ class AgenticRuntime:
                 "summary": summary,
                 "child_status": child_result.status,
                 "resolved_clarifications": resolved_clarifications,
+                "clarification_report": clarification_report,
             },
         )
         tool_message = {
@@ -715,6 +736,7 @@ class AgenticRuntime:
             metadata={
                 "resumed_child_frame_id": child_frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
+                "clarification_report": clarification_report,
             },
         )
         compact_trace = [_compact_state_trace(child_result), _compact_state_trace(parent_result)]
@@ -759,6 +781,7 @@ class AgenticRuntime:
                     child_frame=parent,
                     child_result=parent_result,
                     execution_context=execution_context,
+                    clarification_report=clarification_report,
                 )
         return AgenticRunResult(
             final_text=(
@@ -773,6 +796,7 @@ class AgenticRuntime:
                 "resumed_frame_id": parent.frame_id,
                 "completed_child_frame_id": child_frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
+                "clarification_report": clarification_report,
             },
         )
 
@@ -856,20 +880,25 @@ class AgenticRuntime:
     ) -> None:
         if execution_context.chat_store is None:
             return
+        metadata = {
+            **frame.metadata,
+            "completed_state_status": state_result.status,
+            "summary": self.state_runner.history_service.state_result_summary(state_result),
+        }
+        if state_result.metadata.get("resolved_clarifications") is not None:
+            metadata["resolved_clarifications"] = state_result.metadata["resolved_clarifications"]
+        clarification_report = _clarification_report_from_state_result(state_result)
+        if clarification_report is not None:
+            metadata["clarification_report"] = clarification_report
+            if not metadata.get("resolved_clarifications"):
+                metadata["resolved_clarifications"] = _resolved_clarifications_from_report(
+                    clarification_report,
+                )
         execution_context.chat_store.update_agentic_frame_status(
             frame.session_id,
             frame.frame_id,
             "completed" if state_result.status == "ok" else state_result.status,
-            metadata={
-                **frame.metadata,
-                "completed_state_status": state_result.status,
-                "summary": self.state_runner.history_service.state_result_summary(state_result),
-                **(
-                    {"resolved_clarifications": state_result.metadata["resolved_clarifications"]}
-                    if state_result.metadata.get("resolved_clarifications") is not None
-                    else {}
-                ),
-            },
+            metadata=metadata,
             messages=full_messages,
             clarification_packet=None,
         )
@@ -915,3 +944,24 @@ def _frame_pending_tool_call_ids(frame: Any) -> list[str]:
         for call in continuation.get("pending_tool_calls", [])
         if isinstance(call, dict) and call.get("call_id")
     ] or ([str(frame.active_tool_call_id)] if frame.active_tool_call_id else [])
+
+
+def _clarification_report_from_state_result(
+    state_result: AgenticStateRunResult,
+) -> dict[str, Any] | None:
+    report = state_result.metadata.get("clarification_report")
+    if isinstance(report, dict):
+        return report
+    if state_result.state_id == AgenticStateId.CLARIFICATION_AGENT:
+        structured_output = state_result.structured_output
+        if isinstance(structured_output, dict):
+            return structured_output
+    return None
+
+
+def _resolved_clarifications_from_report(
+    report: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(report, dict) or not isinstance(report.get("entries"), list):
+        return []
+    return [entry for entry in report["entries"] if isinstance(entry, dict)]

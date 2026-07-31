@@ -222,6 +222,9 @@ Priority: 1
   metadata for stale, mismatched, empty, and invalid answers.
 - Defer browser media capture, media upload/storage, and transcription
   integration until a later clarification-media wave.
+- Preserve the complete `ClarificationResolutionReport` through child,
+  parent, and nested parent tool outputs. Derived resolved-answer lists must
+  not replace the report as the source of truth.
 - Define validation and rendering behavior for empty answers, invalid option
   refs, stale packets, repeated questions, audio-only answers, and answers that
   do not resolve the target.

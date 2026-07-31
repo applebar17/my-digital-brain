@@ -510,22 +510,32 @@ Exit criteria:
 
 Activities:
 
-- Return the structured resolution report as the `ask_clarification` tool
-  output to the invoker.
+- Return the complete validated `ClarificationResolutionReport` as the
+  `ask_clarification` tool output to the invoker, including statuses,
+  clarified values, selected refs, evidence, and remaining uncertainty.
+- Preserve the report when a completed child resumes its parent and when
+  nested parent frames are resumed; never reduce it to only a summary or
+  derived answer list.
 - Ensure clarified values are available to the invoker's next structured
   proposal.
 - Verify that the invoker can create, update, attach, ask again, or defer based
   on the report and its own instructions.
-- Preserve provenance and original user wording in the report and the Wave 3
-  master-history promotion.
+- Persist the report in completed child-frame metadata while keeping the
+  canonical transcript in `AgenticFrame.messages`.
+- Preserve provenance and original user wording in the report; keep only the
+  clean question/answer exchange in Wave 3 master-history promotion.
+- Treat `resolved_clarifications` as derived runtime context only. The
+  structured report remains the source of truth.
 
 Exit criteria:
 
 - Amos-like flows retain the clarified full name in the final node action.
-- The invoker does not receive stale pre-clarification candidate values as the
-  only available identity data.
+- The invoker receives the full clarification report in the next tool message
+  and does not receive stale pre-clarification candidate values as the only
+  available identity data.
 - Master history remains compact and ordered.
-- End-to-end tests prove clarification answers reach the next invoker turn.
+- End-to-end tests prove clarification answers and clarified structured values
+  reach the next invoker turn without a pipeline restart.
 
 ### Wave 6: Prompt Policy And Agent Behavior
 
