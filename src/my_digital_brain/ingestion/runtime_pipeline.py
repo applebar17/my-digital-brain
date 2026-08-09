@@ -54,15 +54,19 @@ class IngestionPipelineMixin:
             raise ValueError("The paused result is missing its candidate graph checkpoint.")
 
         context = _context_package_for_services(source, pending_result.graph_context_pack)
+        execution_context = self._execution_context(source)
         try:
-            resolution = self.resolution_agent.resume_nodes(
-                source_text=source.raw_text,
-                context=context,
-                candidate_graph=pending_result.entity_candidate_graph,
-                packets=pending_result.graph_context_pack.identity_lookup_packets,
-                continuation=interaction.continuation,
-                answer_text=answer_text,
-            )
+            resolution_kwargs = {
+                "source_text": source.raw_text,
+                "context": context,
+                "candidate_graph": pending_result.entity_candidate_graph,
+                "packets": pending_result.graph_context_pack.identity_lookup_packets,
+                "continuation": interaction.continuation,
+                "answer_text": answer_text,
+            }
+            if execution_context.agentic_runtime is not None:
+                resolution_kwargs["execution_context"] = execution_context
+            resolution = self.resolution_agent.resume_nodes(**resolution_kwargs)
             if isinstance(resolution, LLMSessionAwaitingTool):
                 return self._finish(
                     _checkpoint_result(
