@@ -20,7 +20,9 @@ logger = logging.getLogger("uat_ingestion_trace")
 from my_digital_brain.agentic import (  # noqa: E402
     AgenticPlanningService,
     AgenticReasoningService,
+    AgenticRuntime,
     AgenticStateRunner,
+    AgenticToolExecutionContext,
 )
 from my_digital_brain.ai.client.settings import genai_settings_from_app_settings  # noqa: E402
 from my_digital_brain.ai.router import StaticModelRouter  # noqa: E402
@@ -180,6 +182,7 @@ def build_trace_service(
         provider=settings.normalized_llm_provider,
     )
     runner = AgenticStateRunner(provider=provider, model_router=router)
+    agentic_runtime = AgenticRuntime(runner)
     service = IngestionService(
         reasoning_service=AgenticReasoningService(runner),
         planning_service=AgenticPlanningService(runner),
@@ -199,6 +202,10 @@ def build_trace_service(
             batch_size=settings.ingestion_resolution_batch_size,
         ),
         write_plan_builder=GraphWritePlanBuilder(),
+        execution_context_factory=lambda source: AgenticToolExecutionContext(
+            agentic_runtime=agentic_runtime,
+            current_text=source.raw_text,
+        ),
     )
     return service, provider
 
