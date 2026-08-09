@@ -85,6 +85,7 @@ def build_chat_runtime(
         semantic_search_service=semantic_search_service,
         owner_manager=owner_manager,
         execute_write_plan=settings.ingestion_execute_write_plan,
+        agentic_runtime=agentic_runtime,
     )
     owner_snapshot = _owner_snapshot(graph_service, settings.owner_graph_node_id)
     owner_profile_reader = (
@@ -157,6 +158,7 @@ def build_ingestion_service(
     semantic_search_service: Any | None,
     owner_manager: Any | None,
     execute_write_plan: bool,
+    agentic_runtime: AgenticRuntime | None = None,
 ) -> IngestionService | None:
     if graph_service is None:
         return None
@@ -165,6 +167,7 @@ def build_ingestion_service(
         return AgenticToolExecutionContext(
             graph_service=graph_service,
             current_text=source.raw_text,
+            agentic_runtime=agentic_runtime,
             metadata={
                 "source_id": source.source_id,
                 "source_type": str(source.source_type),
