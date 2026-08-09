@@ -8,6 +8,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from my_digital_brain.agentic.contexts import ConversationContext
+from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.messages import NeutralConversationMessage
+from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
@@ -19,7 +23,10 @@ from my_digital_brain.ai.session import (
     LLMSessionRequest,
     continuation_with_tool_results,
 )
-from my_digital_brain.clarification.contracts import ClarificationHandoffRequest
+from my_digital_brain.clarification.contracts import (
+    ClarificationHandoffRequest,
+    ClarificationSessionInput,
+)
 from my_digital_brain.core.owner_context import owner_prompt_block
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
@@ -31,6 +38,7 @@ from my_digital_brain.ingestion.contracts import (
     ResolutionToolName,
     ResolvedEntityMap,
 )
+from my_digital_brain.ingestion.contracts.identity_resolution import ReferenceObjectKind
 from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
 from my_digital_brain.ingestion.resolution_context import (
     build_other_planned_context_packet,
@@ -51,6 +59,148 @@ class _ResolutionProposalRun:
     actions: list[ResolutionToolAction] = field(default_factory=list)
     batch_results: list[ResolutionResult] = field(default_factory=list)
     batch_maps: list[ResolvedEntityMap] = field(default_factory=list)
+
+
+def _conversation_history(conversation: ConversationContext) -> list[dict[str, str]]:
+    messages = [*conversation.history, conversation.current_message]
+    return [
+        {
+            "role": "user"
+            if str(getattr(message.kind, "value", message.kind)) == "user"
+            else "assistant",
+            "content": str(message.content or ""),
+        }
+        for message in messages
+        if str(getattr(message.kind, "value", message.kind)) in {"user", "assistant"}
+    ]
+
+
+def _clarification_context_payload(
+    context: IngestionContextPackage,
+    candidate_graph: CandidateMemoryGraph,
+    handoff: ClarificationHandoffRequest,
+) -> dict[str, Any]:
+    handoff_refs = {
+        ref
+        for doubt in handoff.doubts
+        for ref in [*doubt.refs, *doubt.evidence_refs]
+    }
+    candidate_context = []
+    for candidate in _candidate_graph_items(candidate_graph):
+        if getattr(candidate, "local_ref", None) not in handoff_refs:
+            continue
+        candidate_context.append(
+            {
+                key: value
+                for key, value in candidate.model_dump(mode="json", exclude_none=True).items()
+                if key
+                in {
+                    "local_ref",
+                    "entity_type",
+                    "display_name",
+                    "aliases",
+                    "description",
+                    "typed_properties",
+                    "missing_fields",
+                    "ambiguity_flags",
+                }
+            }
+        )
+    payload: dict[str, Any] = {
+        "source_id": context.source_id,
+        "entities": list(context.entities),
+        "relationships": list(context.relationships),
+        "notes": list(context.notes),
+        "identity_lookup_packets": [
+            (
+                packet.model_facing_payload()
+                if hasattr(packet, "model_facing_payload")
+                else packet.model_dump(mode="json", exclude_none=True)
+            )
+            for packet in context.identity_lookup_packets
+        ],
+        "candidate_context": candidate_context,
+    }
+    if context.owner_snapshot is not None:
+        payload["owner_snapshot"] = context.owner_snapshot.model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+    return payload
+
+
+def _candidate_graph_items(candidate_graph: CandidateMemoryGraph) -> list[Any]:
+    return [
+        *candidate_graph.candidate_entities,
+        *candidate_graph.memory_logs,
+        *candidate_graph.candidate_profile_memories,
+        *candidate_graph.candidate_relationships,
+        *candidate_graph.candidate_relationship_contexts,
+        *candidate_graph.candidate_claims,
+        *candidate_graph.candidate_perceptions,
+        *candidate_graph.candidate_metadata_patches,
+    ]
+
+
+def _clarification_registry(
+    context: IngestionContextPackage,
+    candidate_graph: CandidateMemoryGraph,
+    handoff: ClarificationHandoffRequest,
+) -> RunReferenceRegistry:
+    """Hydrate only the handoff scope into the child session registry.
+
+    Candidate refs are proposals rather than graph identities. This gives the
+    clarification agent enough registry context to ask about the supplied
+    candidates without performing identity matching or exposing backend IDs.
+    Existing graph refs continue to come from the canonical run snapshot.
+    """
+
+    if not context.reference_registry_snapshot:
+        raise ValueError("Clarification handoff requires the active reference registry.")
+    registry = RunReferenceRegistry.from_snapshot(context.reference_registry_snapshot)
+    entries = {
+        str(entry.get("ref"))
+        for entry in context.reference_registry_snapshot.get("entries", [])
+        if isinstance(entry, dict) and entry.get("ref")
+    }
+    candidates_by_ref = {
+        str(candidate.local_ref): candidate
+        for candidate in _candidate_graph_items(candidate_graph)
+        if getattr(candidate, "local_ref", None)
+    }
+    packets_by_ref = {
+        packet.candidate_ref: packet for packet in context.identity_lookup_packets
+    }
+    requested_refs = {
+        ref
+        for doubt in handoff.doubts
+        for ref in [*doubt.refs, *doubt.evidence_refs]
+        if ref
+    }
+    for ref in sorted(requested_refs - entries):
+        candidate = candidates_by_ref.get(ref)
+        packet = packets_by_ref.get(ref)
+        if candidate is None and packet is None:
+            raise ValueError(
+                f"Clarification ref '{ref}' is not supplied by the active candidate context."
+            )
+        if candidate is not None:
+            payload = candidate.model_dump(mode="json", exclude_none=True)
+            label = str(payload.get("entity_type") or "Node")
+            display_label = payload.get("display_name")
+            aliases = list(payload.get("aliases") or [])
+        else:
+            label = packet.entity_type
+            display_label = packet.proposed_display_name
+            aliases = list(packet.proposed_aliases)
+        registry.register_proposal(
+            ref,
+            object_kind=ReferenceObjectKind.NODE,
+            label=label,
+            display_label=display_label,
+            aliases=aliases,
+        )
+    return registry
 
 
 class LLMResolutionProposalAgent:
@@ -87,6 +237,7 @@ class LLMResolutionProposalAgent:
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> list[ResolutionToolAction] | LLMSessionAwaitingTool:
         proposal = self._run_proposals(
             step=step,
@@ -94,6 +245,7 @@ class LLMResolutionProposalAgent:
             context=context,
             candidate_graph=candidate_graph,
             packets=packets,
+            execution_context=execution_context,
         )
         if isinstance(proposal, LLMSessionAwaitingTool):
             return proposal
@@ -126,6 +278,7 @@ class LLMResolutionProposalAgent:
         initial_maps: Iterable[ResolvedEntityMap] = (),
         continuation: LLMSessionContinuation | None = None,
         compile_batches: bool = False,
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> _ResolutionProposalRun | LLMSessionAwaitingTool:
         toolbox = build_resolution_toolbox(step)
         step_candidates = self._step_candidates(step, candidate_graph)
@@ -176,6 +329,7 @@ class LLMResolutionProposalAgent:
                 step=step,
                 source_text=source_text,
                 context=context,
+                candidate_graph=candidate_graph,
                 packets=packets,
                 batch=batch,
                 batch_start=batch_start,
@@ -185,6 +339,7 @@ class LLMResolutionProposalAgent:
                 route=route,
                 request_context=request_context,
                 continuation=continuation if batch_start == start_batch else None,
+                execution_context=execution_context,
             )
             batch_refs = self._candidate_refs(batch)
             result = self._repair_incomplete_batch(
@@ -203,6 +358,7 @@ class LLMResolutionProposalAgent:
                 prompt=prompt,
                 route=route,
                 request_context=request_context,
+                execution_context=execution_context,
             )
             if isinstance(result, LLMSessionAwaitingTool):
                 return self._with_resolution_state(result, proposal)
@@ -231,6 +387,7 @@ class LLMResolutionProposalAgent:
         packets: Sequence[EntityLookupContextPacket] = (),
         continuation: LLMSessionContinuation,
         answer_text: str,
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         """Resume the paused node-resolution session after a user answer."""
 
@@ -283,6 +440,7 @@ class LLMResolutionProposalAgent:
             initial_maps=completed_maps,
             continuation=resumed,
             compile_batches=True,
+            execution_context=execution_context,
         )
         if isinstance(proposal, LLMSessionAwaitingTool):
             return proposal
@@ -306,6 +464,7 @@ class LLMResolutionProposalAgent:
         prompt: str,
         route: Any,
         request_context: AIRequestContext,
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> LLMSessionCompleted | LLMSessionAwaitingTool:
         """Continue the same session when a terminal turn omits batch actions."""
 
@@ -336,7 +495,16 @@ class LLMResolutionProposalAgent:
                     ]
                 )
             mapping = {
-                name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
+                name: self._capture_handler(
+                    step,
+                    name,
+                    actions,
+                    execution_context=execution_context,
+                    source_text=source_text,
+                    context=context,
+                    candidate_graph=candidate_graph,
+                )
+                for name in toolbox.tools_by_name
             }
             current = self.provider.run_session(
                 LLMSessionRequest(
@@ -389,6 +557,7 @@ class LLMResolutionProposalAgent:
         step: ResolutionStep,
         source_text: str | None,
         context: IngestionContextPackage,
+        candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket],
         batch: Sequence[Any],
         batch_start: int,
@@ -398,6 +567,7 @@ class LLMResolutionProposalAgent:
         route: Any,
         request_context: AIRequestContext,
         continuation: LLMSessionContinuation | None = None,
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> LLMSessionCompleted | LLMSessionAwaitingTool:
         batch_refs = {
             candidate.local_ref for candidate in batch if getattr(candidate, "local_ref", None)
@@ -414,7 +584,16 @@ class LLMResolutionProposalAgent:
             ],
         }
         mapping = {
-            name: self._capture_handler(step, name, actions) for name in toolbox.tools_by_name
+            name: self._capture_handler(
+                step,
+                name,
+                actions,
+                execution_context=execution_context,
+                source_text=source_text,
+                context=context,
+                candidate_graph=candidate_graph,
+            )
+            for name in toolbox.tools_by_name
         }
         if continuation is None:
             messages = [
@@ -464,6 +643,7 @@ class LLMResolutionProposalAgent:
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
+        execution_context: AgenticToolExecutionContext | None = None,
     ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         if not context.reference_registry_snapshot:
             raise ValueError("Node resolution requires the active reference registry snapshot.")
@@ -474,6 +654,7 @@ class LLMResolutionProposalAgent:
             candidate_graph=candidate_graph,
             packets=packets,
             compile_batches=True,
+            execution_context=execution_context,
         )
         if isinstance(proposal, LLMSessionAwaitingTool):
             return proposal
@@ -614,13 +795,77 @@ class LLMResolutionProposalAgent:
         step: ResolutionStep,
         name: str,
         actions: list[ResolutionToolAction],
+        *,
+        execution_context: AgenticToolExecutionContext | None = None,
+        source_text: str | None = None,
+        context: IngestionContextPackage | None = None,
+        candidate_graph: CandidateMemoryGraph | None = None,
     ) -> Any:
         def capture(**kwargs: Any) -> ToolResult:
             if name == ResolutionToolName.ASK_CLARIFICATION.value:
                 handoff = ClarificationHandoffRequest(
                     doubts=kwargs.get("doubts") or [],
                     invoker_state_id=step.value,
+                    invoker_tool_call_id=(
+                        execution_context.current_tool_call_id
+                        if execution_context is not None
+                        else None
+                    ),
+                    parent_frame_id=(
+                        execution_context.frame_id if execution_context is not None else None
+                    ),
                 )
+                runtime = (
+                    execution_context.agentic_runtime
+                    if execution_context is not None
+                    else None
+                )
+                if runtime is not None and context is not None:
+                    conversation = execution_context.conversation_context
+                    if conversation is None:
+                        conversation = ConversationContext(
+                            current_message=NeutralConversationMessage.user(
+                                execution_context.current_text or source_text or ""
+                            ),
+                        )
+                        execution_context.conversation_context = conversation
+                    execution_context.state_id = step.value
+                    execution_context.current_payload = context
+                    if candidate_graph is None:
+                        raise ValueError(
+                            "Clarification handoff requires the active candidate graph."
+                        )
+                    execution_context.reference_registry = _clarification_registry(
+                        context,
+                        candidate_graph,
+                        handoff,
+                    )
+                    execution_context.metadata[
+                        "reference_registry_snapshot"
+                    ] = execution_context.reference_registry.snapshot()
+                    session_input = ClarificationSessionInput(
+                        handoff=handoff,
+                        conversation=conversation,
+                        master_history=_conversation_history(conversation),
+                        context_payload=_clarification_context_payload(
+                            context,
+                            candidate_graph,
+                            handoff,
+                        ),
+                        session_id=(
+                            execution_context.session_id
+                            or f"resolution-{context.source_id}-{step.value}"
+                        ),
+                        parent_frame_id=execution_context.frame_id,
+                        parent_tool_call_id=execution_context.current_tool_call_id,
+                    )
+                    return runtime.run_child_frame(
+                        parent_execution_context=execution_context,
+                        conversation_context=conversation,
+                        child_state=AgenticStateId.CLARIFICATION_AGENT,
+                        child_payload=session_input,
+                        tool_name=name,
+                    )
                 return ToolResult(
                     status="pending",
                     output="Clarification agent handoff is awaiting user interaction.",
@@ -649,6 +894,9 @@ class LLMResolutionProposalAgent:
                 ),
                 data={"action": action.model_dump(mode="json", exclude_none=True)},
             )
+
+        if execution_context is not None:
+            capture._agentic_execution_context = execution_context
 
         return capture
 
