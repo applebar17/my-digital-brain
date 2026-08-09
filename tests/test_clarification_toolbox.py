@@ -270,3 +270,8 @@ def test_agentic_factory_builds_strict_wave2_schemas() -> None:
     assert set(toolbox.tools_by_name) == set(mapping)
     assert "at most five" in toolbox.tools_by_name["pick_one"]["function"]["description"]
     assert toolbox.tools_by_name["lookup_candidates"]["function"]["strict"] is True
+    pick_one_parameters = toolbox.tools_by_name["pick_one"]["function"]["parameters"]
+    text_parameters = toolbox.tools_by_name["ask_text_or_audio"]["function"]["parameters"]
+    assert pick_one_parameters["properties"]["options"]["minItems"] == 1
+    assert text_parameters["properties"]["options"]["maxItems"] == 0
+    assert "Never provide options" in text_parameters["properties"]["options"]["description"]
