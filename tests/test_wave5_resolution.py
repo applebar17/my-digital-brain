@@ -4,6 +4,13 @@ import json
 
 import pytest
 
+from my_digital_brain.agentic import (
+    AgenticRuntime,
+    AgenticStateRunner,
+    AgenticToolExecutionContext,
+    ConversationContext,
+    NeutralConversationMessage,
+)
 from my_digital_brain.ai.schemas import ChatMessage, ProviderCallMetadata
 from my_digital_brain.ai.session import (
     LLMCompletionRequest,
@@ -14,6 +21,7 @@ from my_digital_brain.ai.session import (
     LLMSessionResult,
     LLMSessionRunner,
 )
+from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.ingestion.contracts import (
     CandidateMemoryGraph,
     IngestionContextPackage,
@@ -274,6 +282,105 @@ def test_resolution_agent_returns_pending_clarification_to_ingestion() -> None:
     assert isinstance(result, LLMSessionAwaitingTool)
     assert result.continuation.pending_tool_calls[0].name == "ask_clarification"
     assert result.continuation.pending_tool_calls[0].call_id == "clarify-1"
+
+
+def test_resolution_handoff_propagates_child_question_packet() -> None:
+    class Provider:
+        provider_name = "fake"
+
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        def run_session(self, request: LLMSessionRequest) -> LLMSessionResult:
+            return LLMSessionRunner(self).run(request)
+
+        def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
+            self.call_count += 1
+            if self.call_count > 2:
+                raise RuntimeError(f"unexpected repeated provider turn: {request.tools}")
+            if "ask_text" in json.dumps(request.tools):
+                name = "ask_text"
+                arguments = {
+                    "question": "Chi è Amos?",
+                    "kind": "identity_no_match",
+                    "reason": "Manca un'identificazione sufficiente.",
+                    "target_refs": ["CANDIDATE_PERSON_001"],
+                    "evidence_refs": ["CANDIDATE_PERSON_001"],
+                    "options": [],
+                    "allow_custom_answer": True,
+                }
+            else:
+                name = "ask_clarification"
+                arguments = {
+                    "doubts": [
+                        {
+                            "doubt_id": "DOUBT_001",
+                            "doubt": "Amos has no identifying surname.",
+                            "refs": ["CANDIDATE_PERSON_001"],
+                            "missing_information": "Surname",
+                            "why_blocking": "The identity is incomplete.",
+                            "evidence_refs": ["CANDIDATE_PERSON_001"],
+                        }
+                    ]
+                }
+            return LLMCompletionResult(
+                assistant_message=ChatMessage(
+                    role="assistant",
+                    tool_calls=[
+                        {
+                            "id": f"call-{name}",
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(arguments),
+                            },
+                        }
+                    ],
+                ),
+                metadata=ProviderCallMetadata.fake(model=request.model),
+            )
+
+    registry = RunReferenceRegistry(graph_scope="graph-1", run_scope="run-1")
+    registry.register_owner("person:owner")
+    provider = Provider()
+    runtime = AgenticRuntime(AgenticStateRunner(provider=provider))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    execution_context = AgenticToolExecutionContext(
+        agentic_runtime=runtime,
+        chat_store=store,
+        session_id=session.session_id,
+        conversation_context=ConversationContext(
+            current_message=NeutralConversationMessage.user("I met Amos."),
+        ),
+    )
+    result = LLMResolutionProposalAgent(provider).propose(
+        step=ResolutionStep.NODE,
+        source_text="I met Amos.",
+        context=IngestionContextPackage(
+            source_id="source-1",
+            reference_registry_snapshot=registry.snapshot(),
+        ),
+        candidate_graph=CandidateMemoryGraph(
+            source_id="source-1",
+            candidate_entities=[
+                {
+                    "local_ref": "CANDIDATE_PERSON_001",
+                    "entity_type": "Person",
+                    "display_name": "Amos",
+                }
+            ],
+        ),
+        execution_context=execution_context,
+    )
+
+    assert isinstance(result, LLMSessionAwaitingTool)
+    packet = result.continuation.pending_interaction["clarification_packet"]
+    assert packet["questions"][0]["question"] == "Chi è Amos?"
 
 
 def test_resolution_agent_resumes_the_same_session_after_clarification() -> None:
