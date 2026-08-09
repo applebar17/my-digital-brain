@@ -159,11 +159,17 @@ class IngestionService(
                 "A structured resolution proposal agent is required for entity resolution."
             )
         context = _context_package_for_services(source, graph_context_pack)
+        execution_context = self._execution_context(source)
+        resolution_kwargs = {
+            "source_text": source.raw_text,
+            "context": context,
+            "candidate_graph": candidate_graph,
+            "packets": graph_context_pack.identity_lookup_packets,
+        }
+        if execution_context.agentic_runtime is not None:
+            resolution_kwargs["execution_context"] = execution_context
         resolution = self.resolution_agent.resolve_nodes(
-            source_text=source.raw_text,
-            context=context,
-            candidate_graph=candidate_graph,
-            packets=graph_context_pack.identity_lookup_packets,
+            **resolution_kwargs,
         )
         if isinstance(resolution, LLMSessionAwaitingTool):
             return IngestionResult(
