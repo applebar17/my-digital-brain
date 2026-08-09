@@ -65,6 +65,7 @@ class ResolutionProposalAgent(Protocol):
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
+        execution_context: object | None = None,
     ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         """Collect and validate the complete node proposal set."""
 
@@ -76,6 +77,7 @@ class ResolutionProposalAgent(Protocol):
         context: IngestionContextPackage,
         candidate_graph: CandidateMemoryGraph,
         packets: Sequence[EntityLookupContextPacket] = (),
+        execution_context: object | None = None,
     ) -> list[ResolutionToolAction] | LLMSessionAwaitingTool:
         """Collect proposal actions for one resolution step."""
 
@@ -88,6 +90,7 @@ class ResolutionProposalAgent(Protocol):
         packets: Sequence[EntityLookupContextPacket] = (),
         continuation: LLMSessionContinuation,
         answer_text: str,
+        execution_context: object | None = None,
     ) -> tuple[ResolvedEntityMap, ResolutionResult] | LLMSessionAwaitingTool:
         """Resume node resolution in the same LLM session after clarification."""
 
