@@ -151,13 +151,17 @@ class IngestionCompletionMixin:
             ):
                 if not candidates:
                     continue
-                actions = self.resolution_agent.propose(
-                    step=step,
-                    source_text=source.raw_text,
-                    context=context,
-                    candidate_graph=candidate_graph,
-                    packets=context.identity_lookup_packets,
-                )
+                execution_context = self._execution_context(source)
+                proposal_kwargs = {
+                    "step": step,
+                    "source_text": source.raw_text,
+                    "context": context,
+                    "candidate_graph": candidate_graph,
+                    "packets": context.identity_lookup_packets,
+                }
+                if execution_context.agentic_runtime is not None:
+                    proposal_kwargs["execution_context"] = execution_context
+                actions = self.resolution_agent.propose(**proposal_kwargs)
                 if isinstance(actions, LLMSessionAwaitingTool):
                     return self._finish(
                         IngestionResult(
