@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.state import AgenticStateConfig
@@ -321,14 +321,35 @@ def _clarification_tool_definitions(
         "minItems": 1,
         "maxItems": 5,
     }
+    no_options_property = {
+        "type": "array",
+        "description": (
+            "Never provide options for this tool. Always send an empty array. "
+            "Use pick_one, pick_many, or confirm when choices are needed."
+        ),
+        "items": option_property["items"],
+        "maxItems": 0,
+    }
 
-    def question(name: str, description: str, response_hint: str) -> AgenticToolDefinition:
+    def question(
+        name: str,
+        description: str,
+        response_hint: str,
+        *,
+        accepts_options: bool,
+    ) -> AgenticToolDefinition:
+        options = option_property if accepts_options else no_options_property
+        option_instruction = (
+            "Provide concise options with summaries when applicable."
+            if accepts_options
+            else "Never provide options, placeholders, or empty-label choices; send options=[]."
+        )
         return _definition(
             name,
             f"{description} {response_hint} Ask at most five questions in one assistant turn; "
-            "parallel calls become one packet. Do not create an Other option.",
+            f"parallel calls become one packet. {option_instruction} Do not create an Other option.",
             states=clarification_states,
-            properties={**question_properties, "options": option_property},
+            properties={**question_properties, "options": options},
             required=[*question_properties, "options"],
         )
 
@@ -401,26 +422,31 @@ def _clarification_tool_definitions(
             "pick_one",
             "Ask the user to select exactly one supplied option.",
             "Custom answers remain available unless explicitly disabled.",
+            accepts_options=True,
         ),
         question(
             "pick_many",
             "Ask the user to select one or more supplied options.",
             "Custom answers remain available unless explicitly disabled.",
+            accepts_options=True,
         ),
         question(
             "confirm",
             "Ask the user to confirm a proposal using exactly two supplied options.",
             "Use this only for a genuine confirmation question.",
+            accepts_options=True,
         ),
         question(
             "ask_text",
             "Ask the user for a free-form clarification.",
-            "Text and audio answers are accepted by the channel contract.",
+            "Text or audio answers are accepted by the channel contract; choices are not.",
+            accepts_options=False,
         ),
         question(
             "ask_text_or_audio",
             "Ask the user for a free-form clarification with text or audio.",
-            "The backend normalizes either modality for the child session.",
+            "The backend normalizes either modality for the child session; choices are not.",
+            accepts_options=False,
         ),
     ]
 
