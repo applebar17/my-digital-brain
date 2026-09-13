@@ -160,6 +160,7 @@ uv run --no-project @uvRuntimeDependencies -- python -m my_digital_brain.cli mig
 uv run --no-project @uvRuntimeDependencies -- python -m my_digital_brain.cli migrate-graph
 
 if (-not $NoBackend) {
+    $backendLauncher = $null
     if (Test-TcpPort 8000) {
         Write-Host "Backend already listening on port 8000."
     } else {
@@ -172,12 +173,19 @@ if (-not $NoBackend) {
             -RedirectStandardError ($backendLog -replace "\.log$", ".err.log") `
             -WindowStyle Hidden `
             -PassThru
-        Save-ProcessRecord -Name "backend" -Process $backendProcess
+        $backendLauncher = $backendProcess
     }
     Wait-HttpEndpoint -Uri "http://127.0.0.1:8000/health"
+    if ($backendLauncher) {
+        $backendOwner = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty OwningProcess
+        $backendListener = Get-Process -Id $backendOwner -ErrorAction SilentlyContinue
+        Save-ProcessRecord -Name "backend" -Process $(if ($backendListener) { $backendListener } else { $backendLauncher })
+    }
 }
 
 if (-not $NoFrontend) {
+    $frontendLauncher = $null
     if (Test-TcpPort 5173) {
         Write-Host "Frontend already listening on port 5173."
     } else {
@@ -190,9 +198,15 @@ if (-not $NoFrontend) {
             -RedirectStandardError ($frontendLog -replace "\.log$", ".err.log") `
             -WindowStyle Hidden `
             -PassThru
-        Save-ProcessRecord -Name "frontend" -Process $frontendProcess
+        $frontendLauncher = $frontendProcess
     }
     Wait-HttpEndpoint -Uri "http://127.0.0.1:5173"
+    if ($frontendLauncher) {
+        $frontendOwner = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty OwningProcess
+        $frontendListener = Get-Process -Id $frontendOwner -ErrorAction SilentlyContinue
+        Save-ProcessRecord -Name "frontend" -Process $(if ($frontendListener) { $frontendListener } else { $frontendLauncher })
+    }
 }
 
 Write-Host "Local development stack started."
