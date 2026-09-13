@@ -142,6 +142,49 @@ They must be:
 
 Bad schema descriptions can confuse the model as much as bad prompt text.
 
+### 2.1 Structured Validation Should Enable Recovery
+
+Structured validation is a control surface for guiding the model, not only a
+terminal gate. Keep the schema strict enough to protect the application, but
+avoid brittle rules that reject harmless variations in model-generated names or
+formatting.
+
+Use two validation layers:
+
+- **Structural validation** checks required fields, types, safe value bounds,
+  enum membership, and relationships that can be verified from the object
+  alone.
+- **Semantic validation** checks context-dependent conditions such as reference
+  resolvability, object identity, authorization, and write safety at the
+  orchestration or backend boundary.
+
+When a recoverable validation error occurs:
+
+1. Convert it into a human-readable explanation.
+2. Append it as a `role=user` message to the same agent-specific history.
+3. Explain what was received, what is wrong, what values or context are valid,
+   and what the model should do next.
+4. Ask the model to return only the corrected structured output.
+5. Retry within a small configurable budget and preserve the repair turns in
+   the trace.
+
+Validation errors should be written for a human reader and the model together.
+Do not expose only raw Pydantic paths, generic messages such as `invalid input`,
+or opaque exception representations. For example:
+
+```text
+The field `resolved_refs[0]` refers to `node_existing_lorenzo`, but that ref is
+not present in the current context. The available ref for the existing person
+is `node_0001`. Reuse `node_0001`, or create a new local ref only if this is a
+different person. Return the complete corrected object.
+```
+
+The model may correct its own recoverable mistakes. A repair attempt must not
+bypass backend authorization, identity safeguards, destructive-operation
+controls, or final persistence validation. If the repair budget is exhausted,
+return a detailed, traceable failure or clarification request rather than a
+generic error or a silently guessed result.
+
 ### 3. Prefer Modular Model Calls Over Heavy Requests
 
 Large overloaded prompts increase hallucination risk and make failures harder to
@@ -325,6 +368,11 @@ Guardrails may include:
 - Fallback behavior.
 - Read-only tool scopes for judge investigation.
 - Mandatory structured outputs for judge decisions.
+
+Guardrails should distinguish recoverable model mistakes from blocking safety
+violations. A malformed or incoherent structured response should normally enter
+the model-repair path. A request that would be unsafe, unauthorized, or
+destructive must remain blocked even if the model retries.
 
 The agent can be dynamic inside the guardrails. The guardrails prevent runaway
 loops, accidental writes, and confusing user experiences.
@@ -625,6 +673,12 @@ observation record instead.
 Verbose errors are not only for humans. They are a control surface for agentic
 behavior.
 
+The same principle applies to Pydantic and structured-output errors. Format
+validation feedback as an instruction that can produce a corrected next turn,
+not as an implementation traceback. Include the precise field, the failed rule,
+the received value when safe, the allowed alternatives or relevant context,
+and whether the next action is retry, clarification, or stop.
+
 ### 19. Embeddings Are Backend-Derived Retrieval Artifacts
 
 Vector embeddings are not the source of truth and they are not model-authored
@@ -727,6 +781,12 @@ Rules:
 - Use short LLM-facing aliases instead of raw database IDs in prompts and tool
   schemas.
 - Make tool errors actionable enough for the model to repair invalid calls.
+- Keep model-facing validation rules tolerant of harmless naming and formatting
+  variation while preserving semantic coherence and backend safety.
+- Treat recoverable schema failures as same-history `role=user` repair turns
+  with a bounded retry budget; never hide them behind generic failures.
+- Write Pydantic and structured-output errors so a human and the model can both
+  understand the correction required.
 - Record model inputs, outputs, prompt versions, schema versions, and tool calls
   when they affect persistent state.
 
@@ -745,7 +805,9 @@ Before implementing a new AI behavior, answer:
 - What tool errors should guide invalid or unsafe calls?
 - What are the deterministic guardrails?
 - What happens if the model is uncertain?
-- What happens if validation fails?
+- Which validation failures are recoverable, and how will the model repair them?
+- Does each recoverable failure become a clear same-history `role=user` message?
+- Which validation failures must remain blocking regardless of model retries?
 - What state changes must be auditable?
 - What privacy or provider constraints apply?
 
