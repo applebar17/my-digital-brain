@@ -111,6 +111,33 @@ def test_tools_and_structured_terminal_output_share_one_session() -> None:
     assert len(result.messages) == 5
 
 
+def test_intermediate_agent_tool_result_requires_a_tool_follow_up() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", tool_calls=[_call("call-1", "agent")]),
+            ChatMessage(role="assistant", content="child summary echoed as final"),
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Delegate work to the agent tool.",
+            toolbox=_toolbox("agent"),
+            tools_mapping={
+                "agent": lambda: ToolResult(
+                    status="ok",
+                    output="child summary",
+                    continuation_required=True,
+                )
+            },
+        )
+    )
+
+    assert isinstance(result, LLMSessionFailed)
+    assert "No tool result was promoted" in result.error
+    assert transport.requests[1].tool_choice == "required"
+
+
 def test_tool_batch_is_not_split_when_it_exceeds_cap() -> None:
     transport = ScriptedTransport(
         [

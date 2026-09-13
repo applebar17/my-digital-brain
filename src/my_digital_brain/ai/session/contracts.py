@@ -30,6 +30,7 @@ class LLMCompletionRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     tools: list[ToolSpec] = Field(default_factory=list)
+    tool_choice: Literal["auto", "none", "required"] | dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
     context: AIRequestContext = Field(default_factory=AIRequestContext)
     metadata: dict[str, Any] = Field(default_factory=dict)

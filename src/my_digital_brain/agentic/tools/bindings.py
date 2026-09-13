@@ -401,6 +401,7 @@ class AgenticToolBindings:
                 child_state=AgenticStateId.CLARIFICATION_AGENT,
                 child_payload=session_input,
                 tool_name="ask_clarification",
+                continuation_required=True,
             )
         except Exception as exc:
             return _tool_error(

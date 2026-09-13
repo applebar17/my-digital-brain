@@ -865,6 +865,7 @@ class LLMResolutionProposalAgent:
                         child_state=AgenticStateId.CLARIFICATION_AGENT,
                         child_payload=session_input,
                         tool_name=name,
+                        continuation_required=True,
                     )
                 return ToolResult(
                     status="pending",

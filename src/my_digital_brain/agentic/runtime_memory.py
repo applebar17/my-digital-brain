@@ -456,7 +456,7 @@ class MemoryIngestionRuntimeService:
                 )
                 state_result = AgenticStateRunResult(
                     state_id=child_state,
-                    assistant_text=result.output,
+                    assistant_text=None,
                     terminal=result.status not in {"interrupted", "pending"},
                     status=str(result.status),
                     metadata={"tool_result": result.model_dump(mode="json", exclude_none=True)},
@@ -465,7 +465,7 @@ class MemoryIngestionRuntimeService:
                 compact_trace.append(_compact_state_trace(state_result))
                 if result.status in {"interrupted", "pending"}:
                     return AgenticRunResult(
-                        final_text=result.output,
+                        final_text=None,
                         visited_states=[item.state_id for item in action_results],
                         state_results=action_results,
                         status="interrupted",

@@ -528,10 +528,6 @@ class AgenticHistoryService:
     def state_result_summary(self, state_result: AgenticStateRunResult) -> str:
         if state_result.assistant_text:
             return state_result.assistant_text
-        for event in reversed(state_result.tool_events):
-            summary = self.tool_event_summary(event)
-            if summary:
-                return summary
         return f"{_enum_value(state_result.state_id)} completed."
 
     def tool_event_summary(self, event: AgenticToolEvent) -> str:

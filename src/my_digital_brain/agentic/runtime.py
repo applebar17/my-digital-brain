@@ -209,6 +209,7 @@ class AgenticRuntime:
         child_state: AgenticStateId,
         child_payload: Any,
         tool_name: str,
+        continuation_required: bool = False,
     ) -> ToolResult:
         child_context = AgenticToolExecutionContext(
             graph_service=parent_execution_context.graph_service,
@@ -246,6 +247,7 @@ class AgenticRuntime:
                 conversation_context,
                 child_result=result,
                 tool_name=tool_name,
+                continuation_required=continuation_required,
             )
             interruption = dict(result.interruption or {})
             packet_payload = interruption.get("clarification_packet")
@@ -317,12 +319,14 @@ class AgenticRuntime:
             child_result=result,
             child_state=child_state,
             tool_name=tool_name,
+            continuation_required=continuation_required,
         )
         summary = result.final_text or "Child frame completed."
         resolved_clarifications = list(result.metadata.get("resolved_clarifications") or [])
         return ToolResult(
             status="ok" if result.status == "ok" else result.status,
             output=summary,
+            continuation_required=continuation_required,
             data={
                 "operation": tool_name,
                 "summary": summary,
@@ -350,6 +354,7 @@ class AgenticRuntime:
         child_result: AgenticRunResult,
         child_state: AgenticStateId,
         tool_name: str,
+        continuation_required: bool = False,
     ) -> None:
         if child_execution_context.chat_store is None:
             return
@@ -377,6 +382,7 @@ class AgenticRuntime:
                 parent_tool_call_id=child_execution_context.parent_tool_call_id,
                 metadata={
                     "child_tool_name": tool_name,
+                    "continuation_required": continuation_required,
                     "completed_state_status": child_result.status,
                     "clarification_report": child_result.metadata.get("clarification_report"),
                 },
@@ -390,6 +396,7 @@ class AgenticRuntime:
         *,
         child_result: AgenticRunResult,
         tool_name: str,
+        continuation_required: bool = False,
     ) -> dict[str, Any]:
         if parent_execution_context.chat_store is None:
             return {"frame_id": parent_execution_context.frame_id}
@@ -450,6 +457,7 @@ class AgenticRuntime:
                 "waiting_for_child_state_id": interrupted_child_state_id,
                 "child_tool_call_id": child_interruption.get("tool_call_id"),
                 "child_tool_name": child_interruption.get("tool_name"),
+                "continuation_required": continuation_required,
                 "internal_continuation": parent_execution_context.metadata.get(
                     "internal_continuation"
                 ),
@@ -742,6 +750,10 @@ class AgenticRuntime:
         tool_result = ToolResult(
             status="ok" if child_result.status == "ok" else child_result.status,
             output=summary,
+            continuation_required=bool(
+                child_frame.metadata.get("continuation_required")
+                or parent.metadata.get("continuation_required")
+            ),
             data={
                 "operation": parent.active_tool_name or child_frame.state_id,
                 "child_frame_id": child_frame.frame_id,
@@ -779,6 +791,7 @@ class AgenticRuntime:
                 "resumed_child_frame_id": child_frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
                 "clarification_report": clarification_report,
+                "force_tool_follow_up": tool_result.continuation_required,
             },
         )
         compact_trace = [_compact_state_trace(child_result), _compact_state_trace(parent_result)]

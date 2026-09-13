@@ -56,6 +56,15 @@ class ToolResult(BaseModel):
     error: ToolError | None = Field(
         None, description="Error details when status is error."
     )
+    continuation_required: bool = Field(
+        False,
+        description=(
+            "Whether this result is an intermediate handoff that must be returned "
+            "to the invoking model session for another tool-capable turn. An "
+            "intermediate tool result must never be exposed as the user-facing "
+            "assistant response."
+        ),
+    )
     meta: dict[str, Any] | None = Field(
         None, description="Additional metadata for tracing or debugging."
     )

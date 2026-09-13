@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ValidationError
 
@@ -77,10 +77,16 @@ class LLMSessionRunner:
         tools_enabled = bool(request.toolbox and request.tools_mapping) and not self._cap_reached(
             request, executed
         )
+        continuation_required = bool(request.metadata.get("force_tool_follow_up"))
 
         while True:
             completion = self.transport.complete(
-                self._completion_request(request, messages, tools_enabled),
+                self._completion_request(
+                    request,
+                    messages,
+                    tools_enabled,
+                    tool_choice="required" if continuation_required else None,
+                ),
             )
             last_metadata = completion.metadata
             last_usage = completion.usage
@@ -104,6 +110,9 @@ class LLMSessionRunner:
                 events.extend(new_events)
                 messages = new_messages
                 executed += len(tool_calls)
+                continuation_required = any(
+                    event.result.continuation_required for event in new_events
+                )
                 if pending:
                     continuation = LLMSessionContinuation(
                         session_id=session_id,
@@ -125,6 +134,20 @@ class LLMSessionRunner:
                 if self._cap_reached(request, executed):
                     tools_enabled = False
                 continue
+
+            if continuation_required:
+                return self._failure(
+                    session_id,
+                    messages,
+                    events,
+                    (
+                        "An intermediate tool result was returned to the invoking "
+                        "session, but the provider did not produce the required "
+                        "follow-up tool call. No tool result was promoted to a "
+                        "final assistant response."
+                    ),
+                    last_metadata,
+                )
 
             if request.output_schema is None:
                 return LLMSessionCompleted(
@@ -214,6 +237,8 @@ class LLMSessionRunner:
         request: LLMSessionRequest,
         messages: list[ChatMessage],
         tools_enabled: bool,
+        *,
+        tool_choice: Literal["auto", "none", "required"] | dict[str, Any] | None = None,
     ) -> LLMCompletionRequest:
         return LLMCompletionRequest(
             messages=messages,
@@ -221,6 +246,7 @@ class LLMSessionRunner:
             temperature=request.temperature,
             max_tokens=request.max_tokens,
             tools=request.toolbox.tools if tools_enabled and request.toolbox else [],
+            tool_choice=tool_choice if tools_enabled else None,
             response_format=(
                 strict_response_format(request.output_schema)
                 if request.output_schema is not None

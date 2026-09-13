@@ -177,6 +177,8 @@ class OpenAIProvider:
             params["max_tokens"] = request.max_tokens
         if request.tools:
             params["tools"] = request.tools
+        if request.tool_choice is not None:
+            params["tool_choice"] = request.tool_choice
         if request.response_format:
             params["response_format"] = request.response_format
         return apply_chat_completion_compatibility(params)

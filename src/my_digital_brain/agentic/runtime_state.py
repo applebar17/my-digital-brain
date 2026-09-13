@@ -503,7 +503,7 @@ class AgenticStateRunner:
         )
         return AgenticStateRunResult(
             state_id=state_config.state_id,
-            assistant_text=pending_events[-1].result.output if pending_events else None,
+            assistant_text=None,
             message_delta=[
                 ChatMessage.model_validate(message)
                 for message in messages[1 + len(request.messages) :]
