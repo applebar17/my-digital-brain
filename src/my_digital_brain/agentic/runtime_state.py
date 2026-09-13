@@ -495,7 +495,7 @@ class AgenticStateRunner:
                 packet = pending_data.get("clarification_packet") or packet
         self._publish_activity(
             invocation.execution_context,
-            state_config.state_id.value,
+            _state_value(state_config.state_id),
             "waiting",
         )
         return AgenticStateRunResult(
