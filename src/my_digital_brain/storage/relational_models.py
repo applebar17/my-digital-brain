@@ -74,6 +74,37 @@ class ChatAgenticFrameRecord(TimestampMixin, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ChatProcessRecord(TimestampMixin, Base):
+    __tablename__ = "chat_process_states"
+
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_activity_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resumable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    next_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class ChatActivityRecord(TimestampMixin, Base):
+    __tablename__ = "chat_activity_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "sequence",
+            name="uq_chat_activity_events_session_sequence",
+        ),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    activity_group: Mapped[str] = mapped_column(String(64), nullable=False)
+    activity_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    occurrence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class IngestionSession(TimestampMixin, Base):
     __tablename__ = "ingestion_sessions"
 

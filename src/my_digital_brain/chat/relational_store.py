@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-from sqlalchemy import desc, select
+from datetime import datetime
+
+from sqlalchemy import desc, func, select
 
 from my_digital_brain.chat.enums import (
+    ChatActivityStatus,
     ChatChannel,
+    ChatProcessStatus,
     ConversationMessageRole,
     ConversationStatus,
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
     AgenticFrame,
+    ChatActivityEvent,
+    ChatProcessSnapshot,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
     ConversationSessionSummary,
     utc_now,
 )
-from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.chat.store import (
     _can_autotitle,
     _clean_title,
@@ -24,11 +29,14 @@ from my_digital_brain.chat.store import (
     _preview_text,
     _title_from_text,
 )
+from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.storage.relational import RelationalSessionProvider
 from my_digital_brain.storage.relational_models import (
+    ChatActivityRecord,
     ChatAgenticFrameRecord,
     ChatMessageRecord,
+    ChatProcessRecord,
     ChatSessionRecord,
 )
 
@@ -337,6 +345,168 @@ class RelationalChatSessionStore:
             db.flush()
             return _agentic_frame_from_record(record)
 
+    def begin_chat_process(self, session_id: str) -> ChatProcessSnapshot:
+        with self.sessions.session() as db:
+            self._require_session(db, session_id)
+            now = utc_now()
+            record = db.get(ChatProcessRecord, session_id)
+            if record is None:
+                record = ChatProcessRecord(
+                    id=session_id,
+                    created_at=now,
+                    updated_at=now,
+                    metadata_json={},
+                    session_id=session_id,
+                    status=ChatProcessStatus.WORKING.value,
+                    current_activity_json=None,
+                    started_at=now,
+                    resumable=False,
+                    next_sequence=1,
+                )
+                db.add(record)
+            else:
+                record.status = ChatProcessStatus.WORKING.value
+                record.current_activity_json = None
+                record.started_at = now
+                record.resumable = False
+                record.updated_at = now
+            db.flush()
+            return self._process_snapshot(db, record)
+
+    def publish_chat_activity(
+        self,
+        session_id: str,
+        activity_key: str,
+        status: ChatActivityStatus | str = ChatActivityStatus.STARTED,
+    ) -> ChatActivityEvent:
+        from my_digital_brain.chat.activity import activity_presentation, activity_title
+
+        with self.sessions.session() as db:
+            self._require_session(db, session_id)
+            now = utc_now()
+            process = self._get_or_create_process(db, session_id, now=now)
+            presentation = activity_presentation(activity_key)
+            started_count = db.scalar(
+                select(func.count(ChatActivityRecord.id)).where(
+                    ChatActivityRecord.session_id == session_id,
+                    ChatActivityRecord.activity_group == presentation.activity_group,
+                    ChatActivityRecord.status == ChatActivityStatus.STARTED.value,
+                ),
+            ) or 0
+            normalized_status = ChatActivityStatus(status)
+            occurrence = (
+                started_count
+                if normalized_status == ChatActivityStatus.STARTED
+                else max(0, started_count - 1)
+            )
+            event = ChatActivityRecord(
+                id=new_uuid(),
+                created_at=now,
+                updated_at=now,
+                metadata_json={},
+                session_id=session_id,
+                sequence=process.next_sequence,
+                status=normalized_status.value,
+                title=activity_title(activity_key, occurrence),
+                summary=presentation.summary,
+                activity_group=presentation.activity_group,
+                activity_key=activity_key,
+                occurrence=occurrence,
+            )
+            process.next_sequence += 1
+            process.current_activity_json=(
+                _activity_event_from_record(event).model_dump(mode="json", exclude_none=True)
+                if normalized_status in {ChatActivityStatus.STARTED, ChatActivityStatus.WAITING}
+                else None
+            )
+            process.updated_at = now
+            db.add(event)
+            db.flush()
+            return _activity_event_from_record(event)
+
+    def finish_chat_process(
+        self,
+        session_id: str,
+        status: ChatProcessStatus | str = ChatProcessStatus.COMPLETED,
+        *,
+        resumable: bool = False,
+    ) -> ChatProcessSnapshot:
+        with self.sessions.session() as db:
+            self._require_session(db, session_id)
+            now = utc_now()
+            process = self._get_or_create_process(db, session_id, now=now)
+            process.status = ChatProcessStatus(status).value
+            process.current_activity_json = None
+            process.resumable = resumable
+            process.updated_at = now
+            db.flush()
+            return self._process_snapshot(db, process)
+
+    def get_chat_process_snapshot(self, session_id: str, limit: int = 3) -> ChatProcessSnapshot:
+        with self.sessions.session() as db:
+            self._require_session(db, session_id)
+            process = db.get(ChatProcessRecord, session_id)
+            if process is None:
+                return ChatProcessSnapshot()
+            return self._process_snapshot(db, process, limit=limit)
+
+    @staticmethod
+    def _require_session(db, session_id: str) -> ChatSessionRecord:
+        session = db.get(ChatSessionRecord, session_id)
+        if session is None:
+            raise ChatNotFoundError(f"Chat session not found: {session_id}")
+        return session
+
+    @staticmethod
+    def _get_or_create_process(db, session_id: str, *, now):
+        record = db.get(ChatProcessRecord, session_id)
+        if record is None:
+            record = ChatProcessRecord(
+                id=session_id,
+                created_at=now,
+                updated_at=now,
+                metadata_json={},
+                session_id=session_id,
+                status=ChatProcessStatus.WORKING.value,
+                current_activity_json=None,
+                started_at=now,
+                resumable=False,
+                next_sequence=1,
+            )
+            db.add(record)
+            db.flush()
+        return record
+
+    @staticmethod
+    def _process_snapshot(db, record: ChatProcessRecord, *, limit: int = 3):
+        records = list(
+            db.scalars(
+                select(ChatActivityRecord)
+                .where(ChatActivityRecord.session_id == record.session_id)
+                .where(
+                    ChatActivityRecord.status.in_(
+                        [ChatActivityStatus.COMPLETED.value, ChatActivityStatus.FAILED.value],
+                    ),
+                )
+                .order_by(desc(ChatActivityRecord.sequence))
+                .limit(max(0, limit)),
+            ),
+        )
+        return ChatProcessSnapshot(
+            status=record.status,
+            current_activity=(
+                ChatActivityEvent.model_validate(record.current_activity_json)
+                if isinstance(record.current_activity_json, dict)
+                else None
+            ),
+            recent_activities=[
+                _activity_event_from_record(item) for item in reversed(records)
+            ],
+            started_at=record.started_at,
+            updated_at=record.updated_at,
+            resumable=record.resumable,
+        )
+
     def _summary_for_record(self, db, record: ChatSessionRecord) -> ConversationSessionSummary:
         recent_messages = list(
             db.scalars(
@@ -461,6 +631,17 @@ def _agentic_frame_from_record(record: ChatAgenticFrameRecord) -> AgenticFrame:
         created_at=record.created_at,
         updated_at=record.updated_at,
         metadata=record.metadata_json or {},
+    )
+
+
+def _activity_event_from_record(record: ChatActivityRecord) -> ChatActivityEvent:
+    return ChatActivityEvent(
+        sequence=record.sequence,
+        status=record.status,
+        title=record.title,
+        summary=record.summary,
+        activity_group=record.activity_group,
+        created_at=record.created_at,
     )
 
 

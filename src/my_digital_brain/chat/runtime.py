@@ -18,6 +18,7 @@ from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.enums import (
     ChatChannel,
     ChatDiagnosticLevel,
+    ChatProcessStatus,
     ChatResponseStatus,
     ConversationMessageRole,
     ConversationStatus,
@@ -29,6 +30,7 @@ from my_digital_brain.chat.exceptions import (
 )
 from my_digital_brain.chat.models import (
     ChatDiagnostic,
+    ChatProcessSnapshot,
     ChatResponse,
     ConversationMessage,
     ConversationSession,
@@ -115,20 +117,35 @@ class ChatRuntime:
             session.session_id,
             explicit_refs=message.conversation_history_refs,
         )
-        response = self._call_agentic(
-            message,
-            session.session_id,
-            history_refs,
-        )
+        self.store.begin_chat_process(session.session_id)
+        try:
+            response = self._call_agentic(
+                message,
+                session.session_id,
+                history_refs,
+            )
 
-        self._persist_response(
-            session.session_id,
-            response,
-            source_message_id=message.message_id,
-            source_text=message.text,
-            history_refs=history_refs,
-        )
-        return response
+            self._persist_response(
+                session.session_id,
+                response,
+                source_message_id=message.message_id,
+                source_text=message.text,
+                history_refs=history_refs,
+            )
+            self.store.finish_chat_process(
+                session.session_id,
+                ChatProcessStatus.WAITING_FOR_USER
+                if response.clarification_packet is not None
+                else ChatProcessStatus.COMPLETED,
+                resumable=response.clarification_packet is not None,
+            )
+            return response
+        except Exception:
+            self.store.finish_chat_process(
+                session.session_id,
+                ChatProcessStatus.FAILED,
+            )
+            raise
 
     def _persist_response(
         self,
@@ -191,6 +208,13 @@ class ChatRuntime:
 
     def get_session_detail(self, session_id: str, limit: int = 50) -> ConversationSessionDetail:
         return self.store.get_session_detail(session_id, limit=limit)
+
+    def get_chat_process_snapshot(
+        self,
+        session_id: str,
+        limit: int = 3,
+    ) -> ChatProcessSnapshot:
+        return self.store.get_chat_process_snapshot(session_id, limit=limit)
 
     def create_session(
         self,
@@ -345,6 +369,7 @@ class ChatRuntime:
             )
         packet = frame.clarification_packet
         validate_clarification_answers(packet, answer_packet)
+        self.store.begin_chat_process(session.session_id)
         log_event(
             logger,
             "chat.clarification.answer_received",
@@ -415,6 +440,11 @@ class ChatRuntime:
                 source_text=partial_answer_summary,
                 history_refs=self._history_refs(session.session_id, []),
             )
+            self.store.finish_chat_process(
+                session.session_id,
+                ChatProcessStatus.WAITING_FOR_USER,
+                resumable=True,
+            )
             return response
 
         complete_answer_packet = answer_packet_from_progress(packet, progress)
@@ -454,13 +484,17 @@ class ChatRuntime:
             parent_frame_id=frame.parent_frame_id,
             parent_tool_call_id=frame.parent_tool_call_id,
         )
-        result = self.agentic_runtime.resume_frame(
-            frame,
-            execution_context,
-            clarification_answer_summary=answer_summary,
-            answer_packet=complete_answer_packet,
-            resolved_clarifications=resolved_clarifications,
-        )
+        try:
+            result = self.agentic_runtime.resume_frame(
+                frame,
+                execution_context,
+                clarification_answer_summary=answer_summary,
+                answer_packet=complete_answer_packet,
+                resolved_clarifications=resolved_clarifications,
+            )
+        except Exception:
+            self.store.finish_chat_process(session.session_id, ChatProcessStatus.FAILED)
+            raise
         session = self.history_service.promote_completed_clarification(
             session,
             packet,
@@ -510,6 +544,13 @@ class ChatRuntime:
             source_message_id=message_id,
             source_text=answer_summary,
             history_refs=self._history_refs(session.session_id, []),
+        )
+        self.store.finish_chat_process(
+            session.session_id,
+            ChatProcessStatus.WAITING_FOR_USER
+            if response.clarification_packet is not None
+            else ChatProcessStatus.COMPLETED,
+            resumable=response.clarification_packet is not None,
         )
         return response
 

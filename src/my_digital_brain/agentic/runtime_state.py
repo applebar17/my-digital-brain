@@ -63,6 +63,11 @@ class AgenticStateRunner:
     @traceable(name="Agentic State Run", run_type="chain")
     def run_state(self, invocation: AgenticStateInvocation) -> AgenticStateRunResult:
         state_id = AgenticStateId(invocation.state_id)
+        self._publish_activity(
+            invocation.execution_context,
+            state_id.value,
+            "started",
+        )
         state_config = self.state_configs[state_id]
         state_value = _state_value(state_config.state_id)
         model_task = state_config.model_task or state_value
@@ -174,6 +179,11 @@ class AgenticStateRunner:
                 route=route,
             )
         if isinstance(result, LLMSessionFailed):
+            self._publish_activity(
+                invocation.execution_context,
+                state_id.value,
+                "failed",
+            )
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=result.error,
@@ -205,6 +215,11 @@ class AgenticStateRunner:
                 "model": result.metadata.model,
                 "route": route.model_dump(mode="json", exclude_none=True),
             },
+        )
+        self._publish_activity(
+            invocation.execution_context,
+            state_id.value,
+            "completed" if state_run_result.status == "ok" else "failed",
         )
         record_ai_flow_event(
             title=f"{state_value} - State Output",
@@ -252,6 +267,11 @@ class AgenticStateRunner:
         output_schema: type[BaseModel],
     ) -> AgenticStateRunResult:
         state_id = AgenticStateId(invocation.state_id)
+        self._publish_activity(
+            invocation.execution_context,
+            state_id.value,
+            "started",
+        )
         state_config = self.state_configs[state_id]
         state_value = _state_value(state_config.state_id)
         model_task = state_config.model_task or state_value
@@ -358,6 +378,11 @@ class AgenticStateRunner:
                 if isinstance(result, LLMSessionFailed)
                 else "Structured output was empty."
             )
+            self._publish_activity(
+                invocation.execution_context,
+                state_id.value,
+                "failed",
+            )
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=error,
@@ -385,6 +410,11 @@ class AgenticStateRunner:
                 "route": route.model_dump(mode="json", exclude_none=True),
                 "structured_output_schema": output_schema.__name__,
             },
+        )
+        self._publish_activity(
+            invocation.execution_context,
+            state_id.value,
+            "completed",
         )
         record_ai_flow_event(
             title=f"{state_value} - Structured State Output",
@@ -463,6 +493,11 @@ class AgenticStateRunner:
                     str(pending_data.get("parent_frame_id") or parent_frame_id or "") or None
                 )
                 packet = pending_data.get("clarification_packet") or packet
+        self._publish_activity(
+            invocation.execution_context,
+            state_config.state_id.value,
+            "waiting",
+        )
         return AgenticStateRunResult(
             state_id=state_config.state_id,
             assistant_text=pending_events[-1].result.output if pending_events else None,
@@ -529,6 +564,7 @@ class AgenticStateRunner:
     ) -> AgenticStateRunResult:
         state_config = self.state_configs[state_id]
         state_value = _state_value(state_config.state_id)
+        self._publish_activity(execution_context, state_id.value, "started")
         model_task = state_config.model_task or state_value
         context = AIRequestContext(
             purpose=model_task,
@@ -577,6 +613,7 @@ class AgenticStateRunner:
                 route=route,
             )
         if isinstance(result, LLMSessionFailed):
+            self._publish_activity(execution_context, state_id.value, "failed")
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=result.error,
@@ -597,6 +634,11 @@ class AgenticStateRunner:
             event.status not in {"ok", "accepted", "pending", "interrupted"}
             for event in tool_events
         )
+        self._publish_activity(
+            execution_context,
+            state_id.value,
+            "completed" if not has_error else "failed",
+        )
         return AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
@@ -611,3 +653,15 @@ class AgenticStateRunner:
                 "route": route.model_dump(mode="json", exclude_none=True),
             },
         )
+
+    @staticmethod
+    def _publish_activity(
+        execution_context: AgenticToolExecutionContext,
+        activity_key: str,
+        status: str,
+    ) -> None:
+        store = execution_context.chat_store
+        session_id = execution_context.session_id
+        publish = getattr(store, "publish_chat_activity", None)
+        if callable(publish) and session_id:
+            publish(session_id, activity_key, status)

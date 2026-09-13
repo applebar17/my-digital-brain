@@ -5,13 +5,17 @@ from threading import RLock
 from typing import Protocol
 
 from my_digital_brain.chat.enums import (
+    ChatActivityStatus,
     ChatChannel,
+    ChatProcessStatus,
     ConversationMessageRole,
     ConversationStatus,
 )
 from my_digital_brain.chat.exceptions import ChatNotFoundError
 from my_digital_brain.chat.models import (
     AgenticFrame,
+    ChatActivityEvent,
+    ChatProcessSnapshot,
     ConversationMessage,
     ConversationSession,
     ConversationSessionDetail,
@@ -88,6 +92,29 @@ class ChatSessionStore(Protocol):
         clarification_packet: dict | None = None,
     ) -> AgenticFrame: ...
 
+    def begin_chat_process(self, session_id: str) -> ChatProcessSnapshot: ...
+
+    def publish_chat_activity(
+        self,
+        session_id: str,
+        activity_key: str,
+        status: ChatActivityStatus | str = ChatActivityStatus.STARTED,
+    ) -> ChatActivityEvent: ...
+
+    def finish_chat_process(
+        self,
+        session_id: str,
+        status: ChatProcessStatus | str = ChatProcessStatus.COMPLETED,
+        *,
+        resumable: bool = False,
+    ) -> ChatProcessSnapshot: ...
+
+    def get_chat_process_snapshot(
+        self,
+        session_id: str,
+        limit: int = 3,
+    ) -> ChatProcessSnapshot: ...
+
 
 class InMemoryChatSessionStore:
     """Local development store for chat runtime behavior."""
@@ -99,6 +126,8 @@ class InMemoryChatSessionStore:
         self._messages: dict[str, list[ConversationMessage]] = defaultdict(list)
         self._agentic_frames: dict[str, AgenticFrame] = {}
         self._agentic_frame_session_ids: dict[str, set[str]] = defaultdict(set)
+        self._process_snapshots: dict[str, ChatProcessSnapshot] = {}
+        self._activity_events: dict[str, list[ChatActivityEvent]] = defaultdict(list)
 
     def create_session(
         self,
@@ -308,6 +337,8 @@ class InMemoryChatSessionStore:
         self._messages: dict[str, list[ConversationMessage]] = defaultdict(list)
         self._agentic_frames: dict[str, AgenticFrame] = {}
         self._agentic_frame_session_ids: dict[str, set[str]] = defaultdict(set)
+        self._process_snapshots: dict[str, ChatProcessSnapshot] = {}
+        self._activity_events: dict[str, list[ChatActivityEvent]] = defaultdict(list)
 
     def create_session(
         self,
@@ -494,6 +525,101 @@ class InMemoryChatSessionStore:
             self._sync_session_active_frame(session_id)
             return updated.model_copy(deep=True)
 
+    def begin_chat_process(self, session_id: str) -> ChatProcessSnapshot:
+        with self._lock:
+            self._require_session(session_id)
+            now = utc_now()
+            snapshot = ChatProcessSnapshot(
+                status=ChatProcessStatus.WORKING,
+                started_at=now,
+                updated_at=now,
+            )
+            self._process_snapshots[session_id] = snapshot
+            return snapshot.model_copy(deep=True)
+
+    def publish_chat_activity(
+        self,
+        session_id: str,
+        activity_key: str,
+        status: ChatActivityStatus | str = ChatActivityStatus.STARTED,
+    ) -> ChatActivityEvent:
+        from my_digital_brain.chat.activity import activity_presentation, activity_title
+
+        with self._lock:
+            self._require_session(session_id)
+            normalized_status = ChatActivityStatus(status)
+            previous = self._activity_events[session_id]
+            presentation = activity_presentation(activity_key)
+            started_count = sum(
+                1
+                for event in previous
+                if event.activity_group == presentation.activity_group
+                and event.status == ChatActivityStatus.STARTED
+            )
+            occurrence = (
+                started_count
+                if normalized_status == ChatActivityStatus.STARTED
+                else max(0, started_count - 1)
+            )
+            event = ChatActivityEvent(
+                sequence=len(previous) + 1,
+                status=normalized_status,
+                title=activity_title(activity_key, occurrence),
+                summary=presentation.summary,
+                activity_group=presentation.activity_group,
+            )
+            previous.append(event)
+            current = event if normalized_status in {
+                ChatActivityStatus.STARTED,
+                ChatActivityStatus.WAITING,
+            } else None
+            snapshot = self._process_snapshots.get(session_id) or ChatProcessSnapshot()
+            self._process_snapshots[session_id] = snapshot.model_copy(
+                update={
+                    "current_activity": current,
+                    "recent_activities": _recent_activities(previous),
+                    "updated_at": event.created_at,
+                },
+                deep=True,
+            )
+            return event.model_copy(deep=True)
+
+    def finish_chat_process(
+        self,
+        session_id: str,
+        status: ChatProcessStatus | str = ChatProcessStatus.COMPLETED,
+        *,
+        resumable: bool = False,
+    ) -> ChatProcessSnapshot:
+        with self._lock:
+            self._require_session(session_id)
+            snapshot = self._process_snapshots.get(session_id) or ChatProcessSnapshot()
+            updated = snapshot.model_copy(
+                update={
+                    "status": ChatProcessStatus(status),
+                    "current_activity": None,
+                    "resumable": resumable,
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            self._process_snapshots[session_id] = updated
+            return updated.model_copy(deep=True)
+
+    def get_chat_process_snapshot(self, session_id: str, limit: int = 3) -> ChatProcessSnapshot:
+        with self._lock:
+            self._require_session(session_id)
+            snapshot = self._process_snapshots.get(session_id) or ChatProcessSnapshot()
+            events = self._activity_events.get(session_id, [])
+            return snapshot.model_copy(
+                update={"recent_activities": _recent_activities(events, limit=limit)},
+                deep=True,
+            )
+
+    def _require_session(self, session_id: str) -> None:
+        if session_id not in self._sessions:
+            raise ChatNotFoundError(f"Chat session not found: {session_id}")
+
     def get_agentic_frame(self, frame_id: str) -> AgenticFrame:
         with self._lock:
             try:
@@ -642,3 +768,16 @@ def _can_autotitle(session: ConversationSession) -> bool:
         session.title == "New chat"
         and str(session.metadata.get("title_source") or "default") != "manual"
     )
+
+
+def _recent_activities(
+    events: list[ChatActivityEvent],
+    *,
+    limit: int = 3,
+) -> list[ChatActivityEvent]:
+    completed = [
+        event
+        for event in events
+        if event.status in {ChatActivityStatus.COMPLETED, ChatActivityStatus.FAILED}
+    ]
+    return [event.model_copy(deep=True) for event in completed[-max(0, limit) :]]

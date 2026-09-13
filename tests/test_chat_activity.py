@@ -10,6 +10,7 @@ from my_digital_brain.chat.activity import (
 )
 from my_digital_brain.chat.enums import ChatActivityStatus, ChatProcessStatus
 from my_digital_brain.chat.models import ChatActivityEvent, ChatProcessSnapshot
+from my_digital_brain.chat.store import InMemoryChatSessionStore
 
 
 def test_activity_registry_covers_current_agentic_states() -> None:
@@ -54,3 +55,31 @@ def test_activity_contract_contains_no_internal_source_identifier() -> None:
     assert "state_id" not in payload
     assert "frame_id" not in payload
     assert payload["current_activity"]["title"] == "Searching your memories"
+
+
+def test_in_memory_store_keeps_current_activity_separate_from_recent_history() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.create_session(channel="web", owner_id="owner")
+
+    started = store.begin_chat_process(session.session_id)
+    assert started.status == ChatProcessStatus.WORKING
+
+    store.publish_chat_activity(
+        session.session_id,
+        AgenticStateId.REASONING_CHECKPOINT.value,
+        ChatActivityStatus.STARTED,
+    )
+    current = store.get_chat_process_snapshot(session.session_id)
+    assert current.current_activity is not None
+    assert current.current_activity.activity_group == "understanding"
+    assert current.recent_activities == []
+
+    store.publish_chat_activity(
+        session.session_id,
+        AgenticStateId.REASONING_CHECKPOINT.value,
+        ChatActivityStatus.COMPLETED,
+    )
+    completed = store.get_chat_process_snapshot(session.session_id)
+    assert completed.current_activity is None
+    assert len(completed.recent_activities) == 1
+    assert completed.recent_activities[0].status == ChatActivityStatus.COMPLETED
