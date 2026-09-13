@@ -580,6 +580,16 @@ def test_ref_context_rejects_malformed_colliding_and_wrong_kind_refs() -> None:
     assert resolved.resolution_status == RefResolutionStatus.CREATED.value
 
 
+def test_ref_context_accepts_readable_existing_ref_conventions() -> None:
+    entry = RefEntry(
+        ref="node_existing_lorenzo",
+        object_kind=RefObjectKind.NODE,
+        backend_id="lorenzo-uuid",
+    )
+
+    assert entry.ref == "node_existing_lorenzo"
+
+
 def test_ref_context_registers_readable_refs_and_restores_uuid_bindings() -> None:
     context = RefContext(session_id="chat-1")
 

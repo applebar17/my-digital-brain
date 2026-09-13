@@ -12,10 +12,17 @@ from my_digital_brain.agentic.enums import (
     RefResolutionStatus,
 )
 
-_REF_RE = re.compile(
+LOCAL_REF_RE = re.compile(
     r"^OWNER$|"
-    r"^(node|memory|edge|context|media)_[0-9]{4}$|"
-    r"^(node|memory|edge|context|media)_new_[a-z0-9_]{1,64}$",
+    r"^(node|memory|edge|context|media)_[a-z0-9][a-z0-9_]{0,63}$",
+)
+LOCAL_REF_DESCRIPTION = (
+    "Run-scoped local reference used to connect structured objects. This is an "
+    "opaque model-facing handle, not a database UUID and not a business identifier. "
+    "Prefer readable forms such as node_0001, node_existing_lorenzo, node_new_lorenzo, "
+    "memory_0001, memory_new_barbecue, or context_new_perception. Reuse the exact "
+    "same ref whenever it represents the same object; use a new unique ref for a "
+    "different object. Never invent or return backend IDs."
 )
 _KIND_PREFIX = {
     RefObjectKind.NODE: "node",
@@ -50,7 +57,7 @@ _BACKEND_NOISE_KEYS = {
 
 
 class RefEntry(AgenticModel):
-    ref: str
+    ref: str = Field(description=LOCAL_REF_DESCRIPTION)
     object_kind: RefObjectKind
     label: str | None = None
     type: str | None = None
@@ -438,7 +445,7 @@ def build_ref_packet(
 
 def _validate_ref_for_kind(ref: str, object_kind: RefObjectKind | str) -> None:
     kind = RefObjectKind(object_kind)
-    if not _REF_RE.fullmatch(ref):
+    if not LOCAL_REF_RE.fullmatch(ref):
         raise ValueError(f"Malformed ref: {ref}")
     expected = _KIND_PREFIX[kind]
     if ref != "OWNER" and not (
@@ -452,6 +459,12 @@ def _required_backend_id(value: Any) -> str:
     if not normalized:
         raise ValueError("Backend ids must not be empty.")
     return normalized
+
+
+def is_local_ref(value: str) -> bool:
+    """Return whether a value is a safe model-facing local reference token."""
+
+    return bool(LOCAL_REF_RE.fullmatch(str(value).strip()))
 
 
 def _normalize_object(value: Any) -> dict[str, Any]:
@@ -536,7 +549,7 @@ def _endpoint_ref(value: Any, ref_context: RefContext | None) -> str | None:
         return None
     text = str(value)
     if ref_context is None:
-        return text if _REF_RE.match(text) else None
+        return text if LOCAL_REF_RE.fullmatch(text) else None
     if text in ref_context.entries:
         return text
     return ref_context.ref_for_backend_id(text)

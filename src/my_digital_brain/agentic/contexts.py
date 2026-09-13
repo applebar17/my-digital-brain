@@ -27,13 +27,17 @@ from my_digital_brain.agentic.enums import (
     ToolResultStatus,
 )
 from my_digital_brain.agentic.messages import NeutralConversationMessage
-from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.agentic.refs import (
+    LOCAL_REF_DESCRIPTION,
+    LOCAL_REF_RE,
+    RefContext,
+)
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.core.profile_context import OwnerProfilePurpose, OwnerProfileSnapshot
 
 _PROPOSED_REF_RE = re.compile(r"\b(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64}\b")
-_VISIBLE_REF_RE = re.compile(r"^(?:(?:node|memory|edge|context|media)_[0-9]{4}|(?:node|memory|edge|context|media)_new_[a-z0-9_]{1,64})$")
+_VISIBLE_REF_RE = LOCAL_REF_RE
 
 BACKEND_ONLY_KEYS = {
     "metadata",
@@ -201,7 +205,10 @@ class ReasoningInsightContext(AgenticModel):
     insight_type: ReasoningInsightKind
     summary: str
     evidence_text: str | None = None
-    affected_refs: list[str] = Field(default_factory=list)
+    affected_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs affected by this insight; reuse refs supplied in context exactly.",
+    )
     recommended_next_action: str | None = None
     caution: str | None = None
 
@@ -209,7 +216,10 @@ class ReasoningInsightContext(AgenticModel):
 class ReasoningClarificationCandidateContext(AgenticModel):
     question: str
     reason: str
-    target_refs: list[str] = Field(default_factory=list)
+    target_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs the question is about; use only refs supplied in context.",
+    )
     suggested_answers: list[str] = Field(default_factory=list)
     blocking: bool = True
 
@@ -217,7 +227,13 @@ class ReasoningClarificationCandidateContext(AgenticModel):
 class ReasoningEntityUnderstandingContext(AgenticModel):
     mention_text: str
     interpretation: str
-    existing_alias_refs: list[str] = Field(default_factory=list)
+    existing_alias_refs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Known local refs that may represent this mention. Copy a supplied ref "
+            "exactly; do not create a second spelling for the same object."
+        ),
+    )
     should_be_node: bool = False
     possible_node_type: str | None = None
     metadata_candidate_keys: list[str] = Field(default_factory=list)
@@ -228,7 +244,10 @@ class ReasoningStorageRecommendationContext(AgenticModel):
     subject: str
     recommendation_type: ReasoningStorageRecommendationType
     reason: str
-    target_refs: list[str] = Field(default_factory=list)
+    target_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs affected by this recommendation; use known refs exactly.",
+    )
     suggested_property_keys: list[str] = Field(default_factory=list)
     guardrails: list[str] = Field(default_factory=list)
 
@@ -522,31 +541,58 @@ class AgenticToolPayload(AgenticModel):
 
 
 class PlannedRefPacket(AgenticModel):
-    ref: str
-    object_kind: str
+    ref: str = Field(description=LOCAL_REF_DESCRIPTION)
+    object_kind: str = Field(
+        description=(
+            "Semantic kind of the object represented by ref, such as node, memory, "
+            "edge, context, or media. The kind must agree with the ref prefix."
+        ),
+    )
     label: str | None = None
     type: str | None = None
     name: str | None = None
     summary: str | None = None
     aliases: list[str] = Field(default_factory=list)
     source_mentions: list[str] = Field(default_factory=list)
-    status: str | None = None
+    status: str | None = Field(
+        default=None,
+        description=(
+            "Optional resolution status such as existing, proposed, or ambiguous. "
+            "Status describes the object; it does not change the ref spelling rules."
+        ),
+    )
     notes: str | None = None
 
     @model_validator(mode="after")
     def _validate_ref(self) -> "PlannedRefPacket":
-        if not _VISIBLE_REF_RE.match(self.ref):
+        if not _VISIBLE_REF_RE.fullmatch(self.ref):
             raise ValueError(
-                "PlannedRefPacket.ref must be a local ref like node_0001, "
-                "node_new_lorenzo, memory_new_beach_outing, or context_new_perception."
+                "ref must be a safe local reference: start with node_, memory_, edge_, "
+                "context_, media_, or use OWNER; use lowercase letters, numbers, and "
+                "underscores only. The readable suffix is flexible. Examples include "
+                "node_0001, node_existing_lorenzo, node_new_lorenzo, and memory_new_barbecue."
             )
         _validate_ref_kind_prefix(self.ref, self.object_kind)
         return self
 
 
 class NodePlanPacket(AgenticModel):
-    planned_refs: list[PlannedRefPacket] = Field(default_factory=list)
-    resolved_refs: list[PlannedRefPacket] = Field(default_factory=list)
+    planned_refs: list[PlannedRefPacket] = Field(
+        default_factory=list,
+        description=(
+            "New or not-yet-resolved objects proposed by this plan. Choose one unique "
+            "local ref per object and reuse it in all later actions. Prefer node_new_* "
+            "or another readable node_* convention."
+        ),
+    )
+    resolved_refs: list[PlannedRefPacket] = Field(
+        default_factory=list,
+        description=(
+            "Objects identified as already represented by the current context. Copy the "
+            "exact known local ref, including names such as node_0001 or "
+            "node_existing_lorenzo; do not create a second ref for the same object."
+        ),
+    )
     duplicate_notes: list[str] = Field(default_factory=list)
     ignored_mentions: list[str] = Field(default_factory=list)
     summary: str = ""
@@ -569,10 +615,22 @@ class NodePlanPacket(AgenticModel):
 
 
 class MemoryPlanPacket(AgenticModel):
-    planned_refs: list[PlannedRefPacket] = Field(default_factory=list)
-    host_refs: list[str] = Field(default_factory=list)
-    involved_refs: list[str] = Field(default_factory=list)
-    context_refs: list[str] = Field(default_factory=list)
+    planned_refs: list[PlannedRefPacket] = Field(
+        default_factory=list,
+        description="New memory/context refs proposed by this plan; make each unique and reuse it.",
+    )
+    host_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs whose timeline should host the memory; reuse known refs exactly.",
+    )
+    involved_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs involved in the memory; use the same ref for the same object.",
+    )
+    context_refs: list[str] = Field(
+        default_factory=list,
+        description="Local relationship or context refs relevant to the memory.",
+    )
     weak_edge_notes: list[str] = Field(default_factory=list)
     summary: str = ""
 
@@ -585,7 +643,7 @@ class MemoryPlanPacket(AgenticModel):
             *self.context_refs,
         ]
         for ref in packet_refs:
-            if not _VISIBLE_REF_RE.match(ref):
+            if not _VISIBLE_REF_RE.fullmatch(ref):
                 raise ValueError(f"MemoryPlanPacket contains an invalid local ref: {ref}")
         _validate_unique_refs([item.ref for item in self.planned_refs], "MemoryPlanPacket")
         if not (
@@ -623,7 +681,13 @@ class MemoryPlanStep(AgenticModel):
 class MemoryPlanAction(AgenticModel):
     action_id: str = Field(default_factory=new_uuid)
     action_type: MemoryPlanActionType
-    target_refs: list[str] = Field(default_factory=list)
+    target_refs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Local refs targeted by this action. Reuse the exact refs from the active "
+            "reference context; do not use database UUIDs."
+        ),
+    )
     rationale: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
@@ -632,7 +696,10 @@ class MemoryPlanAction(AgenticModel):
 
 class MemoryPlan(AgenticModel):
     plan_id: str = Field(default_factory=new_uuid)
-    context_refs: list[str] = Field(default_factory=list)
+    context_refs: list[str] = Field(
+        default_factory=list,
+        description="Known local refs needed to interpret or execute this plan.",
+    )
     actions: list[MemoryPlanAction] = Field(default_factory=list)
     steps: list[MemoryPlanStep] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -686,7 +753,7 @@ class EdgeMemoryPlan(AgenticModel):
                 }:
                     for field_name in ("from_ref", "to_ref", "source_ref", "target_ref"):
                         value = action.payload.get(field_name)
-                        if value is not None and not _VISIBLE_REF_RE.match(str(value)):
+                        if value is not None and not _VISIBLE_REF_RE.fullmatch(str(value)):
                             raise ValueError(
                                 f"Edge action {action.action_id} field {field_name} must use a local ref."
                             )
