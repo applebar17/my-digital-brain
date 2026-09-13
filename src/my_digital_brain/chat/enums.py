@@ -31,3 +31,19 @@ class ChatDiagnosticLevel(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
+
+
+class ChatActivityStatus(StrEnum):
+    STARTED = "started"
+    COMPLETED = "completed"
+    WAITING = "waiting"
+    FAILED = "failed"
+
+
+class ChatProcessStatus(StrEnum):
+    IDLE = "idle"
+    WORKING = "working"
+    WAITING_FOR_USER = "waiting_for_user"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

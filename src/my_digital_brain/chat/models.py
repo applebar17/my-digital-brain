@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from my_digital_brain.chat.enums import (
+    ChatActivityStatus,
     ChatChannel,
     ChatDiagnosticLevel,
+    ChatProcessStatus,
     ChatResponseStatus,
     ConversationMessageRole,
     ConversationStatus,
 )
-from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.clarification.contracts import ClarificationPacket
+from my_digital_brain.core.ids import new_uuid
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ChatModel(BaseModel):
@@ -135,6 +137,28 @@ class ChatDiagnostic(ChatModel):
     code: str
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatActivityEvent(ChatModel):
+    """Safe, channel-neutral progress information for normal chat surfaces."""
+
+    sequence: int = Field(ge=1)
+    status: ChatActivityStatus
+    title: str = Field(min_length=1, max_length=160)
+    summary: str = Field(min_length=1, max_length=500)
+    activity_group: str = Field(min_length=1, max_length=64)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ChatProcessSnapshot(ChatModel):
+    """Current and recent user-facing activity for one chat process."""
+
+    status: ChatProcessStatus = ChatProcessStatus.IDLE
+    current_activity: ChatActivityEvent | None = None
+    recent_activities: list[ChatActivityEvent] = Field(default_factory=list)
+    started_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+    resumable: bool = False
 
 
 class ChatResponse(ChatModel):
