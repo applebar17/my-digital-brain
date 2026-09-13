@@ -15,7 +15,12 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlan,
     NodeMemoryPlan,
 )
-from my_digital_brain.agentic.enums import AgenticStateId, MemoryPlanActionType, MemoryPlanningPhase
+from my_digital_brain.agentic.enums import (
+    AgenticStateId,
+    MemoryPlanActionType,
+    MemoryPlanningPhase,
+    RefObjectKind,
+)
 from my_digital_brain.agentic.planning_contracts import (
     PlanningPurposeGuidelines,
     PlanningTransformContext,
@@ -46,6 +51,7 @@ class MemoryIngestionRuntimeService:
         execution_context.agentic_runtime = self.runtime
         execution_context.conversation_context = conversation_context
         execution_context.state_id = AgenticStateId.MEMORY_INGESTION.value
+        execution_context.ref_context = payload.ref_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -82,6 +88,7 @@ class MemoryIngestionRuntimeService:
         if node_plan_result.status != "ok" or node_plan_result.structured_output is None:
             return _memory_ingestion_error_result(state_results, compact_trace, node_plan_result)
         node_plan = NodeMemoryPlan.model_validate(node_plan_result.structured_output)
+        _register_planned_refs(payload.ref_context, node_plan.node_plan_packet)
         current_payload = current_payload.model_copy(
             update={
                 "node_plan": node_plan,
@@ -122,6 +129,7 @@ class MemoryIngestionRuntimeService:
         if memory_plan_result.status != "ok" or memory_plan_result.structured_output is None:
             return _memory_ingestion_error_result(state_results, compact_trace, memory_plan_result)
         memory_plan = MemoryLogMemoryPlan.model_validate(memory_plan_result.structured_output)
+        _register_planned_refs(payload.ref_context, memory_plan.memory_plan_packet)
         current_payload = current_payload.model_copy(
             update={
                 "memory_plan": memory_plan,
@@ -357,6 +365,7 @@ class MemoryIngestionRuntimeService:
                         desired_work=action.rationale or action.payload.get("desired_work"),
                         target_ids=action.target_refs,
                         graph_context=payload.graph_context,
+                        ref_context=payload.ref_context,
                         current_time=payload.current_time,
                         timezone=payload.timezone,
                         metadata={
@@ -398,4 +407,27 @@ class MemoryIngestionRuntimeService:
             state_results=action_results,
             status="ok" if all(item.status == "ok" for item in action_results) else "error",
             compact_trace=compact_trace,
+        )
+
+
+def _register_planned_refs(ref_context: Any, packet: Any) -> None:
+    """Make planner refs available to every subsequent child frame."""
+
+    if ref_context is None or packet is None:
+        return
+    for planned in [
+        *list(getattr(packet, "planned_refs", []) or []),
+        *list(getattr(packet, "resolved_refs", []) or []),
+    ]:
+        if planned.ref in ref_context.entries:
+            continue
+        ref_context.register_proposed(
+            planned.ref,
+            RefObjectKind(planned.object_kind),
+            label=planned.label,
+            type=planned.type,
+            name=planned.name,
+            summary=planned.summary,
+            aliases=list(planned.aliases),
+            source="ingestion_planning",
         )

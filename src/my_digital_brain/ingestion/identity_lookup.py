@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Any
 
+from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.graph.utils import normalize_text
@@ -188,13 +190,7 @@ class DeterministicIdentityLookupService:
                 node_id = node.properties.get("id")
                 if not node_id or self._is_owner(node_id) or not _is_active(node):
                     continue
-                ref = registry.register_existing(
-                    str(node_id),
-                    object_kind=ReferenceObjectKind.NODE,
-                    label=node.label,
-                    display_label=_display_name(node),
-                    aliases=_aliases(node),
-                )
+                ref = _register_existing(registry, node)
                 candidates.append(
                     EntityLookupCandidate(
                         ref=ref,
@@ -216,13 +212,7 @@ class DeterministicIdentityLookupService:
         match_kind: IdentityMatchKind,
         registry: RunReferenceRegistry,
     ) -> EntityLookupCandidate:
-        ref = registry.register_existing(
-            str(node.properties["id"]),
-            object_kind=ReferenceObjectKind.NODE,
-            label=node.label,
-            display_label=_display_name(node),
-            aliases=_aliases(node),
-        )
+        ref = _register_existing(registry, node)
         return EntityLookupCandidate(
             ref=ref,
             label=node.label,
@@ -336,6 +326,30 @@ def _aliases(node: NodeSearchResult) -> list[str]:
 
 def _is_active(node: NodeSearchResult) -> bool:
     return str(node.properties.get("lifecycle_state") or "active").casefold() == "active"
+
+
+def _register_existing(registry: Any, node: NodeSearchResult) -> str:
+    """Register a graph match in the active model-reference context."""
+
+    backend_id = str(node.properties["id"])
+    display_name = _display_name(node)
+    aliases = _aliases(node)
+    if isinstance(registry, RefContext):
+        return registry.register_existing(
+            backend_id,
+            RefObjectKind.NODE,
+            label=node.label,
+            name=display_name,
+            aliases=aliases,
+            source="clarification_lookup",
+        )
+    return registry.register_existing(
+        backend_id,
+        object_kind=ReferenceObjectKind.NODE,
+        label=node.label,
+        display_label=display_name,
+        aliases=aliases,
+    )
 
 
 def _score(node: NodeSearchResult) -> float | None:

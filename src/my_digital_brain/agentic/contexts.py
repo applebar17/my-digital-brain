@@ -126,8 +126,21 @@ class GraphContextPackage(AgenticModel):
     relationship_contexts: list[dict[str, Any]] = Field(default_factory=list)
     evidence_summaries: list[dict[str, Any]] = Field(default_factory=list)
     known_ambiguities: list[str] = Field(default_factory=list)
+    ref_context: RefContext | None = None
     owner_snapshot: OwnerSnapshot | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_facing_payload(self) -> dict[str, Any]:
+        """Render graph context with readable refs and no backend bindings."""
+
+        payload = self.model_dump(
+            mode="json",
+            exclude={"ref_context"},
+            exclude_none=True,
+        )
+        if self.ref_context is not None:
+            payload["ref_context"] = self.ref_context.model_facing_packet()
+        return _compact_prompt_payload(payload)
 
 
 class ReasoningPurposeGuidelines(AgenticModel):
@@ -789,6 +802,7 @@ class GraphUpdateContext(AgenticModel):
     target_ids: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
     graph_context: GraphContextPackage | None = None
+    ref_context: RefContext | None = None
     owner_snapshot: OwnerSnapshot | None = None
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"

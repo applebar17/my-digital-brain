@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import Field, model_validator
 
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolResult
 
@@ -67,7 +68,7 @@ class ClarificationToolService:
     """Backend boundary for the clarification agent's read and question tools."""
 
     graph_service: Any | None
-    reference_registry: Any | None
+    ref_context: RefContext | Any | None
     owner_manager: Any | None = None
     owner_graph_node_id: str | None = None
 
@@ -294,9 +295,9 @@ class ClarificationToolService:
             return _error(tool_name, "invalid_question_request", str(exc), retryable=True)
 
     def _registry(self) -> Any:
-        if self.reference_registry is None:
-            raise ValueError("The active run reference registry is not configured.")
-        return self.reference_registry
+        if self.ref_context is None:
+            raise ValueError("The active canonical reference context is not configured.")
+        return self.ref_context
 
     def _require_ref(
         self,
@@ -308,11 +309,14 @@ class ClarificationToolService:
         if not ref or ":" in ref or len(ref) > 120:
             raise ValueError(f"Invalid model-facing reference: {ref}")
         entry = registry.entry_for(ref)
-        if allow_proposed and str(entry.status) == "proposed":
-            if expected_kind is not None and entry.object_kind != expected_kind:
+        status = getattr(entry, "resolution_status", getattr(entry, "status", None))
+        entry_kind = getattr(entry.object_kind, "value", entry.object_kind)
+        expected_value = getattr(expected_kind, "value", expected_kind)
+        if allow_proposed and str(status) == "proposed":
+            if expected_value is not None and entry_kind != expected_value:
                 raise ValueError(f"Reference has an unexpected object kind: {ref}")
             return ref
-        return registry.resolve(ref, expected_kind=expected_kind)
+        return registry.resolve(ref, expected_kind=expected_value)
 
 
 def _response_mode_for_tool(tool_name: str) -> ClarificationResponseMode:
@@ -346,7 +350,10 @@ def _pending_question_result(packet: ClarificationPacket) -> ToolResult:
 
 
 def _registry_refs(registry: Any) -> list[str]:
-    return [str(entry["ref"]) for entry in registry.snapshot().get("entries", [])]
+    entries = registry.snapshot().get("entries", [])
+    if isinstance(entries, dict):
+        return [str(ref) for ref in entries]
+    return [str(entry["ref"]) for entry in entries]
 
 
 def _node_kind() -> Any:

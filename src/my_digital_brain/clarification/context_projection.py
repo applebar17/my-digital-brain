@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.graph.models import NodeSearchResult, RelationshipResult
 
 
@@ -64,6 +66,15 @@ def register_node(node: Any, registry: Any) -> str:
     try:
         return registry.alias_for_internal(str(node_id))
     except ValueError:
+        if isinstance(registry, RefContext):
+            return registry.register_existing(
+                str(node_id),
+                RefObjectKind.NODE,
+                label=model.label,
+                name=display_name(model),
+                aliases=aliases(model),
+                source="clarification_context",
+            )
         return registry.register_existing(
             str(node_id),
             object_kind=_node_kind(),

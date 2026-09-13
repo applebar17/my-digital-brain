@@ -15,7 +15,8 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlanAction,
     QueryRetrievalPlanningContext,
 )
-from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.enums import AgenticStateId, RefObjectKind
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.models import ToolError, ToolResult
@@ -87,6 +88,9 @@ class AgenticToolExecutionContext:
     agentic_runtime: Any | None = None
     conversation_context: Any | None = None
     current_payload: Any | None = None
+    ref_context: RefContext | None = None
+    # Retained only while the legacy ingestion service is migrated. Active
+    # agentic chat must use ref_context; no new code should populate this.
     reference_registry: Any | None = None
 
 
@@ -135,9 +139,18 @@ class AgenticToolBindings:
         conversation = self._conversation_context()
         source_text = self._source_text_from_context()
         retrieval = self._semantic_retrieval(source_text, limit=5) if source_text else {}
+        ref_context = self.context.ref_context or _ref_context_from_retrieval(
+            retrieval,
+            session_id=self.context.session_id or conversation.context_id,
+        )
+        if self.context.owner_id:
+            _ensure_owner_ref(ref_context, self.context.owner_id, self.context.owner_snapshot)
+        graph_context = _graph_context_from_retrieval(retrieval, ref_context=ref_context)
+        self.context.ref_context = ref_context
         ingestion_context = MemoryIngestionContext(
             conversation=conversation,
-            graph_context=_graph_context_from_retrieval(retrieval),
+            graph_context=graph_context,
+            ref_context=ref_context,
             timezone=conversation.timezone,
             current_time=conversation.current_time,
             metadata={
@@ -166,6 +179,7 @@ class AgenticToolBindings:
             conversation=conversation,
             action=action,
             graph_context=graph_context,
+            ref_context=getattr(current_payload, "ref_context", self.context.ref_context),
             timezone=getattr(current_payload, "timezone", conversation.timezone),
             current_time=getattr(current_payload, "current_time", conversation.current_time),
             metadata={"source": "run_memory_creation", **(metadata or {})},
@@ -202,6 +216,11 @@ class AgenticToolBindings:
             target_ids=target_ids or [],
             source_refs=source_refs or [],
             graph_context=getattr(self.context.current_payload, "graph_context", None),
+            ref_context=getattr(
+                self.context.current_payload,
+                "ref_context",
+                self.context.ref_context,
+            ),
             metadata=metadata or {},
         )
         return self._run_child_frame(
@@ -412,7 +431,7 @@ class AgenticToolBindings:
             typed_identity_values=typed_identity_values,
             max_candidates=max_candidates,
         )
-        self._sync_reference_registry()
+        self._sync_ref_context()
         return result
 
     def _handle_get_candidate_context(
@@ -428,7 +447,7 @@ class AgenticToolBindings:
             include_evidence=include_evidence,
             limit=limit,
         )
-        self._sync_reference_registry()
+        self._sync_ref_context()
         return result
 
     def _handle_get_relationship_context(
@@ -444,7 +463,7 @@ class AgenticToolBindings:
             relationship_type=relationship_type,
             limit=limit,
         )
-        self._sync_reference_registry()
+        self._sync_ref_context()
         return result
 
     def _handle_pick_one(self, **kwargs: Any) -> ToolResult:
@@ -472,19 +491,20 @@ class AgenticToolBindings:
         )
 
     def _clarification_tools(self) -> ClarificationToolService:
-        registry = self.context.reference_registry or _registry_from_context(self.context)
-        self.context.reference_registry = registry
+        ref_context = self.context.ref_context or _ref_context_from_context(self.context)
+        self.context.ref_context = ref_context
         return ClarificationToolService(
             graph_service=self.context.graph_service,
-            reference_registry=registry,
+            ref_context=ref_context,
             owner_manager=self.context.metadata.get("owner_manager"),
             owner_graph_node_id=self.context.owner_id,
         )
 
-    def _sync_reference_registry(self) -> None:
-        registry = self.context.reference_registry
-        if registry is not None:
-            self.context.metadata["reference_registry_snapshot"] = registry.snapshot()
+    def _sync_ref_context(self) -> None:
+        """Keep the canonical context available to durable child frames."""
+
+        if self.context.ref_context is not None:
+            self.context.metadata["ref_context_snapshot"] = self.context.ref_context.snapshot()
 
     def _handle_get_context_package(
         self,
@@ -1076,7 +1096,11 @@ class AgenticToolBindings:
         )
 
 
-def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPackage | None:
+def _graph_context_from_retrieval(
+    retrieval: dict[str, Any],
+    *,
+    ref_context: RefContext | None = None,
+) -> GraphContextPackage | None:
     if retrieval.get("status") != "ok":
         return None
     result = retrieval.get("result")
@@ -1087,20 +1111,40 @@ def _graph_context_from_retrieval(retrieval: dict[str, Any]) -> GraphContextPack
     candidate_matches: list[dict[str, Any]] = []
     for index, package in enumerate(packages[:5], start=1):
         if isinstance(package, dict):
-            package_id = str(package.get("package_id") or f"retrieval_package_{index}")
-            aliases[package_id] = str(
-                package.get("target_id") or package.get("seed_id") or package_id
+            target = package.get("target")
+            target_id = (
+                target.get("id")
+                if isinstance(target, dict)
+                else package.get("target_id") or package.get("seed_id")
             )
-            candidate_matches.append(package)
+            target_ref = _register_retrieval_object(target, ref_context)
+            if target_ref is None and target_id and ref_context is not None:
+                target_ref = _register_retrieval_object(
+                    {"id": target_id, "label": package.get("target_label") or "Node"},
+                    ref_context,
+                )
+            if target_ref:
+                aliases[f"retrieval_{index}"] = target_ref
+            for item in [
+                *(package.get("current_facts") or []),
+                *(package.get("relationships") or []),
+                *(package.get("relationship_contexts") or []),
+                *(package.get("evidence") or []),
+                *(package.get("matched_records") or []),
+            ]:
+                _register_retrieval_object(item, ref_context)
+            candidate_matches.append(_model_facing_retrieval_value(package, ref_context))
     hits = result.get("hits") or []
     for hit in hits[:10]:
         if isinstance(hit, dict):
-            candidate_matches.append(hit)
+            _register_retrieval_object(hit.get("target"), ref_context)
+            candidate_matches.append(_model_facing_retrieval_value(hit, ref_context))
     if not aliases and not candidate_matches:
         return None
     return GraphContextPackage(
         aliases=aliases,
         candidate_matches=candidate_matches,
+        ref_context=ref_context,
         metadata={"source": "scoped_retrieval"},
         owner_snapshot=_owner_snapshot_from_retrieval(retrieval),
     )
@@ -1119,7 +1163,19 @@ def _invalid_handoff_refs(
     current_payload: Any | None,
     metadata: dict[str, Any],
 ) -> list[str]:
-    """Validate refs when the current payload exposes a backend registry snapshot."""
+    """Validate handoff refs against the active canonical context."""
+
+    context = _find_ref_context(current_payload, metadata)
+    if context is not None:
+        allowed = set(context.entries)
+        referenced = {
+            str(ref)
+            for doubt in doubts
+            if isinstance(doubt, dict)
+            for ref in [*(doubt.get("refs") or []), *(doubt.get("evidence_refs") or [])]
+            if ref
+        }
+        return sorted(referenced - allowed)
 
     payload = _serialize(current_payload)
     snapshots: list[dict[str, Any]] = []
@@ -1141,6 +1197,167 @@ def _invalid_handoff_refs(
         if ref
     }
     return sorted(referenced - allowed)
+
+
+def _ref_context_from_retrieval(
+    retrieval: dict[str, Any],
+    *,
+    session_id: str | None,
+) -> RefContext:
+    context = RefContext(session_id=session_id)
+    result = retrieval.get("result")
+    if not isinstance(result, dict):
+        return context
+    for package in list(result.get("context_packages") or [])[:5]:
+        if not isinstance(package, dict):
+            continue
+        _register_retrieval_object(package.get("target"), context)
+        for item in [
+            *(package.get("current_facts") or []),
+            *(package.get("relationships") or []),
+            *(package.get("relationship_contexts") or []),
+            *(package.get("evidence") or []),
+            *(package.get("matched_records") or []),
+        ]:
+            _register_retrieval_object(item, context)
+    for hit in list(result.get("hits") or [])[:10]:
+        if isinstance(hit, dict):
+            _register_retrieval_object(hit.get("target"), context)
+            _register_retrieval_object(hit.get("canonical_target"), context)
+            for item in hit.get("matched_records") or []:
+                _register_retrieval_object(item, context)
+    return context
+
+
+def _ensure_owner_ref(
+    ref_context: RefContext,
+    owner_id: str,
+    owner_snapshot: OwnerSnapshot | None,
+) -> None:
+    ref_context.register_owner(
+        owner_id,
+        name=(owner_snapshot.display_name if owner_snapshot is not None else None),
+    )
+
+
+def _register_retrieval_object(value: Any, context: RefContext | None) -> str | None:
+    if context is None or not isinstance(value, dict):
+        return None
+    backend_id = value.get("id") or value.get("backend_id")
+    if not backend_id:
+        return None
+    if value.get("from_id") is not None and value.get("to_id") is not None:
+        kind = RefObjectKind.EDGE
+        for endpoint_key in ("from_id", "to_id"):
+            endpoint_id = value.get(endpoint_key)
+            if endpoint_id and context.ref_for_backend_id(str(endpoint_id)) is None:
+                context.register_existing(
+                    str(endpoint_id),
+                    RefObjectKind.NODE,
+                    label="Node",
+                    source="semantic_retrieval_endpoint",
+                )
+    else:
+        label = str(value.get("label") or value.get("type") or "")
+        kind = (
+            RefObjectKind.MEMORY
+            if label == "MemoryLog"
+            else RefObjectKind.MEDIA
+            if label == "MediaAsset"
+            else RefObjectKind.CONTEXT
+            if label in {
+                "Claim",
+                "Perception",
+                "RelationshipContext",
+                "RelationshipState",
+                "ProfileMemory",
+            }
+            else RefObjectKind.NODE
+        )
+    try:
+        return context.register_existing(
+            str(backend_id),
+            kind,
+            label=str(value.get("label") or "Node"),
+            type=str(value.get("type")) if value.get("type") else None,
+            name=_retrieval_display_name(value),
+            summary=_retrieval_summary(value),
+            aliases=[str(item) for item in value.get("aliases", []) if item],
+            source="semantic_retrieval",
+        )
+    except ValueError:
+        return context.ref_for_backend_id(str(backend_id))
+
+
+def _model_facing_retrieval_value(value: Any, context: RefContext | None) -> Any:
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in {"alias_map", "id", "backend_id", "node_id", "package_id", "vector_id"}:
+                continue
+            if key.endswith("_id"):
+                ref = context.ref_for_backend_id(str(item)) if context and item else None
+                if ref:
+                    result[key.removesuffix("_id") + "_ref"] = ref
+                continue
+            if key.endswith("_ids"):
+                refs = [
+                    context.ref_for_backend_id(str(item_id))
+                    for item_id in (item or [])
+                    if context and context.ref_for_backend_id(str(item_id))
+                ]
+                if refs:
+                    result[key.removesuffix("_ids") + "_refs"] = refs
+                continue
+            result[key] = _model_facing_retrieval_value(item, context)
+        return result
+    if isinstance(value, list):
+        return [_model_facing_retrieval_value(item, context) for item in value]
+    return value
+
+
+def _retrieval_display_name(value: dict[str, Any]) -> str | None:
+    for key in ("display_name", "name", "title", "label_text", "description"):
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    return None
+
+
+def _retrieval_summary(value: dict[str, Any]) -> str | None:
+    for key in ("summary", "description", "log_text", "text", "document_preview"):
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    return None
+
+
+def _find_ref_context(*values: Any) -> RefContext | None:
+    for value in values:
+        if isinstance(value, RefContext):
+            return value
+        if isinstance(value, dict):
+            snapshot = value.get("ref_context_snapshot")
+            if isinstance(snapshot, dict):
+                return RefContext.from_snapshot(snapshot)
+            nested = value.get("ref_context")
+            if isinstance(nested, dict) and "entries" in nested:
+                return RefContext.from_snapshot(nested)
+            found = _find_ref_context(*value.values())
+            if found is not None:
+                return found
+        elif isinstance(value, list):
+            found = _find_ref_context(*value)
+            if found is not None:
+                return found
+    return None
+
+
+def _ref_context_from_context(context: AgenticToolExecutionContext) -> RefContext:
+    found = _find_ref_context(context.current_payload, context.metadata)
+    if found is None:
+        raise ValueError("The active canonical reference context is not present in the run.")
+    return found
 
 
 def _registry_from_context(

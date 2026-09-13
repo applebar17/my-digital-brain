@@ -11,6 +11,7 @@ from my_digital_brain.agentic.contexts import (
     MemoryIngestionContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime_helpers import (
     _collect_child_payload_values,
     _compact_state_trace,
@@ -40,6 +41,22 @@ if TYPE_CHECKING:
     from my_digital_brain.clarification.contracts import ClarificationAnswerPacket
 
 
+def _ref_context_from_frame(frame: Any) -> RefContext | None:
+    payload = getattr(frame, "context_payload", None)
+    if not isinstance(payload, dict):
+        return None
+    current_payload = payload.get("current_payload")
+    if not isinstance(current_payload, dict):
+        return None
+    ref_context = current_payload.get("ref_context")
+    if isinstance(ref_context, dict) and "entries" in ref_context:
+        return RefContext.from_snapshot(ref_context)
+    snapshot = current_payload.get("ref_context_snapshot")
+    if isinstance(snapshot, dict):
+        return RefContext.from_snapshot(snapshot)
+    return None
+
+
 @dataclass(slots=True)
 class AgenticRuntime:
     state_runner: AgenticStateRunner
@@ -57,6 +74,8 @@ class AgenticRuntime:
         current_payload: Any = start_payload if start_payload is not None else conversation_context
         execution_context.agentic_runtime = self
         execution_context.conversation_context = conversation_context
+        if getattr(current_payload, "ref_context", None) is not None:
+            execution_context.ref_context = current_payload.ref_context
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -202,6 +221,7 @@ class AgenticRuntime:
             message_id=parent_execution_context.message_id,
             current_text=parent_execution_context.current_text,
             conversation_history_refs=list(parent_execution_context.conversation_history_refs),
+            ref_context=parent_execution_context.ref_context,
             reference_registry=parent_execution_context.reference_registry,
             metadata=dict(parent_execution_context.metadata),
             frame_id=new_uuid(),
@@ -557,6 +577,7 @@ class AgenticRuntime:
         execution_context.frame_id = frame.frame_id
         execution_context.parent_frame_id = frame.parent_frame_id
         execution_context.parent_tool_call_id = frame.parent_tool_call_id
+        execution_context.ref_context = _ref_context_from_frame(frame)
         conversation_context = self._conversation_context_from_frame(
             frame,
             fallback_text=clarification_answer_summary,
@@ -729,6 +750,9 @@ class AgenticRuntime:
             fallback_text=summary,
         )
         execution_context.conversation_context = parent_conversation
+        execution_context.ref_context = (
+            _ref_context_from_frame(parent) or execution_context.ref_context
+        )
         parent_result = self.state_runner.continue_state_from_messages(
             state_id=AgenticStateId(parent.state_id),
             messages=parent_messages,

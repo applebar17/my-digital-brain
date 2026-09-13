@@ -13,6 +13,7 @@ from my_digital_brain.agentic.enums import (
 )
 
 _REF_RE = re.compile(
+    r"^OWNER$|"
     r"^(node|memory|edge|context|media)_[0-9]{4}$|"
     r"^(node|memory|edge|context|media)_new_[a-z0-9_]{1,64}$",
 )
@@ -260,6 +261,34 @@ class RefContext(AgenticModel):
         entry.resolution_status = RefResolutionStatus(status)
         return entry
 
+    def register_owner(
+        self,
+        backend_id: str,
+        *,
+        name: str | None = None,
+        aliases: list[str] | None = None,
+    ) -> str:
+        """Register the trusted owner under the stable model ref ``OWNER``."""
+
+        normalized_backend_id = _required_backend_id(backend_id)
+        current = self.entries.get("OWNER")
+        if current is not None:
+            if current.backend_id != normalized_backend_id:
+                raise ValueError("A reference context cannot contain two owner identities.")
+            return "OWNER"
+        return self.add_entry(
+            RefEntry(
+                ref="OWNER",
+                object_kind=RefObjectKind.NODE,
+                label="Person",
+                name=name,
+                aliases=list(aliases or []),
+                backend_id=normalized_backend_id,
+                source="owner_bootstrap",
+                resolution_status=RefResolutionStatus.EXISTING,
+            ),
+        ).ref
+
     def resolve(
         self,
         ref: str,
@@ -412,7 +441,9 @@ def _validate_ref_for_kind(ref: str, object_kind: RefObjectKind | str) -> None:
     if not _REF_RE.fullmatch(ref):
         raise ValueError(f"Malformed ref: {ref}")
     expected = _KIND_PREFIX[kind]
-    if not (ref.startswith(f"{expected}_") or ref.startswith(f"{expected}_new_")):
+    if ref != "OWNER" and not (
+        ref.startswith(f"{expected}_") or ref.startswith(f"{expected}_new_")
+    ):
         raise ValueError(f"Ref '{ref}' does not match object kind '{kind.value}'.")
 
 
