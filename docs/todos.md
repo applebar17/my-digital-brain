@@ -30,6 +30,9 @@ features:
 
 Priority: 1
 
+- Migrate the project to one canonical `RefContext`: remove the parallel
+  uppercase registry, raw-ID model contracts, compatibility conversions, and
+  stale documentation after the chat clarification flow is covered end to end.
 - Build a regression corpus from real UAT traces covering:
   - exact graph match;
   - multiple exact or partial matches;

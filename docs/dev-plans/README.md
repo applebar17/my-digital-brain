@@ -18,6 +18,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md)
 - [MemoryLog vectorization and node update flow](11-node-log-vectorization-and-update-flow.md)
 - [Chat activity and progress rendering](12-chat-activity-and-progress-rendering.md)
+- [Canonical Reference Context](13-canonical-reference-context.md)
 
 ## Wave Meaning
 
