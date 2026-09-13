@@ -618,17 +618,11 @@ class AgenticRuntime:
                 "resolved_clarifications": resolved_clarifications,
             },
         )
-        resumed_messages = [
-            *frame.messages,
-            *[
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": tool_result.model_dump_json(exclude_none=True),
-                }
-                for tool_call_id in pending_tool_call_ids
-            ],
-        ]
+        resumed_messages = _replace_pending_tool_messages(
+            frame.messages,
+            pending_tool_call_ids,
+            tool_result,
+        )
         state_id = AgenticStateId(frame.state_id)
         state_result = self.state_runner.continue_state_from_messages(
             state_id=state_id,
@@ -1029,6 +1023,50 @@ def _frame_pending_tool_call_ids(frame: Any) -> list[str]:
         for call in continuation.get("pending_tool_calls", [])
         if isinstance(call, dict) and call.get("call_id")
     ] or ([str(frame.active_tool_call_id)] if frame.active_tool_call_id else [])
+
+
+def _replace_pending_tool_messages(
+    messages: list[dict[str, Any]],
+    pending_tool_call_ids: list[str],
+    tool_result: ToolResult,
+) -> list[dict[str, Any]]:
+    """Replace the provider's pending tool results with the user's answer.
+
+    A channel-mediated tool call is already represented in the saved transcript
+    by an assistant tool-call message followed by the tool's pending result.
+    Resuming must replace that result; appending another tool message would
+    produce an invalid provider transcript with an orphaned tool response.
+    """
+
+    replacement = tool_result.model_dump_json(exclude_none=True)
+    pending_ids = {str(value) for value in pending_tool_call_ids}
+    resumed_messages: list[dict[str, Any]] = []
+    replaced_ids: set[str] = set()
+    for message in messages:
+        if (
+            message.get("role") == "tool"
+            and str(message.get("tool_call_id")) in pending_ids
+        ):
+            tool_call_id = str(message["tool_call_id"])
+            resumed_messages.append(
+                {
+                    **message,
+                    "tool_call_id": tool_call_id,
+                    "content": replacement,
+                }
+            )
+            replaced_ids.add(tool_call_id)
+        else:
+            resumed_messages.append(message)
+    for tool_call_id in pending_ids - replaced_ids:
+        resumed_messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": replacement,
+            }
+        )
+    return resumed_messages
 
 
 def _clarification_report_from_state_result(

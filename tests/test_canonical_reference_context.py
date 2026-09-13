@@ -6,7 +6,7 @@ from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.state import default_state_configs
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext, build_agentic_tool_mapping
-from my_digital_brain.agentic.runtime import AgenticRuntime
+from my_digital_brain.agentic.runtime import AgenticRuntime, _replace_pending_tool_messages
 from my_digital_brain.chat.models import AgenticFrame
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.clarification.contracts import ClarificationPacket, ClarificationQuestion
@@ -173,3 +173,30 @@ def test_nested_interruption_returns_the_packet_persisted_on_child_frame() -> No
 
     assert result["tool_call_id"] == "ask-text-call"
     assert result["clarification_packet"]["packet_id"] == packet.packet_id
+
+
+def test_resume_replaces_pending_tool_result_instead_of_appending_orphan() -> None:
+    from my_digital_brain.ai.models import ToolResult
+
+    messages = [
+        {"role": "user", "content": "Need clarification."},
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "ask-text-call", "type": "function"}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "ask-text-call",
+            "content": '{"status":"pending"}',
+        },
+    ]
+
+    resumed = _replace_pending_tool_messages(
+        messages,
+        ["ask-text-call"],
+        ToolResult(status="ok", output="Lorenzo is my brother."),
+    )
+
+    assert len(resumed) == len(messages)
+    assert resumed[-1]["tool_call_id"] == "ask-text-call"
+    assert '"status":"ok"' in resumed[-1]["content"]
