@@ -153,6 +153,33 @@ export interface ChatResponse {
   created_at: string;
 }
 
+export type ChatActivityStatus = "started" | "completed" | "waiting" | "failed";
+export type ChatProcessStatus =
+  | "idle"
+  | "working"
+  | "waiting_for_user"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ChatActivityEvent {
+  sequence: number;
+  status: ChatActivityStatus;
+  title: string;
+  summary: string;
+  activity_group: string;
+  created_at: string;
+}
+
+export interface ChatProcessSnapshot {
+  status: ChatProcessStatus;
+  current_activity?: ChatActivityEvent | null;
+  recent_activities: ChatActivityEvent[];
+  started_at?: string | null;
+  updated_at: string;
+  resumable: boolean;
+}
+
 export interface ConversationSession {
   session_id: string;
   channel: string;

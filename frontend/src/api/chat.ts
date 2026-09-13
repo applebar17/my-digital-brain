@@ -1,6 +1,7 @@
 import { apiRequest } from "./http";
 import type {
   ChatResponse,
+  ChatProcessSnapshot,
   ConversationSession,
   ConversationSessionDetail,
   ConversationSessionList,
@@ -67,6 +68,18 @@ export function getChatSession(
 ): Promise<ConversationSessionDetail> {
   return apiRequest<ConversationSessionDetail>(`/chat/sessions/${sessionId}`, {
     query: { limit },
+    bearerToken
+  });
+}
+
+export function getChatProcessSnapshot(
+  sessionId: string,
+  ownerId: string,
+  bearerToken: string,
+  limit = 3
+): Promise<ChatProcessSnapshot> {
+  return apiRequest<ChatProcessSnapshot>(`/chat/sessions/${sessionId}/process`, {
+    query: { owner_id: ownerId, limit },
     bearerToken
   });
 }

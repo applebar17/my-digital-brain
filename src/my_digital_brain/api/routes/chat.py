@@ -13,6 +13,7 @@ from my_digital_brain.chat.exceptions import (
 )
 from my_digital_brain.chat.factory import build_chat_runtime
 from my_digital_brain.chat.models import (
+    ChatProcessSnapshot,
     ChatResponse,
     ConversationSession,
     ConversationSessionDetail,
@@ -211,6 +212,26 @@ def get_chat_session(
 ) -> ConversationSessionDetail:
     try:
         return runtime.get_session_detail(session_id, limit=limit)
+    except Exception as exc:
+        raise chat_http_error(exc) from exc
+
+
+@router.get(
+    "/sessions/{session_id}/process",
+    response_model=ChatProcessSnapshot,
+    dependencies=[Depends(require_web_chat_auth)],
+)
+def get_chat_process_snapshot(
+    session_id: str,
+    owner_id: str,
+    limit: int = Query(default=3, ge=0, le=20),
+    runtime: ChatRuntime = Depends(get_chat_runtime),
+) -> ChatProcessSnapshot:
+    try:
+        session = runtime.store.get_session(session_id)
+        if session.owner_id != owner_id:
+            raise ChatValidationError("Chat session does not belong to the request owner.")
+        return runtime.get_chat_process_snapshot(session_id, limit=limit)
     except Exception as exc:
         raise chat_http_error(exc) from exc
 
