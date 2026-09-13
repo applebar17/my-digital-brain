@@ -71,7 +71,7 @@ class LLMSessionRunner:
         *,
         executed: int,
     ) -> LLMSessionResult:
-        repair_attempted = False
+        repair_attempts = 0
         last_metadata = None
         last_usage = None
         tools_enabled = bool(request.toolbox and request.tools_mapping) and not self._cap_reached(
@@ -138,16 +138,22 @@ class LLMSessionRunner:
 
             try:
                 parsed = request.output_schema.model_validate_json(assistant.content or "")
+                if request.output_validator is not None:
+                    request.output_validator(parsed)
             except (ValidationError, ValueError, TypeError) as exc:
-                if repair_attempted:
+                if repair_attempts >= request.max_output_repairs:
                     return self._failure(
                         session_id,
                         messages,
                         events,
-                        f"Structured output remained invalid after one repair attempt: {exc}",
+                        _structured_output_failure(
+                            request.output_schema,
+                            exc,
+                            repair_attempts=repair_attempts,
+                        ),
                         last_metadata,
                     )
-                repair_attempted = True
+                repair_attempts += 1
                 messages.append(
                     ChatMessage(
                         role="user",
@@ -418,17 +424,61 @@ def _upsert_tool_message(
 
 
 def _repair_message(schema: type[BaseModel], exc: Exception) -> str:
-    errors = exc.errors() if isinstance(exc, ValidationError) else [{"message": str(exc)}]
-    compact = [
-        {
-            "path": ".".join(str(part) for part in error.get("loc", ())),
-            "message": error.get("msg"),
-            "type": error.get("type"),
-        }
-        for error in errors[:12]
-    ]
     return (
-        f"Repair your previous response for schema {schema.__name__}. Preserve the intent "
-        "and correct only the validation errors below. Return only the requested "
-        "structured output.\n" + json.dumps(compact, ensure_ascii=True)
+        f"Repair your previous response for schema {schema.__name__}. Preserve its "
+        "intent and correct the validation issues below. Use the field descriptions "
+        "and the current conversation/context to choose the correction. Return only "
+        "the complete corrected structured output.\n\n"
+        "Validation feedback:\n"
+        f"{_humanize_validation_error(exc)}"
     )
+
+
+def _structured_output_failure(
+    schema: type[BaseModel],
+    exc: Exception,
+    *,
+    repair_attempts: int,
+) -> str:
+    return (
+        f"Structured output for {schema.__name__} could not be corrected after "
+        f"{repair_attempts} repair attempt(s). The process stopped before using the "
+        "invalid output. Last validation feedback:\n"
+        f"{_humanize_validation_error(exc)}"
+    )
+
+
+def _humanize_validation_error(exc: Exception, *, limit: int = 12) -> str:
+    if isinstance(exc, ValidationError):
+        errors = exc.errors()
+    else:
+        errors = [{"loc": (), "msg": str(exc)}]
+
+    lines: list[str] = []
+    for error in errors[:limit]:
+        location = ".".join(str(part) for part in error.get("loc", ())) or "output"
+        message = str(error.get("msg") or "the value does not satisfy the schema")
+        line = f"- `{location}`: {message}"
+        if "input" in error:
+            preview = _value_preview(error["input"])
+            if preview:
+                line += f" Received {preview}."
+        lines.append(line)
+    if len(errors) > limit:
+        lines.append(f"- Additional validation issues omitted: {len(errors) - limit}.")
+    return "\n".join(lines) or "- The structured output was empty or unreadable."
+
+
+def _value_preview(value: Any, *, limit: int = 240) -> str:
+    if value is None:
+        return "`null`"
+    if isinstance(value, (dict, list, tuple)):
+        try:
+            rendered = json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            rendered = repr(value)
+    else:
+        rendered = repr(value)
+    if len(rendered) > limit:
+        return repr(rendered[: limit - 3] + "...")
+    return rendered

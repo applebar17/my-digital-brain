@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -265,6 +266,7 @@ class AgenticStateRunner:
         invocation: AgenticStateInvocation,
         *,
         output_schema: type[BaseModel],
+        output_validator: Callable[[BaseModel], None] | None = None,
     ) -> AgenticStateRunResult:
         state_id = AgenticStateId(invocation.state_id)
         self._publish_activity(
@@ -346,6 +348,7 @@ class AgenticStateRunner:
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
                 output_schema=output_schema,
+                output_validator=output_validator,
                 toolbox=build_agentic_toolbox(state_config, self.tool_registry),
                 tools_mapping=build_agentic_tool_mapping(
                     state_config,

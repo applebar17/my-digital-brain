@@ -88,9 +88,25 @@ class LLMSessionRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     output_schema: type[BaseModel] | None = None
+    output_validator: Callable[[BaseModel], None] | None = Field(
+        default=None,
+        description=(
+            "Optional backend semantic validation applied after structural parsing. "
+            "Recoverable failures are returned to the model as repair feedback."
+        ),
+    )
     toolbox: ToolBox | None = None
     tools_mapping: ToolMapping = Field(default_factory=dict)
     max_tool_calls: int | None = None
+    max_output_repairs: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description=(
+            "Maximum number of same-history repair turns allowed after invalid "
+            "structured output. Keep this small to prevent unbounded model loops."
+        ),
+    )
     session_id: str = ""
     context: AIRequestContext = Field(default_factory=AIRequestContext)
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -378,7 +378,7 @@ def test_parallel_question_calls_share_one_pending_packet() -> None:
     ].startswith("clarification-group-")
 
 
-def test_invalid_structured_output_gets_one_repair_turn() -> None:
+def test_invalid_structured_output_gets_a_same_history_repair_turn() -> None:
     transport = ScriptedTransport(
         [
             ChatMessage(role="assistant", content="invalid"),
@@ -394,3 +394,79 @@ def test_invalid_structured_output_gets_one_repair_turn() -> None:
     assert result.parsed == Output(answer="fixed")
     assert transport.requests[1].messages[-1].role == "user"
     assert "Repair your previous response" in str(transport.requests[1].messages[-1].content)
+
+
+def test_invalid_structured_output_can_use_two_repair_turns() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", content="invalid-1"),
+            ChatMessage(role="assistant", content="invalid-2"),
+            ChatMessage(role="assistant", content='{"answer":"fixed"}'),
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Return JSON.",
+            output_schema=Output,
+            max_output_repairs=2,
+        )
+    )
+
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.parsed == Output(answer="fixed")
+    assert len(transport.requests) == 3
+    assert all(request.messages[-1].role == "user" for request in transport.requests[1:])
+    assert "Validation feedback:" in transport.requests[1].messages[-1].content
+
+
+def test_structured_output_failure_exposes_human_readable_last_error() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", content="invalid-1"),
+            ChatMessage(role="assistant", content="invalid-2"),
+            ChatMessage(role="assistant", content="invalid-3"),
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Return JSON.",
+            output_schema=Output,
+            max_output_repairs=2,
+        )
+    )
+
+    assert result.kind == "failed"
+    assert "after 2 repair attempt(s)" in result.error
+    assert "output" in result.error
+    assert "ValidationError" not in result.error
+
+
+def test_semantic_output_validation_is_recoverable_in_the_same_history() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", content='{"answer":"wrong ref"}'),
+            ChatMessage(role="assistant", content='{"answer":"fixed"}'),
+        ]
+    )
+
+    def validate_output(output: BaseModel) -> None:
+        if output.answer == "wrong ref":
+            raise ValueError(
+                "The ref 'node_existing_lorenzo' is not in the current reference context. "
+                "Reuse 'node_0001'."
+            )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Return JSON.",
+            output_schema=Output,
+            output_validator=validate_output,
+        )
+    )
+
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.parsed == Output(answer="fixed")
+    assert "node_existing_lorenzo" in transport.requests[1].messages[-1].content
+    assert transport.requests[1].messages[-1].role == "user"

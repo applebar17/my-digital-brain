@@ -110,7 +110,7 @@ class MemoryIngestionRuntimeService:
             node_plan = NodeMemoryPlan.model_validate(node_plan_result.structured_output)
         else:
             node_plan = current_payload.node_plan
-        _register_planned_refs(payload.ref_context, node_plan.node_plan_packet)
+        _register_planned_refs(current_payload.ref_context, node_plan.node_plan_packet)
         current_payload = current_payload.model_copy(
             update={
                 "node_plan": node_plan,
@@ -162,7 +162,7 @@ class MemoryIngestionRuntimeService:
             memory_plan = MemoryLogMemoryPlan.model_validate(memory_plan_result.structured_output)
         else:
             memory_plan = current_payload.memory_plan
-        _register_planned_refs(payload.ref_context, memory_plan.memory_plan_packet)
+        _register_planned_refs(current_payload.ref_context, memory_plan.memory_plan_packet)
         current_payload = current_payload.model_copy(
             update={
                 "memory_plan": memory_plan,
@@ -375,6 +375,10 @@ class MemoryIngestionRuntimeService:
                 },
             ),
             output_schema=output_schema,
+            output_validator=lambda output: _validate_phase_plan_refs(
+                output,
+                payload.ref_context,
+            ),
         )
 
     def _execute_memory_plan_actions(
@@ -499,4 +503,66 @@ def _register_planned_refs(ref_context: Any, packet: Any) -> None:
             summary=planned.summary,
             aliases=list(planned.aliases),
             source="ingestion_planning",
+        )
+
+
+def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
+    """Validate plan refs against the active context before registering proposals."""
+
+    if ref_context is None:
+        return
+    packet = next(
+        (
+            getattr(output, packet_name, None)
+            for packet_name in ("node_plan_packet", "memory_plan_packet")
+            if getattr(output, packet_name, None) is not None
+        ),
+        None,
+    )
+    if packet is None:
+        return
+
+    known_refs = set(ref_context.entries)
+    planned_refs = {
+        planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])
+    }
+    for planned in list(getattr(packet, "planned_refs", []) or []):
+        if planned.ref in known_refs:
+            raise ValueError(
+                f"The planned ref '{planned.ref}' already exists in the current context. "
+                "Put it in resolved_refs when it represents that existing object, or "
+                "choose a new unique ref for a new object."
+            )
+
+    for resolved in list(getattr(packet, "resolved_refs", []) or []):
+        entry = ref_context.entries.get(resolved.ref)
+        if entry is None:
+            available = ", ".join(sorted(known_refs)) or "(none)"
+            raise ValueError(
+                f"The resolved ref '{resolved.ref}' is not present in the current "
+                f"reference context. Available refs are: {available}. Copy an existing "
+                "ref exactly, or place a genuinely new object in planned_refs."
+            )
+        expected_kind = RefObjectKind(resolved.object_kind)
+        if entry.object_kind != expected_kind:
+            raise ValueError(
+                f"The resolved ref '{resolved.ref}' represents a "
+                f"{entry.object_kind.value}, but the plan labels it as "
+                f"{expected_kind.value}. Keep the existing ref and correct object_kind."
+            )
+
+    packet_refs = [
+        *[planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])],
+        *[resolved.ref for resolved in list(getattr(packet, "resolved_refs", []) or [])],
+        *list(getattr(packet, "host_refs", []) or []),
+        *list(getattr(packet, "involved_refs", []) or []),
+        *list(getattr(packet, "context_refs", []) or []),
+    ]
+    unknown_refs = sorted(set(packet_refs) - known_refs - planned_refs)
+    if unknown_refs:
+        available = ", ".join(sorted(known_refs)) or "(none)"
+        raise ValueError(
+            "The plan refers to local refs that are not defined in the current context: "
+            f"{', '.join(unknown_refs)}. Available refs are: {available}. Reuse a known "
+            "ref or declare the new object once in planned_refs."
         )
