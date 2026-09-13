@@ -680,9 +680,14 @@ class AgenticToolBindings:
                 retryable=False,
             )
         try:
-            explicit_targets = []
-            for target_id in target_ids or []:
-                explicit_targets.append(graph.get_node(str(target_id)))
+            resolved_target_ids, error = self._resolve_refs(
+                target_ids or [],
+                expected_kind=RefObjectKind.NODE,
+                tool_name="resolve_graph_update_targets",
+            )
+            if error is not None:
+                return error
+            explicit_targets = [graph.get_node(target_id) for target_id in resolved_target_ids]
             if explicit_targets:
                 return _update_tool_result(
                     "resolve_graph_update_targets",
@@ -737,6 +742,51 @@ class AgenticToolBindings:
         except Exception as exc:
             return _update_exception_result("resolve_graph_update_targets", exc)
 
+    def _resolve_ref(
+        self,
+        value: str,
+        *,
+        expected_kind: RefObjectKind,
+        tool_name: str,
+    ) -> tuple[str | None, ToolResult | None]:
+        normalized = str(value or "").strip()
+        ref_context = self.context.ref_context
+        if ref_context is None:
+            return normalized, None
+        try:
+            return ref_context.resolve(normalized, expected_kind=expected_kind), None
+        except ValueError as exc:
+            return None, _update_tool_error(
+                tool_name,
+                "invalid_model_reference",
+                str(exc),
+                "Use a supplied readable ref from the active context.",
+                retryable=True,
+                details={"ref": normalized, "expected_kind": expected_kind.value},
+            )
+
+    def _resolve_refs(
+        self,
+        values: list[str],
+        *,
+        expected_kind: RefObjectKind,
+        tool_name: str,
+    ) -> tuple[list[str], ToolResult | None]:
+        resolved: list[str] = []
+        for value in values:
+            if not value:
+                continue
+            backend_id, error = self._resolve_ref(
+                value,
+                expected_kind=expected_kind,
+                tool_name=tool_name,
+            )
+            if error is not None:
+                return [], error
+            if backend_id:
+                resolved.append(backend_id)
+        return resolved, None
+
     def _handle_create_memory_log(
         self,
         log_text: str,
@@ -758,7 +808,13 @@ class AgenticToolBindings:
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
-        host_ids = [str(value) for value in host_target_ids if value]
+        host_ids, error = self._resolve_refs(
+            host_target_ids,
+            expected_kind=RefObjectKind.NODE,
+            tool_name="create_memory_log",
+        )
+        if error is not None:
+            return error
         if not host_ids:
             return _update_tool_error(
                 "create_memory_log",
@@ -777,7 +833,14 @@ class AgenticToolBindings:
                 retryable=True,
                 details={"host_target_ids": host_ids},
             )
-        primary_host = primary_host_target_id or host_ids[0]
+        primary_host_input = primary_host_target_id or host_target_ids[0]
+        primary_host, error = self._resolve_ref(
+            primary_host_input,
+            expected_kind=RefObjectKind.NODE,
+            tool_name="create_memory_log",
+        )
+        if error is not None:
+            return error
         if primary_host not in host_ids:
             return _update_tool_error(
                 "create_memory_log",
@@ -788,11 +851,25 @@ class AgenticToolBindings:
                 details={"primary_host_target_id": primary_host, "host_target_ids": host_ids},
             )
         try:
+            involved_ids, error = self._resolve_refs(
+                involved_target_ids or [],
+                expected_kind=RefObjectKind.NODE,
+                tool_name="create_memory_log",
+            )
+            if error is not None:
+                return error
+            context_ids, error = self._resolve_refs(
+                relationship_context_target_ids or [],
+                expected_kind=RefObjectKind.CONTEXT,
+                tool_name="create_memory_log",
+            )
+            if error is not None:
+                return error
             primary_node = graph.get_node(primary_host)
             for target_id in [
                 *host_ids,
-                *(involved_target_ids or []),
-                *(relationship_context_target_ids or []),
+                *involved_ids,
+                *context_ids,
             ]:
                 graph.get_node(str(target_id))
             properties = {
@@ -803,8 +880,8 @@ class AgenticToolBindings:
                 "primary_host_target_id": primary_host,
                 "primary_host_target_label": primary_node.label,
                 "host_target_ids": host_ids,
-                "involved_target_ids": list(involved_target_ids or []),
-                "relationship_context_target_ids": list(relationship_context_target_ids or []),
+                "involved_target_ids": involved_ids,
+                "relationship_context_target_ids": context_ids,
                 "media_refs": list(media_refs or []),
             }
             log = graph.upsert_node("MemoryLog", _drop_none(properties))
@@ -816,9 +893,9 @@ class AgenticToolBindings:
                     log_id,
                     {"primary": host_id == primary_host, "role": "host"},
                 )
-            for involved_id in involved_target_ids or []:
+            for involved_id in involved_ids:
                 graph.upsert_relationship("INVOLVES", log_id, str(involved_id), {})
-            for context_id in relationship_context_target_ids or []:
+            for context_id in context_ids:
                 graph.upsert_relationship(
                     "UPDATES_RELATIONSHIP",
                     log_id,
@@ -830,23 +907,27 @@ class AgenticToolBindings:
                 [
                     log_id,
                     *host_ids,
-                    *(involved_target_ids or []),
-                    *(relationship_context_target_ids or []),
+                    *involved_ids,
+                    *context_ids,
                 ],
+            )
+            created_ref = self._bind_created_ref(
+                log_id,
+                expected_kind=RefObjectKind.MEMORY,
+                label="MemoryLog",
             )
             return _update_tool_result(
                 "create_memory_log",
                 summary="MemoryLog created and linked.",
-                created_refs=[log_id],
+                created_refs=[created_ref or log_id],
                 affected_graph_ids=[
-                    log_id,
-                    *host_ids,
-                    *(involved_target_ids or []),
-                    *(relationship_context_target_ids or []),
+                    *self._refs_for_backend_ids(
+                        [log_id, *host_ids, *involved_ids, *context_ids],
+                    ),
                 ],
                 refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
                 diagnostics=refreshed.get("diagnostics", []),
-                data={"memory_log": _serialize(log)},
+                data={"memory_log": self._model_facing_value(log)},
             )
         except Exception as exc:
             return _update_exception_result("create_memory_log", exc)
@@ -886,15 +967,20 @@ class AgenticToolBindings:
         try:
             node = graph.upsert_node(label, properties)
             node_id = str(node.properties["id"])
+            created_ref = self._bind_created_ref(
+                node_id,
+                expected_kind=RefObjectKind.NODE,
+                label=label,
+            )
             refreshed = self._refresh_vectors("create_graph_node", [node_id])
             return _update_tool_result(
                 "create_graph_node",
                 summary=f"{label} node created.",
-                created_refs=[node_id],
-                affected_graph_ids=[node_id],
+                created_refs=[created_ref or node_id],
+                affected_graph_ids=self._refs_for_backend_ids([node_id]),
                 refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
                 diagnostics=refreshed.get("diagnostics", []),
-                data={"node": _serialize(node)},
+                data={"node": self._model_facing_value(node)},
             )
         except Exception as exc:
             return _update_exception_result("create_graph_node", exc)
@@ -922,17 +1008,24 @@ class AgenticToolBindings:
                 retryable=False,
                 details={"lifecycle_state": lifecycle_state},
             )
+        resolved_node_id, error = self._resolve_ref(
+            node_id,
+            expected_kind=RefObjectKind.NODE,
+            tool_name="patch_graph_node",
+        )
+        if error is not None:
+            return error
         try:
-            node = graph.patch_node(node_id, properties)
-            refreshed = self._refresh_vectors("patch_graph_node", [node_id])
+            node = graph.patch_node(resolved_node_id, properties)
+            refreshed = self._refresh_vectors("patch_graph_node", [resolved_node_id])
             return _update_tool_result(
                 "patch_graph_node",
                 summary="Graph node patched.",
-                updated_refs=[node_id],
-                affected_graph_ids=[node_id],
+                updated_refs=self._refs_for_backend_ids([resolved_node_id]),
+                affected_graph_ids=self._refs_for_backend_ids([resolved_node_id]),
                 refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
                 diagnostics=refreshed.get("diagnostics", []),
-                data={"node": _serialize(node)},
+                data={"node": self._model_facing_value(node)},
             )
         except Exception as exc:
             return _update_exception_result("patch_graph_node", exc)
@@ -975,26 +1068,47 @@ class AgenticToolBindings:
                 retryable=False,
                 details={"lifecycle_state": lifecycle_state},
             )
+        resolved_from_id, error = self._resolve_ref(
+            from_id,
+            expected_kind=RefObjectKind.NODE,
+            tool_name="upsert_graph_relationship",
+        )
+        if error is not None:
+            return error
+        resolved_to_id, error = self._resolve_ref(
+            to_id,
+            expected_kind=RefObjectKind.NODE,
+            tool_name="upsert_graph_relationship",
+        )
+        if error is not None:
+            return error
         try:
             relationship = graph.upsert_relationship(
                 relationship_type,
-                from_id,
-                to_id,
+                resolved_from_id,
+                resolved_to_id,
                 properties,
             )
             relationship_id = str(relationship.properties["id"])
+            created_ref = self._bind_created_ref(
+                relationship_id,
+                expected_kind=RefObjectKind.EDGE,
+                label="Relationship",
+            )
             refreshed = self._refresh_vectors(
                 "upsert_graph_relationship",
-                [from_id, to_id],
+                [resolved_from_id, resolved_to_id],
             )
             return _update_tool_result(
                 "upsert_graph_relationship",
                 summary="Graph relationship upserted.",
-                created_refs=[relationship_id],
-                affected_graph_ids=[from_id, to_id],
+                created_refs=[created_ref or relationship_id],
+                affected_graph_ids=self._refs_for_backend_ids(
+                    [resolved_from_id, resolved_to_id],
+                ),
                 refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
                 diagnostics=refreshed.get("diagnostics", []),
-                data={"relationship": _serialize(relationship)},
+                data={"relationship": self._model_facing_value(relationship)},
             )
         except Exception as exc:
             return _update_exception_result("upsert_graph_relationship", exc)
@@ -1017,29 +1131,87 @@ class AgenticToolBindings:
         properties = _parse_json_object("create_relationship_state", properties_json)
         if isinstance(properties, ToolResult):
             return properties
+        resolved_context_id, error = self._resolve_ref(
+            context_id,
+            expected_kind=RefObjectKind.CONTEXT,
+            tool_name="create_relationship_state",
+        )
+        if error is not None:
+            return error
         try:
             state = graph.create_relationship_state(
-                context_id,
+                resolved_context_id,
                 properties,
                 make_current=make_current,
             )
             state_id = str(state.properties["id"])
             refreshed = self._refresh_vectors(
                 "create_relationship_state",
-                [context_id, state_id],
+                [resolved_context_id, state_id],
             )
             return _update_tool_result(
                 "create_relationship_state",
                 summary="RelationshipState created.",
-                created_refs=[state_id],
-                updated_refs=[context_id] if make_current else [],
-                affected_graph_ids=[context_id, state_id],
+                created_refs=[
+                    self._bind_created_ref(
+                        state_id,
+                        expected_kind=RefObjectKind.CONTEXT,
+                        label="RelationshipState",
+                    )
+                    or state_id
+                ],
+                updated_refs=(
+                    self._refs_for_backend_ids([resolved_context_id])
+                    if make_current
+                    else []
+                ),
+                affected_graph_ids=self._refs_for_backend_ids(
+                    [resolved_context_id, state_id],
+                ),
                 refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
                 diagnostics=refreshed.get("diagnostics", []),
-                data={"relationship_state": _serialize(state)},
+                data={"relationship_state": self._model_facing_value(state)},
             )
         except Exception as exc:
             return _update_exception_result("create_relationship_state", exc)
+
+    def _bind_created_ref(
+        self,
+        backend_id: str,
+        *,
+        expected_kind: RefObjectKind,
+        label: str,
+    ) -> str | None:
+        ref_context = self.context.ref_context
+        if ref_context is None:
+            return None
+        payload = self.context.current_payload
+        action = getattr(payload, "action", None)
+        action_refs = list(getattr(action, "target_refs", []) or [])
+        for ref in action_refs:
+            entry = ref_context.entries.get(ref)
+            if entry is None or entry.object_kind != expected_kind or entry.backend_id:
+                continue
+            ref_context.resolve_backend_id(ref, backend_id, status="created")
+            return ref
+        return ref_context.register_existing(
+            backend_id,
+            expected_kind,
+            label=label,
+            source="graph_write",
+        )
+
+    def _refs_for_backend_ids(self, backend_ids: list[str]) -> list[str]:
+        ref_context = self.context.ref_context
+        if ref_context is None:
+            return [str(item) for item in backend_ids]
+        return [
+            ref_context.ref_for_backend_id(str(item)) or str(item)
+            for item in backend_ids
+        ]
+
+    def _model_facing_value(self, value: Any) -> Any:
+        return _model_facing_retrieval_value(_serialize(value), self.context.ref_context)
 
     def _refresh_vectors(self, tool_name: str, target_ids: list[str]) -> dict[str, Any]:
         service = self.context.vectorization_service or getattr(

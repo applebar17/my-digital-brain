@@ -4,6 +4,9 @@ import json
 
 from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.agentic.state import default_state_configs
+from my_digital_brain.agentic.tools import AgenticToolExecutionContext, build_agentic_tool_mapping
+from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.agentic.tools.bindings import _graph_context_from_retrieval
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 
@@ -78,3 +81,40 @@ def test_clarification_question_uses_canonical_refs_and_allows_proposals() -> No
     packet = result.data["clarification_packet"]
     assert packet["target_refs"] == ["node_new_lorenzo"]
     assert "node_new_lorenzo" in packet["questions"][0]["target_refs"]
+
+
+def test_graph_write_resolves_model_ref_only_at_backend_boundary() -> None:
+    class Graph:
+        def __init__(self) -> None:
+            self.received_node_id: str | None = None
+
+        def patch_node(self, node_id: str, _properties: dict) -> NodeSearchResult:
+            self.received_node_id = node_id
+            return NodeSearchResult(
+                label="Person",
+                labels=["Person"],
+                properties={"id": node_id, "display_name": "Lorenzo"},
+            )
+
+    refs = RefContext(session_id="session-1")
+    refs.register_existing(
+        "person-lorenzo",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Lorenzo",
+    )
+    graph = Graph()
+    context = AgenticToolExecutionContext(graph_service=graph, ref_context=refs)
+    mapping = build_agentic_tool_mapping(
+        default_state_configs()["graph_update"],
+        context,
+    )
+
+    result = mapping["patch_graph_node"](
+        node_id="node_0001",
+        properties_json='{"nickname": "Lory"}',
+    )
+
+    assert result.status == "ok"
+    assert graph.received_node_id == "person-lorenzo"
+    assert result.data["updated_refs"] == ["node_0001"]

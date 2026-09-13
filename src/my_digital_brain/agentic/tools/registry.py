@@ -152,8 +152,8 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "desired_work": optional_string_property(
                     "Conceptual work requested, such as create log, patch node, or update relationship.",
                 ),
-                "target_ids": array_property("Optional known graph target ids."),
-                "source_refs": array_property("Optional source or media references."),
+                "target_ids": array_property("Optional known model-facing node refs."),
+                "source_refs": array_property("Optional model-facing source or media refs."),
                 "metadata": object_property("Additional low-noise request metadata."),
             },
             required=[],
@@ -196,7 +196,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             states=graph_update_states,
             properties={
                 "query": string_property("Update text or target search query."),
-                "target_ids": array_property("Known target ids supplied by the caller."),
+                "target_ids": array_property("Known model-facing node refs supplied by the caller."),
                 "limit": integer_property("Maximum candidate targets.", default=5, maximum=20),
             },
             required=["query"],
@@ -207,13 +207,13 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             states=[*graph_update_states, *memory_creation_states],
             properties={
                 "log_text": string_property("Informational memory text to store."),
-                "host_target_ids": array_property("Host graph node ids for this memory log."),
+                "host_target_ids": array_property("Host node refs for this memory log."),
                 "primary_host_target_id": optional_string_property(
-                    "Primary host id when there are multiple hosts.",
+                    "Primary host ref when there are multiple hosts.",
                 ),
-                "involved_target_ids": array_property("Additional involved graph node ids."),
+                "involved_target_ids": array_property("Additional involved node refs."),
                 "relationship_context_target_ids": array_property(
-                    "RelationshipContext ids updated by this log.",
+                    "RelationshipContext refs updated by this log.",
                 ),
                 "media_refs": array_property("MediaAsset ids or external media refs."),
                 "log_kind": optional_string_property("Log kind, such as update or correction."),
@@ -239,7 +239,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             "Patch a supported graph node using structurally validated JSON properties.",
             states=graph_update_states,
             properties={
-                "node_id": string_property("Target graph node id."),
+                "node_id": string_property("Target node ref from the active context."),
                 "properties_json": string_property("JSON object containing patch properties."),
             },
             required=["node_id", "properties_json"],
@@ -250,8 +250,8 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             states=[*graph_update_states, *memory_creation_states],
             properties={
                 "relationship_type": string_property("Supported relationship type."),
-                "from_id": string_property("Source graph node id."),
-                "to_id": string_property("Target graph node id."),
+                "from_id": string_property("Source node ref from the active context."),
+                "to_id": string_property("Target node ref from the active context."),
                 "properties_json": string_property(
                     "JSON object containing relationship properties."
                 ),
@@ -263,7 +263,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             "Create a RelationshipState for a RelationshipContext and optionally mark it current.",
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "context_id": string_property("RelationshipContext node id."),
+                "context_id": string_property("RelationshipContext ref from the active context."),
                 "properties_json": string_property("JSON object containing state properties."),
                 "make_current": boolean_property("Mark this state as current.", default=True),
             },
