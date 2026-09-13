@@ -7,6 +7,7 @@ import type {
   ClarificationQuestion
 } from "../../../types/chat";
 import type { ClarificationUiError } from "../types";
+import { InlineFormattedText } from "./InlineFormattedText";
 
 interface ClarificationQuestionBoxProps {
   packet?: ClarificationPacket | null;
@@ -149,17 +150,16 @@ export function ClarificationQuestionBox({
     <aside className="memory-clarification-box" aria-live="polite">
       <div className="memory-clarification-header">
         <div>
-          <strong>Clarification needed</strong>
+          <strong>I need one detail to continue</strong>
           <p>{answeredCount} of {activePacket.questions.length} answered</p>
         </div>
-        <span>{currentIndex + 1} / {activePacket.questions.length}</span>
+        <span>Question {currentIndex + 1} of {activePacket.questions.length}</span>
       </div>
 
       {error ? (
         <div className="memory-clarification-error" role="alert">
-          <strong>{error.retryable ? "Submission needs a retry" : "This clarification is no longer active"}</strong>
+          <strong>{error.retryable ? "Your answer needs another try" : "This question is no longer active"}</strong>
           <p>{error.message}</p>
-          <small>{error.code}</small>
           <div className="memory-clarification-error-actions">
             {error.retryable && lastSubmittedPacket ? (
               <button disabled={isSubmitting} onClick={() => onSubmit(lastSubmittedPacket)} type="button">
@@ -176,8 +176,10 @@ export function ClarificationQuestionBox({
       ) : null}
 
       <section className="memory-clarification-question" key={activeQuestion.question_id}>
-        <div className="memory-clarification-kind">{humanize(activeQuestion.kind)}</div>
-        <h3 className="memory-clarification-question-text">{activeQuestion.question}</h3>
+        <div className="memory-clarification-kind">{friendlyKind(activeQuestion.kind)}</div>
+        <h3 className="memory-clarification-question-text">
+          <InlineFormattedText text={activeQuestion.question} />
+        </h3>
         {activeQuestion.options.length > 0 ? (
           <div
             aria-label="Clarification options"
@@ -197,9 +199,9 @@ export function ClarificationQuestionBox({
                   onClick={() => toggleOption(option.option_id)}
                   type="button"
                 >
-                  <span>{option.label}</span>
+                  <span><InlineFormattedText text={option.label} /></span>
                   {option.recommended ? <em>Recommended</em> : null}
-                  {option.summary ? <small>{option.summary}</small> : null}
+                  {option.summary ? <small><InlineFormattedText text={option.summary} /></small> : null}
                 </button>
               );
             })}
@@ -217,15 +219,17 @@ export function ClarificationQuestionBox({
       </section>
 
       <div className="memory-clarification-actions">
-        <button
-          disabled={currentIndex === 0 || isSubmitting}
-          onClick={() => setCurrentIndex((current) => current - 1)}
-          type="button"
-        >
-          Back
-        </button>
+        {currentIndex > 0 ? (
+          <button
+            disabled={isSubmitting}
+            onClick={() => setCurrentIndex((current) => current - 1)}
+            type="button"
+          >
+            Back
+          </button>
+        ) : null}
         <button disabled={!canContinue || isSubmitting} onClick={continueToNext} type="button">
-          {isSubmitting ? "Submitting..." : isLastQuestion ? "Submit answers" : "Next"}
+          {isSubmitting ? "Saving answer..." : isLastQuestion ? "Continue" : "Next question"}
         </button>
       </div>
     </aside>
@@ -257,6 +261,15 @@ function answerIsValid(
   return hasOption || hasText || hasAudio;
 }
 
-function humanize(value: string): string {
-  return value.replaceAll("_", " ").replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+function friendlyKind(value: string): string {
+  const labels: Record<string, string> = {
+    identity_no_match: "Identify a person",
+    identity_ambiguous: "Choose a person",
+    missing_attribute: "Missing detail",
+    confirm_proposal: "Check a detail",
+    correct_conflict: "Resolve a conflict",
+    relationship_target: "Confirm a connection",
+    explicit_discard: "Confirm what to keep"
+  };
+  return labels[value] ?? "One detail needed";
 }

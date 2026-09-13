@@ -1,4 +1,5 @@
 import type { RenderedChatMessage } from "../types";
+import { InlineFormattedText } from "./InlineFormattedText";
 
 interface ChatMessageBubbleProps {
   message: RenderedChatMessage;
@@ -8,7 +9,7 @@ export function ChatMessageBubble({ message }: ChatMessageBubbleProps) {
   return (
     <article className={`memory-chat-message memory-chat-message-${message.role}`}>
       <div className="memory-chat-bubble">
-        <p>{message.text}</p>
+        <p><InlineFormattedText text={message.text} /></p>
       </div>
       <span className="memory-chat-time">{formatTime(message.createdAt)}</span>
     </article>
