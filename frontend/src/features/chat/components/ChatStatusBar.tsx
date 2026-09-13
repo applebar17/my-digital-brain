@@ -6,11 +6,11 @@ interface ChatStatusBarProps {
 
 export function ChatStatusBar({ runtime }: ChatStatusBarProps) {
   const statusText = {
-    active: "Active",
-    processing: "Processing",
-    awaiting_clarification: "Waiting for clarification",
-    completed: "Completed",
-    error: "Action needs attention"
+    active: "Ready",
+    processing: "Working on your request",
+    awaiting_clarification: "Waiting for your answer",
+    completed: "Response ready",
+    error: "Something needs attention"
   }[runtime.status];
   const syncText =
     runtime.clarificationError?.message ??
@@ -22,7 +22,7 @@ export function ChatStatusBar({ runtime }: ChatStatusBarProps) {
     <header className="memory-chat-status">
       <div className="memory-chat-status-primary">
         <span className={`memory-status-dot ${runtime.status === "error" ? "is-error" : ""}`} />
-        <span>Conversation Status: {statusText}</span>
+        <span>{statusText}</span>
       </div>
       {syncText && (
         <div className={`memory-chat-status-secondary ${runtime.status === "error" ? "is-error" : ""}`}>

@@ -1,7 +1,6 @@
 import { ChatIcon } from "./ChatIcon";
 
 interface ChatTopbarProps {
-  activeConversationId: string;
   isHistoryOpen: boolean;
   onToggleHistory: () => void;
   traceEnabled?: boolean;
@@ -9,7 +8,6 @@ interface ChatTopbarProps {
 }
 
 export function ChatTopbar({
-  activeConversationId,
   isHistoryOpen,
   onToggleHistory,
   traceEnabled = false,
@@ -47,7 +45,6 @@ export function ChatTopbar({
           </button>
         ) : null}
         <span>Web</span>
-        <span>{activeConversationId}</span>
       </div>
     </header>
   );

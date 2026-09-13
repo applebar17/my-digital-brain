@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import {
   createChatSession,
+  getChatProcessSnapshot,
   getChatSession,
   listChatSessions,
   postChatMessage,
@@ -30,10 +31,10 @@ import type {
 import {
   createClientMessageId,
   messagesFromSession,
-  processUpdatesFromSession
 } from "../features/chat/utils/chatSession";
 import type {
   ChatResponse,
+  ChatProcessSnapshot,
   ClarificationAnswerPacket,
   ClarificationPacket,
   ClarificationProgress,
@@ -56,7 +57,7 @@ export function ChatView() {
   const [recentChats, setRecentChats] = useState<ConversationSessionSummary[]>([]);
   const [recentSearch, setRecentSearch] = useState("");
   const [openChatMenuId, setOpenChatMenuId] = useState<string>();
-  const [processUpdates, setProcessUpdates] = useState<string[]>([]);
+  const [processSnapshot, setProcessSnapshot] = useState<ChatProcessSnapshot>();
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -66,11 +67,11 @@ export function ChatView() {
   const runtime: ChatRuntimeState = {
     status: clarificationError || errorMessage
       ? "error"
-      : clarificationPacket
+      : clarificationPacket || processSnapshot?.status === "waiting_for_user"
         ? "awaiting_clarification"
-        : isSending
+        : isSending || processSnapshot?.status === "working"
           ? "processing"
-          : statusMessage?.startsWith("Response received")
+          : processSnapshot?.status === "completed"
             ? "completed"
             : "active",
     isSending,
@@ -117,16 +118,19 @@ export function ChatView() {
 
     async function pollSession() {
       try {
-        const detail = await getChatSession(activeSessionId, token, 20);
+        const [detail, snapshot] = await Promise.all([
+          getChatSession(activeSessionId, token, 20),
+          getChatProcessSnapshot(activeSessionId, defaultOwnerId, token)
+        ]);
         if (isCancelled) {
           return;
         }
         setClarificationPacket(clarificationPacketFromSession(detail));
         setClarificationProgress(clarificationProgressFromSession(detail));
-        setProcessUpdates(processUpdatesFromSession(detail));
+        setProcessSnapshot(snapshot);
       } catch {
         if (!isCancelled) {
-          setProcessUpdates(["Waiting for backend process updates..."]);
+          setProcessSnapshot(undefined);
         }
       }
     }
@@ -159,14 +163,30 @@ export function ChatView() {
     setIsSending(true);
     setErrorMessage(undefined);
     setClarificationError(undefined);
-    setProcessUpdates(["Message sent", "Waiting for backend processing..."]);
-    setStatusMessage("Sending message...");
+    setProcessSnapshot(undefined);
+    setStatusMessage("Working on your request...");
 
     try {
+      let activeSessionId = sessionId;
+      let activeConversationIdForRequest = activeConversationId;
+      if (!activeSessionId) {
+        const session = await createChatSession(
+          {
+            owner_id: defaultOwnerId,
+            channel: "web",
+            title: "New chat"
+          },
+          token
+        );
+        activeSessionId = session.session_id;
+        activeConversationIdForRequest = session.external_conversation_id;
+        setSessionId(activeSessionId);
+        setActiveConversationId(session.external_conversation_id);
+      }
       const response = await postChatMessage(
         {
-          session_id: sessionId,
-          conversation_id: activeConversationId,
+          session_id: activeSessionId,
+          conversation_id: activeConversationIdForRequest,
           sender_id: defaultSenderId,
           owner_id: defaultOwnerId,
           message_id: messageId,
@@ -183,11 +203,9 @@ export function ChatView() {
       try {
         await refreshRecentChats();
       } catch {
-        setProcessUpdates(["Response received", "Recent chat list will refresh on reload"]);
+        setStatusMessage("Your response is ready.");
       }
-      setStatusMessage(`Response received: ${response.status}`);
-      setProcessUpdates([`Response received: ${response.status}`]);
-      window.setTimeout(() => setProcessUpdates([]), 2600);
+      setStatusMessage("Your response is ready.");
     } catch (error) {
       setErrorMessage(formatApiError(error, "Unable to send message."));
       setStatusMessage(undefined);
@@ -213,10 +231,13 @@ export function ChatView() {
     setErrorMessage(undefined);
     setClarificationError(undefined);
     setStatusMessage(options.setLoadedStatus ? "Loading conversation..." : undefined);
-    setProcessUpdates([]);
+    setProcessSnapshot(undefined);
     try {
-      const detail = await getChatSession(chat.session_id, token, 80);
-      applySessionDetail(detail);
+      const [detail, snapshot] = await Promise.all([
+        getChatSession(chat.session_id, token, 80),
+        getChatProcessSnapshot(chat.session_id, defaultOwnerId, token)
+      ]);
+      applySessionDetail(detail, snapshot);
       setStatusMessage(options.setLoadedStatus ? `Loaded ${detail.session.title}` : undefined);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to load conversation.");
@@ -234,7 +255,7 @@ export function ChatView() {
   async function createNewChat() {
     setErrorMessage(undefined);
     setStatusMessage("Creating new chat...");
-    setProcessUpdates([]);
+    setProcessSnapshot(undefined);
     try {
       const session = await createChatSession(
         {
@@ -259,8 +280,11 @@ export function ChatView() {
 
   async function reloadSession(nextSessionId: string, fallbackResponse?: ChatResponse) {
     try {
-      const detail = await getChatSession(nextSessionId, token, 80);
-      applySessionDetail(detail);
+      const [detail, snapshot] = await Promise.all([
+        getChatSession(nextSessionId, token, 80),
+        getChatProcessSnapshot(nextSessionId, defaultOwnerId, token)
+      ]);
+      applySessionDetail(detail, snapshot);
     } catch {
       if (fallbackResponse) {
         setMessages((current) => [
@@ -289,12 +313,18 @@ export function ChatView() {
     return list.sessions;
   }
 
-  function applySessionDetail(detail: ConversationSessionDetail) {
+  function applySessionDetail(
+    detail: ConversationSessionDetail,
+    snapshot?: ChatProcessSnapshot
+  ) {
     setActiveConversationId(detail.session.external_conversation_id);
     setSessionId(detail.session.session_id);
     setMessages(messagesFromSession(detail.messages));
     setClarificationPacket(clarificationPacketFromSession(detail));
     setClarificationProgress(clarificationProgressFromSession(detail));
+    if (snapshot) {
+      setProcessSnapshot(snapshot);
+    }
   }
 
   async function handleSubmitClarification(answerPacket: ClarificationAnswerPacket) {
@@ -306,7 +336,7 @@ export function ChatView() {
     setErrorMessage(undefined);
     setClarificationError(undefined);
     setStatusMessage("Submitting clarification...");
-    setProcessUpdates(["Clarification answers submitted", "Resuming backend process..."]);
+    setProcessSnapshot(undefined);
     try {
       const response = await submitClarificationAnswers(
         sessionId,
@@ -323,9 +353,7 @@ export function ChatView() {
       setClarificationProgress(clarificationProgressFromResponse(response));
       await reloadSession(response.session_id, response);
       await refreshRecentChats();
-      setStatusMessage(`Response received: ${response.status}`);
-      setProcessUpdates([`Response received: ${response.status}`]);
-      window.setTimeout(() => setProcessUpdates([]), 2600);
+      setStatusMessage("Your response is ready.");
     } catch (error) {
       const structuredError = clarificationApiError(error);
       if (structuredError) {
@@ -367,7 +395,7 @@ export function ChatView() {
           setMessages([]);
           setClarificationPacket(null);
           setClarificationProgress(null);
-          setProcessUpdates([]);
+          setProcessSnapshot(undefined);
         }
       }
       setStatusMessage("Chat deleted");
@@ -408,7 +436,6 @@ export function ChatView() {
 
       <section className="memory-chat-panel">
         <ChatTopbar
-          activeConversationId={activeConversationId}
           isHistoryOpen={isHistoryOpen}
           onToggleHistory={() => setIsHistoryOpen((current) => !current)}
           traceEnabled={aiTraceDebugEnabled}
@@ -421,7 +448,7 @@ export function ChatView() {
           <ChatMessageList
             messages={messages}
             isProcessing={isSending}
-            processUpdates={processUpdates}
+            processSnapshot={processSnapshot}
           />
           {clarificationPacket ? (
             <div className="memory-clarification-panel">

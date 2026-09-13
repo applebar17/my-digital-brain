@@ -1,21 +1,8 @@
 import type {
   ConversationMessage,
-  ConversationSessionDetail,
   ConversationSessionSummary
 } from "../../../types/chat";
 import type { RenderedChatMessage } from "../types";
-
-export function processUpdatesFromSession(detail: ConversationSessionDetail): string[] {
-  const updates = [`Session ${detail.session.status}`];
-  const frame = detail.active_agentic_frame;
-  if (frame) {
-    updates.push(`Agentic frame ${frame.status}`);
-    if (frame.clarification_packet) {
-      updates.push(`${frame.clarification_packet.questions.length} clarification question(s)`);
-    }
-  }
-  return updates;
-}
 
 export function createClientMessageId(): string {
   if ("randomUUID" in crypto) {
