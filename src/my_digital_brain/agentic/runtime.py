@@ -124,6 +124,10 @@ class AgenticRuntime:
                     "clarification_packet": interruption_metadata.get("clarification_packet"),
                     "parent_frame_id": interruption_metadata.get("parent_frame_id"),
                 }
+                interruption = self._canonicalize_child_interruption(
+                    execution_context,
+                    interruption,
+                )
             else:
                 interruption = self._persist_interrupted_frame(
                     state_result,
@@ -244,6 +248,7 @@ class AgenticRuntime:
                 tool_name=tool_name,
             )
             interruption = dict(result.interruption or {})
+            packet_payload = interruption.get("clarification_packet")
             interrupted_child_frame_id = interruption.get("child_frame_id") or interruption.get(
                 "frame_id"
             )
@@ -251,6 +256,11 @@ class AgenticRuntime:
                 interruption.get("child_state_id")
                 or interruption.get("state_id")
                 or child_state.value
+            )
+            self._synchronize_interrupted_child_packet(
+                parent_execution_context,
+                interrupted_child_frame_id,
+                packet_payload,
             )
             return ToolResult(
                 status="pending",
@@ -753,6 +763,7 @@ class AgenticRuntime:
         execution_context.ref_context = (
             _ref_context_from_frame(parent) or execution_context.ref_context
         )
+
         parent_result = self.state_runner.continue_state_from_messages(
             state_id=AgenticStateId(parent.state_id),
             messages=parent_messages,
@@ -823,6 +834,56 @@ class AgenticRuntime:
                 "clarification_report": clarification_report,
             },
         )
+
+    def _canonicalize_child_interruption(
+        self,
+        execution_context: AgenticToolExecutionContext,
+        interruption: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return the persisted child packet, not an outer batched wrapper."""
+
+        frame_id = interruption.get("frame_id")
+        if not frame_id or execution_context.chat_store is None:
+            return interruption
+        try:
+            child_frame = execution_context.chat_store.get_agentic_frame(str(frame_id))
+        except Exception:
+            return interruption
+        packet = child_frame.clarification_packet
+        if packet is None:
+            return interruption
+        return {
+            **interruption,
+            "frame_id": child_frame.frame_id,
+            "state_id": child_frame.state_id,
+            "tool_call_id": child_frame.active_tool_call_id,
+            "tool_name": child_frame.active_tool_name,
+            "clarification_packet": packet.model_dump(mode="json", exclude_none=True),
+        }
+
+    def _synchronize_interrupted_child_packet(
+        self,
+        execution_context: AgenticToolExecutionContext,
+        frame_id: Any,
+        packet_payload: Any,
+    ) -> None:
+        """Keep the persisted answer target identical to the returned packet."""
+
+        if execution_context.chat_store is None or not frame_id:
+            return
+        if not isinstance(packet_payload, dict):
+            return
+        try:
+            execution_context.chat_store.update_agentic_frame_status(
+                execution_context.session_id or "",
+                str(frame_id),
+                "interrupted",
+                clarification_packet=packet_payload,
+            )
+        except Exception:
+            # The child runtime already attempted to persist the frame. A
+            # synchronization failure must not hide the original interruption.
+            return
 
     def _persist_interrupted_frame(
         self,

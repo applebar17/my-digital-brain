@@ -6,6 +6,10 @@ from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.state import default_state_configs
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext, build_agentic_tool_mapping
+from my_digital_brain.agentic.runtime import AgenticRuntime
+from my_digital_brain.chat.models import AgenticFrame
+from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.clarification.contracts import ClarificationPacket, ClarificationQuestion
 from my_digital_brain.graph.models import NodeSearchResult
 from my_digital_brain.agentic.tools.bindings import _graph_context_from_retrieval
 from my_digital_brain.clarification.toolbox import ClarificationToolService
@@ -118,3 +122,54 @@ def test_graph_write_resolves_model_ref_only_at_backend_boundary() -> None:
     assert result.status == "ok"
     assert graph.received_node_id == "person-lorenzo"
     assert result.data["updated_refs"] == ["node_0001"]
+
+
+def test_nested_interruption_returns_the_packet_persisted_on_child_frame() -> None:
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    packet = ClarificationPacket(
+        frame_id="child-frame",
+        tool_call_id="ask-text-call",
+        tool_name="ask_text",
+        origin_state_id="clarification_agent",
+        reason="Need one detail.",
+        questions=[
+            ClarificationQuestion(
+                question="Who is Lorenzo?",
+                kind="identity_no_match",
+                response_mode="free_text",
+            ),
+        ],
+    )
+    store.save_agentic_frame(
+        session.session_id,
+        AgenticFrame(
+            frame_id="child-frame",
+            session_id=session.session_id,
+            state_id="clarification_agent",
+            status="interrupted",
+            active_tool_call_id="ask-text-call",
+            active_tool_name="ask_text",
+            clarification_packet=packet,
+        ),
+    )
+    context = AgenticToolExecutionContext(
+        chat_store=store,
+        session_id=session.session_id,
+    )
+
+    result = AgenticRuntime.__new__(AgenticRuntime)._canonicalize_child_interruption(
+        context,
+        {
+            "frame_id": "child-frame",
+            "tool_call_id": "outer-call",
+            "clarification_packet": {"packet_id": "outer-packet"},
+        },
+    )
+
+    assert result["tool_call_id"] == "ask-text-call"
+    assert result["clarification_packet"]["packet_id"] == packet.packet_id
