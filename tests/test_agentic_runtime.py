@@ -27,6 +27,7 @@ from my_digital_brain.agentic import (
 )
 from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.agentic.runtime_models import AgenticRunResult
 from my_digital_brain.ai.schemas import (
     ChatMessage,
     ProviderCallMetadata,
@@ -40,6 +41,7 @@ from my_digital_brain.ai.session import (
 )
 from my_digital_brain.chat.models import AgenticFrame
 from my_digital_brain.chat.store import InMemoryChatSessionStore
+from my_digital_brain.clarification.contracts import ClarificationPacket
 from my_digital_brain.ingestion.contracts import MemoryLogDraftBatch
 
 
@@ -563,6 +565,89 @@ def test_resumed_child_report_reaches_parent_invoker_tool_output() -> None:
     assert tool_message.role == "tool"
     assert "Amos Vignaroli" in tool_message.content
     assert "clarified_values" in tool_message.content
+
+
+def test_child_reuses_provider_parent_tool_call_id(monkeypatch) -> None:
+    runtime = AgenticRuntime(_runner(ScriptedToolCallingProvider([])))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    parent_context = AgenticToolExecutionContext(
+        chat_store=store,
+        session_id=session.session_id,
+        state_id=AgenticStateId.PLANNING_CHECKPOINT.value,
+        frame_id="parent-frame-1",
+        current_tool_call_id="openai-call-1",
+        current_payload={"purpose": "test"},
+    )
+    captured: dict[str, AgenticToolExecutionContext] = {}
+
+    def fake_run(
+        _runtime,
+        _conversation_context,
+        execution_context,
+        start_state=None,
+        start_payload=None,
+    ) -> AgenticRunResult:
+        captured["child"] = execution_context
+        packet = ClarificationPacket(
+            frame_id=execution_context.frame_id or "child-frame-1",
+            tool_call_id="ask-call-1",
+            tool_name="ask_text",
+            origin_state_id=AgenticStateId.CLARIFICATION_AGENT.value,
+            reason="Need one detail.",
+            questions=[
+                {
+                    "question": "What is the surname?",
+                    "kind": "missing_attribute",
+                    "response_mode": "free_text",
+                }
+            ],
+        )
+        store.save_agentic_frame(
+            session.session_id,
+            AgenticFrame(
+                frame_id=execution_context.frame_id or "child-frame-1",
+                session_id=session.session_id,
+                state_id=AgenticStateId.CLARIFICATION_AGENT.value,
+                status="interrupted",
+                parent_frame_id=execution_context.parent_frame_id,
+                parent_tool_call_id=execution_context.parent_tool_call_id,
+                active_tool_call_id="ask-call-1",
+                active_tool_name="ask_text",
+                clarification_packet=packet,
+            ),
+        )
+        return AgenticRunResult(
+            status="interrupted",
+            final_text="I need one detail.",
+            interruption={
+                "frame_id": execution_context.frame_id,
+                "state_id": AgenticStateId.CLARIFICATION_AGENT.value,
+                "tool_call_id": "ask-call-1",
+                "tool_name": "ask_text",
+                "clarification_packet": packet.model_dump(mode="json"),
+            },
+        )
+
+    monkeypatch.setattr(AgenticRuntime, "run", fake_run)
+    result = runtime.run_child_frame(
+        parent_execution_context=parent_context,
+        conversation_context=_conversation("Remember this."),
+        child_state=AgenticStateId.CLARIFICATION_AGENT,
+        child_payload={},
+        tool_name="ask_clarification",
+    )
+
+    saved_parent = store.get_agentic_frame("parent-frame-1")
+    saved_child = store.get_agentic_frame(captured["child"].frame_id or "")
+    assert result.status == "pending"
+    assert saved_parent.active_tool_call_id == "openai-call-1"
+    assert captured["child"].parent_tool_call_id == "openai-call-1"
+    assert saved_child.parent_tool_call_id == "openai-call-1"
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:

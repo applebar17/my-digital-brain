@@ -45,16 +45,11 @@ def render_agentic_chat_response(
 def _clarification_packet(
     result: AgenticRunResult,
 ) -> ClarificationPacket | None:
-    if result.interruption is not None:
-        packet = result.interruption.get("clarification_packet")
-        if isinstance(packet, dict):
-            return ClarificationPacket.model_validate(packet)
-    for state_result in result.state_results:
-        for event in state_result.tool_events:
-            data = event.data or {}
-            packet = data.get("clarification_packet")
-            if isinstance(packet, dict):
-                return ClarificationPacket.model_validate(packet)
+    if result.interruption is None:
+        return None
+    packet = result.interruption.get("clarification_packet")
+    if isinstance(packet, dict):
+        return ClarificationPacket.model_validate(packet)
     return None
 
 
