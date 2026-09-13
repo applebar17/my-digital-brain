@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   createChatSession,
@@ -57,12 +57,21 @@ export function ChatView() {
   const [recentChats, setRecentChats] = useState<ConversationSessionSummary[]>([]);
   const [recentSearch, setRecentSearch] = useState("");
   const [openChatMenuId, setOpenChatMenuId] = useState<string>();
-  const [processSnapshot, setProcessSnapshot] = useState<ChatProcessSnapshot>();
-  const [isSending, setIsSending] = useState(false);
+  const [processSnapshots, setProcessSnapshots] = useState<
+    Record<string, ChatProcessSnapshot>
+  >({});
+  const [sendingSessionIds, setSendingSessionIds] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
   const [clarificationError, setClarificationError] = useState<ClarificationUiError>();
   const [token] = useState(() => localStorage.getItem(tokenStorageKey) ?? defaultWebChatToken);
+  const activeSessionIdRef = useRef<string | undefined>(undefined);
+  const processSnapshot = sessionId ? processSnapshots[sessionId] : undefined;
+  const isSending = Boolean(sessionId && sendingSessionIds.has(sessionId));
+
+  useEffect(() => {
+    activeSessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const runtime: ChatRuntimeState = {
     status: clarificationError || errorMessage
@@ -109,39 +118,44 @@ export function ChatView() {
   }, [token]);
 
   useEffect(() => {
-    if (!isSending || !sessionId) {
+    if (sendingSessionIds.size === 0) {
       return undefined;
     }
 
-    const activeSessionId = sessionId;
     let isCancelled = false;
 
-    async function pollSession() {
+    async function pollSession(processingSessionId: string) {
       try {
         const [detail, snapshot] = await Promise.all([
-          getChatSession(activeSessionId, token, 20),
-          getChatProcessSnapshot(activeSessionId, defaultOwnerId, token)
+          getChatSession(processingSessionId, token, 20),
+          getChatProcessSnapshot(processingSessionId, defaultOwnerId, token)
         ]);
         if (isCancelled) {
           return;
         }
-        setClarificationPacket(clarificationPacketFromSession(detail));
-        setClarificationProgress(clarificationProgressFromSession(detail));
-        setProcessSnapshot(snapshot);
-      } catch {
-        if (!isCancelled) {
-          setProcessSnapshot(undefined);
+        setProcessSnapshots((current) => ({
+          ...current,
+          [processingSessionId]: snapshot
+        }));
+        if (processingSessionId === sessionId) {
+          setClarificationPacket(clarificationPacketFromSession(detail));
+          setClarificationProgress(clarificationProgressFromSession(detail));
         }
+      } catch {
+        // Keep the last known snapshot; the next poll can recover transient errors.
       }
     }
 
-    void pollSession();
-    const intervalId = window.setInterval(pollSession, 1600);
+    const processingSessionIds = Array.from(sendingSessionIds);
+    void Promise.all(processingSessionIds.map((id) => pollSession(id)));
+    const intervalId = window.setInterval(() => {
+      void Promise.all(processingSessionIds.map((id) => pollSession(id)));
+    }, 1600);
     return () => {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [isSending, sessionId, token]);
+  }, [sendingSessionIds, sessionId, token]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,14 +174,14 @@ export function ChatView() {
 
     setDraft("");
     setMessages((current) => [...current, userMessage]);
-    setIsSending(true);
     setErrorMessage(undefined);
     setClarificationError(undefined);
-    setProcessSnapshot(undefined);
+    clearProcessSnapshot(sessionId);
     setStatusMessage("Working on your request...");
 
+    let requestSessionId = sessionId;
     try {
-      let activeSessionId = sessionId;
+      let activeSessionId = requestSessionId;
       let activeConversationIdForRequest = activeConversationId;
       if (!activeSessionId) {
         const session = await createChatSession(
@@ -179,10 +193,12 @@ export function ChatView() {
           token
         );
         activeSessionId = session.session_id;
+        requestSessionId = activeSessionId;
         activeConversationIdForRequest = session.external_conversation_id;
         setSessionId(activeSessionId);
         setActiveConversationId(session.external_conversation_id);
       }
+      setSendingSessionIds((current) => new Set(current).add(activeSessionId));
       const response = await postChatMessage(
         {
           session_id: activeSessionId,
@@ -196,28 +212,50 @@ export function ChatView() {
         token
       );
 
-      setSessionId(response.session_id);
-      setClarificationPacket(response.clarification_packet ?? null);
-      setClarificationProgress(clarificationProgressFromResponse(response));
+      if (!activeSessionIdRef.current || activeSessionIdRef.current === requestSessionId) {
+        setSessionId(response.session_id);
+        setClarificationPacket(response.clarification_packet ?? null);
+        setClarificationProgress(clarificationProgressFromResponse(response));
+      }
       await reloadSession(response.session_id, response);
       try {
         await refreshRecentChats();
       } catch {
+        if (activeSessionIdRef.current === requestSessionId) {
+          setStatusMessage("Your response is ready.");
+        }
+      }
+      if (activeSessionIdRef.current === requestSessionId) {
         setStatusMessage("Your response is ready.");
       }
-      setStatusMessage("Your response is ready.");
     } catch (error) {
-      setErrorMessage(formatApiError(error, "Unable to send message."));
-      setStatusMessage(undefined);
+      if (activeSessionIdRef.current === requestSessionId) {
+        setErrorMessage(formatApiError(error, "Unable to send message."));
+        setStatusMessage(undefined);
+      }
     } finally {
-      setIsSending(false);
+      if (requestSessionId) {
+        setSendingSessionIds((current) => {
+          const next = new Set(current);
+          next.delete(requestSessionId as string);
+          return next;
+        });
+      }
     }
   }
 
-  async function handleSelectChat(chat: ConversationSessionSummary) {
-    if (isSending) {
+  function clearProcessSnapshot(nextSessionId?: string) {
+    if (!nextSessionId) {
       return;
     }
+    setProcessSnapshots((current) => {
+      const next = { ...current };
+      delete next[nextSessionId];
+      return next;
+    });
+  }
+
+  async function handleSelectChat(chat: ConversationSessionSummary) {
     setOpenChatMenuId(undefined);
     await loadSession(chat, { setLoadedStatus: true });
   }
@@ -228,15 +266,20 @@ export function ChatView() {
   ) {
     setActiveConversationId(chat.external_conversation_id);
     setSessionId(chat.session_id);
+    activeSessionIdRef.current = chat.session_id;
     setErrorMessage(undefined);
     setClarificationError(undefined);
     setStatusMessage(options.setLoadedStatus ? "Loading conversation..." : undefined);
-    setProcessSnapshot(undefined);
+    clearProcessSnapshot(chat.session_id);
     try {
       const [detail, snapshot] = await Promise.all([
         getChatSession(chat.session_id, token, 80),
         getChatProcessSnapshot(chat.session_id, defaultOwnerId, token)
       ]);
+      if (activeSessionIdRef.current !== chat.session_id) {
+        setProcessSnapshots((current) => ({ ...current, [chat.session_id]: snapshot }));
+        return;
+      }
       applySessionDetail(detail, snapshot);
       setStatusMessage(options.setLoadedStatus ? `Loaded ${detail.session.title}` : undefined);
     } catch (error) {
@@ -246,16 +289,18 @@ export function ChatView() {
   }
 
   function handleNewChat() {
-    if (isSending) {
-      return;
-    }
     void createNewChat();
   }
 
   async function createNewChat() {
     setErrorMessage(undefined);
     setStatusMessage("Creating new chat...");
-    setProcessSnapshot(undefined);
+    setSessionId(undefined);
+    activeSessionIdRef.current = undefined;
+    setActiveConversationId(defaultConversationId);
+    setMessages([]);
+    setClarificationPacket(null);
+    setClarificationProgress(null);
     try {
       const session = await createChatSession(
         {
@@ -267,6 +312,7 @@ export function ChatView() {
       );
       setActiveConversationId(session.external_conversation_id);
       setSessionId(session.session_id);
+      activeSessionIdRef.current = session.session_id;
       setMessages([]);
       setClarificationPacket(null);
       setClarificationProgress(null);
@@ -284,8 +330,15 @@ export function ChatView() {
         getChatSession(nextSessionId, token, 80),
         getChatProcessSnapshot(nextSessionId, defaultOwnerId, token)
       ]);
+      if (activeSessionIdRef.current !== nextSessionId) {
+        setProcessSnapshots((current) => ({ ...current, [nextSessionId]: snapshot }));
+        return;
+      }
       applySessionDetail(detail, snapshot);
     } catch {
+      if (activeSessionIdRef.current !== nextSessionId) {
+        return;
+      }
       if (fallbackResponse) {
         setMessages((current) => [
           ...current,
@@ -319,11 +372,15 @@ export function ChatView() {
   ) {
     setActiveConversationId(detail.session.external_conversation_id);
     setSessionId(detail.session.session_id);
+    activeSessionIdRef.current = detail.session.session_id;
     setMessages(messagesFromSession(detail.messages));
     setClarificationPacket(clarificationPacketFromSession(detail));
     setClarificationProgress(clarificationProgressFromSession(detail));
     if (snapshot) {
-      setProcessSnapshot(snapshot);
+      setProcessSnapshots((current) => ({
+        ...current,
+        [detail.session.session_id]: snapshot
+      }));
     }
   }
 
@@ -332,11 +389,12 @@ export function ChatView() {
       return;
     }
     const messageId = createClientMessageId();
-    setIsSending(true);
     setErrorMessage(undefined);
     setClarificationError(undefined);
     setStatusMessage("Submitting clarification...");
-    setProcessSnapshot(undefined);
+    clearProcessSnapshot(sessionId);
+    const requestSessionId = sessionId;
+    setSendingSessionIds((current) => new Set(current).add(requestSessionId));
     try {
       const response = await submitClarificationAnswers(
         sessionId,
@@ -349,11 +407,15 @@ export function ChatView() {
         },
         token
       );
-      setClarificationPacket(response.clarification_packet ?? null);
-      setClarificationProgress(clarificationProgressFromResponse(response));
+      if (activeSessionIdRef.current === requestSessionId) {
+        setClarificationPacket(response.clarification_packet ?? null);
+        setClarificationProgress(clarificationProgressFromResponse(response));
+      }
       await reloadSession(response.session_id, response);
       await refreshRecentChats();
-      setStatusMessage("Your response is ready.");
+      if (activeSessionIdRef.current === requestSessionId) {
+        setStatusMessage("Your response is ready.");
+      }
     } catch (error) {
       const structuredError = clarificationApiError(error);
       if (structuredError) {
@@ -367,18 +429,23 @@ export function ChatView() {
           details: structuredError.details
         });
       } else {
-        setErrorMessage(formatApiError(error, "Unable to submit clarification."));
+        if (activeSessionIdRef.current === requestSessionId) {
+          setErrorMessage(formatApiError(error, "Unable to submit clarification."));
+        }
       }
-      setStatusMessage(undefined);
+      if (activeSessionIdRef.current === requestSessionId) {
+        setStatusMessage(undefined);
+      }
     } finally {
-      setIsSending(false);
+      setSendingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(requestSessionId);
+        return next;
+      });
     }
   }
 
   async function handleDeleteChat(chat: ConversationSessionSummary) {
-    if (isSending) {
-      return;
-    }
     setOpenChatMenuId(undefined);
     setErrorMessage(undefined);
     setStatusMessage("Deleting chat...");
@@ -391,11 +458,12 @@ export function ChatView() {
           await loadSession(nextActive, { setLoadedStatus: false });
         } else {
           setSessionId(undefined);
+          activeSessionIdRef.current = undefined;
           setActiveConversationId(defaultConversationId);
           setMessages([]);
           setClarificationPacket(null);
           setClarificationProgress(null);
-          setProcessSnapshot(undefined);
+          clearProcessSnapshot(chat.session_id);
         }
       }
       setStatusMessage("Chat deleted");
