@@ -74,8 +74,17 @@ It stores:
 - status for observability and UI;
 - compact trace/debug metadata.
 
-Frames are not pending-process records. They are provider-message continuation
-records.
+Provider-owned frames are provider-message continuation records. A backend
+continuation may also be stored as a frame while a deterministic pipeline is
+waiting for a child agentic state; that frame has no provider tool call and
+must not invent one.
+
+Provider tool-call IDs are assigned by the model provider and are preserved
+unchanged from the assistant tool call through its matching tool result. A
+backend continuation instead stores a small resumable cursor (for example,
+the ingestion phase and action id) in frame metadata. The cursor is resumed
+after the child completes, then the result is returned to the nearest real
+provider tool call.
 
 ## Nested Tool Execution
 
@@ -102,6 +111,11 @@ If a child interrupts for clarification, the child frame is stored as
 `waiting_child`, preserving the parent assistant tool call without becoming a
 second user-facing clarification. When the child completes, the backend appends
 one compact tool result to the parent tool call and resumes the parent.
+
+For backend-only pipeline steps, the waiting parent has no assistant tool-call
+message. Its internal continuation metadata identifies the current phase and
+action, so resuming the clarification child continues the pipeline at the
+next action rather than attempting to create an artificial provider transcript.
 
 ## Clarification
 

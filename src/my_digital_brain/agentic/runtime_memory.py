@@ -52,42 +52,64 @@ class MemoryIngestionRuntimeService:
         execution_context.conversation_context = conversation_context
         execution_context.state_id = AgenticStateId.MEMORY_INGESTION.value
         execution_context.ref_context = payload.ref_context
+        resume = payload.metadata.get("memory_ingestion_resume")
+        resume_phase = str(resume.get("phase") or "") if isinstance(resume, dict) else ""
+        resume_action_id = str(resume.get("action_id") or "") if isinstance(resume, dict) else ""
+        phase_order = {
+            MemoryPlanningPhase.NODES.value: 0,
+            MemoryPlanningPhase.MEMORY_LOGS.value: 1,
+            MemoryPlanningPhase.EDGES.value: 2,
+        }
+        resume_phase_index = phase_order.get(resume_phase, 0)
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
-        reasoning_result = self.runtime.state_runner.run_structured_state(
-            AgenticStateInvocation(
-                state_id=AgenticStateId.MEMORY_INGESTION,
-                context_payload=payload,
-                execution_context=execution_context,
-                metadata={
-                    "structured_output": True,
-                    "output_schema": "MemoryIngestionReasoning",
-                    "phase": "reasoning_inventory",
-                },
-            ),
-            output_schema=MemoryIngestionReasoning,
-        )
-        state_results.append(reasoning_result)
-        compact_trace.append(_compact_state_trace(reasoning_result))
-        if reasoning_result.status != "ok" or reasoning_result.structured_output is None:
-            return _memory_ingestion_error_result(state_results, compact_trace, reasoning_result)
+        if payload.reasoning is None:
+            reasoning_result = self.runtime.state_runner.run_structured_state(
+                AgenticStateInvocation(
+                    state_id=AgenticStateId.MEMORY_INGESTION,
+                    context_payload=payload,
+                    execution_context=execution_context,
+                    metadata={
+                        "structured_output": True,
+                        "output_schema": "MemoryIngestionReasoning",
+                        "phase": "reasoning_inventory",
+                    },
+                ),
+                output_schema=MemoryIngestionReasoning,
+            )
+            state_results.append(reasoning_result)
+            compact_trace.append(_compact_state_trace(reasoning_result))
+            if reasoning_result.status != "ok" or reasoning_result.structured_output is None:
+                return _memory_ingestion_error_result(
+                    state_results,
+                    compact_trace,
+                    reasoning_result,
+                )
+            reasoning = MemoryIngestionReasoning.model_validate(reasoning_result.structured_output)
+            current_payload = payload.model_copy(update={"reasoning": reasoning}, deep=True)
+        else:
+            current_payload = payload
 
-        reasoning = MemoryIngestionReasoning.model_validate(reasoning_result.structured_output)
-        current_payload = payload.model_copy(update={"reasoning": reasoning}, deep=True)
-
-        node_plan_result = self._run_memory_phase_plan(
-            current_payload,
-            execution_context,
-            phase=MemoryPlanningPhase.NODES,
-            prompt_id="memory_node_planning",
-            output_schema=NodeMemoryPlan,
-        )
-        state_results.append(node_plan_result)
-        compact_trace.append(_compact_state_trace(node_plan_result))
-        if node_plan_result.status != "ok" or node_plan_result.structured_output is None:
-            return _memory_ingestion_error_result(state_results, compact_trace, node_plan_result)
-        node_plan = NodeMemoryPlan.model_validate(node_plan_result.structured_output)
+        if current_payload.node_plan is None:
+            node_plan_result = self._run_memory_phase_plan(
+                current_payload,
+                execution_context,
+                phase=MemoryPlanningPhase.NODES,
+                prompt_id="memory_node_planning",
+                output_schema=NodeMemoryPlan,
+            )
+            state_results.append(node_plan_result)
+            compact_trace.append(_compact_state_trace(node_plan_result))
+            if node_plan_result.status != "ok" or node_plan_result.structured_output is None:
+                return _memory_ingestion_error_result(
+                    state_results,
+                    compact_trace,
+                    node_plan_result,
+                )
+            node_plan = NodeMemoryPlan.model_validate(node_plan_result.structured_output)
+        else:
+            node_plan = current_payload.node_plan
         _register_planned_refs(payload.ref_context, node_plan.node_plan_packet)
         current_payload = current_payload.model_copy(
             update={
@@ -103,12 +125,16 @@ class MemoryIngestionRuntimeService:
             },
             deep=True,
         )
-        node_action_result = self._execute_memory_plan_actions(
-            node_plan.steps,
-            execution_context,
-            conversation_context,
-            current_payload,
-        )
+        node_action_result = None
+        if resume_phase_index <= 0:
+            node_action_result = self._execute_memory_plan_actions(
+                node_plan.steps,
+                execution_context,
+                conversation_context,
+                current_payload,
+                phase=MemoryPlanningPhase.NODES,
+                skip_action_id=resume_action_id if resume_phase_index == 0 else None,
+            )
         if node_action_result is not None:
             state_results.extend(node_action_result.state_results)
             compact_trace.extend(node_action_result.compact_trace or [])
@@ -117,18 +143,25 @@ class MemoryIngestionRuntimeService:
                 node_action_result.compact_trace = compact_trace
                 return node_action_result
 
-        memory_plan_result = self._run_memory_phase_plan(
-            current_payload,
-            execution_context,
-            phase=MemoryPlanningPhase.MEMORY_LOGS,
-            prompt_id="memory_log_planning",
-            output_schema=MemoryLogMemoryPlan,
-        )
-        state_results.append(memory_plan_result)
-        compact_trace.append(_compact_state_trace(memory_plan_result))
-        if memory_plan_result.status != "ok" or memory_plan_result.structured_output is None:
-            return _memory_ingestion_error_result(state_results, compact_trace, memory_plan_result)
-        memory_plan = MemoryLogMemoryPlan.model_validate(memory_plan_result.structured_output)
+        if current_payload.memory_plan is None:
+            memory_plan_result = self._run_memory_phase_plan(
+                current_payload,
+                execution_context,
+                phase=MemoryPlanningPhase.MEMORY_LOGS,
+                prompt_id="memory_log_planning",
+                output_schema=MemoryLogMemoryPlan,
+            )
+            state_results.append(memory_plan_result)
+            compact_trace.append(_compact_state_trace(memory_plan_result))
+            if memory_plan_result.status != "ok" or memory_plan_result.structured_output is None:
+                return _memory_ingestion_error_result(
+                    state_results,
+                    compact_trace,
+                    memory_plan_result,
+                )
+            memory_plan = MemoryLogMemoryPlan.model_validate(memory_plan_result.structured_output)
+        else:
+            memory_plan = current_payload.memory_plan
         _register_planned_refs(payload.ref_context, memory_plan.memory_plan_packet)
         current_payload = current_payload.model_copy(
             update={
@@ -144,12 +177,16 @@ class MemoryIngestionRuntimeService:
             },
             deep=True,
         )
-        memory_action_result = self._execute_memory_plan_actions(
-            memory_plan.steps,
-            execution_context,
-            conversation_context,
-            current_payload,
-        )
+        memory_action_result = None
+        if resume_phase_index <= 1:
+            memory_action_result = self._execute_memory_plan_actions(
+                memory_plan.steps,
+                execution_context,
+                conversation_context,
+                current_payload,
+                phase=MemoryPlanningPhase.MEMORY_LOGS,
+                skip_action_id=resume_action_id if resume_phase_index == 1 else None,
+            )
         if memory_action_result is not None:
             state_results.extend(memory_action_result.state_results)
             compact_trace.extend(memory_action_result.compact_trace or [])
@@ -158,18 +195,25 @@ class MemoryIngestionRuntimeService:
                 memory_action_result.compact_trace = compact_trace
                 return memory_action_result
 
-        edge_plan_result = self._run_memory_phase_plan(
-            current_payload,
-            execution_context,
-            phase=MemoryPlanningPhase.EDGES,
-            prompt_id="memory_edge_planning",
-            output_schema=EdgeMemoryPlan,
-        )
-        state_results.append(edge_plan_result)
-        compact_trace.append(_compact_state_trace(edge_plan_result))
-        if edge_plan_result.status != "ok" or edge_plan_result.structured_output is None:
-            return _memory_ingestion_error_result(state_results, compact_trace, edge_plan_result)
-        edge_plan = EdgeMemoryPlan.model_validate(edge_plan_result.structured_output)
+        if current_payload.edge_plan is None:
+            edge_plan_result = self._run_memory_phase_plan(
+                current_payload,
+                execution_context,
+                phase=MemoryPlanningPhase.EDGES,
+                prompt_id="memory_edge_planning",
+                output_schema=EdgeMemoryPlan,
+            )
+            state_results.append(edge_plan_result)
+            compact_trace.append(_compact_state_trace(edge_plan_result))
+            if edge_plan_result.status != "ok" or edge_plan_result.structured_output is None:
+                return _memory_ingestion_error_result(
+                    state_results,
+                    compact_trace,
+                    edge_plan_result,
+                )
+            edge_plan = EdgeMemoryPlan.model_validate(edge_plan_result.structured_output)
+        else:
+            edge_plan = current_payload.edge_plan
         current_payload = current_payload.model_copy(
             update={
                 "edge_plan": edge_plan,
@@ -180,12 +224,16 @@ class MemoryIngestionRuntimeService:
             },
             deep=True,
         )
-        edge_action_result = self._execute_memory_plan_actions(
-            edge_plan.steps,
-            execution_context,
-            conversation_context,
-            current_payload,
-        )
+        edge_action_result = None
+        if resume_phase_index <= 2:
+            edge_action_result = self._execute_memory_plan_actions(
+                edge_plan.steps,
+                execution_context,
+                conversation_context,
+                current_payload,
+                phase=MemoryPlanningPhase.EDGES,
+                skip_action_id=resume_action_id if resume_phase_index == 2 else None,
+            )
         if edge_action_result is not None:
             state_results.extend(edge_action_result.state_results)
             compact_trace.extend(edge_action_result.compact_trace or [])
@@ -239,6 +287,13 @@ class MemoryIngestionRuntimeService:
             state_results=state_results,
             status="ok",
             compact_trace=compact_trace,
+            metadata={
+                "structured_output": result_context.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
+                "resolved_clarifications": list(current_payload.resolved_clarifications),
+            },
         )
 
     def _run_memory_phase_plan(
@@ -328,11 +383,25 @@ class MemoryIngestionRuntimeService:
         execution_context: AgenticToolExecutionContext,
         conversation_context: ConversationContext,
         payload: MemoryIngestionContext,
+        *,
+        phase: MemoryPlanningPhase,
+        skip_action_id: str | None = None,
     ) -> AgenticRunResult | None:
         action_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
         for step in steps:
             for action in step.actions:
+                if skip_action_id:
+                    if action.action_id == skip_action_id:
+                        skip_action_id = None
+                    continue
+                execution_context.current_payload = payload
+                execution_context.metadata["internal_continuation"] = {
+                    "kind": "memory_ingestion",
+                    "phase": phase.value,
+                    "action_id": action.action_id,
+                    "payload": payload.model_dump(mode="json", exclude_none=True),
+                }
                 child_state = (
                     AgenticStateId.GRAPH_UPDATE
                     if action.action_type == MemoryPlanActionType.UPDATE_NODE

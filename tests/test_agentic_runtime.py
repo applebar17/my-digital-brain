@@ -25,6 +25,7 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
+from my_digital_brain.agentic.contexts import MemoryIngestionContext
 from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime_models import AgenticRunResult
@@ -455,7 +456,12 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
     refs = RefContext(session_id="session-1")
     refs.register_existing("person-marco-1", RefObjectKind.NODE, label="Person", name="Marco")
     refs.register_existing("person-marco-2", RefObjectKind.NODE, label="Person", name="Marco")
-    refs.register_existing("memory-1", RefObjectKind.MEMORY, label="MemoryLog", name="Identity context")
+    refs.register_existing(
+        "memory-1",
+        RefObjectKind.MEMORY,
+        label="MemoryLog",
+        name="Identity context",
+    )
     result = runtime.run(
         _conversation("Marco has two possible identities."),
         AgenticToolExecutionContext(
@@ -648,6 +654,122 @@ def test_child_reuses_provider_parent_tool_call_id(monkeypatch) -> None:
     assert saved_parent.active_tool_call_id == "openai-call-1"
     assert captured["child"].parent_tool_call_id == "openai-call-1"
     assert saved_child.parent_tool_call_id == "openai-call-1"
+
+
+def test_internal_child_does_not_invent_provider_tool_call_id() -> None:
+    runtime = AgenticRuntime(_runner(ScriptedToolCallingProvider([])))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    parent_context = AgenticToolExecutionContext(
+        chat_store=store,
+        session_id=session.session_id,
+        state_id=AgenticStateId.MEMORY_INGESTION.value,
+        frame_id="internal-parent-frame",
+        current_payload={"source_text": "Remember this."},
+    )
+
+    result = runtime._persist_waiting_child_frame(
+        parent_context,
+        _conversation("Remember this."),
+        child_result=AgenticRunResult(
+            status="interrupted",
+            final_text="I need one detail.",
+            interruption={"frame_id": "clarification-frame"},
+        ),
+        tool_name="run_memory_creation",
+    )
+
+    saved_parent = store.get_agentic_frame("internal-parent-frame")
+    assert result["status"] == "waiting_child"
+    assert saved_parent.active_tool_call_id is None
+    assert saved_parent.messages == []
+    assert not any(
+        call.get("id", "").startswith("child-")
+        for message in saved_parent.messages
+        for call in message.get("tool_calls", [])
+    )
+
+
+def test_resume_frame_continues_backend_ingestion_without_provider_call_id(monkeypatch) -> None:
+    runtime = AgenticRuntime(_runner(ScriptedToolCallingProvider([])))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    conversation = _conversation("Remember this.")
+    payload = MemoryIngestionContext(conversation=conversation)
+    parent = AgenticFrame(
+        frame_id="internal-parent-frame",
+        session_id=session.session_id,
+        state_id=AgenticStateId.MEMORY_INGESTION.value,
+        status="waiting_child",
+        context_payload={
+            "conversation": conversation.model_dump(mode="json"),
+            "current_payload": payload.model_dump(mode="json"),
+        },
+        metadata={
+            "internal_continuation": {
+                "kind": "memory_ingestion",
+                "phase": "memory_logs",
+                "action_id": "memory_action_0001",
+                "payload": payload.model_dump(mode="json"),
+            }
+        },
+    )
+    child = AgenticFrame(
+        frame_id="clarification-frame",
+        session_id=session.session_id,
+        state_id=AgenticStateId.CLARIFICATION_AGENT.value,
+        status="completed",
+        parent_frame_id=parent.frame_id,
+        metadata={"resolved_clarifications": [{"doubt_id": "doubt-1"}]},
+    )
+    store.save_agentic_frame(session.session_id, parent)
+    execution_context = AgenticToolExecutionContext(
+        chat_store=store,
+        session_id=session.session_id,
+        frame_id=parent.frame_id,
+        agentic_runtime=runtime,
+    )
+
+    def fake_memory_run(_self, resumed_payload, resumed_context, resumed_conversation):
+        assert resumed_context.frame_id == parent.frame_id
+        assert resumed_context.current_tool_call_id is None
+        assert resumed_payload.resolved_clarifications == [{"doubt_id": "doubt-1"}]
+        assert resumed_conversation.current_message.content == "Remember this."
+        return AgenticRunResult(
+            final_text="Memory ingestion completed.",
+            status="ok",
+            metadata={
+                "structured_output": {"summary": "Memory ingestion completed."},
+                "resolved_clarifications": resumed_payload.resolved_clarifications,
+            },
+        )
+
+    monkeypatch.setattr(
+        "my_digital_brain.agentic.runtime_memory.MemoryIngestionRuntimeService.run",
+        fake_memory_run,
+    )
+    result = runtime._resume_parent_frame(
+        parent,
+        child_frame=child,
+        child_result=AgenticStateRunResult(
+            state_id=AgenticStateId.CLARIFICATION_AGENT,
+            status="ok",
+            metadata={"resolved_clarifications": [{"doubt_id": "doubt-1"}]},
+        ),
+        execution_context=execution_context,
+    )
+
+    assert result.status == "ok"
+    assert result.final_text == "Memory ingestion completed."
+    assert store.get_agentic_frame(parent.frame_id).status == "completed"
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:

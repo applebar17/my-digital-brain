@@ -401,8 +401,7 @@ class AgenticRuntime:
         active_tool_call_id = parent_execution_context.current_tool_call_id
         active_tool_name = parent_execution_context.current_tool_name or tool_name
         active_tool_arguments = dict(parent_execution_context.current_tool_arguments)
-        if not messages:
-            active_tool_call_id = active_tool_call_id or f"child-{new_uuid()}"
+        if not messages and active_tool_call_id:
             messages = [
                 {
                     "role": "assistant",
@@ -451,6 +450,9 @@ class AgenticRuntime:
                 "waiting_for_child_state_id": interrupted_child_state_id,
                 "child_tool_call_id": child_interruption.get("tool_call_id"),
                 "child_tool_name": child_interruption.get("tool_name"),
+                "internal_continuation": parent_execution_context.metadata.get(
+                    "internal_continuation"
+                ),
             },
         )
         parent_execution_context.chat_store.save_agentic_frame(frame.session_id, frame)
@@ -671,7 +673,7 @@ class AgenticRuntime:
             full_messages=full_messages,
             state_result=state_result,
         )
-        if frame.parent_frame_id and frame.parent_tool_call_id:
+        if frame.parent_frame_id:
             parent = self._load_frame(frame.parent_frame_id, execution_context=execution_context)
             if parent is not None:
                 return self._resume_parent_frame(
@@ -707,6 +709,16 @@ class AgenticRuntime:
         clarification_report: dict[str, Any] | None = None,
     ) -> AgenticRunResult:
         if not parent.active_tool_call_id:
+            continuation = parent.metadata.get("internal_continuation")
+            if isinstance(continuation, dict):
+                return self._resume_internal_continuation(
+                    parent,
+                    child_frame=child_frame,
+                    child_result=child_result,
+                    execution_context=execution_context,
+                    continuation=continuation,
+                    clarification_report=clarification_report,
+                )
             return AgenticRunResult(
                 final_text="The parent agentic frame has no open tool call.",
                 visited_states=[AgenticStateId(parent.state_id), child_result.state_id],
@@ -740,6 +752,7 @@ class AgenticRuntime:
                 "clarification_report": clarification_report,
             },
         )
+
         tool_message = {
             "role": "tool",
             "tool_call_id": parent.active_tool_call_id,
@@ -799,7 +812,7 @@ class AgenticRuntime:
             full_messages=full_messages,
             state_result=parent_result,
         )
-        if parent.parent_frame_id and parent.parent_tool_call_id:
+        if parent.parent_frame_id:
             grandparent = self._load_frame(
                 parent.parent_frame_id,
                 execution_context=execution_context,
@@ -826,6 +839,112 @@ class AgenticRuntime:
                 "completed_child_frame_id": child_frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
                 "clarification_report": clarification_report,
+            },
+        )
+
+    def _resume_internal_continuation(
+        self,
+        parent: AgenticFrame,
+        *,
+        child_frame: AgenticFrame,
+        child_result: AgenticStateRunResult,
+        execution_context: AgenticToolExecutionContext,
+        continuation: dict[str, Any],
+        clarification_report: dict[str, Any] | None = None,
+    ) -> AgenticRunResult:
+        if continuation.get("kind") != "memory_ingestion":
+            return AgenticRunResult(
+                final_text="The internal agentic continuation is not supported.",
+                visited_states=[child_result.state_id],
+                state_results=[child_result],
+                status="error",
+                compact_trace=[_compact_state_trace(child_result)],
+            )
+        from my_digital_brain.agentic.runtime_memory import MemoryIngestionRuntimeService
+
+        payload = MemoryIngestionContext.model_validate(continuation.get("payload") or {})
+        execution_context.frame_id = parent.frame_id
+        execution_context.parent_frame_id = parent.parent_frame_id
+        execution_context.parent_tool_call_id = parent.parent_tool_call_id
+        execution_context.current_tool_call_id = None
+        execution_context.current_tool_name = None
+        execution_context.current_tool_arguments = {}
+        execution_context.provider_messages = list(parent.messages)
+        execution_context.state_id = parent.state_id
+        execution_context.ref_context = (
+            _ref_context_from_frame(parent) or execution_context.ref_context
+        )
+        resolved_clarifications = _merge_resolved_clarifications(
+            payload.resolved_clarifications,
+            child_frame.metadata.get("resolved_clarifications"),
+            child_result.metadata.get("resolved_clarifications"),
+        )
+        payload = payload.model_copy(
+            update={
+                "resolved_clarifications": resolved_clarifications,
+                "metadata": {
+                    **payload.metadata,
+                    "memory_ingestion_resume": {
+                        "phase": continuation.get("phase"),
+                        "action_id": continuation.get("action_id"),
+                    },
+                },
+            },
+            deep=True,
+        )
+        execution_context.current_payload = payload
+        execution_context.metadata.pop("internal_continuation", None)
+        resumed = MemoryIngestionRuntimeService(self).run(
+            payload,
+            execution_context,
+            self._conversation_context_from_frame(
+                parent,
+                fallback_text=child_result.assistant_text or "",
+            ),
+        )
+        if resumed.status == "interrupted":
+            return resumed
+        state_result = AgenticStateRunResult(
+            state_id=AgenticStateId.MEMORY_INGESTION,
+            assistant_text=resumed.final_text,
+            structured_output=resumed.metadata.get("structured_output"),
+            status=resumed.status,
+            metadata={
+                "resolved_clarifications": resumed.metadata.get("resolved_clarifications", []),
+                "clarification_report": clarification_report
+                or resumed.metadata.get("clarification_report"),
+            },
+        )
+        self._complete_frame(
+            parent,
+            execution_context=execution_context,
+            full_messages=parent.messages,
+            state_result=state_result,
+        )
+        if parent.parent_frame_id:
+            grandparent = self._load_frame(
+                parent.parent_frame_id,
+                execution_context=execution_context,
+            )
+            if grandparent is not None:
+                return self._resume_parent_frame(
+                    grandparent,
+                    child_frame=parent,
+                    child_result=state_result,
+                    execution_context=execution_context,
+                    clarification_report=state_result.metadata.get("clarification_report"),
+                )
+        return AgenticRunResult(
+            final_text=resumed.final_text,
+            visited_states=[child_result.state_id, AgenticStateId.MEMORY_INGESTION],
+            state_results=[child_result, *resumed.state_results, state_result],
+            status=resumed.status,
+            compact_trace=[_compact_state_trace(child_result), *resumed.compact_trace],
+            metadata={
+                "resumed_frame_id": parent.frame_id,
+                "resolved_clarifications": resumed.metadata.get("resolved_clarifications", []),
+                "clarification_report": clarification_report
+                or resumed.metadata.get("clarification_report"),
             },
         )
 
@@ -973,13 +1092,19 @@ class AgenticRuntime:
                 metadata["resolved_clarifications"] = _resolved_clarifications_from_report(
                     clarification_report,
                 )
-        execution_context.chat_store.update_agentic_frame_status(
+        execution_context.chat_store.save_agentic_frame(
             frame.session_id,
-            frame.frame_id,
-            "completed" if state_result.status == "ok" else state_result.status,
-            metadata=metadata,
-            messages=full_messages,
-            clarification_packet=None,
+            frame.model_copy(
+                update={
+                    "status": "completed" if state_result.status == "ok" else state_result.status,
+                    "metadata": metadata,
+                    "messages": full_messages,
+                    "active_tool_call_id": None,
+                    "active_tool_name": None,
+                    "clarification_packet": None,
+                },
+                deep=True,
+            ),
         )
 
     def _load_frame(
@@ -1088,3 +1213,22 @@ def _resolved_clarifications_from_report(
     if not isinstance(report, dict) or not isinstance(report.get("entries"), list):
         return []
     return [entry for entry in report["entries"] if isinstance(entry, dict)]
+
+
+def _merge_resolved_clarifications(*groups: Any) -> list[dict[str, Any]]:
+    """Merge run-scoped clarification entries without duplicating doubt results."""
+
+    merged: dict[str, dict[str, Any]] = {}
+    unkeyed: list[dict[str, Any]] = []
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for entry in group:
+            if not isinstance(entry, dict):
+                continue
+            doubt_id = entry.get("doubt_id")
+            if isinstance(doubt_id, str) and doubt_id:
+                merged[doubt_id] = entry
+            elif entry not in unkeyed:
+                unkeyed.append(entry)
+    return [*merged.values(), *unkeyed]
