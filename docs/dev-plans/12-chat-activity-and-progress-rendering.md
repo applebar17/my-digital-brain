@@ -57,6 +57,68 @@ durable chat activity events and process snapshot
     web chat      Telegram
 ```
 
+## Clarification Integration Audit
+
+The first production-chat audit exposed a backend handoff gap rather than a
+question-component rendering defect:
+
+```text
+web message
+  -> ChatRuntime._call_agentic
+  -> ingest_memory
+  -> memory planning / graph update
+  -> ask_clarification
+  -> clarification agent
+  -> pending question tool
+  -> interrupted AgenticFrame + clarification_packet
+  -> ChatResponse + web question component
+```
+
+The last two transitions are the required user-facing boundary. The current
+chat ingestion branch creates `MemoryIngestionContext` from semantic
+retrieval, but does not carry an active `RunReferenceRegistry` or registry
+snapshot into that context. The child clarification frame therefore cannot
+validate or project the refs supplied by the planning and graph-update states.
+It returns an unresolved report, after which the parent may retry the
+clarification handoff. The process can consequently remain `working` while
+the browser receives neither a question packet nor a resumable frame.
+
+The standalone interactive UAT path does not reproduce this failure because
+its legacy ingestion flow explicitly creates and propagates the registry
+before entering the clarification child frame. That makes it a useful
+regression path, but not proof that the web chat contract is wired.
+
+There is also a reference-contract mismatch to resolve before implementing the
+production bridge:
+
+- the newer agentic planning contracts expose readable refs such as
+  `node_new_lorenzo` and carry them in `RefContext`;
+- the clarification toolbox currently validates against the ingestion
+  `RunReferenceRegistry`, whose generated refs are `NODE_000001` and whose
+  proposal refs must be `CANDIDATE_*`;
+- the agentic `GraphContextPackage` currently has aliases and candidate data,
+  but no active registry snapshot.
+
+The recommended delivery order is:
+
+1. choose one model-facing ref contract and define a narrow adapter at the
+   legacy graph/write boundary;
+2. initialize and propagate that context through chat ingestion, every child
+   frame, and persisted frame payloads;
+3. make a pending clarification tool call terminate the current run as an
+   interrupted frame, with a validated packet and no natural-language-only
+   fallback;
+4. verify the API response, session detail after refresh, answer submission,
+   and resumed final response with one end-to-end chat test;
+5. only then refine the frontend activity/question presentation and live
+   process synchronization.
+
+The frontend already follows the intended contract: it reads the packet from
+the response or `active_agentic_frame`, hides transient clarification messages,
+and renders `ClarificationQuestionBox` only when a structured packet exists.
+Parsing a natural-language question in the frontend would conceal the backend
+failure and would not support safe resume after refresh.
+
 ## Locked Product Principles
 
 - Progress wording describes observable work, not hidden model reasoning.
@@ -229,6 +291,10 @@ be used as user-facing labels.
   tool-call IDs.
 - Verify that answering a question returns to the ordinary activity lifecycle
   before the final response is shown.
+- Repair the production chat-to-ingestion registry handoff before changing
+  frontend question rendering.
+- Add a real chat API regression covering the same story as the interactive
+  clarification UAT, including durable frame creation and resume.
 
 ### Wave 5: Quality and evolution
 

@@ -81,6 +81,10 @@ Priority: 1
 
 Priority: 1
 
+- Repair the production web-chat clarification handoff: propagate the active
+  reference context through agentic ingestion and child frames, emit a
+  durable interrupted frame with a structured question packet, and verify the
+  answer/resume path end to end before treating frontend rendering as done.
 - Evaluate multilingual and user-friendly wording for no-match, duplicate,
   missing-field, correction, confirmation, relationship-target, and
   multi-question scenarios.
