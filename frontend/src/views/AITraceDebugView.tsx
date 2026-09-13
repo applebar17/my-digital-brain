@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { clearAIFlowTraces, listAIFlowTraces } from "../api/aiTraces";
-import { defaultWebChatToken } from "../config";
+import { listChatSessions } from "../api/chat";
+import { defaultOwnerId, defaultWebChatToken } from "../config";
 import type { AIFlowTraceEvent } from "../types/aiTrace";
+import type { ConversationSessionSummary } from "../types/chat";
 
 const tokenStorageKey = "my-digital-brain.web-chat-token";
 
@@ -16,6 +18,8 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
   const [errorMessage, setErrorMessage] = useState<string>();
   const [collapsedEvents, setCollapsedEvents] = useState<Set<number>>(() => new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
+  const [sessions, setSessions] = useState<ConversationSessionSummary[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [token] = useState(() => localStorage.getItem(tokenStorageKey) ?? defaultWebChatToken);
 
   const sortedEvents = useMemo(
@@ -29,6 +33,36 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
       ),
     [sortedEvents]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSessions() {
+      setIsLoadingSessions(true);
+      try {
+        const result = await listChatSessions(defaultOwnerId, token, {
+          channel: "web",
+          limit: 100
+        });
+        if (!cancelled) {
+          setSessions(result.sessions);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(error instanceof Error ? error.message : "Unable to load chat sessions.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSessions(false);
+        }
+      }
+    }
+
+    void loadSessions();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     setEvents([]);
@@ -58,6 +92,18 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
         }
         if (result.events.length > 0) {
           setEvents((current) => appendUniqueEvents(current, result.events));
+          const newestSequence = Math.max(...result.events.map((event) => event.sequence));
+          setCollapsedEvents((current) => {
+            const next = new Set(current);
+            result.events.forEach((event) => {
+              if (event.sequence === newestSequence) {
+                next.delete(event.sequence);
+              } else {
+                next.add(event.sequence);
+              }
+            });
+            return next;
+          });
         }
         setLatestSequence(result.latest_sequence);
         setErrorMessage(undefined);
@@ -95,6 +141,12 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
     }
   }
 
+  function handleSessionChange(nextSessionId: string) {
+    window.location.hash = nextSessionId ? `debug/${nextSessionId}` : "debug";
+  }
+
+  const selectedSession = sessions.find((session) => session.session_id === sessionId);
+
   function handleExpandAll() {
     setCollapsedEvents(new Set());
     setExpandedSections(new Set(allSectionKeys));
@@ -121,8 +173,8 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
           <h2>AI Flow Trace</h2>
           <p>
             {sessionId
-              ? `Rendering trace events for chat session ${sessionId}.`
-              : "Open a chat session trace from the chat header."}
+              ? `Inspecting ${selectedSession?.title ?? "selected chat"}.`
+              : "Select a chat session to inspect its AI runtime trace."}
           </p>
         </div>
         <div className="ai-trace-header-actions">
@@ -138,6 +190,44 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
           </button>
         </div>
       </header>
+
+      <section className="ai-trace-session-picker" aria-label="Trace session selection">
+        <div>
+          <p className="eyebrow">Developer tool</p>
+          <strong>Conversation trace</strong>
+          <span>
+            {sessions.length > 0
+              ? `${sessions.length} recent web chat${sessions.length === 1 ? "" : "s"}`
+              : "Choose a chat to load its recorded events."}
+          </span>
+        </div>
+        <label>
+          <span>Chat session</span>
+          <select
+            value={sessionId ?? ""}
+            disabled={isLoadingSessions}
+            onChange={(event) => handleSessionChange(event.target.value)}
+          >
+            <option value="">Select a chat session...</option>
+            {sessionId && !selectedSession ? (
+              <option value={sessionId}>Selected session ({shortId(sessionId)})</option>
+            ) : null}
+            {sessions.map((session) => (
+              <option key={session.session_id} value={session.session_id}>
+                {session.title} · {session.status} · {shortId(session.session_id)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="ai-trace-session-refresh"
+          disabled={isLoadingSessions}
+          onClick={() => window.location.reload()}
+        >
+          Refresh chats
+        </button>
+      </section>
 
       {errorMessage ? <div className="ai-trace-error">{errorMessage}</div> : null}
 
@@ -209,6 +299,7 @@ function TraceEventCard({
           <span className="ai-trace-event-title">
             <strong>{event.title}</strong>
             <span>{meta.join(" / ")}</span>
+            <em>{traceSummary(event)}</em>
           </span>
         </button>
         <div className="ai-trace-event-meta">
@@ -252,6 +343,35 @@ function TraceEventCard({
       </div>
     </article>
   );
+}
+
+function traceSummary(event: AIFlowTraceEvent): string {
+  if (event.status === "error") {
+    return "This runtime step reported an error. Expand technical details for the recorded failure.";
+  }
+  if (event.call_kind.includes("tool")) {
+    return event.toolbox_name
+      ? `Tool step: ${event.toolbox_name} completed.`
+      : "A backend tool step completed.";
+  }
+  if (event.call_kind.includes("payload")) {
+    return "Prepared the model request and its available actions.";
+  }
+  if (event.call_kind.includes("response") || event.call_kind.includes("result")) {
+    return "Received and normalized the model result.";
+  }
+  if (event.call_kind.includes("embedding")) {
+    return "Generated vector representations for retrieval.";
+  }
+  return `Recorded ${humanize(event.call_kind)}.`;
+}
+
+function humanize(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function shortId(value: string): string {
+  return value.slice(0, 8);
 }
 
 function traceSectionKey(eventSequence: number, sectionIndex: number): string {

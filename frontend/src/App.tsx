@@ -13,10 +13,14 @@ const themeStorageKey = "my-digital-brain.theme";
 
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceId>(() => parseHashWorkspace());
+  const [sessionId, setSessionId] = useState<string | undefined>(() => parseHashSessionId());
   const [theme, setTheme] = useState<AppTheme>(() => initialTheme());
 
   useEffect(() => {
-    const onHashChange = () => setWorkspace(parseHashWorkspace());
+    const onHashChange = () => {
+      setWorkspace(parseHashWorkspace());
+      setSessionId(parseHashSessionId());
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -35,10 +39,10 @@ export default function App() {
       return <AnalyticsView />;
     }
     if (workspace === "debug" && aiTraceDebugEnabled) {
-      return <AITraceDebugView sessionId={parseHashSessionId()} />;
+      return <AITraceDebugView sessionId={sessionId} />;
     }
     return <ChatView />;
-  }, [workspace]);
+  }, [sessionId, workspace]);
 
   return (
     <AppShell
