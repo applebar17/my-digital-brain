@@ -54,6 +54,33 @@ Priority: 1
 - Keep the current boundary: backend searches, validates, and writes; the LLM
   chooses the semantic identity action from supplied context.
 
+## Reference Coherence And Recoverable Structured Validation
+
+Priority: 1
+
+See [Reference coherence and recoverable structured validation](dev-plans/14-reference-coherence-and-recoverable-validation.md).
+
+The first implementation waves now make readable local-ref names tolerant and
+give the model a bounded same-history repair path when structured output is
+invalid. The remaining work is important because a relaxed naming rule alone
+must not allow an invented ref to be mistaken for an existing graph object, and
+because repeated stories, ambiguity and paused sessions are normal operating
+conditions rather than exceptional failures.
+
+- Complete the field-description audit for every active structured-output
+  contract and keep model-facing ref semantics aligned across planning,
+  extraction, clarification and writes.
+- Add end-to-end regression coverage for first ingestion, repeated ingestion on
+  an existing graph, ambiguous matches requiring clarification, and invalid
+  refs repaired by the model.
+- Verify idempotency and duplicate handling so a repeated story reuses existing
+  entities without creating duplicate graph objects or memory records.
+- Extend semantic ref validation and repair coverage to every ingestion phase,
+  including resumed clarification and relationship planning.
+- Remove remaining duplicated/obsolete ref vocabularies, strict naming rules,
+  one-attempt repair wording, and raw Pydantic-only diagnostics after the
+  canonical flow is fully covered.
+
 ## Application Identity, Export, MCP, And Integrations
 
 Priority: 1

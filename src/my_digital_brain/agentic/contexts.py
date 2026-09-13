@@ -486,7 +486,13 @@ class ReasoningAmbiguity(AgenticModel):
 class ReasoningDuplicateNote(AgenticModel):
     mention: str = Field(description="Source mention or candidate identity needing duplicate checks.")
     note: str = Field(description="Duplicate or resolution guidance for the planner.")
-    candidate_refs: list[str] = Field(default_factory=list)
+    candidate_refs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Known local refs relevant to the duplicate note. Copy refs from the active "
+            "context exactly; do not use backend UUIDs or create a second spelling."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_signal(self) -> "ReasoningDuplicateNote":

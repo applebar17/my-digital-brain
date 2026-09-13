@@ -38,7 +38,10 @@ class MemoryLogSourceKind(StrEnum):
 
 class MemoryLogLinkDraft(IngestionModel):
     target_ref: str = Field(
-        description="Candidate ref or graph alias for a domain/context node linked to the log.",
+        description=(
+            "Local ref or supplied graph alias for a domain/context node linked to the log. "
+            "Copy the exact ref from context; this is not a database UUID."
+        ),
     )
     role: str | None = Field(
         default=None,
@@ -57,7 +60,8 @@ class MemoryLogLinkDraft(IngestionModel):
 class MediaAssetRefDraft(IngestionModel):
     media_ref: str = Field(
         description=(
-            "Caller-provided media handle or local ref. This is a placeholder; "
+            "Caller-provided media handle or local ref. Prefer a readable unique local "
+            "ref and reuse it consistently. This is a placeholder; "
             "backend persistence resolves it into MediaAsset records later."
         ),
     )
@@ -79,7 +83,10 @@ class MemoryLogDraft(IngestionModel):
     """LLM-facing lightweight memory atom draft."""
 
     local_ref: str = Field(
-        description="Scoped local reference such as MEMORY_LOG_001.",
+        description=(
+            "Scoped local ref for this memory log. Prefer a readable kind-based ref such "
+            "as memory_new_barbecue, reuse it consistently, and never use a database UUID."
+        ),
     )
     log_text: str = Field(
         description=(
@@ -95,16 +102,19 @@ class MemoryLogDraft(IngestionModel):
         default_factory=list,
         description=(
             "Domain or context nodes whose timeline should show this log. "
-            "Use candidate refs or graph aliases, not raw database IDs."
+            "Use the exact local refs or graph aliases supplied in context, not raw IDs."
         ),
     )
     involved_refs: list[MemoryLogLinkDraft] = Field(
         default_factory=list,
-        description="Additional domain/context nodes involved in the memory.",
+        description=(
+            "Additional domain/context local refs involved in the memory. Reuse the same "
+            "ref for the same object and do not use backend UUIDs."
+        ),
     )
     relationship_context_refs: list[str] = Field(
         default_factory=list,
-        description="Relationship context refs updated or explained by this log.",
+        description="Local relationship-context refs updated or explained by this log.",
     )
     media_refs: list[MediaAssetRefDraft] = Field(
         default_factory=list,
@@ -259,7 +269,12 @@ class MemoryLog(IngestionModel):
 
 
 class NodeFieldPatchDraft(IngestionModel):
-    target_ref: str = Field(description="Candidate ref or graph alias receiving the patch.")
+    target_ref: str = Field(
+        description=(
+            "Local ref or supplied graph alias receiving the patch. Copy it exactly and "
+            "never provide a backend UUID."
+        )
+    )
     operation: Literal["set", "append", "remove"] = Field(
         description="Requested field patch operation.",
     )

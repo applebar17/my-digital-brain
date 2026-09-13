@@ -163,7 +163,10 @@ class PlanningActionContext(AgenticModel):
     )
     target_refs: list[str] = Field(
         default_factory=list,
-        description="Input refs, candidate refs, or graph aliases this action concerns.",
+        description=(
+            "Local refs, candidate refs, or graph aliases this action concerns. Copy the "
+            "exact refs supplied in the current context; these are not database UUIDs."
+        ),
     )
     evidence_text: str | None = Field(
         default=None,

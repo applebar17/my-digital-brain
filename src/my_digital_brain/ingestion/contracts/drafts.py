@@ -41,7 +41,10 @@ class PropertyDraft(IngestionModel):
 class CandidateBaseDraft(IngestionModel):
     local_ref: str = Field(
         description=(
-            "Scoped local reference such as CANDIDATE_PERSON_001 for later task outputs."
+            "Model-facing local reference for this candidate. Copy the exact ref supplied "
+            "by the current context and reuse it wherever this candidate is mentioned. "
+            "Prefer a readable kind-based convention such as node_new_lorenzo or "
+            "candidate_person_001; this is not a database UUID."
         ),
     )
     evidence: list[EvidenceSpanDraft] = Field(default_factory=list)
@@ -81,8 +84,18 @@ class CandidateRelationshipDraft(CandidateBaseDraft):
     relationship_type: LLMRelationshipType = Field(
         description="Allowed graph relationship type. Use only enum values.",
     )
-    from_ref: str = Field(description="Source endpoint ref, usually a candidate ref or alias.")
-    to_ref: str = Field(description="Target endpoint ref, usually a candidate ref or alias.")
+    from_ref: str = Field(
+        description=(
+            "Source endpoint local ref. Reuse the exact ref supplied in the current "
+            "context; never replace it with a backend UUID."
+        )
+    )
+    to_ref: str = Field(
+        description=(
+            "Target endpoint local ref. Reuse the exact ref supplied in the current "
+            "context; never replace it with a backend UUID."
+        )
+    )
     relationship_kind: RelationshipKind | None = Field(
         default=None,
         description=(
@@ -102,7 +115,10 @@ class CandidateRelationshipDraft(CandidateBaseDraft):
 class CandidateClaimDraft(CandidateBaseDraft):
     claim_type: str | None = Field(default=None)
     text: str = Field(description="Atomic claim text to preserve as a graph claim.")
-    about_refs: list[str] = Field(default_factory=list)
+    about_refs: list[str] = Field(
+        default_factory=list,
+        description="Local refs the claim is about; copy supplied refs exactly.",
+    )
     property_suggestions: list[PropertyDraft] = Field(default_factory=list)
     valid_from: str | None = None
     valid_to: str | None = None
@@ -110,7 +126,9 @@ class CandidateClaimDraft(CandidateBaseDraft):
 
 
 class CandidatePerceptionDraft(CandidateBaseDraft):
-    target_ref: str = Field(description="Candidate ref or graph alias being perceived.")
+    target_ref: str = Field(
+        description="Local ref or supplied graph alias being perceived; do not use a UUID."
+    )
     description: str = Field(description="Description of the user's perception.")
     perception_type: str | None = None
     emotional_summary: str | None = None
@@ -123,8 +141,12 @@ class CandidatePerceptionDraft(CandidateBaseDraft):
 
 
 class CandidateRelationshipContextDraft(CandidateBaseDraft):
-    from_ref: str = Field(description="First endpoint of the relationship context.")
-    to_ref: str = Field(description="Second endpoint of the relationship context.")
+    from_ref: str = Field(
+        description="First endpoint local ref; reuse the exact ref supplied in context."
+    )
+    to_ref: str = Field(
+        description="Second endpoint local ref; reuse the exact ref supplied in context."
+    )
     relationship_type: LLMRelationshipType | None = Field(default=None)
     relationship_kind: RelationshipKind | None = Field(default=None)
     relationship_detail: str | None = Field(default=None)
@@ -140,7 +162,12 @@ class CandidateRelationshipContextDraft(CandidateBaseDraft):
 
 
 class CandidateMetadataPatchDraft(CandidateBaseDraft):
-    target_ref: str = Field(description="Candidate ref or graph alias receiving the patch.")
+    target_ref: str = Field(
+        description=(
+            "Local ref or supplied graph alias receiving the patch. Copy it exactly and "
+            "never provide a backend UUID."
+        )
+    )
     operation: Literal["set", "append", "remove"] = Field(
         description="Patch operation requested by the extraction step.",
     )

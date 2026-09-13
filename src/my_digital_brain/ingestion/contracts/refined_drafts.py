@@ -61,9 +61,10 @@ class IngestionReasoningCheckpointDraft(IngestionModel):
 class PlannedEntityRefDraft(IngestionModel):
     local_ref: str = Field(
         description=(
-            "Session-scoped candidate ref for this planned entity, such as "
-            "CANDIDATE_PERSON_001. Reuse this exact ref in later extraction, "
-            "relationship, and write-planning steps."
+            "Session-scoped local ref for this planned entity. Copy a ref supplied by "
+            "context when reusing an existing object; otherwise choose one readable, "
+            "unique kind-based ref such as node_new_lorenzo. Reuse it exactly in later "
+            "extraction, relationship, and write-planning steps. It is not a UUID."
         ),
     )
     mention_text: str | None = Field(
@@ -87,7 +88,10 @@ class PlannedEntityRefDraft(IngestionModel):
     )
     context_refs: list[str] = Field(
         default_factory=list,
-        description="Graph aliases or local refs this action should consider.",
+        description=(
+            "Graph aliases or local refs this action should consider. Copy supplied refs "
+            "exactly and do not invent backend IDs."
+        ),
     )
     notes: str | None = Field(
         default=None,
@@ -141,8 +145,9 @@ class EntityIngestionPlanDraft(IngestionModel):
 class PlannedMemoryLogRefDraft(IngestionModel):
     local_ref: str = Field(
         description=(
-            "Session-scoped memory-log ref for this planned log, such as "
-            "MEMORY_LOG_001. Reuse this exact ref in extraction and write planning."
+            "Session-scoped local ref for this planned memory log. Prefer a readable "
+            "kind-based ref such as memory_new_barbecue, choose it once, and reuse it "
+            "exactly in extraction and write planning. It is not a UUID."
         ),
     )
     log_text_hint: str | None = Field(
@@ -151,15 +156,21 @@ class PlannedMemoryLogRefDraft(IngestionModel):
     )
     host_refs: list[str] = Field(
         default_factory=list,
-        description="Entity candidate refs or graph aliases whose timeline should host this log.",
+        description=(
+            "Entity local refs or supplied graph aliases whose timeline should host this "
+            "log. Copy the exact refs from context; do not use database UUIDs."
+        ),
     )
     involved_refs: list[str] = Field(
         default_factory=list,
-        description="Additional entity candidate refs or graph aliases involved in the memory.",
+        description=(
+            "Additional entity local refs or supplied graph aliases involved in the "
+            "memory. Reuse the exact same ref for the same object."
+        ),
     )
     relationship_context_refs: list[str] = Field(
         default_factory=list,
-        description="Relationship context refs this memory may explain or update.",
+        description="Local relationship-context refs this memory may explain or update.",
     )
     evidence_text: str | None = Field(
         default=None,
@@ -233,7 +244,10 @@ class MissingEntityRequiredDraft(IngestionModel):
     """Structured blocker used to re-plan missing endpoint extraction."""
 
     missing_ref: str = Field(
-        description="Planner-local ref for the missing endpoint, such as MISSING_ENTITY_001.",
+        description=(
+            "Planner-local ref for the missing endpoint. Use one unique readable local "
+            "ref and reuse it when planning the supplemental entity; this is not a UUID."
+        ),
     )
     reason: str = Field(description="Why this missing entity is required.")
     mention_text: str | None = Field(
@@ -245,7 +259,7 @@ class MissingEntityRequiredDraft(IngestionModel):
         description="Suggested entity type when the source supports it.",
     )
     needed_for_relationship_ref: str = Field(
-        description="Relationship local_ref blocked by this missing entity.",
+        description="Relationship local ref blocked by this missing entity; copy it exactly.",
     )
     relationship_goal: str = Field(
         description="Relationship goal to resume after the missing entity is resolved.",
@@ -271,19 +285,25 @@ class MissingEntityRequiredDraft(IngestionModel):
 class RelationshipIngestionActionDraft(IngestionModel):
     local_ref: str = Field(
         description=(
-            "Session-scoped relationship candidate ref such as "
-            "CANDIDATE_RELATIONSHIP_001, CANDIDATE_RELATIONSHIP_CONTEXT_001, "
-            "CANDIDATE_CLAIM_001, or CANDIDATE_PERCEPTION_001."
+            "Session-scoped local ref for this relationship action. Prefer a readable "
+            "unique kind-based ref and reuse it in dependencies and later steps. It is "
+            "not a database UUID."
         ),
     )
     goal: str = Field(description="Short goal for the relationship action.")
     from_ref: str | None = Field(
         default=None,
-        description="Resolved entity ref, staged entity ref, graph alias, or missing ref.",
+        description=(
+            "Source endpoint local ref, supplied graph alias, or declared missing ref. "
+            "Copy known refs exactly; never use a backend UUID."
+        ),
     )
     to_ref: str | None = Field(
         default=None,
-        description="Resolved entity ref, staged entity ref, graph alias, or missing ref.",
+        description=(
+            "Target endpoint local ref, supplied graph alias, or declared missing ref. "
+            "Copy known refs exactly; never use a backend UUID."
+        ),
     )
     relationship_intent: str = Field(
         description="Plain-language relationship intent to preserve for extraction.",
@@ -298,7 +318,10 @@ class RelationshipIngestionActionDraft(IngestionModel):
     )
     depends_on: list[str] = Field(
         default_factory=list,
-        description="Entity local refs or missing refs required before this action can run.",
+        description=(
+            "Entity or missing local refs required before this action can run. Reuse the "
+            "exact refs declared by the plan."
+        ),
     )
     notes: str | None = Field(
         default=None,
