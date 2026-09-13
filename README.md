@@ -10,6 +10,25 @@ The Wave 0 scaffold provides FastAPI, Neo4j, Postgres, Chroma, migration runners
 docker compose up --build
 ```
 
+On a machine where the container registries are unavailable, the same
+application can be started with the local development profile:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -InstallNeo4j -StartChromaContainer
+```
+
+The first run downloads Neo4j Community from the official Neo4j distribution
+host into the ignored `local/` directory. The local profile uses SQLite for
+operational storage, the existing Chroma HTTP service on port `8001`, and the
+same backend/frontend code and configured model provider. Subsequent starts
+can omit `-InstallNeo4j`. Stop it with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1
+```
+
+Use `-Mode docker` with either script for the normal Compose deployment.
+
 Frontend UI is available at:
 
 ```powershell
