@@ -17,6 +17,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Graph-RAG and vector retrieval](09-graph-rag-and-vector-retrieval.md)
 - [Ingestion reasoning refinement wave 1](10-ingestion-reasoning-refinement-wave-1.md)
 - [MemoryLog vectorization and node update flow](11-node-log-vectorization-and-update-flow.md)
+- [Chat activity and progress rendering](12-chat-activity-and-progress-rendering.md)
 
 ## Wave Meaning
 
