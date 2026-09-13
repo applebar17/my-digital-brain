@@ -27,7 +27,7 @@ from my_digital_brain.agentic import (
 )
 from my_digital_brain.agentic.contexts import MemoryIngestionContext
 from my_digital_brain.agentic.enums import RefObjectKind
-from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.agentic.refs import RefContext, RefEntry
 from my_digital_brain.agentic.runtime_models import AgenticRunResult
 from my_digital_brain.ai.schemas import (
     ChatMessage,
@@ -276,6 +276,20 @@ def _runner(provider: ScriptedToolCallingProvider) -> AgenticStateRunner:
     return AgenticStateRunner(provider=provider)
 
 
+def _existing_graph_ref_context() -> RefContext:
+    context = RefContext(session_id="ingestion-test")
+    context.add_entry(
+        RefEntry(
+            ref="node_0001",
+            object_kind=RefObjectKind.NODE,
+            backend_id="node-backend-1",
+            label="Place",
+            name="University",
+        )
+    )
+    return context
+
+
 def _conversation(text: str = "What do I remember about Marco?") -> ConversationContext:
     return ConversationContext(
         current_message=NeutralConversationMessage.user(text),
@@ -357,7 +371,10 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
 
     result = runtime.run(
         _conversation("Marco was from university, not work."),
-        AgenticToolExecutionContext(graph_service=FakeGraphService()),
+        AgenticToolExecutionContext(
+            graph_service=FakeGraphService(),
+            ref_context=_existing_graph_ref_context(),
+        ),
     )
 
     assert result.status == "ok"
@@ -790,6 +807,7 @@ def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
             session_id="session-1",
             conversation_id="conversation-1",
             owner_id="owner-1",
+            ref_context=_existing_graph_ref_context(),
         ),
     )
 

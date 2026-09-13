@@ -519,50 +519,68 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
         ),
         None,
     )
-    if packet is None:
-        return
-
     known_refs = set(ref_context.entries)
-    planned_refs = {
-        planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])
-    }
-    for planned in list(getattr(packet, "planned_refs", []) or []):
-        if planned.ref in known_refs:
-            raise ValueError(
-                f"The planned ref '{planned.ref}' already exists in the current context. "
-                "Put it in resolved_refs when it represents that existing object, or "
-                "choose a new unique ref for a new object."
-            )
+    planned_refs: set[str] = set()
+    if packet is not None:
+        planned_refs = {
+            planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])
+        }
+        for planned in list(getattr(packet, "planned_refs", []) or []):
+            if planned.ref in known_refs:
+                raise ValueError(
+                    f"The planned ref '{planned.ref}' already exists in the current context. "
+                    "Put it in resolved_refs when it represents that existing object, or "
+                    "choose a new unique ref for a new object."
+                )
 
-    for resolved in list(getattr(packet, "resolved_refs", []) or []):
-        entry = ref_context.entries.get(resolved.ref)
-        if entry is None:
+        for resolved in list(getattr(packet, "resolved_refs", []) or []):
+            entry = ref_context.entries.get(resolved.ref)
+            if entry is None:
+                available = ", ".join(sorted(known_refs)) or "(none)"
+                raise ValueError(
+                    f"The resolved ref '{resolved.ref}' is not present in the current "
+                    f"reference context. Available refs are: {available}. Copy an existing "
+                    "ref exactly, or place a genuinely new object in planned_refs."
+                )
+            expected_kind = RefObjectKind(resolved.object_kind)
+            if entry.object_kind != expected_kind:
+                raise ValueError(
+                    f"The resolved ref '{resolved.ref}' represents a "
+                    f"{entry.object_kind.value}, but the plan labels it as "
+                    f"{expected_kind.value}. Keep the existing ref and correct object_kind."
+                )
+
+        packet_refs = [
+            *[planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])],
+            *[resolved.ref for resolved in list(getattr(packet, "resolved_refs", []) or [])],
+            *list(getattr(packet, "host_refs", []) or []),
+            *list(getattr(packet, "involved_refs", []) or []),
+            *list(getattr(packet, "context_refs", []) or []),
+        ]
+        unknown_refs = sorted(set(packet_refs) - known_refs - planned_refs)
+        if unknown_refs:
             available = ", ".join(sorted(known_refs)) or "(none)"
             raise ValueError(
-                f"The resolved ref '{resolved.ref}' is not present in the current "
-                f"reference context. Available refs are: {available}. Copy an existing "
-                "ref exactly, or place a genuinely new object in planned_refs."
-            )
-        expected_kind = RefObjectKind(resolved.object_kind)
-        if entry.object_kind != expected_kind:
-            raise ValueError(
-                f"The resolved ref '{resolved.ref}' represents a "
-                f"{entry.object_kind.value}, but the plan labels it as "
-                f"{expected_kind.value}. Keep the existing ref and correct object_kind."
+                "The plan refers to local refs that are not defined in the current context: "
+                f"{', '.join(unknown_refs)}. Available refs are: {available}. Reuse a known "
+                "ref or declare the new object once in planned_refs."
             )
 
-    packet_refs = [
-        *[planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])],
-        *[resolved.ref for resolved in list(getattr(packet, "resolved_refs", []) or [])],
-        *list(getattr(packet, "host_refs", []) or []),
-        *list(getattr(packet, "involved_refs", []) or []),
-        *list(getattr(packet, "context_refs", []) or []),
-    ]
-    unknown_refs = sorted(set(packet_refs) - known_refs - planned_refs)
-    if unknown_refs:
-        available = ", ".join(sorted(known_refs)) or "(none)"
+    action_refs: list[str] = []
+    for step in list(getattr(output, "steps", []) or []):
+        for action in list(getattr(step, "actions", []) or []):
+            action_refs.extend(list(getattr(action, "target_refs", []) or []))
+            payload = getattr(action, "payload", {}) or {}
+            for field_name in ("from_ref", "to_ref", "source_ref", "target_ref"):
+                value = payload.get(field_name)
+                if isinstance(value, str):
+                    action_refs.append(value)
+    unknown_action_refs = sorted(set(action_refs) - known_refs - planned_refs)
+    if unknown_action_refs:
+        available = ", ".join(sorted(known_refs | planned_refs)) or "(none)"
         raise ValueError(
-            "The plan refers to local refs that are not defined in the current context: "
-            f"{', '.join(unknown_refs)}. Available refs are: {available}. Reuse a known "
-            "ref or declare the new object once in planned_refs."
+            "A plan action refers to local refs that are not defined in the current "
+            f"context or plan: {', '.join(unknown_action_refs)}. Available refs are: "
+            f"{available}. Reuse a known ref or declare the new object once in "
+            "planned_refs."
         )
