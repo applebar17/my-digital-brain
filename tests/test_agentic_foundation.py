@@ -580,6 +580,36 @@ def test_ref_context_rejects_malformed_colliding_and_wrong_kind_refs() -> None:
     assert resolved.resolution_status == RefResolutionStatus.CREATED.value
 
 
+def test_ref_context_registers_readable_refs_and_restores_uuid_bindings() -> None:
+    context = RefContext(session_id="chat-1")
+
+    existing_ref = context.register_existing(
+        "lorenzo-uuid",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Lorenzo Tordini",
+    )
+    proposed = context.register_proposed(
+        "node_new_lorenzo",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Lorenzo",
+    )
+
+    assert existing_ref == "node_0001"
+    assert proposed.ref == "node_new_lorenzo"
+    assert context.resolve(existing_ref, expected_kind=RefObjectKind.NODE) == "lorenzo-uuid"
+    with pytest.raises(ValueError, match="not bound"):
+        context.resolve(proposed.ref)
+
+    context.resolve_backend_id(proposed.ref, "new-lorenzo-uuid", status=RefResolutionStatus.CREATED)
+    restored = RefContext.from_snapshot(context.snapshot())
+
+    assert restored.resolve("node_0001") == "lorenzo-uuid"
+    assert restored.resolve("node_new_lorenzo") == "new-lorenzo-uuid"
+    assert restored.alias_for_internal("new-lorenzo-uuid") == "node_new_lorenzo"
+
+
 def test_packet_profiles_include_expected_field_sets() -> None:
     entry = RefEntry(
         ref="node_0001",

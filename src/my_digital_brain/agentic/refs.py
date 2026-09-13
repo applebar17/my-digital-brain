@@ -13,7 +13,8 @@ from my_digital_brain.agentic.enums import (
 )
 
 _REF_RE = re.compile(
-    r"^(node|memory|edge|context|media)(?:_new)?_[0-9]{4}$",
+    r"^(node|memory|edge|context|media)_[0-9]{4}$|"
+    r"^(node|memory|edge|context|media)_new_[a-z0-9_]{1,64}$",
 )
 _KIND_PREFIX = {
     RefObjectKind.NODE: "node",
@@ -142,6 +143,40 @@ class RefContext(AgenticModel):
             ),
         )
 
+    def register_existing(
+        self,
+        backend_id: str,
+        object_kind: RefObjectKind | str,
+        *,
+        label: str | None = None,
+        type: str | None = None,
+        name: str | None = None,
+        summary: str | None = None,
+        aliases: list[str] | None = None,
+        source: str | None = "hydrated_context",
+    ) -> str:
+        """Register an existing backend object and return its stable model ref."""
+
+        normalized_backend_id = _required_backend_id(backend_id)
+        existing_ref = self.ref_for_backend_id(normalized_backend_id)
+        if existing_ref is not None:
+            entry = self.get_entry(existing_ref)
+            if entry.object_kind != RefObjectKind(object_kind):
+                raise ValueError(
+                    f"Backend object is already registered as another kind: {backend_id}"
+                )
+            return existing_ref
+        return self.add_hydrated(
+            object_kind,
+            backend_id=normalized_backend_id,
+            label=label,
+            type=type,
+            name=name,
+            summary=summary,
+            aliases=aliases,
+            source=source,
+        ).ref
+
     def add_proposed(
         self,
         object_kind: RefObjectKind | str,
@@ -168,6 +203,39 @@ class RefContext(AgenticModel):
             ),
         )
 
+    def register_proposed(
+        self,
+        ref: str,
+        object_kind: RefObjectKind | str,
+        *,
+        label: str | None = None,
+        type: str | None = None,
+        name: str | None = None,
+        summary: str | None = None,
+        aliases: list[str] | None = None,
+        source: str | None = "planning",
+    ) -> RefEntry:
+        """Register a planner-provided readable ref without allocating a new name."""
+
+        kind = RefObjectKind(object_kind)
+        entry = RefEntry(
+            ref=ref,
+            object_kind=kind,
+            label=label,
+            type=type,
+            name=name,
+            summary=summary,
+            aliases=list(aliases or []),
+            source=source,
+            resolution_status=RefResolutionStatus.PROPOSED,
+        )
+        current = self.entries.get(ref)
+        if current is not None:
+            if current != entry:
+                raise ValueError(f"Ref already exists with different meaning: {ref}")
+            return current
+        return self.add_entry(entry)
+
     def get_entry(self, ref: str) -> RefEntry:
         try:
             return self.entries[ref]
@@ -182,9 +250,51 @@ class RefContext(AgenticModel):
         status: RefResolutionStatus | str = RefResolutionStatus.RESOLVED,
     ) -> RefEntry:
         entry = self.get_entry(ref)
-        entry.backend_id = backend_id
+        normalized_backend_id = _required_backend_id(backend_id)
+        existing_ref = self.ref_for_backend_id(normalized_backend_id)
+        if existing_ref not in (None, ref):
+            raise ValueError(
+                f"Backend object is already registered under another ref: {backend_id}"
+            )
+        entry.backend_id = normalized_backend_id
         entry.resolution_status = RefResolutionStatus(status)
         return entry
+
+    def resolve(
+        self,
+        ref: str,
+        *,
+        expected_kind: RefObjectKind | str | None = None,
+    ) -> str:
+        """Resolve a known model ref to its backend UUID or internal backend ID."""
+
+        entry = self.get_entry(ref)
+        if expected_kind is not None and entry.object_kind != RefObjectKind(expected_kind):
+            raise ValueError(f"Reference has an unexpected object kind: {ref}")
+        if not entry.backend_id:
+            raise ValueError(f"Reference is not bound to a backend object: {ref}")
+        return entry.backend_id
+
+    def alias_for_internal(self, backend_id: str) -> str:
+        normalized_backend_id = _required_backend_id(backend_id)
+        existing_ref = self.ref_for_backend_id(normalized_backend_id)
+        if existing_ref is None:
+            raise ValueError(f"Backend object is not registered in this context: {backend_id}")
+        return existing_ref
+
+    def entry_for(self, ref: str) -> RefEntry:
+        return self.get_entry(ref)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return the backend-owned snapshot used for durable frame resume."""
+
+        return self.model_dump(mode="json", exclude_none=True)
+
+    @classmethod
+    def from_snapshot(cls, snapshot: dict[str, Any]) -> "RefContext":
+        if not isinstance(snapshot, dict):
+            raise ValueError("Reference context snapshot must be an object.")
+        return cls.model_validate(snapshot)
 
     def ref_for_backend_id(self, backend_id: str) -> str | None:
         for entry in self.entries.values():
@@ -299,11 +409,18 @@ def build_ref_packet(
 
 def _validate_ref_for_kind(ref: str, object_kind: RefObjectKind | str) -> None:
     kind = RefObjectKind(object_kind)
-    if not _REF_RE.match(ref):
+    if not _REF_RE.fullmatch(ref):
         raise ValueError(f"Malformed ref: {ref}")
     expected = _KIND_PREFIX[kind]
     if not (ref.startswith(f"{expected}_") or ref.startswith(f"{expected}_new_")):
         raise ValueError(f"Ref '{ref}' does not match object kind '{kind.value}'.")
+
+
+def _required_backend_id(value: Any) -> str:
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValueError("Backend ids must not be empty.")
+    return normalized
 
 
 def _normalize_object(value: Any) -> dict[str, Any]:
