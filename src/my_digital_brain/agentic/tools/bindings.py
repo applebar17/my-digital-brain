@@ -349,10 +349,17 @@ class AgenticToolBindings:
         if runtime is None:
             return _missing_dependency("ask_clarification", "agentic_runtime")
         try:
+            if self.context.ref_context is None:
+                return _update_tool_error(
+                    "ask_clarification",
+                    "missing_reference_context",
+                    "The active canonical reference context is not available.",
+                    "Retry from a run that carries its canonical reference context.",
+                    retryable=False,
+                )
             invalid_refs = _invalid_handoff_refs(
                 doubts,
-                current_payload=self.context.current_payload,
-                metadata=self.context.metadata,
+                ref_context=self.context.ref_context,
             )
             if invalid_refs:
                 return _update_tool_error(
@@ -491,8 +498,9 @@ class AgenticToolBindings:
         )
 
     def _clarification_tools(self) -> ClarificationToolService:
-        ref_context = self.context.ref_context or _ref_context_from_context(self.context)
-        self.context.ref_context = ref_context
+        ref_context = self.context.ref_context
+        if ref_context is None:
+            raise ValueError("The active canonical reference context is not configured.")
         return ClarificationToolService(
             graph_service=self.context.graph_service,
             ref_context=ref_context,
@@ -1332,34 +1340,13 @@ def _owner_snapshot_from_retrieval(retrieval: dict[str, Any]) -> OwnerSnapshot |
 def _invalid_handoff_refs(
     doubts: list[dict[str, Any]],
     *,
-    current_payload: Any | None,
-    metadata: dict[str, Any],
+    ref_context: RefContext,
 ) -> list[str]:
     """Validate handoff refs against the active canonical context."""
 
-    context = _find_ref_context(current_payload, metadata)
-    if context is not None:
-        allowed = set(context.entries)
-        referenced = {
-            str(ref)
-            for doubt in doubts
-            if isinstance(doubt, dict)
-            for ref in [*(doubt.get("refs") or []), *(doubt.get("evidence_refs") or [])]
-            if ref
-        }
-        return sorted(referenced - allowed)
-
-    payload = _serialize(current_payload)
-    snapshots: list[dict[str, Any]] = []
-    _collect_registry_snapshots(payload, snapshots)
-    _collect_registry_snapshots(metadata, snapshots)
-    if not snapshots:
-        return []
-    snapshot = snapshots[0]
     allowed = {
-        str(entry.get("ref"))
-        for entry in snapshot.get("entries", [])
-        if isinstance(entry, dict) and entry.get("ref")
+        str(ref)
+        for ref in ref_context.entries
     }
     referenced = {
         str(ref)
@@ -1502,60 +1489,6 @@ def _retrieval_summary(value: dict[str, Any]) -> str | None:
         if isinstance(item, str) and item.strip():
             return item.strip()
     return None
-
-
-def _find_ref_context(*values: Any) -> RefContext | None:
-    for value in values:
-        if isinstance(value, RefContext):
-            return value
-        if isinstance(value, dict):
-            snapshot = value.get("ref_context_snapshot")
-            if isinstance(snapshot, dict):
-                return RefContext.from_snapshot(snapshot)
-            nested = value.get("ref_context")
-            if isinstance(nested, dict) and "entries" in nested:
-                return RefContext.from_snapshot(nested)
-            found = _find_ref_context(*value.values())
-            if found is not None:
-                return found
-        elif isinstance(value, list):
-            found = _find_ref_context(*value)
-            if found is not None:
-                return found
-    return None
-
-
-def _ref_context_from_context(context: AgenticToolExecutionContext) -> RefContext:
-    found = _find_ref_context(context.current_payload, context.metadata)
-    if found is None:
-        raise ValueError("The active canonical reference context is not present in the run.")
-    return found
-
-
-def _registry_from_context(
-    context: AgenticToolExecutionContext,
-) -> Any:
-    from my_digital_brain.ingestion.reference_registry import RunReferenceRegistry
-
-    snapshots: list[dict[str, Any]] = []
-    _collect_registry_snapshots(_serialize(context.current_payload), snapshots)
-    _collect_registry_snapshots(context.metadata, snapshots)
-    if not snapshots:
-        raise ValueError("The active run reference registry is not present in the context.")
-    snapshot = snapshots[0]
-    return RunReferenceRegistry.from_snapshot(snapshot)
-
-
-def _collect_registry_snapshots(value: Any, output: list[dict[str, Any]]) -> None:
-    if isinstance(value, dict):
-        snapshot = value.get("reference_registry_snapshot")
-        if isinstance(snapshot, dict):
-            output.append(snapshot)
-        for child in value.values():
-            _collect_registry_snapshots(child, output)
-    elif isinstance(value, list):
-        for child in value:
-            _collect_registry_snapshots(child, output)
 
 
 def _update_tool_result(

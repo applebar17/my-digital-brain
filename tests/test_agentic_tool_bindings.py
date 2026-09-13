@@ -13,6 +13,8 @@ from my_digital_brain.agentic import (
     default_agentic_tool_registry,
     default_state_configs,
 )
+from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
@@ -430,7 +432,15 @@ def test_ask_clarification_hands_off_detailed_doubts() -> None:
             )
 
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
-    execution_context = _execution_context(frame_id="frame-1", agentic_runtime=ChildRuntime())
+    refs = RefContext(session_id="session-1")
+    refs.register_existing("node-marco-1", RefObjectKind.NODE, label="Person", name="Marco")
+    refs.register_existing("node-marco-2", RefObjectKind.NODE, label="Person", name="Marco")
+    refs.register_existing("memory-1", RefObjectKind.MEMORY, label="MemoryLog", name="Meeting")
+    execution_context = _execution_context(
+        frame_id="frame-1",
+        agentic_runtime=ChildRuntime(),
+        ref_context=refs,
+    )
     mapping = build_agentic_tool_mapping(config, execution_context)
 
     result = mapping["ask_clarification"](
@@ -438,10 +448,10 @@ def test_ask_clarification_hands_off_detailed_doubts() -> None:
             {
                 "doubt_id": "DOUBT_001",
                 "doubt": "Two people named Marco are plausible.",
-                "refs": ["NODE_000001", "NODE_000002"],
+                "refs": ["node_0001", "node_0002"],
                 "missing_information": "Which context identifies Marco.",
                 "why_blocking": "The target cannot be selected safely.",
-                "evidence_refs": ["MEMORY_000001"],
+                "evidence_refs": ["memory_0001"],
             }
         ],
     )
@@ -459,14 +469,12 @@ def test_ask_clarification_rejects_refs_missing_from_current_registry() -> None:
             raise AssertionError("invalid refs must not start a child frame")
 
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    refs = RefContext(session_id="session-1")
+    refs.register_existing("node-marco-1", RefObjectKind.NODE, label="Person", name="Marco")
     execution_context = _execution_context(
         frame_id="frame-1",
         agentic_runtime=ChildRuntime(),
-        current_payload={
-            "reference_registry_snapshot": {
-                "entries": [{"ref": "CANDIDATE_PERSON_001"}],
-            },
-        },
+        ref_context=refs,
     )
     mapping = build_agentic_tool_mapping(config, execution_context)
 
@@ -475,7 +483,7 @@ def test_ask_clarification_rejects_refs_missing_from_current_registry() -> None:
             {
                 "doubt_id": "DOUBT_001",
                 "doubt": "The supplied person reference is not available.",
-                "refs": ["CANDIDATE_PERSON_999"],
+                "refs": ["node_9999"],
                 "missing_information": "The correct candidate reference.",
                 "why_blocking": "The agent cannot ground the clarification.",
                 "evidence_refs": [],
@@ -486,7 +494,7 @@ def test_ask_clarification_rejects_refs_missing_from_current_registry() -> None:
     assert result.status == "recoverable_error"
     assert result.data["error_code"] == "invalid_clarification_reference"
     assert result.data["validation_details"]["invalid_refs"] == [
-        "CANDIDATE_PERSON_999"
+        "node_9999"
     ]
 
 

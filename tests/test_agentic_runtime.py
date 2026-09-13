@@ -25,6 +25,8 @@ from my_digital_brain.agentic import (
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
 )
+from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.ai.schemas import (
     ChatMessage,
     ProviderCallMetadata,
@@ -425,10 +427,10 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
                         {
                             "doubt_id": "DOUBT_001",
                             "doubt": "Marco has two possible graph matches.",
-                            "refs": ["NODE_000001", "NODE_000002"],
+                            "refs": ["node_0001", "node_0002"],
                             "missing_information": "Which context identifies Marco.",
                             "why_blocking": "The target is ambiguous.",
-                            "evidence_refs": ["MEMORY_000001"],
+                            "evidence_refs": ["memory_0001"],
                         }
                     ]
                 },
@@ -448,6 +450,10 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
         ],
     )
     runtime = AgenticRuntime(_runner(provider))
+    refs = RefContext(session_id="session-1")
+    refs.register_existing("person-marco-1", RefObjectKind.NODE, label="Person", name="Marco")
+    refs.register_existing("person-marco-2", RefObjectKind.NODE, label="Person", name="Marco")
+    refs.register_existing("memory-1", RefObjectKind.MEMORY, label="MemoryLog", name="Identity context")
     result = runtime.run(
         _conversation("Marco has two possible identities."),
         AgenticToolExecutionContext(
@@ -455,11 +461,13 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
             conversation_id="conversation-1",
             owner_id="owner-1",
             agentic_runtime=runtime,
+            ref_context=refs,
         ),
         start_state=AgenticStateId.GRAPH_UPDATE,
         start_payload=GraphUpdateContext(
             source_text="Marco has two possible identities.",
             conversation=_conversation("Marco has two possible identities."),
+            ref_context=refs,
         ),
     )
 
