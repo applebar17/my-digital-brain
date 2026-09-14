@@ -480,6 +480,12 @@ def test_three_phase_memory_plan_contracts_and_packets_validate() -> None:
 
     assert semantic_node.ref == "node_new_lorenzo"
     assert semantic_memory.ref == "memory_new_beach_outing"
+    with pytest.raises(ValidationError):
+        PlannedRefPacket(
+            ref="memory_new_beach_outing",
+            object_kind="memory_log",
+            label="MemoryLog",
+        )
     assert memory_plan.memory_plan_packet.host_refs == ["node_new_0001"]
     assert edge_plan.steps[0].phase == MemoryPlanningPhase.EDGES.value
     assert "backend_id" not in str(node_plan.node_plan_packet.model_dump(mode="json"))

@@ -23,6 +23,7 @@ from my_digital_brain.agentic.enums import (
     ProfileMemoryVisibility,
     ReasoningInsightKind,
     ReasoningStorageRecommendationType,
+    RefObjectKind,
     ResponseRenderStyle,
     ToolResultStatus,
 )
@@ -548,10 +549,11 @@ class AgenticToolPayload(AgenticModel):
 
 class PlannedRefPacket(AgenticModel):
     ref: str = Field(description=LOCAL_REF_DESCRIPTION)
-    object_kind: str = Field(
+    object_kind: RefObjectKind = Field(
         description=(
-            "Semantic kind of the object represented by ref, such as node, memory, "
-            "edge, context, or media. The kind must agree with the ref prefix."
+            "Canonical semantic kind of the object represented by ref. Choose exactly "
+            "one of node, memory, edge, context, or media; use memory for a MemoryLog. "
+            "The kind must agree with the ref prefix and is not a database label."
         ),
     )
     label: str | None = None
@@ -1041,12 +1043,10 @@ class MaintenanceReviewResultContext(AgenticModel):
 
 
 
-def _validate_ref_kind_prefix(ref: str, object_kind: str) -> None:
-    normalized = str(object_kind or "").strip().lower()
-    aliases = {"memorylog": "memory", "memory_log": "memory", "relationship": "edge"}
-    kind = aliases.get(normalized, normalized)
-    if kind in {"node", "memory", "edge", "context", "media"} and not ref.startswith(f"{kind}_"):
-        raise ValueError(f"Ref {ref} does not match object kind {object_kind}.")
+def _validate_ref_kind_prefix(ref: str, object_kind: RefObjectKind) -> None:
+    kind = RefObjectKind(object_kind).value
+    if not ref.startswith(f"{kind}_"):
+        raise ValueError(f"Ref {ref} does not match object kind {kind}.")
 
 
 def _validate_unique_refs(refs: list[str], owner: str) -> None:
