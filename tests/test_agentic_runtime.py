@@ -15,8 +15,15 @@ from my_digital_brain.agentic import (
     AgenticToolExecutionContext,
     ChannelSessionMetadata,
     ConversationContext,
+    EdgeMemoryPlan,
     GraphUpdateContext,
+    MemoryIngestionReasoning,
+    MemoryLogMemoryPlan,
+    MemoryPlanAction,
+    MemoryPlanPacket,
+    MemoryPlanStep,
     NeutralConversationMessage,
+    NodePlanPacket,
     NodeMemoryPlan,
     PlanningPurposeGuidelines,
     PlanningTransformContext,
@@ -26,8 +33,9 @@ from my_digital_brain.agentic import (
     ReasoningPurposeGuidelines,
 )
 from my_digital_brain.agentic.contexts import MemoryIngestionContext
-from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.enums import MemoryPlanActionType, MemoryPlanningPhase, RefObjectKind
 from my_digital_brain.agentic.refs import RefContext, RefEntry
+from my_digital_brain.agentic.runtime_memory import MemoryIngestionRuntimeService
 from my_digital_brain.agentic.runtime_models import AgenticRunResult
 from my_digital_brain.ai.schemas import (
     ChatMessage,
@@ -787,6 +795,54 @@ def test_resume_frame_continues_backend_ingestion_without_provider_call_id(monke
     assert result.status == "ok"
     assert result.final_text == "Memory ingestion completed."
     assert store.get_agentic_frame(parent.frame_id).status == "completed"
+
+
+def test_memory_ingestion_resume_reuses_existing_reasoning(monkeypatch) -> None:
+    """A resumed phase must not lose the reasoning artifact from the first pass."""
+
+    monkeypatch.setattr(
+        MemoryIngestionRuntimeService,
+        "_execute_memory_plan_actions",
+        lambda *args, **kwargs: None,
+    )
+    reasoning = MemoryIngestionReasoning(planning_guidance="Keep the existing context coherent.")
+
+    def phase_step(phase: MemoryPlanningPhase) -> MemoryPlanStep:
+        return MemoryPlanStep(
+            step_id=f"{phase.value}_step",
+            phase=phase,
+            actions=[MemoryPlanAction(action_type=MemoryPlanActionType.CREATE_NODE)],
+        )
+
+    payload = MemoryIngestionContext(
+        conversation=_conversation("Remember Marco."),
+        reasoning=reasoning,
+        node_plan=NodeMemoryPlan(
+            summary="Nodes already planned.",
+            steps=[phase_step(MemoryPlanningPhase.NODES)],
+            node_plan_packet=NodePlanPacket(summary="No new nodes are required."),
+        ),
+        memory_plan=MemoryLogMemoryPlan(
+            summary="Memory logs already planned.",
+            steps=[phase_step(MemoryPlanningPhase.MEMORY_LOGS)],
+            memory_plan_packet=MemoryPlanPacket(summary="No new memory logs are required."),
+        ),
+        edge_plan=EdgeMemoryPlan(
+            summary="Edges already planned.",
+            steps=[phase_step(MemoryPlanningPhase.EDGES)],
+        ),
+    )
+
+    result = MemoryIngestionRuntimeService(runtime=object()).run(
+        payload,
+        AgenticToolExecutionContext(),
+        payload.conversation,
+    )
+
+    assert result.status == "ok"
+    assert result.metadata["structured_output"]["plan"]["metadata"]["reasoning"] == (
+        reasoning.model_dump(mode="json", exclude_none=True)
+    )
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:

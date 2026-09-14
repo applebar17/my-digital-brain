@@ -64,7 +64,8 @@ class MemoryIngestionRuntimeService:
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
-        if payload.reasoning is None:
+        reasoning = payload.reasoning
+        if reasoning is None:
             reasoning_result = self.runtime.state_runner.run_structured_state(
                 AgenticStateInvocation(
                     state_id=AgenticStateId.MEMORY_INGESTION,
@@ -90,6 +91,7 @@ class MemoryIngestionRuntimeService:
             current_payload = payload.model_copy(update={"reasoning": reasoning}, deep=True)
         else:
             current_payload = payload
+        assert reasoning is not None
 
         if current_payload.node_plan is None:
             node_plan_result = self._run_memory_phase_plan(
