@@ -15,15 +15,36 @@ from my_digital_brain.agentic import (
 )
 from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.ai.models import ToolResult
 from my_digital_brain.graph.models import (
     GraphViewNode,
     GraphViewResult,
     NodeSearchResult,
     RelationshipResult,
 )
+from my_digital_brain.graph.registry import (
+    GRAPH_MUTABLE_NODE_LABELS,
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+)
 from my_digital_brain.prompts import PromptRegistry
-from my_digital_brain.ai.models import ToolResult
 
+
+def test_graph_relationship_tool_schema_uses_graph_registry_enum() -> None:
+    definition = default_agentic_tool_registry().get("upsert_graph_relationship")
+    relationship_schema = definition.spec["function"]["parameters"]["properties"][
+        "relationship_type"
+    ]
+
+    assert relationship_schema["enum"] == list(GRAPH_MUTABLE_RELATIONSHIP_TYPES)
+    assert "SIBLING_OF" not in relationship_schema["enum"]
+
+
+def test_graph_node_tool_schema_uses_graph_registry_enum() -> None:
+    definition = default_agentic_tool_registry().get("create_graph_node")
+    label_schema = definition.spec["function"]["parameters"]["properties"]["label"]
+
+    assert label_schema["enum"] == list(GRAPH_MUTABLE_NODE_LABELS)
+    assert "MergeRecord" not in label_schema["enum"]
 
 
 class FakeContextPackage(BaseModel):
@@ -347,6 +368,7 @@ def test_top_level_tools_require_agentic_runtime_without_legacy_facade() -> None
     assert ingest.error is not None
     assert ingest.error.code == "missing_dependency"
     assert "agentic_runtime" in ingest.error.message
+
 
 def test_graph_read_tools_call_graph_service_and_serialize_results() -> None:
     graph = FakeGraphService()

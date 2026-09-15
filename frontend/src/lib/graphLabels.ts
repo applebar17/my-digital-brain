@@ -8,12 +8,34 @@ export function nodeId(node: NodeSearchResult): string {
 export function nodeTitle(node: NodeSearchResult): string {
   return firstString(
     node.properties.display_name,
-    node.properties.title,
     node.properties.name,
+    node.properties.title,
+    node.properties.log_text,
+    node.properties.label_text,
     node.properties.profile_key,
+    node.properties.value,
+    node.properties.caption,
     node.properties.text,
-    node.properties.id
+    firstAlias(node.properties.aliases),
+    node.properties.description,
+    node.properties.emotional_summary,
+    node.properties.original_user_words,
+    unnamedNodeLabel(node.label)
   );
+}
+
+function firstAlias(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.find(
+    (alias): alias is string => typeof alias === "string" && alias.trim().length > 0
+  );
+}
+
+function unnamedNodeLabel(label: string): string {
+  const readableLabel = label.replaceAll(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return `Unnamed ${readableLabel}`;
 }
 
 export function firstString(...values: unknown[]): string {

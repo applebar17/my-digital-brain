@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from my_digital_brain.ai.models import ToolSpec
@@ -33,6 +34,14 @@ def tool_spec(
 
 def string_property(description: str) -> dict[str, Any]:
     return {"type": "string", "description": description}
+
+
+def enum_property(values: Iterable[str], description: str) -> dict[str, Any]:
+    return {
+        "type": "string",
+        "enum": list(values),
+        "description": description,
+    }
 
 
 def optional_string_property(description: str) -> dict[str, Any]:

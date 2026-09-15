@@ -173,7 +173,10 @@ class WholeSourceGraphContextPackBuilder:
         if not target_id:
             return None
         label = hit.get("primary_target_label") or target.get("label")
-        title = hit.get("title") or target.get("title") or str(target_id)
+        title = hit.get("title") or _display_title(
+            target,
+            fallback=f"Unnamed {_readable_label(str(label or 'node'))}",
+        )
         description = hit.get("description") or target.get("description")
         aliases = _string_list(
             (target.get("display_metadata") or {}).get("aliases")
@@ -211,12 +214,18 @@ class WholeSourceGraphContextPackBuilder:
             str(node_id),
             object_kind=ReferenceObjectKind.NODE,
             label=str(label or "Node"),
-            display_label=_display_title(properties, fallback=str(node_id)),
+            display_label=_display_title(
+                properties,
+                fallback=f"Unnamed {_readable_label(str(label or 'node'))}",
+            ),
             aliases=_string_list(properties.get("aliases")),
         )
         return GraphContextEntityItem(
             ref=ref,
-            display_label=_display_title(properties, fallback=str(node_id)),
+            display_label=_display_title(
+                properties,
+                fallback=f"Unnamed {_readable_label(str(label or 'node'))}",
+            ),
             entity_type=str(label) if label else None,
             compact_summary=_display_description(properties),
             aliases=_string_list(properties.get("aliases")),
@@ -312,10 +321,28 @@ def _serialize(value: Any) -> Any:
 
 
 def _display_title(properties: dict[str, Any], *, fallback: str) -> str:
-    for key in ("display_name", "name", "title", "text", "description"):
+    for key in (
+        "display_name",
+        "name",
+        "title",
+        "log_text",
+        "label_text",
+        "text",
+        "profile_key",
+        "value",
+        "caption",
+        "description",
+        "emotional_summary",
+        "original_user_words",
+    ):
         value = properties.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    aliases = properties.get("aliases")
+    if isinstance(aliases, list):
+        for alias in aliases:
+            if isinstance(alias, str) and alias.strip():
+                return alias.strip()
     return fallback
 
 
@@ -325,6 +352,20 @@ def _display_description(properties: dict[str, Any]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _readable_label(label: str) -> str:
+    words: list[str] = []
+    current = ""
+    for char in label:
+        if char.isupper() and current and not current[-1].isupper():
+            words.append(current)
+            current = char
+            continue
+        current += char
+    if current:
+        words.append(current)
+    return " ".join(words).lower() or "node"
 
 
 def _string_list(value: Any) -> list[str]:

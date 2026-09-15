@@ -8,6 +8,7 @@ from my_digital_brain.agentic.state import AgenticStateConfig
 from my_digital_brain.agentic.tools.specs import (
     array_property,
     boolean_property,
+    enum_property,
     integer_property,
     object_property,
     optional_string_property,
@@ -16,6 +17,10 @@ from my_digital_brain.agentic.tools.specs import (
 )
 from my_digital_brain.ai.models import ToolSpec
 from my_digital_brain.clarification.contracts import clarification_doubts_schema
+from my_digital_brain.graph.registry import (
+    GRAPH_MUTABLE_NODE_LABELS,
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+)
 
 
 @dataclass(frozen=True)
@@ -226,11 +231,22 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         _definition(
             "create_graph_node",
-            "Create a supported graph node using structurally validated JSON properties.",
+            (
+                "Create a supported graph node using properties that match the selected label. "
+                "Use human-facing fields: display_name for Person, title for Event, name for "
+                "Place/Organization/Object/Animal/SocialCircle/Topic, and log_text for MemoryLog. "
+                "Aliases are supplementary names, never identity. Backend ids, normalized fields, "
+                "and database references are backend-owned and must not be invented."
+            ),
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "label": string_property("Supported graph node label."),
-                "properties_json": string_property("JSON object containing node properties."),
+                "label": enum_property(
+                    GRAPH_MUTABLE_NODE_LABELS,
+                    "Supported graph node label.",
+                ),
+                "properties_json": string_property(
+                    "JSON object containing only fields supported by the selected graph label."
+                ),
             },
             required=["label", "properties_json"],
         ),
@@ -246,10 +262,17 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         _definition(
             "upsert_graph_relationship",
-            "Create or update a supported non-destructive graph relationship.",
+            (
+                "Create or update one supported non-destructive graph relationship. Choose only "
+                "from the enum. Use RELATIONSHIP_WITH for social relationships and put details "
+                "such as brother or colleague in relationship properties, not in the type."
+            ),
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "relationship_type": string_property("Supported relationship type."),
+                "relationship_type": enum_property(
+                    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+                    "Supported non-destructive graph relationship type; do not invent variants.",
+                ),
                 "from_id": string_property("Source node ref from the active context."),
                 "to_id": string_property("Target node ref from the active context."),
                 "properties_json": string_property(

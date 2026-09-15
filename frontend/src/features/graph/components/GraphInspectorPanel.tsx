@@ -86,7 +86,6 @@ export function GraphInspectorPanel({
   const target = detail.target;
   const propertyEntries = Object.entries(target.properties);
   const visibleProperties = propertyEntries.filter(([key]) => !isTechnicalProperty(key));
-  const metadataProperties = propertyEntries.filter(([key]) => isTechnicalProperty(key));
 
   return (
     <aside className={className} aria-hidden={!isOpen}>
@@ -152,25 +151,6 @@ export function GraphInspectorPanel({
             </dl>
           )}
         </section>
-
-        <details className="memory-metadata-section">
-          <summary>
-            <span>Technical Metadata</span>
-            <small>{metadataProperties.length} fields</small>
-          </summary>
-          {metadataProperties.length === 0 ? (
-            <p className="memory-muted">No hidden metadata returned for this node.</p>
-          ) : (
-            <dl className="memory-property-list">
-              {metadataProperties.map(([key, value]) => (
-                <div key={key}>
-                  <dt>{formatPropertyLabel(key)}</dt>
-                  <dd>{formatUnknown(value)}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </details>
 
         <section className="memory-property-section">
           <h4>Direct Evidence</h4>

@@ -26,37 +26,19 @@ from my_digital_brain.clarification.contracts import (
 )
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.graph.registry import (
+    CORE_RELATIONSHIP_TYPE_SET,
+    GRAPH_MUTABLE_NODE_LABELS,
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+)
 
-GRAPH_UPDATE_CREATABLE_LABELS = {
-    "Person",
-    "Event",
-    "Place",
-    "Organization",
-    "Object",
-    "Animal",
-    "SocialCircle",
-    "Topic",
-    "Source",
-    "Claim",
-    "Perception",
-    "RelationshipContext",
-    "ProfileMemory",
-    "ContactPoint",
-    "ExternalReference",
-    "RelationshipState",
-    "ChangeRecord",
-    "MemoryLog",
-    "MediaAsset",
-    "ContradictionRecord",
-}
+GRAPH_UPDATE_CREATABLE_LABELS = frozenset(GRAPH_MUTABLE_NODE_LABELS)
 
 logger = logging.getLogger(__name__)
 
-GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = {
-    "MERGED_NODE",
-    "CANONICAL_NODE",
-    "MERGED_INTO",
-}
+GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = (
+    CORE_RELATIONSHIP_TYPE_SET - set(GRAPH_MUTABLE_RELATIONSHIP_TYPES)
+)
 
 
 @dataclass(slots=True)

@@ -165,16 +165,25 @@ class GraphProjection:
             "display_name",
             "name",
             "title",
+            "log_text",
+            "label_text",
             "text",
             "profile_key",
             "value",
-            "external_id",
+            "caption",
             "description",
+            "emotional_summary",
+            "original_user_words",
         ):
             value = properties.get(field)
             if isinstance(value, str) and value.strip():
                 return value
-        return f"{node.label} {properties['id']}"
+        aliases = properties.get("aliases")
+        if isinstance(aliases, list):
+            for alias in aliases:
+                if isinstance(alias, str) and alias.strip():
+                    return alias
+        return f"Unnamed {_readable_label(node.label)}"
 
     def display_description(self, node: NodeSearchResult) -> str | None:
         for field in ("description", "emotional_summary", "original_user_words", "text"):
@@ -211,3 +220,17 @@ class GraphProjection:
         if isinstance(value, str) and value.strip():
             return value
         return None
+
+
+def _readable_label(label: str) -> str:
+    words: list[str] = []
+    current = ""
+    for char in label:
+        if char.isupper() and current and not current[-1].isupper():
+            words.append(current)
+            current = char
+            continue
+        current += char
+    if current:
+        words.append(current)
+    return " ".join(words).lower() or "node"

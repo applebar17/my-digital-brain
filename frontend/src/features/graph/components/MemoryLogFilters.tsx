@@ -52,15 +52,6 @@ export function MemoryLogFilters({
         />
       </label>
       <label>
-        <span>Involved</span>
-        <input
-          value={filters.involved_target_id ?? ""}
-          disabled={isLoading}
-          placeholder="target id"
-          onChange={(event) => onChange({ ...filters, involved_target_id: event.target.value || undefined })}
-        />
-      </label>
-      <label>
         <span>Limit</span>
         <input
           min={1}

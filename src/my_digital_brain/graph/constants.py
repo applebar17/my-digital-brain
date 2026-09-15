@@ -84,7 +84,6 @@ DISPLAY_METADATA_FIELDS = (
     "label_text",
     "value",
     "provider",
-    "external_id",
     "url",
     "category",
     "domain",

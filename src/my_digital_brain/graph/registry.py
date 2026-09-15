@@ -74,7 +74,20 @@ CORE_RELATIONSHIP_TYPES = (
 )
 
 CORE_NODE_LABEL_SET = frozenset(CORE_NODE_LABELS)
+# These labels can be created by ordinary graph-update tools. Extraction and
+# merge records are produced by their owning backend services.
+GRAPH_MUTABLE_NODE_LABELS = tuple(
+    label for label in CORE_NODE_LABELS if label not in {"ExtractionRun", "MergeRecord"}
+)
 CORE_RELATIONSHIP_TYPE_SET = frozenset(CORE_RELATIONSHIP_TYPES)
+# Merge bookkeeping is handled by the merge service, not by ordinary graph
+# update actions. Keep this derived from the canonical graph registry so tool
+# schemas and runtime validation cannot drift apart.
+GRAPH_MUTABLE_RELATIONSHIP_TYPES = tuple(
+    relationship_type
+    for relationship_type in CORE_RELATIONSHIP_TYPES
+    if relationship_type not in {"MERGED_NODE", "CANONICAL_NODE", "MERGED_INTO"}
+)
 RELATIONSHIP_DIRECTIONS = frozenset({"in", "out", "both"})
 
 

@@ -1,5 +1,5 @@
 import { EmptyState } from "../../../components/EmptyState";
-import { formatUnknown } from "../../../lib/graphLabels";
+import { formatUnknown, firstString } from "../../../lib/graphLabels";
 import type { SemanticMemoryHit, SemanticMemorySearchResult } from "../../../types/graph";
 
 interface RetrievalDiagnosticsPanelProps {
@@ -26,8 +26,14 @@ export function RetrievalDiagnosticsPanel({
         <div className="retrieval-diagnostic-grid">
           <Diagnostic label="Scope" value={hit.scope} />
           <Diagnostic label="Role" value={hit.hit_role} />
-          <Diagnostic label="Matched" value={hit.matched_target_label ?? hit.matched_target_id} />
-          <Diagnostic label="Display" value={hit.display_target_label ?? hit.display_target_id} />
+          <Diagnostic
+            label="Matched"
+            value={firstString(hit.matched_target_label, hit.hit_role, "Selected record")}
+          />
+          <Diagnostic
+            label="Display"
+            value={firstString(hit.display_target_label, hit.primary_target_label, "Selected record")}
+          />
           <Diagnostic label="Raw" value={hit.raw_score} />
           <Diagnostic label="Normalized" value={hit.normalized_score ?? hit.score} />
           <Diagnostic label="Weight" value={hit.scope_weight} />

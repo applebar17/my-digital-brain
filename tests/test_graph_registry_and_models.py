@@ -16,15 +16,19 @@ from my_digital_brain.graph.models import (
     MediaAssetNode,
     MemoryLogNode,
     MergeRecordNode,
+    NodeSearchResult,
     PerceptionNode,
     PersonNode,
     RelationshipStateNode,
     SocialCircleNode,
     TimelineItem,
 )
+from my_digital_brain.graph.projection import GraphProjection
 from my_digital_brain.graph.registry import (
     CORE_NODE_LABELS,
     CORE_RELATIONSHIP_TYPES,
+    GRAPH_MUTABLE_NODE_LABELS,
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
     validate_node_label,
     validate_relationship_type,
 )
@@ -49,6 +53,39 @@ def test_relationship_registry_accepts_core_types() -> None:
 def test_relationship_registry_rejects_unknown_type() -> None:
     with pytest.raises(GraphValidationError, match="Unsupported graph relationship type"):
         validate_relationship_type("DROP_ALL")
+
+
+def test_graph_projection_never_uses_database_id_as_display_title() -> None:
+    projection = GraphProjection()
+
+    assert projection.display_title(
+        NodeSearchResult(
+            label="Person",
+            labels=["Person"],
+            properties={"id": "person-uuid", "aliases": ["Amos"]},
+        )
+    ) == "Amos"
+    assert projection.display_title(
+        NodeSearchResult(
+            label="ExternalReference",
+            labels=["ExternalReference"],
+            properties={"id": "reference-uuid", "external_id": "provider-123"},
+        )
+    ) == "Unnamed external reference"
+
+
+def test_mutable_node_registry_excludes_merge_records() -> None:
+    assert set(GRAPH_MUTABLE_NODE_LABELS) <= set(CORE_NODE_LABELS)
+    assert "MergeRecord" not in GRAPH_MUTABLE_NODE_LABELS
+
+
+def test_mutable_relationship_registry_excludes_merge_bookkeeping() -> None:
+    assert set(GRAPH_MUTABLE_RELATIONSHIP_TYPES) <= set(CORE_RELATIONSHIP_TYPES)
+    assert not set(GRAPH_MUTABLE_RELATIONSHIP_TYPES) & {
+        "MERGED_NODE",
+        "CANONICAL_NODE",
+        "MERGED_INTO",
+    }
 
 
 def test_core_node_model_accepts_metadata_provenance_and_affective_fields() -> None:

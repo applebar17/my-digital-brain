@@ -41,7 +41,7 @@ export function MemoryLogDetailPanel({
       <header>
         <div>
           <p className="eyebrow">MemoryLog</p>
-          <h4>{formatUnknown(log.properties.log_text ?? log.properties.original_user_words)}</h4>
+          <h4>{nodeTitle(log)}</h4>
         </div>
         <div className="badge-row">
           {badge(log.properties.log_kind, "info")}
@@ -54,8 +54,6 @@ export function MemoryLogDetailPanel({
         {detailField("Time", firstDefined(log, "happened_at", "resolved_start", "source_time", "observed_at", "created_at"))}
         {detailField("Original wording", log.properties.original_user_words)}
         {detailField("Confidence", log.properties.confidence)}
-        {detailField("Source refs", log.properties.source_ids)}
-        {detailField("Media refs", log.properties.media_refs)}
       </dl>
 
       <NodeBucket title="Hosts" nodes={detail.hosts} />
@@ -71,7 +69,7 @@ export function MemoryLogDetailPanel({
           detail.relationships.map((relationship) => (
             <div key={String(relationship.properties.id ?? `${relationship.from_id}:${relationship.to_id}`)}>
               <strong>{relationship.type}</strong>
-              <span>{compactPair(relationship.from_id, relationship.to_id)}</span>
+              <span>{relationshipSummary(relationship.from_id, relationship.to_id, detail)}</span>
             </div>
           ))
         )}
@@ -124,6 +122,21 @@ function firstDefined(node: NodeSearchResult, ...keys: string[]): unknown {
   return undefined;
 }
 
-function compactPair(fromId: string, toId: string): string {
-  return `${fromId.slice(0, 8)} -> ${toId.slice(0, 8)}`;
+function relationshipSummary(
+  fromId: string,
+  toId: string,
+  detail: MemoryLogDetailResult
+): string {
+  const nodes = [
+    detail.memory_log,
+    ...detail.hosts,
+    ...detail.involved,
+    ...detail.relationship_contexts,
+    ...detail.media_assets
+  ];
+  const titleFor = (id: string) => {
+    const node = nodes.find((candidate) => nodeId(candidate) === id);
+    return node ? nodeTitle(node) : "Related record";
+  };
+  return `${titleFor(fromId)} -> ${titleFor(toId)}`;
 }
