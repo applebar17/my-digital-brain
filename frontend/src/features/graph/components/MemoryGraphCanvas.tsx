@@ -27,9 +27,6 @@ interface CursorPosition {
   y: number;
 }
 
-// Nodes further than this from the focused node collapse into one dim "loose" tier
-// at the base of the pyramid, so nothing vanishes abruptly when focus mode turns on.
-const MAX_VISIBLE_TIER = 3;
 const LAYOUT_TWEEN_MS = 460;
 
 export function MemoryGraphCanvas({
@@ -47,20 +44,27 @@ export function MemoryGraphCanvas({
   const width = 1280;
   const height = 780;
 
-  // Focus mode: the selected node is present in the current graph, so we can lift it
-  // to the top and fan its neighbourhood out beneath it in tiers.
+  // A selection is a true focus: only the selected node, its direct neighbours,
+  // and their connecting edges are rendered. The full graph remains in state.
   const focusMode = Boolean(
     graph && selectedNodeId && graph.nodes.some((node) => node.id === selectedNodeId)
   );
+  const renderedGraph = useMemo(
+    () => focusMode ? directNeighborhood(graph as GraphViewResult, selectedNodeId as string) : graph,
+    [graph, focusMode, selectedNodeId]
+  );
 
   const layout = useMemo<GraphLayout>(() => {
-    if (!graph) {
+    if (!renderedGraph) {
       return { positions: new Map(), tierById: new Map() };
     }
     return focusMode
-      ? buildPyramidLayout(graph, selectedNodeId as string, width, height)
-      : { positions: buildPositions(graph.nodes, graph.seed_id, width, height), tierById: new Map() };
-  }, [graph, focusMode, selectedNodeId]);
+      ? buildFocusedLayout(renderedGraph, selectedNodeId as string, width, height)
+      : {
+          positions: buildPositions(renderedGraph.nodes, renderedGraph.seed_id, width, height),
+          tierById: new Map()
+        };
+  }, [renderedGraph, focusMode, selectedNodeId]);
 
   const animatedPositions = useTweenedPositions(layout.positions);
 
@@ -115,6 +119,7 @@ export function MemoryGraphCanvas({
       </section>
     );
   }
+  const graphToRender = renderedGraph as GraphViewResult;
 
   return (
     <section className="memory-canvas-shell" aria-label="Memory graph canvas">
@@ -134,8 +139,8 @@ export function MemoryGraphCanvas({
         <button type="button" onClick={() => setZoom(1)}>Fit</button>
       </div>
       <div className="memory-canvas-meta">
-        <span>{graph.nodes.length} nodes</span>
-        <span>{graph.relationships.length} edges</span>
+        <span>{graphToRender.nodes.length} nodes</span>
+        <span>{graphToRender.relationships.length} edges</span>
         {focusMode && <span>Focused view</span>}
         {isLoading && <span>Syncing</span>}
       </div>
@@ -162,7 +167,7 @@ export function MemoryGraphCanvas({
           </filter>
         </defs>
         <g transform={`translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
-          {graph.relationships.map((relationship) => {
+          {graphToRender.relationships.map((relationship) => {
             const from = displayedPositions.get(relationship.from_id);
             const to = displayedPositions.get(relationship.to_id);
             if (!from || !to) {
@@ -176,7 +181,7 @@ export function MemoryGraphCanvas({
             return (
               <g
                 className={`memory-edge ${active ? "is-active" : ""} ${
-                  focusMode ? (touchesFocus ? "is-primary" : "is-muted") : ""
+                  focusMode && touchesFocus ? "is-primary" : ""
                 }`}
                 key={relationship.id}
               >
@@ -194,23 +199,21 @@ export function MemoryGraphCanvas({
             );
           })}
 
-          {graph.nodes.map((node) => {
+          {graphToRender.nodes.map((node) => {
             const position = displayedPositions.get(node.id);
             if (!position) {
               return null;
             }
             const tone = graphNodeTone(node);
-            const isSeed = focusMode ? selectedNodeId === node.id : graph.seed_id === node.id;
-            const selected = selectedNodeId === node.id || graph.seed_id === node.id;
+            const isSeed = focusMode ? selectedNodeId === node.id : graphToRender.seed_id === node.id;
+            const selected = selectedNodeId === node.id || graphToRender.seed_id === node.id;
             const active = selected || hoveredNodeId === node.id;
             const color = graphToneColor(tone);
             const tier = layout.tierById.get(node.id);
             const tierClass = focusMode
               ? isSeed
                 ? "is-seed"
-                : tier === undefined
-                  ? "tier-loose"
-                  : `tier-${Math.min(tier, MAX_VISIBLE_TIER)}`
+                : `tier-${tier ?? 1}`
               : "";
             return (
               <g
@@ -335,77 +338,44 @@ function buildPositions(
   return positions;
 }
 
-/**
- * Pyramid / fan layout: the focused node sits at the top-center; every other node is
- * placed on a tier whose depth is its hop-distance from the focused node. Deeper tiers
- * sit lower and spread wider, giving the descending-hierarchy shape. Nodes with no path
- * to the focus collapse into a single dim tier at the base.
- */
-function buildPyramidLayout(
+function directNeighborhood(graph: GraphViewResult, focusId: string): GraphViewResult {
+  const relationships = graph.relationships.filter(
+    (relationship) => relationship.from_id === focusId || relationship.to_id === focusId
+  );
+  const nodeIds = new Set<string>([focusId]);
+  relationships.forEach((relationship) => {
+    nodeIds.add(relationship.from_id);
+    nodeIds.add(relationship.to_id);
+  });
+  return {
+    ...graph,
+    seed_id: focusId,
+    nodes: graph.nodes.filter((node) => nodeIds.has(node.id)),
+    relationships
+  };
+}
+
+/** The focused node sits above its direct neighbours in a compact, readable fan. */
+function buildFocusedLayout(
   graph: GraphViewResult,
   focusId: string,
   width: number,
   height: number
 ): GraphLayout {
-  const adjacency = new Map<string, Set<string>>();
-  const link = (a: string, b: string) => {
-    if (!adjacency.has(a)) {
-      adjacency.set(a, new Set());
-    }
-    adjacency.get(a)!.add(b);
-  };
-  graph.relationships.forEach((relationship) => {
-    link(relationship.from_id, relationship.to_id);
-    link(relationship.to_id, relationship.from_id);
-  });
-
   const tierById = new Map<string, number>();
   tierById.set(focusId, 0);
-  let frontier = [focusId];
-  let depth = 0;
-  while (frontier.length > 0) {
-    const nextFrontier: string[] = [];
-    depth += 1;
-    frontier.forEach((id) => {
-      (adjacency.get(id) ?? new Set<string>()).forEach((neighbor) => {
-        if (!tierById.has(neighbor)) {
-          tierById.set(neighbor, depth);
-          nextFrontier.push(neighbor);
-        }
-      });
-    });
-    frontier = nextFrontier;
-  }
-
-  // Bucket nodes by clamped tier; unreachable nodes go to a dedicated "loose" bucket.
-  const looseTier = MAX_VISIBLE_TIER + 1;
-  const buckets = new Map<number, string[]>();
-  graph.nodes.forEach((node) => {
-    const rawTier = tierById.get(node.id);
-    const tier = rawTier === undefined ? looseTier : Math.min(rawTier, MAX_VISIBLE_TIER);
-    if (!buckets.has(tier)) {
-      buckets.set(tier, []);
-    }
-    buckets.get(tier)!.push(node.id);
-  });
-
   const centerX = width / 2;
-  const topY = 96;
-  const usableHeight = height - topY - 90;
-  const deepestTier = Math.max(...buckets.keys(), 1);
-
   const positions = new Map<string, NodePosition>();
-  buckets.forEach((ids, tier) => {
-    const y = topY + (usableHeight * tier) / Math.max(deepestTier, 1);
-    // Widen with depth for the pyramid silhouette; cap so wide tiers stay on-canvas.
-    const spanWidth = Math.min(width - 140, 40 + tier * 300);
-    ids.forEach((id, index) => {
-      const count = ids.length;
-      const x =
-        count <= 1
-          ? centerX
-          : centerX - spanWidth / 2 + (spanWidth * index) / (count - 1);
-      positions.set(id, { x, y });
+  positions.set(focusId, { x: centerX, y: 150 });
+  const neighbours = graph.nodes.filter((node) => node.id !== focusId);
+  const spanWidth = Math.min(width - 160, Math.max(180, neighbours.length * 150));
+  neighbours.forEach((node, index) => {
+    tierById.set(node.id, 1);
+    positions.set(node.id, {
+      x: neighbours.length <= 1
+        ? centerX
+        : centerX - spanWidth / 2 + (spanWidth * index) / (neighbours.length - 1),
+      y: height * 0.58
     });
   });
 

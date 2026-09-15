@@ -5,7 +5,6 @@ import {
   getMapView,
   getMemoryLogDetail,
   getMemoryLogsForNode,
-  getNeighborhoodView,
   getNodeRelationships,
   hybridSearch,
   getTimelineForNode,
@@ -263,25 +262,6 @@ export function GraphView() {
     }
   }
 
-  async function focusSelectedNeighborhood() {
-    if (!selectedNodeId) {
-      return;
-    }
-    setIsLoading(true);
-    setErrorMessage(undefined);
-    setStatusMessage("Focusing selected node neighborhood...");
-    try {
-      const nextGraph = await getNeighborhoodView(selectedNodeId, depth, true, includeArchived, 100);
-      setGraph(nextGraph);
-      setStatusMessage("Focused graph neighborhood loaded");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to focus graph neighborhood.");
-      setStatusMessage(undefined);
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
   async function reloadMemoryLogs(nextFilters = memoryLogFilters) {
     if (!selectedNodeId) {
       return;
@@ -379,7 +359,6 @@ export function GraphView() {
             selectedMemoryLogDetail={selectedMemoryLogDetail}
             isMemoryLogLoading={isMemoryLogLoading}
             onClose={handleCloseInspector}
-            onFocusNeighborhood={() => void focusSelectedNeighborhood()}
             onMemoryLogFiltersChange={handleMemoryLogFiltersChange}
             onResetMemoryLogFilters={handleResetMemoryLogFilters}
             onSelectMemoryLog={(logId) => void handleSelectMemoryLog(logId)}

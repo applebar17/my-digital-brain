@@ -26,7 +26,6 @@ interface GraphInspectorPanelProps {
   selectedMemoryLogDetail?: MemoryLogDetailResult;
   isMemoryLogLoading: boolean;
   onClose: () => void;
-  onFocusNeighborhood: () => void;
   onMemoryLogFiltersChange: (filters: MemoryLogFilterValues) => void;
   onResetMemoryLogFilters: () => void;
   onSelectMemoryLog: (logId: string) => void;
@@ -43,7 +42,6 @@ export function GraphInspectorPanel({
   selectedMemoryLogDetail,
   isMemoryLogLoading,
   onClose,
-  onFocusNeighborhood,
   onMemoryLogFiltersChange,
   onResetMemoryLogFilters,
   onSelectMemoryLog
@@ -95,9 +93,6 @@ export function GraphInspectorPanel({
           <h3>{nodeTitle(target)}</h3>
         </div>
         <div className="memory-window-actions">
-          <button type="button" onClick={onFocusNeighborhood}>
-            Focus
-          </button>
           <button
             className="memory-window-close"
             type="button"
