@@ -11,7 +11,7 @@ interface MemoryLogRowProps {
 export function MemoryLogRow({ log, isSelected, onSelect }: MemoryLogRowProps) {
   const id = nodeId(log);
   const properties = log.properties;
-  const title = firstString(properties.log_text, properties.original_user_words, nodeTitle(log));
+  const title = firstString(properties.title, properties.log_text, properties.original_user_words, nodeTitle(log));
   const time = firstString(
     properties.happened_at,
     properties.resolved_start,

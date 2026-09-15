@@ -88,10 +88,20 @@ class MemoryLogDraft(IngestionModel):
             "as memory_new_barbecue, reuse it consistently, and never use a database UUID."
         ),
     )
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description=(
+            "Required short, scannable headline for this one memory atom, suitable for a "
+            "timeline or graph label. Capture the distinctive event or update in a few words; "
+            "never use a UUID, local ref, or paste the full story."
+        ),
+    )
     log_text: str = Field(
         description=(
-            "Short human-readable memory brick. It must preserve the specific "
-            "dated update or observation without becoming a full domain node."
+            "Compact self-contained detail for the same memory atom. Preserve the specific "
+            "dated update or observation, but do not retell the whole source story or combine "
+            "unrelated events."
         ),
     )
     log_kind: MemoryLogKind = Field(
@@ -221,6 +231,10 @@ class MemoryLog(IngestionModel):
 
     memory_log_id: str = Field(default_factory=new_uuid)
     local_ref: str | None = Field(default=None)
+    title: str | None = Field(
+        default=None,
+        description="Short user-facing MemoryLog headline generated during extraction.",
+    )
     log_text: str = Field(description="Short human-readable memory brick.")
     log_kind: MemoryLogKind = MemoryLogKind.OBSERVATION
     primary_host_target_id: str | None = Field(

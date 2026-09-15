@@ -210,6 +210,7 @@ class ChangeRecordNode(GraphNodeModel):
 class MemoryLogNode(GraphNodeModel):
     label: ClassVar[str] = "MemoryLog"
 
+    title: str | None = None
     log_text: str
     log_kind: str | None = None
     source_kind: str | None = None

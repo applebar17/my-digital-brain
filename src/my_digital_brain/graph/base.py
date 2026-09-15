@@ -13,6 +13,19 @@ from my_digital_brain.graph.repository import GraphRepository
 from my_digital_brain.graph.utils import normalize_text
 
 
+_REQUIRED_DISPLAY_FIELD_BY_LABEL = {
+    "Person": "display_name",
+    "Event": "title",
+    "Place": "name",
+    "Organization": "name",
+    "Object": "name",
+    "Animal": "name",
+    "SocialCircle": "name",
+    "Topic": "name",
+    "MemoryLog": "title",
+}
+
+
 class GraphServiceBase:
     def __init__(self, repository: GraphRepository) -> None:
         self.repository = repository
@@ -55,6 +68,12 @@ class GraphServiceBase:
         return normalized_properties
 
     def _validate_node_properties(self, label: str, properties: dict[str, Any]) -> dict[str, Any]:
+        display_field = _REQUIRED_DISPLAY_FIELD_BY_LABEL.get(label)
+        if display_field and not _meaningful_text(properties.get(display_field)):
+            raise GraphValidationError(
+                f"{label} requires a meaningful '{display_field}' for user-facing graph rendering. "
+                "Provide a short source-grounded name or title, not an id, local ref, or generic placeholder."
+            )
         model = node_model_for_label(label)
         try:
             node = model.model_validate(properties)
@@ -134,3 +153,12 @@ class GraphServiceBase:
         for node in nodes:
             by_id[node.properties["id"]] = node
         return list(by_id.values())
+
+
+def _meaningful_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value.strip().lower() not in {
+        "unknown",
+        "unnamed",
+        "unknown person",
+        "unnamed person",
+    }

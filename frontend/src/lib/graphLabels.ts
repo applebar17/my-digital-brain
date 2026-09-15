@@ -7,9 +7,9 @@ export function nodeId(node: NodeSearchResult): string {
 
 export function nodeTitle(node: NodeSearchResult): string {
   return firstString(
+    node.properties.title,
     node.properties.display_name,
     node.properties.name,
-    node.properties.title,
     node.properties.log_text,
     node.properties.label_text,
     node.properties.profile_key,

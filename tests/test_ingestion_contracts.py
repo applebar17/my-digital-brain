@@ -602,6 +602,7 @@ def test_candidate_entity_alias_schema_locks_hint_semantics() -> None:
 def test_memory_log_draft_requires_host_and_primary_for_multiple_hosts() -> None:
     draft = MemoryLogDraft(
         local_ref="MEMORY_LOG_001",
+        title="Marco changed job",
         log_text="Marco said yesterday that he changed job.",
         log_kind=MemoryLogKind.UPDATE,
         host_refs=[
@@ -624,10 +625,11 @@ def test_memory_log_draft_requires_host_and_primary_for_multiple_hosts() -> None
     assert draft.media_refs[0].media_ref == "local:photo-1"
 
     with pytest.raises(ValidationError, match="at least one host_ref"):
-        MemoryLogDraft(local_ref="MEMORY_LOG_002", log_text="No host.")
+        MemoryLogDraft(local_ref="MEMORY_LOG_002", title="No host", log_text="No host.")
     with pytest.raises(ValidationError, match="exactly one primary host"):
         MemoryLogDraft(
             local_ref="MEMORY_LOG_003",
+            title="Two hosts",
             log_text="Two hosts but no primary.",
             host_refs=[
                 MemoryLogLinkDraft(target_ref="graph:person:marco"),
@@ -703,6 +705,7 @@ def test_node_update_plan_prefers_memory_logs_but_allows_safe_patches() -> None:
         memory_logs=[
             MemoryLogDraft(
                 local_ref="MEMORY_LOG_001",
+                title="Marco lives in Turin",
                 log_text="Marco now lives in Turin.",
                 log_kind=MemoryLogKind.UPDATE,
                 host_refs=[MemoryLogLinkDraft(target_ref="graph:person:marco", primary=True)],

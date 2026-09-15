@@ -780,6 +780,7 @@ class AgenticToolBindings:
 
     def _handle_create_memory_log(
         self,
+        title: str,
         log_text: str,
         host_target_ids: list[str],
         primary_host_target_id: str | None = None,
@@ -864,6 +865,7 @@ class AgenticToolBindings:
             ]:
                 graph.get_node(str(target_id))
             properties = {
+                "title": title,
                 "log_text": log_text,
                 "log_kind": log_kind,
                 "source_kind": source_kind or "graph_update",

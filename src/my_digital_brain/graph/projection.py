@@ -162,9 +162,9 @@ class GraphProjection:
     def display_title(self, node: NodeSearchResult) -> str:
         properties = node.properties
         for field in (
+            "title",
             "display_name",
             "name",
-            "title",
             "log_text",
             "label_text",
             "text",

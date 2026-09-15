@@ -224,6 +224,7 @@ class GraphWriteSerializersMixin:
         primary_host_id = _resolve_ref_or_none(primary_host, planned_ref_ids)
         properties: dict[str, Any] = {
             "id": deterministic_uuid(key),
+            "title": memory_log.title,
             "description": memory_log.log_text,
             "log_text": memory_log.log_text,
             "log_kind": memory_log.log_kind,

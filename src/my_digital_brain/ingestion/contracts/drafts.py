@@ -56,9 +56,15 @@ class CandidateEntityDraft(CandidateBaseDraft):
     entity_type: LLMEntityType = Field(
         description="Allowed memory entity type. Use only enum values; do not invent labels.",
     )
-    display_name: str | None = Field(
-        default=None,
-        description="Best human-readable name for display and retrieval.",
+    display_name: str = Field(
+        min_length=1,
+        max_length=160,
+        description=(
+            "Required human-readable name shown in the graph and used for retrieval. "
+            "Use the person's known name or the clearest source-grounded name; do not "
+            "put a biography, UUID, local ref, or generic wording such as 'unknown person' here. "
+            "If no meaningful name can be supported, do not create an entity candidate."
+        ),
     )
     description: str | None = Field(
         default=None,

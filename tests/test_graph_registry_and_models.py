@@ -251,6 +251,7 @@ def test_sample_affective_memory_fixture_uses_core_graph_contract() -> None:
 
 def test_memory_log_graph_models_accept_storage_fields() -> None:
     memory_log = MemoryLogNode(
+        title="Marco changed job",
         log_text="Marco changed job yesterday.",
         log_kind="update",
         source_kind="user_stated",

@@ -322,6 +322,7 @@ def _enrich_memory_log(
         )
     return MemoryLog(
         local_ref=local_ref,
+        title=draft.title,
         log_text=draft.log_text,
         log_kind=draft.log_kind,
         primary_host_target_id=primary_host,

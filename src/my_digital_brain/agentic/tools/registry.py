@@ -208,10 +208,11 @@ def _default_definitions() -> list[AgenticToolDefinition]:
         ),
         _definition(
             "create_memory_log",
-            "Create a MemoryLog and link it to host, involved, relationship context, and media targets.",
+            "Create one compact MemoryLog and link it to host, involved, relationship context, and media targets.",
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "log_text": string_property("Informational memory text to store."),
+                "title": string_property("Short, user-facing timeline headline for this one memory atom."),
+                "log_text": string_property("Compact self-contained detail for the same memory atom; never paste the full source story."),
                 "host_target_ids": array_property("Host node refs for this memory log."),
                 "primary_host_target_id": optional_string_property(
                     "Primary host ref when there are multiple hosts.",
@@ -227,7 +228,7 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 ),
                 "happened_at": optional_string_property("Optional ISO event/update time."),
             },
-            required=["log_text", "host_target_ids"],
+            required=["title", "log_text", "host_target_ids"],
         ),
         _definition(
             "create_graph_node",
