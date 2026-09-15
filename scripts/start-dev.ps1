@@ -119,13 +119,14 @@ if (-not (Test-TcpPort 7687)) {
         }
     }
 
-    $neo4jLog = Join-Path $developmentLogDirectory "neo4j.log"
+    $neo4jOutLog = Join-Path $developmentLogDirectory "neo4j.out.log"
+    $neo4jErrLog = Join-Path $developmentLogDirectory "neo4j.err.log"
     $neo4jProcess = Start-Process `
         -FilePath $neo4jExecutable `
         -ArgumentList @("console") `
         -WorkingDirectory $neo4jHome `
-        -RedirectStandardOutput $neo4jLog `
-        -RedirectStandardError $neo4jLog `
+        -RedirectStandardOutput $neo4jOutLog `
+        -RedirectStandardError $neo4jErrLog `
         -WindowStyle Hidden `
         -PassThru
     Save-ProcessRecord -Name "neo4j" -Process $neo4jProcess
