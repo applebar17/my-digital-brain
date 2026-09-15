@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from my_digital_brain.core.models import GraphRecordBase, GraphRelationshipBase
 from my_digital_brain.graph.exceptions import GraphValidationError
@@ -307,10 +307,65 @@ class NodePatchRequest(BaseModel):
     properties: dict[str, Any] = Field(default_factory=dict)
 
 
+class GraphNodePresentation(BaseModel):
+    """Backend-owned user-facing labels for graph clients."""
+
+    title: str
+    summary: str | None = None
+
+
 class NodeSearchResult(BaseModel):
     label: str
     labels: list[str]
     properties: dict[str, Any]
+    presentation: GraphNodePresentation | None = None
+
+    @model_validator(mode="after")
+    def _add_presentation(self) -> "NodeSearchResult":
+        if self.presentation is None:
+            self.presentation = GraphNodePresentation(
+                title=_node_presentation_title(self.label, self.properties),
+                summary=_node_presentation_summary(self.properties),
+            )
+        return self
+
+
+def _node_presentation_title(label: str, properties: dict[str, Any]) -> str:
+    for field in (
+        "title", "display_name", "name", "label_text", "profile_key", "value", "caption",
+        "text", "log_text", "description", "emotional_summary", "original_user_words",
+    ):
+        value = properties.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    aliases = properties.get("aliases")
+    if isinstance(aliases, list):
+        for alias in aliases:
+            if isinstance(alias, str) and alias.strip():
+                return alias.strip()
+    return f"Unnamed {_readable_label(label)}"
+
+
+def _node_presentation_summary(properties: dict[str, Any]) -> str | None:
+    for field in ("description", "log_text", "emotional_summary", "original_user_words", "text"):
+        value = properties.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _readable_label(label: str) -> str:
+    words: list[str] = []
+    current = ""
+    for char in label:
+        if char.isupper() and current and not current[-1].isupper():
+            words.append(current)
+            current = char
+        else:
+            current += char
+    if current:
+        words.append(current)
+    return " ".join(words).lower() or "node"
 
 
 class RelationshipUpsertRequest(BaseModel):

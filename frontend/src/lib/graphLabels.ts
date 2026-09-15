@@ -7,6 +7,7 @@ export function nodeId(node: NodeSearchResult): string {
 
 export function nodeTitle(node: NodeSearchResult): string {
   return firstString(
+    node.presentation?.title,
     node.properties.title,
     node.properties.display_name,
     node.properties.name,

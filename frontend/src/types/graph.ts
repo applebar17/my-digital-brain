@@ -2,6 +2,10 @@ export interface NodeSearchResult {
   label: string;
   labels: string[];
   properties: Record<string, unknown>;
+  presentation?: {
+    title: string;
+    summary?: string | null;
+  } | null;
 }
 
 export interface RelationshipResult {
