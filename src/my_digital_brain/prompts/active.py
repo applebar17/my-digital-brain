@@ -166,7 +166,7 @@ Identify high-level node, memory-log, and edge signals. Planning creates refs an
 - Mark irrelevant details so later steps do not store noise.
 - Split dense episodes into several memory highlights.
 - Keep weak co-presence as involvement, not durable edges.
-- Ask direct clarification questions in the user's language when a real doubt blocks or materially weakens ingestion.
+- When a real unresolved context gap affects a later durable write, call `ask_clarification` now; do not leave it only as a reasoning note for planners.
 
 # Examples
 - "Lorenzo is my brother" -> family edge signal.
@@ -199,6 +199,7 @@ Plan which self-sustaining graph entities should be resolved or created before m
 - Do not create nodes for one-off details that belong only inside a memory log.
 - Keep planned refs unique inside the plan.
 - Produce a compact node plan packet for later phases.
+- Call `ask_clarification` before proposing a node when a real context gap leaves its identity or intended attachment unresolved; do not merely add the gap to the plan output.
 
 # Examples
 - Person with name, surname, and aliases -> node candidate.
@@ -237,6 +238,7 @@ Plan compact MemoryLogs and context records after node planning.
 - Keep weak co-presence as log involvement.
 - Keep planned refs unique inside the plan.
 - Produce a compact memory plan packet for edge planning.
+- Call `ask_clarification` before planning an affected MemoryLog when its host, involved identity, or required context remains a real unresolved gap; do not merely list it in the plan output.
 
 # Examples
 - Barbeque, beach outing, card game, and evening mood -> separate logs.
@@ -276,6 +278,7 @@ Plan durable relationships and context links after node and memory planning.
 - Keep weak co-presence as MemoryLog involvement.
 - Report missing endpoints instead of inventing refs.
 - Keep planned refs unique inside the plan.
+- Call `ask_clarification` before planning an affected durable edge when a real unresolved context gap leaves an endpoint, direction, or meaning ambiguous; do not merely list it in the plan output.
 
 # Examples
 - "Lorenzo is my brother" -> durable family edge.
@@ -314,13 +317,13 @@ Complete the current creation action by choosing deterministic tools and returni
 - Focus on the current action and supplied packets.
 - Use tools for writes; do not narrate a write as complete until a tool confirms it.
 - If a tool returns a validation error, fix the arguments and retry when possible.
-- Ask a direct clarification when missing meaning or target identity blocks or materially weakens the action.
+- Call `ask_clarification` when a real unresolved gap blocks the action; do not expose a question directly or continue with an unsupported write.
 - Return compact created/updated refs and important diagnostics.
 
 # Examples
 - Invalid relationship type -> retry with an allowed type.
-- Missing target person -> ask "What is Alessia's full name?"
-- Missing beach/place -> ask "Which beach or beach club did you go to that afternoon?"
+- Missing target person -> hand off the missing identity detail to `ask_clarification`.
+- Missing beach/place -> hand off the missing location detail to `ask_clarification`.
 - Successful log write -> `memory_new_0001 created; vectors refreshed`.
 
 # Context
@@ -349,12 +352,12 @@ Apply a requested non-destructive graph update through read and write tools.
 - Resolve the target before writing when the target is ambiguous.
 - Use write tools for every mutation.
 - Treat validation errors as feedback and retry with corrected arguments when possible.
-- Ask a direct clarification when target or intent remains blocked or materially uncertain.
+- Call `ask_clarification` when a real unresolved gap leaves the target or intent blocked; do not expose a question directly or continue with an unsupported write.
 - Return compact refs, changed fields, refreshed scopes, and unresolved diagnostics.
 
 # Examples
 - "Marco was from university, not work" -> resolve Marco, patch or add corrective context.
-- Ambiguous "Marco" with two candidates -> ask "Which Marco do you mean?"
+- Ambiguous "Marco" with two candidates -> hand off the identity doubt to `ask_clarification`.
 - Unsupported delete request -> report blocked.
 
 # Context
