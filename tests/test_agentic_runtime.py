@@ -28,6 +28,7 @@ from my_digital_brain.agentic import (
     PlanningPurposeGuidelines,
     PlanningTransformContext,
     PlanningTransformResultContext,
+    PlannedRefPacket,
     QueryRetrievalPlanningContext,
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
@@ -35,7 +36,12 @@ from my_digital_brain.agentic import (
 from my_digital_brain.agentic.contexts import MemoryIngestionContext
 from my_digital_brain.agentic.enums import MemoryPlanActionType, MemoryPlanningPhase, RefObjectKind
 from my_digital_brain.agentic.refs import RefContext, RefEntry
-from my_digital_brain.agentic.runtime_memory import MemoryIngestionRuntimeService
+from my_digital_brain.agentic.runtime_memory import (
+    MemoryIngestionRuntimeService,
+    _unresolved_edge_endpoint_refs,
+    _validate_phase_plan_refs,
+    _verify_created_action_ref,
+)
 from my_digital_brain.agentic.runtime_models import AgenticRunResult
 from my_digital_brain.ai.schemas import (
     ChatMessage,
@@ -844,6 +850,49 @@ def test_memory_ingestion_resume_reuses_existing_reasoning(monkeypatch) -> None:
     assert result.metadata["structured_output"]["plan"]["metadata"]["reasoning"] == (
         reasoning.model_dump(mode="json", exclude_none=True)
     )
+
+
+def test_phase_actions_bind_planned_outputs_and_defer_unresolved_edges() -> None:
+    refs = RefContext(session_id="handoff-test")
+    plan = NodeMemoryPlan(
+        summary="Create Marco.",
+        node_plan_packet=NodePlanPacket(
+            planned_refs=[
+                PlannedRefPacket(
+                    ref="node_new_marco",
+                    object_kind=RefObjectKind.NODE,
+                    label="Person",
+                    name="Marco",
+                )
+            ],
+            summary="Marco is planned.",
+        ),
+        steps=[
+            MemoryPlanStep(
+                phase=MemoryPlanningPhase.NODES,
+                actions=[
+                    MemoryPlanAction(
+                        action_type=MemoryPlanActionType.CREATE_NODE,
+                        target_refs=["node_new_marco"],
+                    )
+                ],
+            )
+        ],
+    )
+
+    _validate_phase_plan_refs(plan, refs)
+    refs.register_proposed("node_new_marco", RefObjectKind.NODE)
+    action = plan.steps[0].actions[0]
+    assert _verify_created_action_ref(action, refs, succeeded=True) is not None
+
+    refs.resolve_backend_id("node_new_marco", "graph-marco", status="created")
+    assert _verify_created_action_ref(action, refs, succeeded=True) is None
+
+    edge = MemoryPlanAction(
+        action_type=MemoryPlanActionType.CREATE_RELATIONSHIP,
+        payload={"from_ref": "node_new_marco", "to_ref": "node_missing"},
+    )
+    assert _unresolved_edge_endpoint_refs(edge, refs) == ["node_missing"]
 
 
 def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> None:

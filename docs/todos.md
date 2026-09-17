@@ -145,6 +145,17 @@ See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.m
 - Keep technical traces and model-facing local refs out of the normal chat
   response; expose them only through the dev trace.
 
+## Deferred Relationship Recovery
+
+Priority: 2
+
+See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.md).
+
+- Persist and revisit durable relationship actions deferred solely because an
+  endpoint was not resolved at ingestion time. Completed nodes and MemoryLogs
+  must remain saved; the later recovery flow must resolve the endpoint, retry
+  only the affected edge, retain source evidence, and avoid duplicating edges.
+
 ## Owner Profile Retrieval And Approval
 
 Priority: 2

@@ -759,7 +759,13 @@ class EdgeMemoryPlan(AgenticModel):
                     MemoryPlanActionType.CREATE_RELATIONSHIP,
                     MemoryPlanActionType.CREATE_RELATIONSHIP_STATE,
                 }:
-                    for field_name in ("from_ref", "to_ref", "source_ref", "target_ref"):
+                    for field_name in (
+                        "from_ref",
+                        "to_ref",
+                        "source_ref",
+                        "target_ref",
+                        "context_id",
+                    ):
                         value = action.payload.get(field_name)
                         if value is not None and not _VISIBLE_REF_RE.fullmatch(str(value)):
                             raise ValueError(

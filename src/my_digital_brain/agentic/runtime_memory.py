@@ -421,6 +421,39 @@ class MemoryIngestionRuntimeService:
                         skip_action_id = None
                     continue
                 execution_context.current_payload = payload
+                # Keep child writes bound to the same RefContext the next phase sees.
+                execution_context.ref_context = payload.ref_context
+                unresolved_endpoints = (
+                    _unresolved_edge_endpoint_refs(action, payload.ref_context)
+                    if phase == MemoryPlanningPhase.EDGES
+                    else []
+                )
+                if unresolved_endpoints:
+                    deferred_message = (
+                        "Deferred this relationship because its endpoint refs are not "
+                        f"resolved yet: {', '.join(unresolved_endpoints)}."
+                    )
+                    state_result = AgenticStateRunResult(
+                        state_id=AgenticStateId.MEMORY_CREATION,
+                        assistant_text=deferred_message,
+                        terminal=True,
+                        status="skipped",
+                        tool_events=[
+                            AgenticToolEvent(
+                                tool_name="defer_relationship",
+                                status="skipped",
+                                output=deferred_message,
+                                data={
+                                    "action_id": action.action_id,
+                                    "unresolved_endpoint_refs": unresolved_endpoints,
+                                    "reason": "unresolved_edge_endpoint",
+                                },
+                            )
+                        ],
+                    )
+                    action_results.append(state_result)
+                    compact_trace.append(_compact_state_trace(state_result))
+                    continue
                 execution_context.metadata["internal_continuation"] = {
                     "kind": "memory_ingestion",
                     "phase": phase.value,
@@ -475,18 +508,30 @@ class MemoryIngestionRuntimeService:
                     child_payload=child_payload,
                     tool_name=tool_name,
                 )
+                output_ref_error = _verify_created_action_ref(
+                    action,
+                    payload.ref_context,
+                    succeeded=result.status == "ok",
+                )
                 state_result = AgenticStateRunResult(
                     state_id=child_state,
-                    assistant_text=result.output,
+                    assistant_text=output_ref_error or result.output,
                     terminal=result.status not in {"interrupted", "pending"},
-                    status=str(result.status),
+                    status="error" if output_ref_error else str(result.status),
                     tool_events=[
                         AgenticToolEvent(
                             tool_name=tool_name,
-                            status=str(result.status),
-                            output=result.output,
+                            status="error" if output_ref_error else str(result.status),
+                            output=output_ref_error or result.output,
                             data=result.data if isinstance(result.data, dict) else None,
                             error=(
+                                {
+                                    "code": "planned_ref_not_bound",
+                                    "message": output_ref_error,
+                                    "retryable": False,
+                                }
+                                if output_ref_error
+                                else
                                 result.error.model_dump(mode="json", exclude_none=True)
                                 if result.error is not None
                                 else {
@@ -518,7 +563,11 @@ class MemoryIngestionRuntimeService:
             final_text="Memory ingestion actions executed.",
             visited_states=[item.state_id for item in action_results],
             state_results=action_results,
-            status="ok" if all(item.status == "ok" for item in action_results) else "error",
+            status=(
+                "ok"
+                if all(item.status in {"ok", "skipped"} for item in action_results)
+                else "error"
+            ),
             compact_trace=compact_trace,
         )
 
@@ -629,7 +678,13 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
         for action in list(getattr(step, "actions", []) or []):
             action_refs.extend(list(getattr(action, "target_refs", []) or []))
             payload = getattr(action, "payload", {}) or {}
-            for field_name in ("from_ref", "to_ref", "source_ref", "target_ref"):
+            for field_name in (
+                "from_ref",
+                "to_ref",
+                "source_ref",
+                "target_ref",
+                "context_id",
+            ):
                 value = payload.get(field_name)
                 if isinstance(value, str):
                     action_refs.append(value)
@@ -642,3 +697,87 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
             f"{available}. Reuse a known ref or declare the new object once in "
             "planned_refs."
         )
+
+    for step in list(getattr(output, "steps", []) or []):
+        for action in list(getattr(step, "actions", []) or []):
+            expected_kind = _created_action_kind(action.action_type)
+            if expected_kind is None:
+                continue
+            created_refs = [
+                ref
+                for ref in list(getattr(action, "target_refs", []) or [])
+                if ref in planned_refs
+                and packet is not None
+                and any(
+                    planned.ref == ref
+                    and RefObjectKind(planned.object_kind) == expected_kind
+                    for planned in list(getattr(packet, "planned_refs", []) or [])
+                )
+            ]
+            if len(created_refs) != 1:
+                kind_name = expected_kind.value
+                raise ValueError(
+                    f"Action {action.action_id} creates a {kind_name} but must include "
+                    f"exactly one planned {kind_name} ref in target_refs. This lets the "
+                    "write bind the planned ref to its backend object for later phases."
+                )
+
+
+def _created_action_kind(action_type: MemoryPlanActionType | str) -> RefObjectKind | None:
+    action_type = MemoryPlanActionType(action_type)
+    if action_type == MemoryPlanActionType.CREATE_NODE:
+        return RefObjectKind.NODE
+    if action_type == MemoryPlanActionType.CREATE_MEMORY_LOG:
+        return RefObjectKind.MEMORY
+    return None
+
+
+def _verify_created_action_ref(action: Any, ref_context: Any, *, succeeded: bool) -> str | None:
+    """Ensure a successful child write made its planned output usable downstream."""
+
+    if not succeeded:
+        return None
+    expected_kind = _created_action_kind(action.action_type)
+    if expected_kind is None or ref_context is None:
+        return None
+    output_refs = [
+        ref
+        for ref in list(action.target_refs or [])
+        if (entry := ref_context.entries.get(ref)) is not None
+        and entry.object_kind == expected_kind
+    ]
+    if len(output_refs) != 1:
+        return (
+            f"The {action.action_type.value} action completed without one identifiable "
+            f"planned {expected_kind.value} ref in target_refs."
+        )
+    output_ref = output_refs[0]
+    if ref_context.entries[output_ref].backend_id:
+        return None
+    return (
+        f"The {action.action_type.value} action reported success, but planned ref "
+        f"'{output_ref}' was not bound to a backend object."
+    )
+
+
+def _unresolved_edge_endpoint_refs(action: Any, ref_context: Any) -> list[str]:
+    """Return unresolved durable-edge endpoints; edge-only work may be deferred."""
+
+    if action.action_type not in {
+        MemoryPlanActionType.CREATE_RELATIONSHIP,
+        MemoryPlanActionType.CREATE_RELATIONSHIP_STATE,
+    }:
+        return []
+    payload = action.payload or {}
+    endpoint_refs = [
+        str(payload[field_name])
+        for field_name in ("from_ref", "to_ref", "source_ref", "target_ref", "context_id")
+        if payload.get(field_name)
+    ]
+    return [
+        ref
+        for ref in endpoint_refs
+        if ref_context is None
+        or ref not in ref_context.entries
+        or not ref_context.entries[ref].backend_id
+    ]

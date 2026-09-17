@@ -271,12 +271,14 @@ Plan durable relationships and context links after node and memory planning.
 - Weak co-presence: shared participation in an episode without durable relationship evidence.
 
 # Rules
-- Edge endpoints must be known refs, never loose names.
+- Edge endpoints must be confirmed known refs, never loose names. The current
+  Known refs packet is the execution authority; planning packets are provenance.
 - For new edges, use short readable refs like `edge_new_user_lorenzo_brother`.
 - Use both the node plan packet and memory plan packet.
 - Create durable edges only for strong signals such as family, partner, explicit context, place/event links, or stated perceptions.
 - Keep weak co-presence as MemoryLog involvement.
-- Report missing endpoints instead of inventing refs.
+- If a listed endpoint is unresolved, defer only that edge and report the refs;
+  do not claim that the node or memory packets are unavailable.
 - Keep planned refs unique inside the plan.
 - Call `ask_clarification` before planning an affected durable edge when a real unresolved context gap leaves an endpoint, direction, or meaning ambiguous; do not merely list it in the plan output.
 

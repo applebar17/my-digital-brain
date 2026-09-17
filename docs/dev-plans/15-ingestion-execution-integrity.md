@@ -160,6 +160,13 @@ MemoryLog refs existed; the pipeline nevertheless continued to the edge phase.
 The phase inputs in `runtime_memory.py` expose plan packets, but the durable
 write outcome is not a required, coherent phase handoff contract.
 
+**Implemented direction.** Keep one canonical `RefContext`: creation actions
+must name their planned output ref; successful child writes must bind that ref
+to its backend object before the next phase; edge planning treats the current
+known-refs packet as execution authority. An edge whose endpoint remains
+unresolved is deferred without rolling back completed nodes or MemoryLogs.
+Durable retry/recovery of those deferred edges remains a separate follow-up.
+
 **Functional impact.** The graph is structurally incomplete even when entity
 names are correct. This makes the graph view seem to have a rendering problem
 when its source data has no edges to render.
