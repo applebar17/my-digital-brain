@@ -126,6 +126,25 @@ Priority: 1
   not become backend semantic gates.
 - Keep browser media capture, upload, storage, and transcription deferred.
 
+## Chat Tool Outcomes And Final Responses
+
+Priority: 1
+
+See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.md).
+
+- Replace generic top-level ingestion summaries with a backend-owned execution
+  receipt containing confirmed created/updated records, counts, deferred facts,
+  clarification state, and safe failure information.
+- Return that receipt as the final `ingest_memory` tool output to the
+  chat-facing orchestrator. The orchestrator must generate the human response
+  from confirmed outcome data, not from planning completion or nested tool
+  prose.
+- Add final-response prompt guidance and regression cases for completed,
+  interrupted-for-clarification, partial/deferred, and failed ingestion. A
+  response must never claim that a memory was saved without confirmed receipts.
+- Keep technical traces and model-facing local refs out of the normal chat
+  response; expose them only through the dev trace.
+
 ## Owner Profile Retrieval And Approval
 
 Priority: 2
