@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from my_digital_brain.config import Settings
+from my_digital_brain.core.owner_context import OwnerIdentityContext, OwnerSnapshot
 from my_digital_brain.graph.constants import OWNER_ALIAS
 from my_digital_brain.graph.exceptions import GraphConflictError, GraphValidationError
 from my_digital_brain.graph.models import PersonNode
@@ -47,6 +48,30 @@ class OwnerNodeManager:
         if alias != OWNER_ALIAS:
             raise GraphValidationError(f"Unsupported owner alias: {alias}")
         return self.owner_node_id
+
+    def resolve_request_owner(self, application_user_id: str) -> OwnerIdentityContext:
+        """Return the canonical owner identity for one request.
+
+        This manager is the local/single-owner implementation. A future authenticated
+        owner resolver can select a different manager/node per application user while
+        preserving the same request-to-graph-owner contract.
+        """
+
+        normalized_user_id = application_user_id.strip()
+        if not normalized_user_id:
+            raise GraphValidationError("Application user id is required to resolve OWNER.")
+        owner = self.ensure_owner()
+        properties = owner.get("properties")
+        if not isinstance(properties, dict):
+            raise GraphValidationError("Canonical owner node has no readable properties.")
+        graph_owner_id = str(properties.get("id") or "").strip()
+        if graph_owner_id != self.owner_node_id:
+            raise GraphValidationError("Canonical owner node id does not match configured owner.")
+        return OwnerIdentityContext(
+            application_user_id=normalized_user_id,
+            graph_owner_id=graph_owner_id,
+            snapshot=OwnerSnapshot.from_properties(properties),
+        )
 
     def _create_owner(self) -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()

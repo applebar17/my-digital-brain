@@ -114,6 +114,19 @@ def test_owner_bootstrap_is_idempotent_and_resolves_alias() -> None:
     assert manager.resolve_owner_alias(OWNER_ALIAS) == "person:owner"
 
 
+def test_request_owner_separates_application_and_graph_identities() -> None:
+    repository = FakeOwnerRepository(
+        [_node("Person", "person:owner", is_owner=True, display_name="Ada Lovelace")]
+    )
+    manager = OwnerNodeManager(repository, Settings(owner_graph_node_id="person:owner"))
+
+    identity = manager.resolve_request_owner("account-user-42")
+
+    assert identity.application_user_id == "account-user-42"
+    assert identity.graph_owner_id == "person:owner"
+    assert identity.snapshot.display_name == "Ada Lovelace"
+
+
 def test_owner_bootstrap_rejects_wrong_existing_node() -> None:
     repository = FakeOwnerRepository([_node("Person", "person:owner", is_owner=False)])
     manager = OwnerNodeManager(repository, Settings(owner_graph_node_id="person:owner"))

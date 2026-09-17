@@ -48,7 +48,7 @@ from my_digital_brain.clarification.interaction import (
     summarize_clarification_answers,
     validate_clarification_answers,
 )
-from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.core.owner_context import OwnerContextResolver, OwnerIdentityContext
 from my_digital_brain.core.profile_context import OwnerProfileSnapshot
 from my_digital_brain.debug import ai_flow_trace_session, get_ai_flow_trace_store
 
@@ -68,7 +68,7 @@ class ChatRuntime:
         history_service: AgenticHistoryService | None = None,
         debug_commands_enabled: bool = False,
         ai_flow_debug_enabled: bool = False,
-        owner_snapshot: OwnerSnapshot | None = None,
+        owner_context_resolver: OwnerContextResolver | None = None,
         owner_profile_reader: object | None = None,
     ) -> None:
         self.store = store or InMemoryChatSessionStore()
@@ -82,13 +82,22 @@ class ChatRuntime:
         self.history_service = history_service or AgenticHistoryService()
         self.debug_commands_enabled = debug_commands_enabled
         self.ai_flow_debug_enabled = ai_flow_debug_enabled
-        self.owner_snapshot = owner_snapshot
+        self.owner_context_resolver = owner_context_resolver
         self.owner_profile_reader = owner_profile_reader
 
     def get_approved_owner_profile(self) -> OwnerProfileSnapshot:
         if self.owner_profile_reader is None:
             raise ChatValidationError("Owner profile retrieval is unavailable.")
         return self.owner_profile_reader.get_approved_profile_for_prompt()
+
+    def _resolve_owner_identity(self, application_user_id: str) -> OwnerIdentityContext:
+        resolver = self.owner_context_resolver
+        if resolver is None:
+            raise ChatValidationError("A request owner resolver is required for agentic chat.")
+        identity = resolver.resolve_request_owner(application_user_id)
+        if not isinstance(identity, OwnerIdentityContext):
+            raise ChatValidationError("Owner resolver returned an invalid request identity.")
+        return identity
 
     @traceable(name="Chat Runtime Handle Message", run_type="chain")
     def handle_message(self, message: IncomingChatMessage) -> ChatResponse:
@@ -453,6 +462,7 @@ class ChatRuntime:
         resolved_clarifications = resolved_clarifications_from_answers(
             packet, complete_answer_packet
         )
+        owner_identity = self._resolve_owner_identity(owner_id)
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
@@ -462,8 +472,9 @@ class ChatRuntime:
             session_id=session.session_id,
             channel=str(session.channel),
             conversation_id=session.external_conversation_id,
-            owner_id=owner_id,
-            owner_snapshot=self.owner_snapshot,
+            application_user_id=owner_identity.application_user_id,
+            graph_owner_id=owner_identity.graph_owner_id,
+            owner_snapshot=owner_identity.snapshot,
             sender_id=sender_id,
             message_id=message_id,
             current_text=answer_summary,
@@ -647,6 +658,7 @@ class ChatRuntime:
             message,
             session_id,
         )
+        owner_identity = self._resolve_owner_identity(message.owner_id)
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
             ingestion_service=self.ingestion_service,
@@ -656,8 +668,9 @@ class ChatRuntime:
             session_id=session_id,
             channel=str(ChatChannel(message.channel)),
             conversation_id=message.conversation_id,
-            owner_id=message.owner_id,
-            owner_snapshot=self.owner_snapshot,
+            application_user_id=owner_identity.application_user_id,
+            graph_owner_id=owner_identity.graph_owner_id,
+            owner_snapshot=owner_identity.snapshot,
             sender_id=message.sender_id,
             message_id=message.message_id,
             current_text=(message.text or "").strip(),

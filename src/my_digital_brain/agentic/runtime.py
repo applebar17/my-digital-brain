@@ -62,6 +62,27 @@ class AgenticRuntime:
     state_runner: AgenticStateRunner
     max_state_transitions: int = 5
 
+    @staticmethod
+    def _bind_request_owner(
+        execution_context: AgenticToolExecutionContext,
+        current_payload: Any,
+    ) -> None:
+        """Refresh the protected OWNER binding for each initial or resumed run."""
+
+        graph_owner_id = execution_context.graph_owner_id
+        if not graph_owner_id:
+            return
+        ref_context = getattr(current_payload, "ref_context", None) or execution_context.ref_context
+        if ref_context is None:
+            return
+        snapshot = execution_context.owner_snapshot
+        ref_context.bind_owner(
+            graph_owner_id,
+            name=(snapshot.display_name if snapshot is not None else None),
+            aliases=(snapshot.aliases if snapshot is not None else None),
+        )
+        execution_context.ref_context = ref_context
+
     @traceable(name="Agentic Runtime Run", run_type="chain")
     def run(
         self,
@@ -76,6 +97,7 @@ class AgenticRuntime:
         execution_context.conversation_context = conversation_context
         if getattr(current_payload, "ref_context", None) is not None:
             execution_context.ref_context = current_payload.ref_context
+        self._bind_request_owner(execution_context, current_payload)
         state_results: list[AgenticStateRunResult] = []
         compact_trace: list[dict[str, Any]] = []
 
@@ -220,7 +242,8 @@ class AgenticRuntime:
             session_id=parent_execution_context.session_id,
             channel=parent_execution_context.channel,
             conversation_id=parent_execution_context.conversation_id,
-            owner_id=parent_execution_context.owner_id,
+            application_user_id=parent_execution_context.application_user_id,
+            graph_owner_id=parent_execution_context.graph_owner_id,
             owner_snapshot=parent_execution_context.owner_snapshot,
             sender_id=parent_execution_context.sender_id,
             message_id=parent_execution_context.message_id,
@@ -598,6 +621,7 @@ class AgenticRuntime:
         execution_context.parent_frame_id = frame.parent_frame_id
         execution_context.parent_tool_call_id = frame.parent_tool_call_id
         execution_context.ref_context = _ref_context_from_frame(frame)
+        self._bind_request_owner(execution_context, None)
         conversation_context = self._conversation_context_from_frame(
             frame,
             fallback_text=clarification_answer_summary,
@@ -782,6 +806,7 @@ class AgenticRuntime:
         execution_context.ref_context = (
             _ref_context_from_frame(parent) or execution_context.ref_context
         )
+        self._bind_request_owner(execution_context, None)
 
         parent_result = self.state_runner.continue_state_from_messages(
             state_id=AgenticStateId(parent.state_id),
@@ -876,6 +901,7 @@ class AgenticRuntime:
         from my_digital_brain.agentic.runtime_memory import MemoryIngestionRuntimeService
 
         payload = MemoryIngestionContext.model_validate(continuation.get("payload") or {})
+        self._bind_request_owner(execution_context, payload)
         execution_context.frame_id = parent.frame_id
         execution_context.parent_frame_id = parent.parent_frame_id
         execution_context.parent_tool_call_id = parent.parent_tool_call_id

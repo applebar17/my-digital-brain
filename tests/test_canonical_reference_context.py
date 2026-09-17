@@ -124,6 +124,21 @@ def test_graph_write_resolves_model_ref_only_at_backend_boundary() -> None:
     assert result.data["updated_refs"] == ["node_0001"]
 
 
+def test_request_owner_binding_replaces_stale_frame_owner_mapping() -> None:
+    refs = RefContext(session_id="session-1")
+    refs.bind_owner("owner-local", name="Old owner")
+    context = AgenticToolExecutionContext(
+        graph_owner_id="person:owner",
+        ref_context=refs,
+    )
+
+    AgenticRuntime._bind_request_owner(context, None)
+
+    assert refs.resolve("OWNER", expected_kind=RefObjectKind.NODE) == "person:owner"
+    assert "owner-local" not in json.dumps(refs.model_facing_packet())
+    assert "person:owner" not in json.dumps(refs.model_facing_packet())
+
+
 def test_nested_interruption_returns_the_packet_persisted_on_child_frame() -> None:
     store = InMemoryChatSessionStore()
     session = store.get_or_create_session(

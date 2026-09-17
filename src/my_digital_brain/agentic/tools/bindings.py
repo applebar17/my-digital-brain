@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,7 +53,8 @@ class AgenticToolExecutionContext:
     session_id: str | None = None
     channel: str = "web"
     conversation_id: str | None = None
-    owner_id: str | None = None
+    application_user_id: str | None = None
+    graph_owner_id: str | None = None
     owner_snapshot: OwnerSnapshot | None = None
     sender_id: str | None = None
     message_id: str | None = None
@@ -125,8 +127,12 @@ class AgenticToolBindings:
             retrieval,
             session_id=self.context.session_id or conversation.context_id,
         )
-        if self.context.owner_id:
-            _ensure_owner_ref(ref_context, self.context.owner_id, self.context.owner_snapshot)
+        if self.context.graph_owner_id:
+            _ensure_owner_ref(
+                ref_context,
+                self.context.graph_owner_id,
+                self.context.owner_snapshot,
+            )
         graph_context = _graph_context_from_retrieval(retrieval, ref_context=ref_context)
         self.context.ref_context = ref_context
         ingestion_context = MemoryIngestionContext(
@@ -272,6 +278,12 @@ class AgenticToolBindings:
                 "desired_view": desired_view,
             }
         try:
+            # Search services are application-singletons. Copy before injecting the
+            # request owner so concurrent users cannot observe each other's owner
+            # scoped profile-memory visibility.
+            if self.context.graph_owner_id and hasattr(semantic, "owner_graph_node_id"):
+                semantic = copy(semantic)
+                semantic.owner_graph_node_id = self.context.graph_owner_id
             kwargs = {"limit": limit}
             if seed_id:
                 kwargs["target_ids"] = [seed_id]
@@ -488,7 +500,7 @@ class AgenticToolBindings:
             graph_service=self.context.graph_service,
             ref_context=ref_context,
             owner_manager=self.context.metadata.get("owner_manager"),
-            owner_graph_node_id=self.context.owner_id,
+            owner_graph_node_id=self.context.graph_owner_id,
         )
 
     def _sync_ref_context(self) -> None:
@@ -1375,11 +1387,11 @@ def _ref_context_from_retrieval(
 
 def _ensure_owner_ref(
     ref_context: RefContext,
-    owner_id: str,
+    graph_owner_id: str,
     owner_snapshot: OwnerSnapshot | None,
 ) -> None:
-    ref_context.register_owner(
-        owner_id,
+    ref_context.bind_owner(
+        graph_owner_id,
         name=(owner_snapshot.display_name if owner_snapshot is not None else None),
     )
 

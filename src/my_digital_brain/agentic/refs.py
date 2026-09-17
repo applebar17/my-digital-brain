@@ -268,20 +268,29 @@ class RefContext(AgenticModel):
         entry.resolution_status = RefResolutionStatus(status)
         return entry
 
-    def register_owner(
+    def bind_owner(
         self,
         backend_id: str,
         *,
         name: str | None = None,
         aliases: list[str] | None = None,
     ) -> str:
-        """Register the trusted owner under the stable model ref ``OWNER``."""
+        """Authoritatively bind the current request owner to ``OWNER``.
+
+        Durable frame snapshots can outlive a graph reset. The owner alias is
+        therefore refreshed from request identity instead of trusted from a snapshot.
+        """
 
         normalized_backend_id = _required_backend_id(backend_id)
         current = self.entries.get("OWNER")
         if current is not None:
-            if current.backend_id != normalized_backend_id:
-                raise ValueError("A reference context cannot contain two owner identities.")
+            if current.object_kind != RefObjectKind.NODE or current.label != "Person":
+                raise ValueError("OWNER must remain bound to a Person node.")
+            current.backend_id = normalized_backend_id
+            current.name = name
+            current.aliases = list(aliases or [])
+            current.source = "request_owner"
+            current.resolution_status = RefResolutionStatus.EXISTING
             return "OWNER"
         return self.add_entry(
             RefEntry(
@@ -291,7 +300,7 @@ class RefContext(AgenticModel):
                 name=name,
                 aliases=list(aliases or []),
                 backend_id=normalized_backend_id,
-                source="owner_bootstrap",
+                source="request_owner",
                 resolution_status=RefResolutionStatus.EXISTING,
             ),
         ).ref

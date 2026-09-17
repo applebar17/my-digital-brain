@@ -12,7 +12,6 @@ from my_digital_brain.ai.router import StaticModelRouter
 from my_digital_brain.chat.runtime import ChatRuntime
 from my_digital_brain.chat.store import ChatSessionStore
 from my_digital_brain.config import Settings
-from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.graph.owner import OwnerNodeManager
 from my_digital_brain.graph.owner_profile import OwnerProfileReader
 from my_digital_brain.ingestion.candidate_context import BoundedCandidateContextHydrator
@@ -87,7 +86,6 @@ def build_chat_runtime(
         execute_write_plan=settings.ingestion_execute_write_plan,
         agentic_runtime=agentic_runtime,
     )
-    owner_snapshot = _owner_snapshot(graph_service, settings.owner_graph_node_id)
     owner_profile_reader = (
         OwnerProfileReader(
             graph_service=graph_service,
@@ -106,22 +104,9 @@ def build_chat_runtime(
         history_service=history_service,
         debug_commands_enabled=settings.chat_debug_commands_enabled,
         ai_flow_debug_enabled=settings.ai_flow_debug_enabled,
-        owner_snapshot=owner_snapshot,
+        owner_context_resolver=owner_manager,
         owner_profile_reader=owner_profile_reader,
     )
-
-
-def _owner_snapshot(graph_service: Any | None, owner_id: str) -> OwnerSnapshot | None:
-    if graph_service is None or not hasattr(graph_service, "get_node"):
-        return None
-    try:
-        node = graph_service.get_node(owner_id)
-        properties = getattr(node, "properties", None)
-        return OwnerSnapshot.from_properties(properties) if isinstance(properties, dict) else None
-    except Exception:
-        return None
-
-
 def build_ai_provider(settings: Settings):
     genai_settings = genai_settings_from_app_settings(settings)
     if settings.normalized_llm_provider == "azure_openai":

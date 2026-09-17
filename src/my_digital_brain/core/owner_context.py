@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
 import json
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,8 +34,28 @@ class OwnerSnapshot(BaseModel):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class OwnerIdentityContext:
+    """Trusted request identity translated into the current graph-owner identity.
+
+    ``application_user_id`` belongs to authentication and chat ownership.
+    ``graph_owner_id`` is the durable Person node ID used only by backend code.
+    The model receives neither: it sees the semantic ``OWNER`` ref and snapshot.
+    """
+
+    application_user_id: str
+    graph_owner_id: str
+    snapshot: OwnerSnapshot
+
+
+class OwnerContextResolver(Protocol):
+    """Resolves an authenticated application user into one graph-owner context."""
+
+    def resolve_request_owner(self, application_user_id: str) -> OwnerIdentityContext: ...
+
+
 OWNER_PROMPT_CONTRACT = """# Owner interaction contract
-- `OWNER` is the existing canonical Person node representing the current user.
+- `OWNER` is the existing canonical Person node for the current user in this request.
 - Map first-person references in the user's own words (`I`, `me`, `my`) to `OWNER`.
 - Do not map first-person text inside quotations or third-party content without evidence.
 - Use `OWNER` as the only owner reference. Never invent or emit a persisted graph ID.

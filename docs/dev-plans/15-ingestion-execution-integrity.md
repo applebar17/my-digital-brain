@@ -54,15 +54,18 @@ context used by child frames.
 
 **Proposed fix.** Establish one owner-binding invariant at ingestion start:
 
-- call `ensure_owner()` before the initial reference packet is built;
-- bind `OWNER` only from `OwnerNodeManager.resolve_owner_alias("OWNER")`;
+- resolve an authenticated application user into a request-scoped owner context
+  before the initial reference packet is built;
+- bind `OWNER` only from that context's current graph-owner ID;
 - validate every existing ref binding against the graph before a mutation;
 - when a reset/missing-node condition is detected, discard the stale binding,
   rebuild the trusted owner entry, and retry only the affected operation;
 - do not retain `owner-local` or any alternate backend owner identity.
 
-The local `OWNER` alias remains model-facing; `person:owner` remains solely a
-backend-owned graph ID.
+The local `OWNER` alias remains model-facing; the graph-owner ID remains solely
+backend-owned. The present configured owner is the local development resolver;
+deployment must provide an authenticated resolver that selects the requesting
+user's owner Person node.
 
 **Acceptance criteria.** After deleting graph nodes and restarting the local
 application, a first-person ingestion creates/reuses the canonical owner and
