@@ -34,6 +34,7 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticRunResult,
     AgenticStateInvocation,
     AgenticStateRunResult,
+    AgenticToolEvent,
 )
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 
@@ -144,6 +145,12 @@ class MemoryIngestionRuntimeService:
                 node_action_result.state_results = state_results
                 node_action_result.compact_trace = compact_trace
                 return node_action_result
+            if node_action_result.status != "ok":
+                return _failed_memory_phase_result(
+                    state_results,
+                    compact_trace,
+                    phase=MemoryPlanningPhase.NODES,
+                )
 
         if current_payload.memory_plan is None:
             memory_plan_result = self._run_memory_phase_plan(
@@ -196,6 +203,12 @@ class MemoryIngestionRuntimeService:
                 memory_action_result.state_results = state_results
                 memory_action_result.compact_trace = compact_trace
                 return memory_action_result
+            if memory_action_result.status != "ok":
+                return _failed_memory_phase_result(
+                    state_results,
+                    compact_trace,
+                    phase=MemoryPlanningPhase.MEMORY_LOGS,
+                )
 
         if current_payload.edge_plan is None:
             edge_plan_result = self._run_memory_phase_plan(
@@ -243,6 +256,12 @@ class MemoryIngestionRuntimeService:
                 edge_action_result.state_results = state_results
                 edge_action_result.compact_trace = compact_trace
                 return edge_action_result
+            if edge_action_result.status != "ok":
+                return _failed_memory_phase_result(
+                    state_results,
+                    compact_trace,
+                    phase=MemoryPlanningPhase.EDGES,
+                )
 
         aggregated_plan = MemoryPlan(
             steps=[*node_plan.steps, *memory_plan.steps, *edge_plan.steps],
@@ -458,9 +477,28 @@ class MemoryIngestionRuntimeService:
                 )
                 state_result = AgenticStateRunResult(
                     state_id=child_state,
-                    assistant_text=None,
+                    assistant_text=result.output,
                     terminal=result.status not in {"interrupted", "pending"},
                     status=str(result.status),
+                    tool_events=[
+                        AgenticToolEvent(
+                            tool_name=tool_name,
+                            status=str(result.status),
+                            output=result.output,
+                            data=result.data if isinstance(result.data, dict) else None,
+                            error=(
+                                result.error.model_dump(mode="json", exclude_none=True)
+                                if result.error is not None
+                                else {
+                                    "code": "required_child_operation_failed",
+                                    "message": "A required ingestion operation failed.",
+                                    "retryable": False,
+                                }
+                                if result.status not in {"ok", "interrupted", "pending"}
+                                else None
+                            ),
+                        )
+                    ],
                     metadata={"tool_result": result.model_dump(mode="json", exclude_none=True)},
                 )
                 action_results.append(state_result)
@@ -483,6 +521,24 @@ class MemoryIngestionRuntimeService:
             status="ok" if all(item.status == "ok" for item in action_results) else "error",
             compact_trace=compact_trace,
         )
+
+
+def _failed_memory_phase_result(
+    state_results: list[AgenticStateRunResult],
+    compact_trace: list[dict[str, Any]],
+    *,
+    phase: MemoryPlanningPhase,
+) -> AgenticRunResult:
+    """Stop required ingestion work without exposing a tool result as chat prose."""
+
+    return AgenticRunResult(
+        final_text="I could not save this memory safely, so I stopped before making further changes.",
+        visited_states=[result.state_id for result in state_results],
+        state_results=state_results,
+        status="error",
+        compact_trace=compact_trace,
+        metadata={"failed_phase": phase.value},
+    )
 
 
 def _register_planned_refs(ref_context: Any, packet: Any) -> None:

@@ -492,7 +492,8 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
         AgenticToolExecutionContext(
             session_id="session-1",
             conversation_id="conversation-1",
-            owner_id="owner-1",
+            application_user_id="account-user-1",
+            graph_owner_id="person:owner",
             agentic_runtime=runtime,
             ref_context=refs,
         ),
@@ -845,6 +846,69 @@ def test_memory_ingestion_resume_reuses_existing_reasoning(monkeypatch) -> None:
     )
 
 
+def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> None:
+    phases: list[MemoryPlanningPhase] = []
+
+    def execute(_self, *_args, phase: MemoryPlanningPhase, **_kwargs):
+        phases.append(phase)
+        return AgenticRunResult(
+            final_text="MemoryLog creation requires at least one host target.",
+            state_results=[
+                AgenticStateRunResult(
+                    state_id=AgenticStateId.MEMORY_CREATION,
+                    status="error",
+                )
+            ],
+            status="error",
+        )
+
+    monkeypatch.setattr(MemoryIngestionRuntimeService, "_execute_memory_plan_actions", execute)
+    payload = MemoryIngestionContext(
+        conversation=_conversation("Remember Marco."),
+        reasoning=MemoryIngestionReasoning(planning_guidance="Keep the context coherent."),
+        node_plan=NodeMemoryPlan(
+            summary="Nodes planned.",
+            steps=[
+                MemoryPlanStep(
+                    phase=MemoryPlanningPhase.NODES,
+                    actions=[MemoryPlanAction(action_type=MemoryPlanActionType.CREATE_NODE)],
+                )
+            ],
+            node_plan_packet=NodePlanPacket(summary="Nodes ready."),
+        ),
+        memory_plan=MemoryLogMemoryPlan(
+            summary="Memory logs planned.",
+            steps=[
+                MemoryPlanStep(
+                    phase=MemoryPlanningPhase.MEMORY_LOGS,
+                    actions=[MemoryPlanAction(action_type=MemoryPlanActionType.CREATE_MEMORY_LOG)],
+                )
+            ],
+            memory_plan_packet=MemoryPlanPacket(summary="Memory logs ready."),
+        ),
+        edge_plan=EdgeMemoryPlan(
+            summary="Edges planned.",
+            steps=[
+                MemoryPlanStep(
+                    phase=MemoryPlanningPhase.EDGES,
+                    actions=[MemoryPlanAction(action_type=MemoryPlanActionType.UPDATE_NODE)],
+                )
+            ],
+        ),
+    )
+
+    result = MemoryIngestionRuntimeService(runtime=object()).run(
+        payload,
+        AgenticToolExecutionContext(),
+        payload.conversation,
+    )
+
+    assert result.status == "error"
+    assert result.metadata["failed_phase"] == MemoryPlanningPhase.NODES.value
+    assert phases == [MemoryPlanningPhase.NODES]
+    assert "could not save this memory safely" in (result.final_text or "")
+
+
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     provider = ScriptedToolCallingProvider(
         [
@@ -862,7 +926,8 @@ def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
         AgenticToolExecutionContext(
             session_id="session-1",
             conversation_id="conversation-1",
-            owner_id="owner-1",
+            application_user_id="account-user-1",
+            graph_owner_id="person:owner",
             ref_context=_existing_graph_ref_context(),
         ),
     )
