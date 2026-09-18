@@ -185,6 +185,23 @@ class AgenticStateRunner:
                 state_id.value,
                 "failed",
             )
+            record_ai_flow_event(
+                title=f"{state_value} - State Failed",
+                call_kind="agentic_state_output",
+                state_id=state_value,
+                purpose=model_task,
+                model=route.model,
+                prompt_id=state_config.prompt_id,
+                toolbox_name=toolbox.name,
+                status="error",
+                sections=[
+                    _trace_json_section(
+                        "ERROR / DIAGNOSTICS",
+                        {"status": "error", "message": result.error},
+                    )
+                ],
+                metadata={"route": route.model_dump(mode="json", exclude_none=True)},
+            )
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=result.error,
@@ -385,6 +402,23 @@ class AgenticStateRunner:
                 invocation.execution_context,
                 state_id.value,
                 "failed",
+            )
+            record_ai_flow_event(
+                title=f"{state_value} - Structured State Failed",
+                call_kind="agentic_structured_state_output",
+                state_id=state_value,
+                purpose=model_task,
+                model=route.model,
+                prompt_id=state_config.prompt_id,
+                schema_id=output_schema.__name__,
+                status="error",
+                sections=[
+                    _trace_json_section(
+                        "ERROR / DIAGNOSTICS",
+                        {"status": "error", "message": error},
+                    )
+                ],
+                metadata={"route": route.model_dump(mode="json", exclude_none=True)},
             )
             return AgenticStateRunResult(
                 state_id=state_id,

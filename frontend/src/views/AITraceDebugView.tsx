@@ -20,11 +20,23 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const [sessions, setSessions] = useState<ConversationSessionSummary[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [showRawEvents, setShowRawEvents] = useState(false);
   const [token] = useState(() => localStorage.getItem(tokenStorageKey) ?? defaultWebChatToken);
 
   const sortedEvents = useMemo(
     () => [...events].sort((left, right) => left.sequence - right.sequence),
     [events]
+  );
+  const failureCount = useMemo(
+    () => sortedEvents.filter(isTraceFailure).length,
+    [sortedEvents]
+  );
+  const visibleEvents = useMemo(
+    () =>
+      sortedEvents.filter(
+        (event) => showRawEvents || isWorkflowEvent(event) || isTraceFailure(event)
+      ),
+    [showRawEvents, sortedEvents]
   );
   const allSectionKeys = useMemo(
     () =>
@@ -96,11 +108,25 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
           setCollapsedEvents((current) => {
             const next = new Set(current);
             result.events.forEach((event) => {
-              if (event.sequence === newestSequence) {
+              if (event.sequence === newestSequence || isTraceFailure(event)) {
                 next.delete(event.sequence);
               } else {
                 next.add(event.sequence);
               }
+            });
+            return next;
+          });
+          setExpandedSections((current) => {
+            const next = new Set(current);
+            result.events.forEach((event) => {
+              if (!isTraceFailure(event)) {
+                return;
+              }
+              event.sections.forEach((section, sectionIndex) => {
+                if (section.title.includes("ERROR") || sectionHasFailure(section.content)) {
+                  next.add(traceSectionKey(event.sequence, sectionIndex));
+                }
+              });
             });
             return next;
           });
@@ -179,6 +205,12 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
         </div>
         <div className="ai-trace-header-actions">
           <span>{isPolling ? "Polling" : "Idle"}</span>
+          <span className={failureCount > 0 ? "ai-trace-failure-count" : ""}>
+            {failureCount > 0 ? `${failureCount} failure${failureCount === 1 ? "" : "s"}` : "No failures"}
+          </span>
+          <button type="button" onClick={() => setShowRawEvents((current) => !current)}>
+            {showRawEvents ? "Hide raw events" : `Show raw events (${sortedEvents.length - visibleEvents.length})`}
+          </button>
           <button type="button" disabled={sortedEvents.length === 0} onClick={handleExpandAll}>
             Expand all
           </button>
@@ -237,7 +269,7 @@ export function AITraceDebugView({ sessionId }: AITraceDebugViewProps) {
         ) : sortedEvents.length === 0 ? (
           <div className="ai-trace-empty">No trace events recorded yet.</div>
         ) : (
-          sortedEvents.map((event) => (
+          visibleEvents.map((event) => (
             <TraceEventCard
               key={event.sequence}
               event={event}
@@ -280,7 +312,7 @@ function TraceEventCard({
   ].filter(Boolean);
   const articleClassName = [
     "ai-trace-event",
-    event.status === "error" ? "is-error" : "",
+    isTraceFailure(event) ? "is-error" : "",
     isCollapsed ? "is-collapsed" : ""
   ]
     .filter(Boolean)
@@ -346,8 +378,8 @@ function TraceEventCard({
 }
 
 function traceSummary(event: AIFlowTraceEvent): string {
-  if (event.status === "error") {
-    return "This runtime step reported an error. Expand technical details for the recorded failure.";
+  if (isTraceFailure(event)) {
+    return failureReason(event) ?? "This runtime step failed. The error details are open below.";
   }
   if (event.call_kind.includes("tool")) {
     return event.toolbox_name
@@ -364,6 +396,34 @@ function traceSummary(event: AIFlowTraceEvent): string {
     return "Generated vector representations for retrieval.";
   }
   return `Recorded ${humanize(event.call_kind)}.`;
+}
+
+function isWorkflowEvent(event: AIFlowTraceEvent): boolean {
+  return event.call_kind === "agentic_state_input" ||
+    event.call_kind === "agentic_state_output" ||
+    event.call_kind === "agentic_structured_state_input" ||
+    event.call_kind === "agentic_structured_state_output" ||
+    event.call_kind === "backend_process_result";
+}
+
+function isTraceFailure(event: AIFlowTraceEvent): boolean {
+  return ["error", "failed", "blocked"].includes(event.status.toLowerCase()) ||
+    event.sections.some((section) => sectionHasFailure(section.content));
+}
+
+function sectionHasFailure(content: string): boolean {
+  return /"(?:status|level)"\s*:\s*"(?:error|failed|blocked)"|"error"\s*:/i.test(content);
+}
+
+function failureReason(event: AIFlowTraceEvent): string | undefined {
+  const diagnostic = event.sections.find((section) =>
+    section.title.includes("ERROR") || sectionHasFailure(section.content)
+  );
+  if (!diagnostic) {
+    return undefined;
+  }
+  const match = diagnostic.content.match(/"(?:message|error)"\s*:\s*"([^"]+)"/i);
+  return match?.[1];
 }
 
 function humanize(value: string): string {
