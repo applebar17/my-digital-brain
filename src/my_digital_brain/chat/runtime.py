@@ -62,7 +62,6 @@ class ChatRuntime:
         *,
         agentic_runtime: AgenticRuntime | None = None,
         graph_service: object | None = None,
-        ingestion_service: object | None = None,
         semantic_search_service: object | None = None,
         vectorization_service: object | None = None,
         history_service: AgenticHistoryService | None = None,
@@ -76,7 +75,6 @@ class ChatRuntime:
             raise ChatValidationError("ChatRuntime requires an AgenticRuntime.")
         self.agentic_runtime = agentic_runtime
         self.graph_service = graph_service
-        self.ingestion_service = ingestion_service
         self.semantic_search_service = semantic_search_service
         self.vectorization_service = vectorization_service
         self.history_service = history_service or AgenticHistoryService()
@@ -465,7 +463,6 @@ class ChatRuntime:
         owner_identity = self._resolve_owner_identity(owner_id)
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
-            ingestion_service=self.ingestion_service,
             semantic_search_service=self.semantic_search_service,
             vectorization_service=self.vectorization_service,
             chat_store=self.store,
@@ -661,7 +658,6 @@ class ChatRuntime:
         owner_identity = self._resolve_owner_identity(message.owner_id)
         execution_context = AgenticToolExecutionContext(
             graph_service=self.graph_service,
-            ingestion_service=self.ingestion_service,
             semantic_search_service=self.semantic_search_service,
             vectorization_service=self.vectorization_service,
             chat_store=self.store,

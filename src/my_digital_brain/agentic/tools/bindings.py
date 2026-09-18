@@ -53,7 +53,6 @@ GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = (
 class AgenticToolExecutionContext:
     state_id: str | None = None
     graph_service: Any | None = None
-    ingestion_service: Any | None = None
     semantic_search_service: Any | None = None
     vectorization_service: Any | None = None
     chat_store: Any | None = None
@@ -1276,9 +1275,7 @@ class AgenticToolBindings:
         return _model_facing_retrieval_value(_serialize(value), self.context.ref_context)
 
     def _refresh_vectors(self, tool_name: str, target_ids: list[str]) -> dict[str, Any]:
-        service = self.context.vectorization_service or getattr(
-            self.context.ingestion_service, "vectorization_service", None
-        )
+        service = self.context.vectorization_service
         if service is None:
             return {
                 "refreshed_vector_scopes": [],

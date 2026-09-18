@@ -235,7 +235,6 @@ class AgenticRuntime:
     ) -> ToolResult:
         child_context = AgenticToolExecutionContext(
             graph_service=parent_execution_context.graph_service,
-            ingestion_service=parent_execution_context.ingestion_service,
             semantic_search_service=parent_execution_context.semantic_search_service,
             vectorization_service=parent_execution_context.vectorization_service,
             chat_store=parent_execution_context.chat_store,
