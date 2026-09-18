@@ -19,6 +19,7 @@ from my_digital_brain.agentic.runtime_helpers import (
 from my_digital_brain.agentic.runtime_models import (
     AgenticStateInvocation,
     AgenticStateRunResult,
+    AgenticToolEvent,
 )
 from my_digital_brain.agentic.state import AgenticStateConfig, default_state_configs
 from my_digital_brain.agentic.tools import (
@@ -217,10 +218,8 @@ class AgenticStateRunner:
                 },
             )
         tool_events = invocation.execution_context.tool_events[event_start:]
-        has_error = any(
-            event.status not in {"ok", "accepted", "pending", "interrupted"}
-            for event in tool_events
-        )
+        _mark_recovered_tool_attempts(tool_events)
+        has_error = _has_terminal_tool_error(tool_events)
         state_run_result = AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
@@ -667,10 +666,8 @@ class AgenticStateRunner:
                 },
             )
         tool_events = execution_context.tool_events[event_start:]
-        has_error = any(
-            event.status not in {"ok", "accepted", "pending", "interrupted"}
-            for event in tool_events
-        )
+        _mark_recovered_tool_attempts(tool_events)
+        has_error = _has_terminal_tool_error(tool_events)
         self._publish_activity(
             execution_context,
             state_id.value,
@@ -702,3 +699,27 @@ class AgenticStateRunner:
         publish = getattr(store, "publish_chat_activity", None)
         if callable(publish) and session_id:
             publish(session_id, activity_key, status)
+
+
+def _mark_recovered_tool_attempts(events: list[AgenticToolEvent]) -> None:
+    """Keep failed repair attempts visible without failing a later successful retry."""
+
+    later_successful_tools: set[str] = set()
+    for event in reversed(events):
+        if event.status in {"ok", "accepted"}:
+            later_successful_tools.add(event.tool_name)
+            continue
+        if event.status != "recoverable_error" or event.tool_name not in later_successful_tools:
+            continue
+        event.data = {
+            **(event.data or {}),
+            "recovered_by_later_attempt": True,
+        }
+
+
+def _has_terminal_tool_error(events: list[AgenticToolEvent]) -> bool:
+    return any(
+        event.status not in {"ok", "accepted", "pending", "interrupted"}
+        and not bool((event.data or {}).get("recovered_by_later_attempt"))
+        for event in events
+    )

@@ -59,6 +59,8 @@ class GraphRelationshipBase(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     description: str | None = None
+    relationship_kind: str | None = None
+    relationship_detail: str | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     resolved_start: str | None = None

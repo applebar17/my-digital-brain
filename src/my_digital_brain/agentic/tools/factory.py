@@ -57,7 +57,9 @@ def _named_handler(
 ) -> Callable[..., ToolResult]:
     def wrapped(**kwargs: Any) -> ToolResult:
         previous_arguments = dict(execution_context.current_tool_arguments)
+        previous_name = execution_context.current_tool_name
         execution_context.current_tool_arguments = dict(kwargs)
+        execution_context.current_tool_name = name
         try:
             result = handler(**kwargs)
         except Exception as exc:  # pragma: no cover - defensive boundary
@@ -73,6 +75,7 @@ def _named_handler(
             )
         finally:
             execution_context.current_tool_arguments = previous_arguments
+            execution_context.current_tool_name = previous_name
         execution_context.tool_events.append(_event_from_result(name, result))
         return result
 

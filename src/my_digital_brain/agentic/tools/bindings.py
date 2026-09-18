@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from copy import copy
 from dataclasses import dataclass, field
@@ -17,6 +16,11 @@ from my_digital_brain.agentic.contexts import (
     QueryRetrievalPlanningContext,
 )
 from my_digital_brain.agentic.enums import AgenticStateId, RefObjectKind
+from my_digital_brain.agentic.mutations import (
+    AGENTIC_CREATABLE_NODE_LABELS,
+    agentic_node_mutation_definition,
+    identity_gap_for_node_creation,
+)
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime_models import AgenticToolEvent
 from my_digital_brain.ai.logging import log_event
@@ -28,23 +32,15 @@ from my_digital_brain.clarification.contracts import (
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 from my_digital_brain.core.owner_context import OwnerSnapshot
 from my_digital_brain.graph.models import (
-    AnimalNodeCreate,
-    EventNodeCreate,
-    GraphNodeCreateModel,
-    ObjectNodeCreate,
-    OrganizationNodeCreate,
-    PersonNodeCreate,
-    PlaceNodeCreate,
-    SocialCircleNodeCreate,
-    TopicNodeCreate,
+    GraphNodePatchModel,
+    GraphRelationshipWrite,
+    MemoryLogCreate,
+    RelationshipStateWrite,
 )
 from my_digital_brain.graph.registry import (
     CORE_RELATIONSHIP_TYPE_SET,
-    GRAPH_MUTABLE_NODE_LABELS,
     GRAPH_MUTABLE_RELATIONSHIP_TYPES,
 )
-
-GRAPH_UPDATE_CREATABLE_LABELS = frozenset(GRAPH_MUTABLE_NODE_LABELS)
 
 logger = logging.getLogger(__name__)
 
@@ -801,28 +797,31 @@ class AgenticToolBindings:
                 resolved.append(backend_id)
         return resolved, None
 
-    def _handle_create_memory_log(
-        self,
-        title: str,
-        log_text: str,
-        host_target_ids: list[str],
-        primary_host_target_id: str | None = None,
-        involved_target_ids: list[str] | None = None,
-        relationship_context_target_ids: list[str] | None = None,
-        media_refs: list[str] | None = None,
-        log_kind: str | None = None,
-        source_kind: str | None = None,
-        happened_at: str | None = None,
-    ) -> ToolResult:
+    def _handle_create_memory_log(self, memory_log: dict[str, Any]) -> ToolResult:
+        tool_name = "create_memory_log"
         graph = self.context.graph_service
         if graph is None:
             return _update_tool_error(
-                "create_memory_log",
+                tool_name,
                 "missing_dependency",
                 "Graph service is not configured.",
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
+        try:
+            request = MemoryLogCreate.model_validate(memory_log)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+        title = request.title
+        log_text = request.log_text
+        host_target_ids = request.host_target_ids
+        primary_host_target_id = request.primary_host_target_id
+        involved_target_ids = request.involved_target_ids
+        relationship_context_target_ids = request.relationship_context_target_ids
+        media_refs = request.media_refs
+        log_kind = request.log_kind
+        source_kind = request.source_kind
+        happened_at = request.happened_at
         host_ids, error = self._resolve_refs(
             host_target_ids,
             expected_kind=RefObjectKind.NODE,
@@ -948,46 +947,17 @@ class AgenticToolBindings:
         except Exception as exc:
             return _update_exception_result("create_memory_log", exc)
 
-    def _handle_create_person_node(self, person: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node(
-            "create_person_node", "Person", PersonNodeCreate, person
-        )
-
-    def _handle_create_event_node(self, event: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node("create_event_node", "Event", EventNodeCreate, event)
-
-    def _handle_create_place_node(self, place: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node("create_place_node", "Place", PlaceNodeCreate, place)
-
-    def _handle_create_organization_node(self, organization: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node(
-            "create_organization_node", "Organization", OrganizationNodeCreate, organization
-        )
-
-    def _handle_create_object_node(self, object: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node(
-            "create_object_node", "Object", ObjectNodeCreate, object
-        )
-
-    def _handle_create_animal_node(self, animal: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node(
-            "create_animal_node", "Animal", AnimalNodeCreate, animal
-        )
-
-    def _handle_create_social_circle_node(self, social_circle: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node(
-            "create_social_circle_node", "SocialCircle", SocialCircleNodeCreate, social_circle
-        )
-
-    def _handle_create_topic_node(self, topic: dict[str, Any]) -> ToolResult:
-        return self._create_typed_graph_node("create_topic_node", "Topic", TopicNodeCreate, topic)
+    def _handle_create_typed_node(self, **arguments: Any) -> ToolResult:
+        tool_name = self.context.current_tool_name or ""
+        try:
+            definition = agentic_node_mutation_definition(tool_name)
+            payload = arguments[definition.argument_name]
+        except (KeyError, ValueError) as exc:
+            return _update_exception_result(tool_name or "create_typed_node", exc)
+        return self._create_typed_graph_node(tool_name, definition.label, definition.create_model, payload)
 
     def _create_typed_graph_node(
-        self,
-        tool_name: str,
-        label: str,
-        contract: type[GraphNodeCreateModel],
-        payload: dict[str, Any],
+        self, tool_name: str, label: str, contract: type[Any], payload: dict[str, Any]
     ) -> ToolResult:
         graph = self.context.graph_service
         if graph is None:
@@ -998,7 +968,7 @@ class AgenticToolBindings:
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
-        if label not in GRAPH_UPDATE_CREATABLE_LABELS:
+        if label not in AGENTIC_CREATABLE_NODE_LABELS:
             return _update_tool_error(
                 tool_name,
                 "graph_update_label_not_allowed",
@@ -1008,9 +978,20 @@ class AgenticToolBindings:
                 details={"label": label},
             )
         try:
-            properties = contract.model_validate(payload).model_dump(exclude_none=True)
+            validated = contract.model_validate(payload)
         except Exception as exc:
             return _update_exception_result(tool_name, exc)
+        identity_gap = identity_gap_for_node_creation(label, validated)
+        if identity_gap is not None:
+            return _update_tool_error(
+                tool_name,
+                "identity_clarification_required",
+                identity_gap,
+                "Call ask_clarification before creating this person; do not write a name-only identity.",
+                retryable=True,
+                details={"label": label},
+            )
+        properties = validated.model_dump(exclude_none=True)
         lifecycle_state = properties.get("lifecycle_state")
         if lifecycle_state in {"archived", "deleted"}:
             return _update_tool_error(
@@ -1042,41 +1023,69 @@ class AgenticToolBindings:
         except Exception as exc:
             return _update_exception_result(tool_name, exc)
 
-    def _handle_patch_graph_node(self, node_id: str, properties_json: str) -> ToolResult:
+    def _handle_patch_typed_node(self, node_id: str, **arguments: Any) -> ToolResult:
+        tool_name = self.context.current_tool_name or ""
+        try:
+            definition = agentic_node_mutation_definition(tool_name)
+            payload = arguments[definition.argument_name]
+        except (KeyError, ValueError) as exc:
+            return _update_exception_result(tool_name or "patch_typed_node", exc)
+        return self._patch_typed_graph_node(
+            tool_name,
+            node_id,
+            definition.label,
+            definition.patch_model,
+            payload,
+        )
+
+    def _patch_typed_graph_node(
+        self,
+        tool_name: str,
+        node_id: str,
+        expected_label: str,
+        contract: type[GraphNodePatchModel],
+        payload: dict[str, Any],
+    ) -> ToolResult:
         graph = self.context.graph_service
         if graph is None:
             return _update_tool_error(
-                "patch_graph_node",
+                tool_name,
                 "missing_dependency",
                 "Graph service is not configured.",
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
-        properties = _parse_json_object("patch_graph_node", properties_json)
-        if isinstance(properties, ToolResult):
-            return properties
-        lifecycle_state = properties.get("lifecycle_state")
-        if lifecycle_state in {"archived", "deleted"}:
-            return _update_tool_error(
-                "patch_graph_node",
-                "destructive_lifecycle_not_allowed",
-                "Wave 5 graph update tools do not allow archive/delete lifecycle transitions.",
-                "Use a non-destructive patch or defer deletion/merge work.",
-                retryable=False,
-                details={"lifecycle_state": lifecycle_state},
-            )
         resolved_node_id, error = self._resolve_ref(
             node_id,
             expected_kind=RefObjectKind.NODE,
-            tool_name="patch_graph_node",
+            tool_name=tool_name,
         )
         if error is not None:
             return error
         try:
+            target = graph.get_node(resolved_node_id)
+            if target.label != expected_label:
+                return _update_tool_error(
+                    tool_name,
+                    "node_label_mismatch",
+                    f"Target ref resolves to {target.label}, not {expected_label}.",
+                    f"Use the patch tool for {target.label} or select a {expected_label} target ref.",
+                    retryable=True,
+                    details={"target_label": target.label, "expected_label": expected_label},
+                )
+            properties = contract.model_validate(payload).model_dump(exclude_none=True)
+            if not properties:
+                return _update_tool_error(
+                    tool_name,
+                    "empty_node_patch",
+                    "No writable patch values were supplied.",
+                    "Supply at least one explicit field to update.",
+                    retryable=True,
+                )
             node = graph.patch_node(resolved_node_id, properties)
-            refreshed = self._refresh_vectors("patch_graph_node", [resolved_node_id])
+            refreshed = self._refresh_vectors(tool_name, [resolved_node_id])
             return _update_tool_result(
-                "patch_graph_node",
+                tool_name,
                 summary="Graph node patched.",
                 updated_refs=self._refs_for_backend_ids([resolved_node_id]),
                 affected_graph_ids=self._refs_for_backend_ids([resolved_node_id]),
@@ -1085,15 +1094,13 @@ class AgenticToolBindings:
                 data={"node": self._model_facing_value(node)},
             )
         except Exception as exc:
-            return _update_exception_result("patch_graph_node", exc)
+            return _update_exception_result(tool_name, exc)
 
     def _handle_upsert_graph_relationship(
         self,
-        relationship_type: str,
-        from_id: str,
-        to_id: str,
-        properties_json: str,
+        relationship: dict[str, Any],
     ) -> ToolResult:
+        tool_name = "upsert_graph_relationship"
         graph = self.context.graph_service
         if graph is None:
             return _update_tool_error(
@@ -1103,45 +1110,40 @@ class AgenticToolBindings:
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
-        if relationship_type in GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES:
+        try:
+            request = GraphRelationshipWrite.model_validate(relationship)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+        if request.relationship_type in GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES:
             return _update_tool_error(
                 "upsert_graph_relationship",
                 "graph_update_relationship_type_not_allowed",
-                f"Graph update tools cannot upsert relationship type '{relationship_type}' in Wave 5 v1.",
+                f"Graph update tools cannot upsert relationship type '{request.relationship_type}' in Wave 5 v1.",
                 "Use a supported non-destructive relationship type or defer merge/destructive work.",
                 retryable=False,
-                details={"relationship_type": relationship_type},
-            )
-        properties = _parse_json_object("upsert_graph_relationship", properties_json)
-        if isinstance(properties, ToolResult):
-            return properties
-        lifecycle_state = properties.get("lifecycle_state")
-        if lifecycle_state in {"archived", "deleted"}:
-            return _update_tool_error(
-                "upsert_graph_relationship",
-                "destructive_lifecycle_not_allowed",
-                "Wave 5 graph update tools do not allow archive/delete lifecycle transitions.",
-                "Use a non-destructive relationship update or defer deletion/merge work.",
-                retryable=False,
-                details={"lifecycle_state": lifecycle_state},
+                details={"relationship_type": request.relationship_type},
             )
         resolved_from_id, error = self._resolve_ref(
-            from_id,
+            request.from_id,
             expected_kind=RefObjectKind.NODE,
             tool_name="upsert_graph_relationship",
         )
         if error is not None:
             return error
         resolved_to_id, error = self._resolve_ref(
-            to_id,
+            request.to_id,
             expected_kind=RefObjectKind.NODE,
             tool_name="upsert_graph_relationship",
         )
         if error is not None:
             return error
         try:
+            properties = request.model_dump(
+                exclude={"relationship_type", "from_id", "to_id"},
+                exclude_none=True,
+            )
             relationship = graph.upsert_relationship(
-                relationship_type,
+                request.relationship_type,
                 resolved_from_id,
                 resolved_to_id,
                 properties,
@@ -1172,10 +1174,9 @@ class AgenticToolBindings:
 
     def _handle_create_relationship_state(
         self,
-        context_id: str,
-        properties_json: str,
-        make_current: bool = True,
+        relationship_state: dict[str, Any],
     ) -> ToolResult:
+        tool_name = "create_relationship_state"
         graph = self.context.graph_service
         if graph is None:
             return _update_tool_error(
@@ -1185,21 +1186,25 @@ class AgenticToolBindings:
                 "Graph update cannot continue without graph_service.",
                 retryable=False,
             )
-        properties = _parse_json_object("create_relationship_state", properties_json)
-        if isinstance(properties, ToolResult):
-            return properties
+        try:
+            request = RelationshipStateWrite.model_validate(relationship_state)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
         resolved_context_id, error = self._resolve_ref(
-            context_id,
+            request.context_id,
             expected_kind=RefObjectKind.CONTEXT,
             tool_name="create_relationship_state",
         )
         if error is not None:
             return error
         try:
+            properties = request.model_dump(
+                exclude={"context_id", "make_current"}, exclude_none=True
+            )
             state = graph.create_relationship_state(
                 resolved_context_id,
                 properties,
-                make_current=make_current,
+                make_current=request.make_current,
             )
             state_id = str(state.properties["id"])
             refreshed = self._refresh_vectors(
@@ -1219,7 +1224,7 @@ class AgenticToolBindings:
                 ],
                 updated_refs=(
                     self._refs_for_backend_ids([resolved_context_id])
-                    if make_current
+                    if request.make_current
                     else []
                 ),
                 affected_graph_ids=self._refs_for_backend_ids(
@@ -1627,30 +1632,6 @@ def _update_exception_result(tool_name: str, exc: Exception) -> ToolResult:
         retryable=retryable,
         details={"exception_type": exc_type},
     )
-
-
-def _parse_json_object(tool_name: str, value: str) -> dict[str, Any] | ToolResult:
-    try:
-        parsed = json.loads(value or "{}")
-    except json.JSONDecodeError as exc:
-        return _update_tool_error(
-            tool_name,
-            "invalid_json",
-            f"properties_json must be a JSON object: {exc}",
-            "Retry with a valid JSON object string.",
-            retryable=True,
-            details={"json_error": str(exc)},
-        )
-    if not isinstance(parsed, dict):
-        return _update_tool_error(
-            tool_name,
-            "invalid_json_object",
-            "properties_json must decode to an object.",
-            'Retry with a JSON object, for example {"status":"active"}.',
-            retryable=True,
-            details={"decoded_type": type(parsed).__name__},
-        )
-    return parsed
 
 
 def _drop_none(value: dict[str, Any]) -> dict[str, Any]:

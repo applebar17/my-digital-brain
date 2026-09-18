@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.mutations import AGENTIC_NODE_MUTATION_DEFINITIONS
 from my_digital_brain.agentic.state import AgenticStateConfig
 from my_digital_brain.agentic.tools.specs import (
     array_property,
     boolean_property,
-    enum_property,
     integer_property,
     object_property,
     optional_string_property,
@@ -19,16 +19,10 @@ from my_digital_brain.agentic.tools.specs import (
 from my_digital_brain.ai.models import ToolSpec
 from my_digital_brain.clarification.contracts import clarification_doubts_schema
 from my_digital_brain.graph.models import (
-    AnimalNodeCreate,
-    EventNodeCreate,
-    ObjectNodeCreate,
-    OrganizationNodeCreate,
-    PersonNodeCreate,
-    PlaceNodeCreate,
-    SocialCircleNodeCreate,
-    TopicNodeCreate,
+    GraphRelationshipWrite,
+    MemoryLogCreate,
+    RelationshipStateWrite,
 )
-from my_digital_brain.graph.registry import GRAPH_MUTABLE_RELATIONSHIP_TYPES
 
 
 @dataclass(frozen=True)
@@ -90,11 +84,10 @@ def _definition(
     states: Iterable[AgenticStateId],
     handler_key: str | None = None,
     properties: dict[str, dict] | None = None,
-    required: list[str] | None = None,
 ) -> AgenticToolDefinition:
     return AgenticToolDefinition(
         name=name,
-        spec=tool_spec(name, description, properties=properties, required=required),
+        spec=tool_spec(name, description, properties=properties),
         allowed_states=frozenset(_state_value(state) for state in states),
         handler_key=handler_key or name,
     )
@@ -125,7 +118,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "desired_view": optional_string_property("Requested view such as timeline or map."),
                 "metadata": object_property("Additional low-noise query metadata."),
             },
-            required=["question"],
         ),
         _definition(
             "ingest_memory",
@@ -136,7 +128,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             ),
             states=conversation_states,
             properties={},
-            required=[],
         ),
         _definition(
             "run_memory_creation",
@@ -146,7 +137,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "action_id": string_property("Plan action id to execute in memory_creation."),
                 "metadata": object_property("Additional low-noise execution metadata."),
             },
-            required=["action_id"],
         ),
         _definition(
             "update_memory_graph",
@@ -169,7 +159,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "source_refs": array_property("Optional model-facing source or media refs."),
                 "metadata": object_property("Additional low-noise request metadata."),
             },
-            required=[],
         ),
         _definition(
             "ask_clarification",
@@ -190,7 +179,6 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             properties={
                 "doubts": clarification_doubts_schema(),
             },
-            required=["doubts"],
         ),
         *_clarification_tool_definitions(clarification_states),
         *_graph_read_definitions(
@@ -212,45 +200,17 @@ def _default_definitions() -> list[AgenticToolDefinition]:
                 "target_ids": array_property("Known model-facing node refs supplied by the caller."),
                 "limit": integer_property("Maximum candidate targets.", default=5, maximum=20),
             },
-            required=["query"],
         ),
         _definition(
             "create_memory_log",
-            "Create one compact MemoryLog and link it to host, involved, relationship context, and media targets.",
+            "Create one compact MemoryLog from the explicit memory_log object and link it to supplied refs.",
             states=[*graph_update_states, *memory_creation_states],
-            properties={
-                "title": string_property("Short, user-facing timeline headline for this one memory atom."),
-                "log_text": string_property("Compact self-contained detail for the same memory atom; never paste the full source story."),
-                "host_target_ids": array_property("Host node refs for this memory log."),
-                "primary_host_target_id": optional_string_property(
-                    "Primary host ref when there are multiple hosts.",
-                ),
-                "involved_target_ids": array_property("Additional involved node refs."),
-                "relationship_context_target_ids": array_property(
-                    "RelationshipContext refs updated by this log.",
-                ),
-                "media_refs": array_property("MediaAsset ids or external media refs."),
-                "log_kind": optional_string_property("Log kind, such as update or correction."),
-                "source_kind": optional_string_property(
-                    "Source kind, such as chat or user_update."
-                ),
-                "happened_at": optional_string_property("Optional ISO event/update time."),
-            },
-            required=["title", "log_text", "host_target_ids"],
+            properties={"memory_log": _pydantic_object_property(MemoryLogCreate, "Explicit MemoryLog fields.")},
         ),
         *_node_creation_definitions(
             [*graph_update_states, *memory_creation_states],
         ),
-        _definition(
-            "patch_graph_node",
-            "Patch a supported graph node using structurally validated JSON properties.",
-            states=graph_update_states,
-            properties={
-                "node_id": string_property("Target node ref from the active context."),
-                "properties_json": string_property("JSON object containing patch properties."),
-            },
-            required=["node_id", "properties_json"],
-        ),
+        *_node_patch_definitions(graph_update_states),
         _definition(
             "upsert_graph_relationship",
             (
@@ -260,28 +220,22 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             ),
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "relationship_type": enum_property(
-                    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
-                    "Supported non-destructive graph relationship type; do not invent variants.",
-                ),
-                "from_id": string_property("Source node ref from the active context."),
-                "to_id": string_property("Target node ref from the active context."),
-                "properties_json": string_property(
-                    "JSON object containing relationship properties."
-                ),
+                "relationship": _pydantic_object_property(
+                    GraphRelationshipWrite,
+                    "Explicit relationship endpoints, type, and writable fields.",
+                )
             },
-            required=["relationship_type", "from_id", "to_id", "properties_json"],
         ),
         _definition(
             "create_relationship_state",
             "Create a RelationshipState for a RelationshipContext and optionally mark it current.",
             states=[*graph_update_states, *memory_creation_states],
             properties={
-                "context_id": string_property("RelationshipContext ref from the active context."),
-                "properties_json": string_property("JSON object containing state properties."),
-                "make_current": boolean_property("Mark this state as current.", default=True),
+                "relationship_state": _pydantic_object_property(
+                    RelationshipStateWrite,
+                    "Explicit RelationshipState fields.",
+                )
             },
-            required=["context_id", "properties_json", "make_current"],
         ),
     ]
 
@@ -289,34 +243,46 @@ def _default_definitions() -> list[AgenticToolDefinition]:
 def _node_creation_definitions(states: list[AgenticStateId]) -> list[AgenticToolDefinition]:
     """Expose one explicit Pydantic-backed creation object per user-facing node type."""
 
-    definitions = (
-        ("create_person_node", "Person", "person", PersonNodeCreate),
-        ("create_event_node", "Event", "event", EventNodeCreate),
-        ("create_place_node", "Place", "place", PlaceNodeCreate),
-        ("create_organization_node", "Organization", "organization", OrganizationNodeCreate),
-        ("create_object_node", "Object", "object", ObjectNodeCreate),
-        ("create_animal_node", "Animal", "animal", AnimalNodeCreate),
-        ("create_social_circle_node", "SocialCircle", "social_circle", SocialCircleNodeCreate),
-        ("create_topic_node", "Topic", "topic", TopicNodeCreate),
-    )
     return [
         _definition(
-            tool_name,
+            definition.create_tool_name,
             (
-                f"Create one {label} node from the explicit `{argument_name}` object. "
+                f"Create one {definition.label} node from the explicit `{definition.argument_name}` object. "
                 "Use only the fields in that object. Backend IDs, normalized fields, "
                 "database references, and planning-only fields such as summary are not accepted."
             ),
             states=states,
+            handler_key="create_typed_node",
             properties={
-                argument_name: _pydantic_object_property(
-                    model,
-                    f"Explicit writable {label} node fields.",
+                definition.argument_name: _pydantic_object_property(
+                    definition.create_model,
+                    f"Explicit writable {definition.label} node fields.",
                 ),
             },
-            required=[argument_name],
         )
-        for tool_name, label, argument_name, model in definitions
+        for definition in AGENTIC_NODE_MUTATION_DEFINITIONS
+    ]
+
+
+def _node_patch_definitions(states: list[AgenticStateId]) -> list[AgenticToolDefinition]:
+    return [
+        _definition(
+            definition.patch_tool_name,
+            (
+                f"Patch one existing {definition.label} node using the explicit "
+                f"`{definition.argument_name}` object. The target ref must identify a {definition.label}."
+            ),
+            states=states,
+            handler_key="patch_typed_node",
+            properties={
+                "node_id": string_property("Target model ref from the active context."),
+                definition.argument_name: _pydantic_object_property(
+                    definition.patch_model,
+                    f"Explicit writable {definition.label} patch fields.",
+                ),
+            },
+        )
+        for definition in AGENTIC_NODE_MUTATION_DEFINITIONS
     ]
 
 
@@ -430,7 +396,6 @@ def _clarification_tool_definitions(
             f"parallel calls become one packet. {option_instruction} Do not create an Other option.",
             states=clarification_states,
             properties={**question_properties, "options": options},
-            required=[*question_properties, "options"],
         )
 
     return [
@@ -463,14 +428,6 @@ def _clarification_tool_definitions(
                     maximum=10,
                 ),
             },
-            required=[
-                "candidate_ref",
-                "entity_type",
-                "display_name",
-                "aliases",
-                "typed_identity_values",
-                "max_candidates",
-            ],
         ),
         _definition(
             "get_candidate_context",
@@ -484,7 +441,6 @@ def _clarification_tool_definitions(
                 "include_evidence": boolean_property("Include compact evidence.", default=True),
                 "limit": integer_property("Maximum context items per ref.", default=5, maximum=20),
             },
-            required=["refs", "include_relationships", "include_evidence", "limit"],
         ),
         _definition(
             "get_relationship_context",
@@ -496,7 +452,6 @@ def _clarification_tool_definitions(
                 "relationship_type": optional_string_property("Optional relationship type filter."),
                 "limit": integer_property("Maximum relationships.", default=5, maximum=20),
             },
-            required=["from_ref", "to_ref", "relationship_type", "limit"],
         ),
         question(
             "pick_one",
@@ -560,7 +515,6 @@ def _graph_read_definitions(
                 "timeline_limit": integer_property("Timeline item limit.", default=20),
                 "relationship_limit": integer_property("Relationship limit.", default=50),
             },
-            required=["node_id"],
         ),
         _definition(
             "get_entity_detail",
@@ -575,7 +529,6 @@ def _graph_read_definitions(
                 *clarification_states,
             ],
             properties=_node_detail_properties(),
-            required=["node_id"],
         ),
         _definition(
             "get_node_detail",
@@ -583,14 +536,12 @@ def _graph_read_definitions(
             states=contradiction_states,
             handler_key="get_entity_detail",
             properties=_node_detail_properties(),
-            required=["node_id"],
         ),
         _definition(
             "get_memories_involving_node",
             "Retrieve memories involving a seed node.",
             states=memory_query_states,
             properties=_node_detail_properties(),
-            required=["node_id"],
         ),
         _definition(
             "get_timeline",
@@ -603,7 +554,6 @@ def _graph_read_definitions(
                 "include_history": boolean_property("Include history records.", default=False),
                 "limit": integer_property("Timeline item limit.", default=100),
             },
-            required=["node_id"],
         ),
         _definition(
             "get_neighborhood_view",
@@ -625,7 +575,6 @@ def _graph_read_definitions(
                 "include_archived": boolean_property("Include archived records.", default=False),
                 "limit": integer_property("Maximum view nodes.", default=100),
             },
-            required=["seed_id"],
         ),
         _definition(
             "get_map_view",
@@ -657,7 +606,6 @@ def _graph_read_definitions(
                 "target_id": string_property("Target node id."),
                 "limit": integer_property("Maximum evidence records.", default=50),
             },
-            required=["target_id"],
         ),
         _definition(
             "get_latest_contact_details",
@@ -667,7 +615,6 @@ def _graph_read_definitions(
                 "node_id": string_property("Person or organization node id."),
                 "limit": integer_property("Maximum contact records.", default=20, maximum=50),
             },
-            required=["node_id"],
         ),
         _definition(
             "get_change_records",
@@ -678,7 +625,6 @@ def _graph_read_definitions(
                 "target_kind": optional_string_property("Target kind: node or relationship."),
                 "limit": integer_property("Maximum change records.", default=50),
             },
-            required=["target_id"],
         ),
         _definition(
             "get_relationship_state_history",
@@ -688,7 +634,6 @@ def _graph_read_definitions(
                 "context_id": string_property("RelationshipContext node id."),
                 "limit": integer_property("Maximum state records.", default=50),
             },
-            required=["context_id"],
         ),
     ]
 

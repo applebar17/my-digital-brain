@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from my_digital_brain.core.models import GraphRecordBase, GraphRelationshipBase
 from my_digital_brain.graph.exceptions import GraphValidationError
-from my_digital_brain.graph.registry import CORE_NODE_LABELS, validate_node_label
+from my_digital_brain.graph.registry import (
+    CORE_NODE_LABELS,
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+    validate_node_label,
+)
 
 
 class GraphNodeModel(GraphRecordBase):
@@ -173,6 +177,149 @@ class SocialCircleNodeCreate(GraphNodeCreateModel):
 class TopicNodeCreate(GraphNodeCreateModel):
     name: str = Field(description="Human-readable topic name from the source.")
     aliases: list[str] = Field(default_factory=list)
+
+
+class GraphNodePatchModel(BaseModel):
+    """Explicit model-facing fields that may be changed on an existing node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str | None = Field(
+        default=None,
+        description="Replacement source-grounded description, or null to leave unchanged.",
+    )
+
+
+class PersonNodePatch(GraphNodePatchModel):
+    display_name: str | None = None
+    aliases: list[str] | None = None
+    known_since: str | None = None
+    status: str | None = None
+
+
+class EventNodePatch(GraphNodePatchModel):
+    title: str | None = None
+    aliases: list[str] | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+
+
+class PlaceNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    place_precision: str | None = None
+
+
+class OrganizationNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    aliases: list[str] | None = None
+    domain: str | None = None
+
+
+class ObjectNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    category: str | None = None
+    owner_hint: str | None = None
+
+
+class AnimalNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    aliases: list[str] | None = None
+    species: str | None = None
+    breed: str | None = None
+    sex: str | None = None
+    status: str | None = None
+    known_since: str | None = None
+    date_of_birth: str | None = None
+    date_of_death: str | None = None
+    owner_hint: str | None = None
+
+
+class SocialCircleNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    aliases: list[str] | None = None
+    circle_type: str | None = None
+    source_kind: str | None = None
+
+
+class TopicNodePatch(GraphNodePatchModel):
+    name: str | None = None
+    aliases: list[str] | None = None
+
+
+class MemoryLogCreate(BaseModel):
+    """Explicit model-facing input for creating a linked MemoryLog."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(description="Short user-facing timeline headline for one memory atom.")
+    log_text: str = Field(
+        description="Compact self-contained detail for the same memory atom; never the full source story."
+    )
+    host_target_ids: list[str] = Field(description="Model refs of host nodes for this log.")
+    primary_host_target_id: str | None = Field(
+        default=None,
+        description="Main host ref when this log has more than one host.",
+    )
+    involved_target_ids: list[str] = Field(default_factory=list)
+    relationship_context_target_ids: list[str] = Field(default_factory=list)
+    media_refs: list[str] = Field(default_factory=list)
+    log_kind: str | None = None
+    source_kind: str | None = None
+    happened_at: str | None = None
+
+
+class GraphRelationshipWrite(BaseModel):
+    """Explicit writable fields for one non-destructive graph relationship."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    relationship_type: str = Field(
+        description="Supported relationship type from the graph relationship enum.",
+        json_schema_extra={"enum": list(GRAPH_MUTABLE_RELATIONSHIP_TYPES)},
+    )
+    from_id: str = Field(description="Source model ref from the active context.")
+    to_id: str = Field(description="Target model ref from the active context.")
+    description: str | None = None
+    relationship_kind: str | None = Field(
+        default=None,
+        description="Human relationship detail such as colleague or sibling; do not invent a relationship type.",
+    )
+    relationship_detail: str | None = Field(
+        default=None,
+        description="Specific source wording for the relationship, such as brother or university friend.",
+    )
+    role: str | None = None
+    primary: bool | None = None
+    valid_from: str | None = None
+    valid_to: str | None = None
+    original_time_text: str | None = None
+    emotional_summary: str | None = None
+    emotional_valence: str | None = None
+    emotional_intensity: float | None = Field(default=None, ge=0.0, le=1.0)
+    emotion_tags: list[str] = Field(default_factory=list)
+    original_user_words: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class RelationshipStateWrite(BaseModel):
+    """Explicit writable state for one RelationshipContext."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    context_id: str = Field(description="RelationshipContext model ref from the active context.")
+    status: str | None = None
+    closeness: str | None = None
+    source_kind: str | None = None
+    make_current: bool = Field(
+        default=True,
+        description="Whether this state becomes the context's current state.",
+    )
 
 
 class TopicNode(GraphNodeModel):

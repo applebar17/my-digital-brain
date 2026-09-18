@@ -42,7 +42,11 @@ from my_digital_brain.agentic.runtime_memory import (
     _validate_phase_plan_refs,
     _verify_created_action_ref,
 )
-from my_digital_brain.agentic.runtime_models import AgenticRunResult
+from my_digital_brain.agentic.runtime_models import AgenticRunResult, AgenticToolEvent
+from my_digital_brain.agentic.runtime_state import (
+    _has_terminal_tool_error,
+    _mark_recovered_tool_attempts,
+)
 from my_digital_brain.ai.schemas import (
     ChatMessage,
     ProviderCallMetadata,
@@ -121,6 +125,26 @@ class ScriptedToolCallingProvider:
 
 def _json_arguments(arguments: object) -> str:
     return json.dumps(arguments if isinstance(arguments, dict) else {}, sort_keys=True)
+
+
+def test_recovered_tool_attempt_does_not_fail_the_completed_state() -> None:
+    events = [
+        AgenticToolEvent(
+            tool_name="create_person_node",
+            status="recoverable_error",
+            data={"operation": "create_person_node"},
+        ),
+        AgenticToolEvent(
+            tool_name="create_person_node",
+            status="ok",
+            data={"operation": "create_person_node"},
+        ),
+    ]
+
+    _mark_recovered_tool_attempts(events)
+
+    assert events[0].data["recovered_by_later_attempt"] is True
+    assert _has_terminal_tool_error(events) is False
 
 
 def _tool_result_content(result: object) -> str:
@@ -1023,15 +1047,18 @@ def test_state_runner_accepts_specialist_context_and_records_tool_events() -> No
                 "content": "Graph update applied.",
                 "tool": "create_memory_log",
                 "arguments": {
-                    "log_text": "Marco was from university.",
-                    "host_target_ids": ["node-marco"],
-                    "primary_host_target_id": None,
-                    "involved_target_ids": [],
-                    "relationship_context_target_ids": [],
-                    "media_refs": [],
-                    "log_kind": "correction",
-                    "source_kind": "chat",
-                    "happened_at": None,
+                    "memory_log": {
+                        "title": "Marco's university connection",
+                        "log_text": "Marco was from university.",
+                        "host_target_ids": ["node-marco"],
+                        "primary_host_target_id": None,
+                        "involved_target_ids": [],
+                        "relationship_context_target_ids": [],
+                        "media_refs": [],
+                        "log_kind": "correction",
+                        "source_kind": "chat",
+                        "happened_at": None,
+                    }
                 },
             }
         ]

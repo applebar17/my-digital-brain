@@ -30,8 +30,8 @@ from my_digital_brain.prompts import PromptRegistry
 def test_graph_relationship_tool_schema_uses_graph_registry_enum() -> None:
     definition = default_agentic_tool_registry().get("upsert_graph_relationship")
     relationship_schema = definition.spec["function"]["parameters"]["properties"][
-        "relationship_type"
-    ]
+        "relationship"
+    ]["properties"]["relationship_type"]
 
     assert relationship_schema["enum"] == list(GRAPH_MUTABLE_RELATIONSHIP_TYPES)
     assert "SIBLING_OF" not in relationship_schema["enum"]
@@ -403,23 +403,26 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
         target_ids=[],
     )
     log = mapping["create_memory_log"](
-        log_text="Marco was from university, not work.",
-        host_target_ids=["node-marco"],
-        primary_host_target_id=None,
-        involved_target_ids=[],
-        relationship_context_target_ids=[],
-        media_refs=[],
-        log_kind="correction",
-        source_kind="chat",
-        happened_at=None,
+        memory_log={
+            "title": "Marco's university connection",
+            "log_text": "Marco was from university, not work.",
+            "host_target_ids": ["node-marco"],
+            "primary_host_target_id": None,
+            "involved_target_ids": [],
+            "relationship_context_target_ids": [],
+            "media_refs": [],
+            "log_kind": "correction",
+            "source_kind": "chat",
+            "happened_at": None,
+        },
     )
-    patch = mapping["patch_graph_node"](
+    patch = mapping["patch_person_node"](
         node_id="node-marco",
-        properties_json='{"description":"university friend"}',
+        person={"description": "university friend", "display_name": None, "aliases": None, "known_since": None, "status": None},
     )
-    blocked = mapping["patch_graph_node"](
+    rejected = mapping["patch_person_node"](
         node_id="node-marco",
-        properties_json='{"lifecycle_state":"archived"}',
+        person={"description": None, "display_name": None, "aliases": None, "known_since": None, "status": None},
     )
 
     assert resolved.data["requires_clarification"] is False
@@ -428,8 +431,8 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
     assert log.data["affected_graph_ids"] == ["memorylog-1", "node-marco"]
     assert patch.status == "ok"
     assert patch.data["updated_refs"] == ["node-marco"]
-    assert blocked.status == "blocked"
-    assert blocked.data["error_code"] == "destructive_lifecycle_not_allowed"
+    assert rejected.status == "recoverable_error"
+    assert rejected.data["error_code"] == "empty_node_patch"
     assert any(item.startswith("upsert_node:MemoryLog") for item in graph.mutations)
     assert "patch_node:node-marco" in graph.mutations
 
@@ -437,7 +440,7 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
 def test_create_person_node_persists_explicit_description_as_graph_presentation() -> None:
     graph = FakeGraphService()
     refs = RefContext(session_id="presentation-test")
-    refs.register_proposed("node_new_marco", RefObjectKind.NODE, label="Person", name="Marco")
+    refs.register_proposed("node_new_marco", RefObjectKind.NODE, label="Person", name="Marco Rossi")
     action = SimpleNamespace(target_refs=["node_new_marco"])
     execution_context = AgenticToolExecutionContext(
         graph_service=graph,
@@ -447,7 +450,7 @@ def test_create_person_node_persists_explicit_description_as_graph_presentation(
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
     result = build_agentic_tool_mapping(config, execution_context)["create_person_node"](
         person={
-            "display_name": "Marco",
+                "display_name": "Marco Rossi",
             "description": "A university friend mentioned in the correction.",
             "aliases": [],
             "known_since": None,
@@ -482,6 +485,25 @@ def test_create_person_node_rejects_planning_only_summary_field() -> None:
 
     assert result.status == "recoverable_error"
     assert result.error.code == "validation_failed"
+    assert graph.last_node_properties is None
+
+
+def test_create_person_node_requires_clarification_for_name_only_identity() -> None:
+    graph = FakeGraphService()
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    result = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))["create_person_node"](
+        person={
+            "display_name": "Marco",
+            "description": None,
+            "aliases": [],
+            "known_since": None,
+            "status": None,
+        },
+    )
+
+    assert result.status == "recoverable_error"
+    assert result.data["error_code"] == "identity_clarification_required"
+    assert "ask_clarification" in result.error.hint
     assert graph.last_node_properties is None
 
 

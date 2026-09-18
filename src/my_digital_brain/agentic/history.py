@@ -452,7 +452,10 @@ class AgenticHistoryService:
                     tool_name=event.tool_name,
                     status=(
                         ToolResultStatus.FAILED
-                        if event.status != ToolResultStatus.OK.value
+                        if (
+                            event.status != ToolResultStatus.OK.value
+                            and not bool((event.data or {}).get("recovered_by_later_attempt"))
+                        )
                         else ToolResultStatus.OK
                     ),
                     summary=self.tool_event_summary(event),

@@ -109,7 +109,6 @@ _tool_specs = {
         properties={
             "doubts": clarification_doubts_schema(),
         },
-        required=["doubts"],
     ),
     ResolutionToolName.CREATE_NODE: _spec(
         ResolutionToolName.CREATE_NODE,

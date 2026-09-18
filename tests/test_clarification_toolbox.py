@@ -11,6 +11,10 @@ from my_digital_brain.agentic import (
     default_agentic_tool_registry,
     default_state_configs,
 )
+from my_digital_brain.agentic.mutations import (
+    AGENTIC_NODE_CREATION_TOOL_NAMES,
+    AGENTIC_NODE_PATCH_TOOL_NAMES,
+)
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 from my_digital_brain.graph.models import (
     EntityDetailResult,
@@ -83,18 +87,11 @@ def test_clarification_agent_exposes_only_wave2_tools() -> None:
     ]
     assert set(state.forbidden_tools) >= {
         "ask_clarification",
-        "create_person_node",
-        "create_event_node",
-        "create_place_node",
-        "create_organization_node",
-        "create_object_node",
-        "create_animal_node",
-        "create_social_circle_node",
-        "create_topic_node",
-        "patch_graph_node",
         "upsert_graph_relationship",
         "raw_graph_query",
     }
+    assert set(state.forbidden_tools) >= set(AGENTIC_NODE_CREATION_TOOL_NAMES)
+    assert set(state.forbidden_tools) >= set(AGENTIC_NODE_PATCH_TOOL_NAMES)
 
 
 def test_lookup_registers_existing_model_ref_and_redacts_graph_id() -> None:

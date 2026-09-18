@@ -10,8 +10,14 @@ def tool_spec(
     name: str,
     description: str,
     properties: dict[str, dict[str, Any]] | None = None,
-    required: list[str] | None = None,
 ) -> ToolSpec:
+    """Build a strict tool schema.
+
+    OpenAI strict function schemas require every declared property to be listed
+    in ``required``. Nullable fields represent optional values and must be sent
+    as ``null`` when unused. This is deliberately the only required-field
+    convention exposed by the tool layer.
+    """
     resolved_properties = {
         key: strict_schema_property(value)
         for key, value in (properties or {}).items()

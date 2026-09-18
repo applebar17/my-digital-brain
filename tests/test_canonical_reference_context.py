@@ -100,6 +100,13 @@ def test_graph_write_resolves_model_ref_only_at_backend_boundary() -> None:
                 properties={"id": node_id, "display_name": "Lorenzo"},
             )
 
+        def get_node(self, node_id: str) -> NodeSearchResult:
+            return NodeSearchResult(
+                label="Person",
+                labels=["Person"],
+                properties={"id": node_id, "display_name": "Lorenzo"},
+            )
+
     refs = RefContext(session_id="session-1")
     refs.register_existing(
         "person-lorenzo",
@@ -114,9 +121,15 @@ def test_graph_write_resolves_model_ref_only_at_backend_boundary() -> None:
         context,
     )
 
-    result = mapping["patch_graph_node"](
+    result = mapping["patch_person_node"](
         node_id="node_0001",
-        properties_json='{"nickname": "Lory"}',
+        person={
+            "description": "Known as Lory.",
+            "display_name": None,
+            "aliases": None,
+            "known_since": None,
+            "status": None,
+        },
     )
 
     assert result.status == "ok"
