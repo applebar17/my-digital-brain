@@ -27,6 +27,17 @@ from my_digital_brain.clarification.contracts import (
 )
 from my_digital_brain.clarification.toolbox import ClarificationToolService
 from my_digital_brain.core.owner_context import OwnerSnapshot
+from my_digital_brain.graph.models import (
+    AnimalNodeCreate,
+    EventNodeCreate,
+    GraphNodeCreateModel,
+    ObjectNodeCreate,
+    OrganizationNodeCreate,
+    PersonNodeCreate,
+    PlaceNodeCreate,
+    SocialCircleNodeCreate,
+    TopicNodeCreate,
+)
 from my_digital_brain.graph.registry import (
     CORE_RELATIONSHIP_TYPE_SET,
     GRAPH_MUTABLE_NODE_LABELS,
@@ -937,11 +948,51 @@ class AgenticToolBindings:
         except Exception as exc:
             return _update_exception_result("create_memory_log", exc)
 
-    def _handle_create_graph_node(self, label: str, properties_json: str) -> ToolResult:
+    def _handle_create_person_node(self, person: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node(
+            "create_person_node", "Person", PersonNodeCreate, person
+        )
+
+    def _handle_create_event_node(self, event: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node("create_event_node", "Event", EventNodeCreate, event)
+
+    def _handle_create_place_node(self, place: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node("create_place_node", "Place", PlaceNodeCreate, place)
+
+    def _handle_create_organization_node(self, organization: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node(
+            "create_organization_node", "Organization", OrganizationNodeCreate, organization
+        )
+
+    def _handle_create_object_node(self, object: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node(
+            "create_object_node", "Object", ObjectNodeCreate, object
+        )
+
+    def _handle_create_animal_node(self, animal: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node(
+            "create_animal_node", "Animal", AnimalNodeCreate, animal
+        )
+
+    def _handle_create_social_circle_node(self, social_circle: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node(
+            "create_social_circle_node", "SocialCircle", SocialCircleNodeCreate, social_circle
+        )
+
+    def _handle_create_topic_node(self, topic: dict[str, Any]) -> ToolResult:
+        return self._create_typed_graph_node("create_topic_node", "Topic", TopicNodeCreate, topic)
+
+    def _create_typed_graph_node(
+        self,
+        tool_name: str,
+        label: str,
+        contract: type[GraphNodeCreateModel],
+        payload: dict[str, Any],
+    ) -> ToolResult:
         graph = self.context.graph_service
         if graph is None:
             return _update_tool_error(
-                "create_graph_node",
+                tool_name,
                 "missing_dependency",
                 "Graph service is not configured.",
                 "Graph update cannot continue without graph_service.",
@@ -949,26 +1000,21 @@ class AgenticToolBindings:
             )
         if label not in GRAPH_UPDATE_CREATABLE_LABELS:
             return _update_tool_error(
-                "create_graph_node",
+                tool_name,
                 "graph_update_label_not_allowed",
                 f"Graph update tools cannot create label '{label}' in Wave 5 v1.",
                 "Use a supported non-destructive label or defer merge/destructive work.",
                 retryable=False,
                 details={"label": label},
             )
-        properties = _parse_json_object("create_graph_node", properties_json)
-        if isinstance(properties, ToolResult):
-            return properties
-        if not isinstance(properties.get("description"), str) or not properties[
-            "description"
-        ].strip():
-            planned_summary = self._planned_node_summary()
-            if planned_summary:
-                properties["description"] = planned_summary
+        try:
+            properties = contract.model_validate(payload).model_dump(exclude_none=True)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
         lifecycle_state = properties.get("lifecycle_state")
         if lifecycle_state in {"archived", "deleted"}:
             return _update_tool_error(
-                "create_graph_node",
+                tool_name,
                 "destructive_lifecycle_not_allowed",
                 "Wave 5 graph update tools do not allow archive/delete lifecycle states.",
                 "Create active/non-destructive graph records only.",
@@ -983,9 +1029,9 @@ class AgenticToolBindings:
                 expected_kind=RefObjectKind.NODE,
                 label=label,
             )
-            refreshed = self._refresh_vectors("create_graph_node", [node_id])
+            refreshed = self._refresh_vectors(tool_name, [node_id])
             return _update_tool_result(
-                "create_graph_node",
+                tool_name,
                 summary=f"{label} node created.",
                 created_refs=[created_ref or node_id],
                 affected_graph_ids=self._refs_for_backend_ids([node_id]),
@@ -994,7 +1040,7 @@ class AgenticToolBindings:
                 data={"node": self._model_facing_value(node)},
             )
         except Exception as exc:
-            return _update_exception_result("create_graph_node", exc)
+            return _update_exception_result(tool_name, exc)
 
     def _handle_patch_graph_node(self, node_id: str, properties_json: str) -> ToolResult:
         graph = self.context.graph_service
@@ -1211,24 +1257,6 @@ class AgenticToolBindings:
             label=label,
             source="graph_write",
         )
-
-    def _planned_node_summary(self) -> str | None:
-        """Return the current planned node's durable presentation fallback."""
-
-        ref_context = self.context.ref_context
-        action = getattr(self.context.current_payload, "action", None)
-        if ref_context is None or action is None:
-            return None
-        for ref in list(getattr(action, "target_refs", []) or []):
-            entry = ref_context.entries.get(ref)
-            if (
-                entry is not None
-                and entry.object_kind == RefObjectKind.NODE
-                and isinstance(entry.summary, str)
-                and entry.summary.strip()
-            ):
-                return entry.summary.strip()
-        return None
 
     def _refs_for_backend_ids(self, backend_ids: list[str]) -> list[str]:
         ref_context = self.context.ref_context

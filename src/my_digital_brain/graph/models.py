@@ -30,6 +30,7 @@ class EventNode(GraphNodeModel):
     label: ClassVar[str] = "Event"
 
     title: str | None = None
+    aliases: list[str] = Field(default_factory=list)
     started_at: str | None = None
     ended_at: str | None = None
 
@@ -87,8 +88,91 @@ class SocialCircleNode(GraphNodeModel):
 
     name: str | None = None
     normalized_name: str | None = None
+    aliases: list[str] = Field(default_factory=list)
     circle_type: str | None = None
     source_kind: str | None = None
+
+
+class GraphNodeCreateModel(BaseModel):
+    """Explicit, model-facing writable fields for one graph-node creation tool."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str | None = Field(
+        default=None,
+        description=(
+            "Short source-grounded description to store on the node. Do not use a "
+            "planning-only field such as summary."
+        ),
+    )
+
+
+class PersonNodeCreate(GraphNodeCreateModel):
+    display_name: str = Field(description="Person's human-readable name from the source.")
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="Explicit alternate names or nicknames from the source.",
+    )
+    known_since: str | None = Field(default=None, description="Source-supported known-since hint.")
+    status: str | None = Field(default=None, description="Source-supported relationship status.")
+
+
+class EventNodeCreate(GraphNodeCreateModel):
+    title: str = Field(description="Short human-readable event title.")
+    aliases: list[str] = Field(
+        default_factory=list,
+        description="Explicit alternate event names or spelling variants from the source.",
+    )
+    started_at: str | None = Field(default=None, description="Known event start time.")
+    ended_at: str | None = Field(default=None, description="Known event end time.")
+
+
+class PlaceNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable place name from the source.")
+    address: str | None = None
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    place_precision: str | None = None
+
+
+class OrganizationNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable organization name from the source.")
+    aliases: list[str] = Field(default_factory=list)
+    domain: str | None = None
+
+
+class ObjectNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable object name from the source.")
+    category: str | None = None
+    owner_hint: str | None = None
+
+
+class AnimalNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable animal name from the source.")
+    aliases: list[str] = Field(default_factory=list)
+    species: str | None = None
+    breed: str | None = None
+    sex: str | None = None
+    status: str | None = None
+    known_since: str | None = None
+    date_of_birth: str | None = None
+    date_of_death: str | None = None
+    owner_hint: str | None = None
+
+
+class SocialCircleNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable social-circle name from the source.")
+    aliases: list[str] = Field(default_factory=list)
+    circle_type: str | None = None
+    source_kind: str | None = None
+
+
+class TopicNodeCreate(GraphNodeCreateModel):
+    name: str = Field(description="Human-readable topic name from the source.")
+    aliases: list[str] = Field(default_factory=list)
 
 
 class TopicNode(GraphNodeModel):

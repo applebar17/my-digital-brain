@@ -83,7 +83,14 @@ def test_clarification_agent_exposes_only_wave2_tools() -> None:
     ]
     assert set(state.forbidden_tools) >= {
         "ask_clarification",
-        "create_graph_node",
+        "create_person_node",
+        "create_event_node",
+        "create_place_node",
+        "create_organization_node",
+        "create_object_node",
+        "create_animal_node",
+        "create_social_circle_node",
+        "create_topic_node",
         "patch_graph_node",
         "upsert_graph_relationship",
         "raw_graph_query",

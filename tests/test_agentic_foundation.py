@@ -255,6 +255,7 @@ def test_prompt_registry_loads_default_templates_and_renders_variables(tmp_path:
         template = default_registry.load(prompt_id).template
         assert "Do not return it only in `context_gaps`" in template
         assert "call `ask_clarification`" in template
+        assert "a first-name-only mention" in template
 
     prompt_dir = tmp_path / "example"
     prompt_dir.mkdir()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from my_digital_brain.agentic.enums import AgenticStateId
 from my_digital_brain.agentic.state import AgenticStateConfig
@@ -17,10 +18,17 @@ from my_digital_brain.agentic.tools.specs import (
 )
 from my_digital_brain.ai.models import ToolSpec
 from my_digital_brain.clarification.contracts import clarification_doubts_schema
-from my_digital_brain.graph.registry import (
-    GRAPH_MUTABLE_NODE_LABELS,
-    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
+from my_digital_brain.graph.models import (
+    AnimalNodeCreate,
+    EventNodeCreate,
+    ObjectNodeCreate,
+    OrganizationNodeCreate,
+    PersonNodeCreate,
+    PlaceNodeCreate,
+    SocialCircleNodeCreate,
+    TopicNodeCreate,
 )
+from my_digital_brain.graph.registry import GRAPH_MUTABLE_RELATIONSHIP_TYPES
 
 
 @dataclass(frozen=True)
@@ -230,26 +238,8 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             },
             required=["title", "log_text", "host_target_ids"],
         ),
-        _definition(
-            "create_graph_node",
-            (
-                "Create a supported graph node using properties that match the selected label. "
-                "Use human-facing fields: display_name for Person, title for Event, name for "
-                "Place/Organization/Object/Animal/SocialCircle/Topic, and log_text for MemoryLog. "
-                "Aliases are supplementary names, never identity. Backend ids, normalized fields, "
-                "and database references are backend-owned and must not be invented."
-            ),
-            states=[*graph_update_states, *memory_creation_states],
-            properties={
-                "label": enum_property(
-                    GRAPH_MUTABLE_NODE_LABELS,
-                    "Supported graph node label.",
-                ),
-                "properties_json": string_property(
-                    "JSON object containing only fields supported by the selected graph label."
-                ),
-            },
-            required=["label", "properties_json"],
+        *_node_creation_definitions(
+            [*graph_update_states, *memory_creation_states],
         ),
         _definition(
             "patch_graph_node",
@@ -294,6 +284,72 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             required=["context_id", "properties_json", "make_current"],
         ),
     ]
+
+
+def _node_creation_definitions(states: list[AgenticStateId]) -> list[AgenticToolDefinition]:
+    """Expose one explicit Pydantic-backed creation object per user-facing node type."""
+
+    definitions = (
+        ("create_person_node", "Person", "person", PersonNodeCreate),
+        ("create_event_node", "Event", "event", EventNodeCreate),
+        ("create_place_node", "Place", "place", PlaceNodeCreate),
+        ("create_organization_node", "Organization", "organization", OrganizationNodeCreate),
+        ("create_object_node", "Object", "object", ObjectNodeCreate),
+        ("create_animal_node", "Animal", "animal", AnimalNodeCreate),
+        ("create_social_circle_node", "SocialCircle", "social_circle", SocialCircleNodeCreate),
+        ("create_topic_node", "Topic", "topic", TopicNodeCreate),
+    )
+    return [
+        _definition(
+            tool_name,
+            (
+                f"Create one {label} node from the explicit `{argument_name}` object. "
+                "Use only the fields in that object. Backend IDs, normalized fields, "
+                "database references, and planning-only fields such as summary are not accepted."
+            ),
+            states=states,
+            properties={
+                argument_name: _pydantic_object_property(
+                    model,
+                    f"Explicit writable {label} node fields.",
+                ),
+            },
+            required=[argument_name],
+        )
+        for tool_name, label, argument_name, model in definitions
+    ]
+
+
+def _pydantic_object_property(model: type[Any], description: str) -> dict[str, Any]:
+    schema = model.model_json_schema()
+    return {
+        "type": "object",
+        "description": description,
+        "properties": {
+            key: _normalize_pydantic_schema(value)
+            for key, value in schema.get("properties", {}).items()
+        },
+        "required": list(schema.get("properties", {})),
+        "additionalProperties": False,
+    }
+
+
+def _normalize_pydantic_schema(value: Any) -> dict[str, Any]:
+    """Convert Pydantic's simple nullable fields to strict-tool compatible schemas."""
+
+    if not isinstance(value, dict):
+        return {}
+    normalized = {
+        key: _normalize_pydantic_schema(item) if isinstance(item, dict) else item
+        for key, item in value.items()
+        if key not in {"default", "title"}
+    }
+    variants = normalized.pop("anyOf", None)
+    if isinstance(variants, list) and len(variants) == 2:
+        types = [item.get("type") for item in variants if isinstance(item, dict)]
+        if len(types) == 2 and all(isinstance(item, str) for item in types):
+            normalized["type"] = types
+    return normalized
 
 
 def _clarification_tool_definitions(

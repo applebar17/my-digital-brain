@@ -546,7 +546,14 @@ def test_clarification_answer_endpoint_resumes_graph_update_state_directly() -> 
     assert response.json()["primary_text"] == "Graph update resumed."
     assert response.json()["metadata"]["resumed_frame_id"] == packet.frame_id
     assert set(provider.calls[0]["tool_names"]) == {
-        "create_graph_node",
+        "create_person_node",
+        "create_event_node",
+        "create_place_node",
+        "create_organization_node",
+        "create_object_node",
+        "create_animal_node",
+        "create_social_circle_node",
+        "create_topic_node",
         "create_memory_log",
         "create_relationship_state",
         "get_context_package",

@@ -23,10 +23,7 @@ from my_digital_brain.graph.models import (
     NodeSearchResult,
     RelationshipResult,
 )
-from my_digital_brain.graph.registry import (
-    GRAPH_MUTABLE_NODE_LABELS,
-    GRAPH_MUTABLE_RELATIONSHIP_TYPES,
-)
+from my_digital_brain.graph.registry import GRAPH_MUTABLE_RELATIONSHIP_TYPES
 from my_digital_brain.prompts import PromptRegistry
 
 
@@ -40,12 +37,18 @@ def test_graph_relationship_tool_schema_uses_graph_registry_enum() -> None:
     assert "SIBLING_OF" not in relationship_schema["enum"]
 
 
-def test_graph_node_tool_schema_uses_graph_registry_enum() -> None:
-    definition = default_agentic_tool_registry().get("create_graph_node")
-    label_schema = definition.spec["function"]["parameters"]["properties"]["label"]
+def test_person_node_tool_schema_exposes_only_explicit_person_fields() -> None:
+    definition = default_agentic_tool_registry().get("create_person_node")
+    person_schema = definition.spec["function"]["parameters"]["properties"]["person"]
 
-    assert label_schema["enum"] == list(GRAPH_MUTABLE_NODE_LABELS)
-    assert "MergeRecord" not in label_schema["enum"]
+    assert set(person_schema["properties"]) == {
+        "display_name",
+        "description",
+        "aliases",
+        "known_since",
+        "status",
+    }
+    assert "summary" not in person_schema["properties"]
 
 
 class FakeContextPackage(BaseModel):
@@ -231,7 +234,7 @@ def _execution_context(**kwargs: Any) -> AgenticToolExecutionContext:
     defaults = {
         "session_id": "session-1",
         "conversation_id": "conversation-1",
-        "owner_id": "owner-1",
+            "application_user_id": "owner-1",
         "channel": "web",
         "current_text": "Yesterday I met Marco.",
     }
@@ -431,16 +434,10 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
     assert "patch_node:node-marco" in graph.mutations
 
 
-def test_create_node_persists_the_planned_summary_as_graph_presentation() -> None:
+def test_create_person_node_persists_explicit_description_as_graph_presentation() -> None:
     graph = FakeGraphService()
     refs = RefContext(session_id="presentation-test")
-    refs.register_proposed(
-        "node_new_marco",
-        RefObjectKind.NODE,
-        label="Person",
-        name="Marco",
-        summary="A university friend mentioned in the correction.",
-    )
+    refs.register_proposed("node_new_marco", RefObjectKind.NODE, label="Person", name="Marco")
     action = SimpleNamespace(target_refs=["node_new_marco"])
     execution_context = AgenticToolExecutionContext(
         graph_service=graph,
@@ -448,9 +445,14 @@ def test_create_node_persists_the_planned_summary_as_graph_presentation() -> Non
         current_payload=SimpleNamespace(action=action),
     )
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
-    result = build_agentic_tool_mapping(config, execution_context)["create_graph_node"](
-        label="Person",
-        properties_json='{"display_name":"Marco"}',
+    result = build_agentic_tool_mapping(config, execution_context)["create_person_node"](
+        person={
+            "display_name": "Marco",
+            "description": "A university friend mentioned in the correction.",
+            "aliases": [],
+            "known_since": None,
+            "status": None,
+        },
     )
 
     assert result.status == "ok"
@@ -461,6 +463,26 @@ def test_create_node_persists_the_planned_summary_as_graph_presentation() -> Non
     assert result.data["node"]["presentation"]["summary"] == (
         "A university friend mentioned in the correction."
     )
+
+
+def test_create_person_node_rejects_planning_only_summary_field() -> None:
+    graph = FakeGraphService()
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    mapping = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))
+    result = mapping["create_person_node"](
+        person={
+            "display_name": "Marco",
+            "description": None,
+            "aliases": [],
+            "known_since": None,
+            "status": None,
+            "summary": "This must never become a graph property.",
+        },
+    )
+
+    assert result.status == "recoverable_error"
+    assert result.error.code == "validation_failed"
+    assert graph.last_node_properties is None
 
 
 def test_missing_dependency_returns_verbose_tool_error() -> None:
