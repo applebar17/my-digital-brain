@@ -559,7 +559,16 @@ class PlannedRefPacket(AgenticModel):
     label: str | None = None
     type: str | None = None
     name: str | None = None
-    summary: str | None = None
+    summary: str | None = Field(
+        default=None,
+        description=(
+            "For a planned node, a concise source-grounded description of who or what "
+            "it is in this memory. This becomes the durable node description when the "
+            "write does not supply one. Do not repeat the name, use a generic label such "
+            "as 'Person', or invent biography. Leave empty when the source supports only "
+            "the name. For non-node refs, use a compact source-grounded summary when useful."
+        ),
+    )
     aliases: list[str] = Field(default_factory=list)
     source_mentions: list[str] = Field(default_factory=list)
     status: str | None = Field(
@@ -581,6 +590,17 @@ class PlannedRefPacket(AgenticModel):
                 "node_0001, node_existing_lorenzo, node_new_lorenzo, and memory_new_barbecue."
             )
         _validate_ref_kind_prefix(self.ref, self.object_kind)
+        if self.object_kind == RefObjectKind.NODE and self.summary:
+            normalized_summary = self.summary.strip().casefold()
+            normalized_name = (self.name or "").strip().casefold()
+            if normalized_summary in {"person", "node", "unknown", "unnamed"} or (
+                normalized_name and normalized_summary == normalized_name
+            ):
+                raise ValueError(
+                    "Node summary must describe the entity's source-grounded role or "
+                    "context, not repeat its name or use a generic placeholder. Leave it "
+                    "empty when the source contains no safe descriptive detail."
+                )
         return self
 
 
@@ -876,6 +896,7 @@ class MemoryCreationResultContext(AgenticModel):
 class GraphUpdateContext(AgenticModel):
     source_text: str
     conversation: ConversationContext
+    action: MemoryPlanAction | None = None
     guidelines: str = Field(
         default="Update the memory graph using deterministic tools.",
     )

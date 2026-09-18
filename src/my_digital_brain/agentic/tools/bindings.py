@@ -959,6 +959,12 @@ class AgenticToolBindings:
         properties = _parse_json_object("create_graph_node", properties_json)
         if isinstance(properties, ToolResult):
             return properties
+        if not isinstance(properties.get("description"), str) or not properties[
+            "description"
+        ].strip():
+            planned_summary = self._planned_node_summary()
+            if planned_summary:
+                properties["description"] = planned_summary
         lifecycle_state = properties.get("lifecycle_state")
         if lifecycle_state in {"archived", "deleted"}:
             return _update_tool_error(
@@ -1205,6 +1211,24 @@ class AgenticToolBindings:
             label=label,
             source="graph_write",
         )
+
+    def _planned_node_summary(self) -> str | None:
+        """Return the current planned node's durable presentation fallback."""
+
+        ref_context = self.context.ref_context
+        action = getattr(self.context.current_payload, "action", None)
+        if ref_context is None or action is None:
+            return None
+        for ref in list(getattr(action, "target_refs", []) or []):
+            entry = ref_context.entries.get(ref)
+            if (
+                entry is not None
+                and entry.object_kind == RefObjectKind.NODE
+                and isinstance(entry.summary, str)
+                and entry.summary.strip()
+            ):
+                return entry.summary.strip()
+        return None
 
     def _refs_for_backend_ids(self, backend_ids: list[str]) -> list[str]:
         ref_context = self.context.ref_context

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -56,6 +57,7 @@ class FakeGraphService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
         self.mutations: list[str] = []
+        self.last_node_properties: dict[str, Any] | None = None
 
     def search_nodes(
         self,
@@ -179,6 +181,7 @@ class FakeGraphService:
 
     def upsert_node(self, label: str, properties: dict[str, Any]) -> NodeSearchResult:
         node_id = str(properties.get("id") or f"{label.lower()}-1")
+        self.last_node_properties = dict(properties)
         self.mutations.append(f"upsert_node:{label}:{node_id}")
         return NodeSearchResult(
             label=label,
@@ -426,6 +429,38 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
     assert blocked.data["error_code"] == "destructive_lifecycle_not_allowed"
     assert any(item.startswith("upsert_node:MemoryLog") for item in graph.mutations)
     assert "patch_node:node-marco" in graph.mutations
+
+
+def test_create_node_persists_the_planned_summary_as_graph_presentation() -> None:
+    graph = FakeGraphService()
+    refs = RefContext(session_id="presentation-test")
+    refs.register_proposed(
+        "node_new_marco",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Marco",
+        summary="A university friend mentioned in the correction.",
+    )
+    action = SimpleNamespace(target_refs=["node_new_marco"])
+    execution_context = AgenticToolExecutionContext(
+        graph_service=graph,
+        ref_context=refs,
+        current_payload=SimpleNamespace(action=action),
+    )
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    result = build_agentic_tool_mapping(config, execution_context)["create_graph_node"](
+        label="Person",
+        properties_json='{"display_name":"Marco"}',
+    )
+
+    assert result.status == "ok"
+    assert graph.last_node_properties is not None
+    assert graph.last_node_properties["description"] == (
+        "A university friend mentioned in the correction."
+    )
+    assert result.data["node"]["presentation"]["summary"] == (
+        "A university friend mentioned in the correction."
+    )
 
 
 def test_missing_dependency_returns_verbose_tool_error() -> None:

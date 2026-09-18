@@ -489,6 +489,7 @@ class MemoryIngestionRuntimeService:
                     child_payload = GraphUpdateContext(
                         source_text=str(payload.metadata.get("source_text") or ""),
                         conversation=conversation_context,
+                        action=action,
                         desired_work=action.rationale or action.payload.get("desired_work"),
                         target_ids=action.target_refs,
                         graph_context=payload.graph_context,

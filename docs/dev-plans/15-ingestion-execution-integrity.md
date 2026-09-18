@@ -171,16 +171,12 @@ Durable retry/recovery of those deferred edges remains a separate follow-up.
 names are correct. This makes the graph view seem to have a rendering problem
 when its source data has no edges to render.
 
-**Proposed fix.** Define a single immutable `ExecutionReceipt` packet per
-phase, containing only backend-confirmed local-ref-to-graph-ID bindings and
-created/updated relationship context refs. Feed it into the next phase:
-
-- edge planning runs only after node and MemoryLog receipts are successful;
-- it receives the combined canonical reference context plus receipts;
-- an absent prerequisite makes the phase failed/interrupted, never a best
-  effort empty-edge pass;
-- do not duplicate a second ad-hoc ref map; extend the canonical ref context
-  from plan 13/14 with backend confirmations.
+**Resolution.** Implemented with the existing canonical `RefContext`, not a
+second `ExecutionReceipt` contract. Node and MemoryLog actions now name their
+planned output ref; a successful child write must bind it before later phases
+continue. Edge planning uses confirmed refs and defers only the affected edge
+when an endpoint is unresolved. Durable deferred-edge recovery is tracked in
+`docs/todos.md`.
 
 **Acceptance criteria.** A successful story with five MemoryLogs produces
 their host/involvement edges and the supported inter-entity relationships. A
@@ -210,8 +206,16 @@ durable contracts:
   `GraphNodePresentation.summary` mapper;
 - retain the planner summary only as a fallback when the candidate description
   is absent and its source/provenance is equivalent;
-- validate a blank/placeholder description as repairable structured-output
-  feedback where a description is required by the node type.
+- validate a supplied placeholder or name-only description as repairable
+  structured-output feedback; permit absence where the source supports only a
+  name.
+
+**Implemented direction.** `PlannedRefPacket.summary` is the single concise,
+source-grounded node description. The create-node binding uses it as a backend
+fallback only when the tool call has not supplied a description; an explicit
+description is retained, and existing-node updates are not overwritten.
+Generic or name-only supplied summaries are repairable structured-output
+errors; absence remains valid when the source supports only a name.
 
 **Acceptance criteria.** Newly created people from the test story have a
 human-readable title and a short description in both graph search/projection

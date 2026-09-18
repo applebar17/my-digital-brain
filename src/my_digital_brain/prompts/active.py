@@ -198,6 +198,9 @@ Plan which self-sustaining graph entities should be resolved or created before m
 - Keep existing refs unchanged. For new nodes, use short readable refs like `node_new_lorenzo`.
 - Do not create nodes for one-off details that belong only inside a memory log.
 - Keep planned refs unique inside the plan.
+- For each new node, provide a concise source-grounded summary of who or what it
+  is when the source supports one. It becomes the durable graph description;
+  do not repeat the name, use generic labels, or invent biography.
 - Produce a compact node plan packet for later phases.
 - Call `ask_clarification` before proposing a node when a real context gap leaves its identity or intended attachment unresolved; do not merely add the gap to the plan output.
 
@@ -317,6 +320,8 @@ Complete the current creation action by choosing deterministic tools and returni
 
 # Rules
 - Focus on the current action and supplied packets.
+- When creating a node, preserve the planned node summary as its description
+  unless a more precise source-grounded description is supplied to the tool.
 - Use tools for writes; do not narrate a write as complete until a tool confirms it.
 - If a tool returns a validation error, fix the arguments and retry when possible.
 - Call `ask_clarification` when a real unresolved gap blocks the action; do not expose a question directly or continue with an unsupported write.
