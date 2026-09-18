@@ -835,14 +835,14 @@ class LLMResolutionProposalAgent:
                         raise ValueError(
                             "Clarification handoff requires the active candidate graph."
                         )
-                    execution_context.reference_registry = _clarification_registry(
+                    clarification_registry = _clarification_registry(
                         context,
                         candidate_graph,
                         handoff,
                     )
                     execution_context.metadata[
                         "reference_registry_snapshot"
-                    ] = execution_context.reference_registry.snapshot()
+                    ] = clarification_registry.snapshot()
                     session_input = ClarificationSessionInput(
                         handoff=handoff,
                         conversation=conversation,

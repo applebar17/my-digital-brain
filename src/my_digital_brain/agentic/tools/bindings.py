@@ -79,9 +79,6 @@ class AgenticToolExecutionContext:
     conversation_context: Any | None = None
     current_payload: Any | None = None
     ref_context: RefContext | None = None
-    # Retained only while the legacy ingestion service is migrated. Active
-    # agentic chat must use ref_context; no new code should populate this.
-    reference_registry: Any | None = None
 
 
 class AgenticToolBindings:

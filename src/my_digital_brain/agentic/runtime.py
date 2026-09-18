@@ -249,7 +249,6 @@ class AgenticRuntime:
             current_text=parent_execution_context.current_text,
             conversation_history_refs=list(parent_execution_context.conversation_history_refs),
             ref_context=parent_execution_context.ref_context,
-            reference_registry=parent_execution_context.reference_registry,
             metadata=dict(parent_execution_context.metadata),
             frame_id=new_uuid(),
             parent_frame_id=parent_execution_context.frame_id,
