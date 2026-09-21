@@ -538,8 +538,7 @@ class MemoryIngestionRuntimeService:
                                     "retryable": False,
                                 }
                                 if output_ref_error
-                                else
-                                result.error.model_dump(mode="json", exclude_none=True)
+                                else result.error.model_dump(mode="json", exclude_none=True)
                                 if result.error is not None
                                 else {
                                     "code": "required_child_operation_failed",
@@ -644,9 +643,7 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
     known_refs = set(ref_context.entries)
     planned_refs: set[str] = set()
     if packet is not None:
-        planned_refs = {
-            planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])
-        }
+        planned_refs = {planned.ref for planned in list(getattr(packet, "planned_refs", []) or [])}
         for planned in list(getattr(packet, "planned_refs", []) or []):
             if planned.ref in known_refs:
                 raise ValueError(
@@ -724,8 +721,7 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
                 if ref in planned_refs
                 and packet is not None
                 and any(
-                    planned.ref == ref
-                    and RefObjectKind(planned.object_kind) == expected_kind
+                    planned.ref == ref and RefObjectKind(planned.object_kind) == expected_kind
                     for planned in list(getattr(packet, "planned_refs", []) or [])
                 )
             ]
@@ -737,6 +733,36 @@ def _validate_phase_plan_refs(output: BaseModel, ref_context: Any) -> None:
                     "write bind the planned ref to its backend object for later phases."
                 )
 
+    materialized_refs = {
+        ref
+        for step in list(getattr(output, "steps", []) or [])
+        for action in list(getattr(step, "actions", []) or [])
+        if _created_action_kind(action.action_type) is not None
+        for ref in list(getattr(action, "target_refs", []) or [])
+        if ref in planned_refs
+    }
+    unmaterialized_refs = sorted(planned_refs - materialized_refs)
+    if unmaterialized_refs:
+        required_actions = {
+            ref: _creation_action_name(
+                RefObjectKind(
+                    next(
+                        planned.object_kind
+                        for planned in list(getattr(packet, "planned_refs", []) or [])
+                        if planned.ref == ref
+                    )
+                )
+            )
+            for ref in unmaterialized_refs
+        }
+        details = "; ".join(
+            f"{ref} requires {required_actions[ref]}" for ref in unmaterialized_refs
+        )
+        raise ValueError(
+            "Every new planned ref must be created by exactly one action in this plan: "
+            f"{details}. Add the matching creation action and include the ref in its target_refs."
+        )
+
 
 def _created_action_kind(action_type: MemoryPlanActionType | str) -> RefObjectKind | None:
     action_type = MemoryPlanActionType(action_type)
@@ -744,7 +770,17 @@ def _created_action_kind(action_type: MemoryPlanActionType | str) -> RefObjectKi
         return RefObjectKind.NODE
     if action_type == MemoryPlanActionType.CREATE_MEMORY_LOG:
         return RefObjectKind.MEMORY
+    if action_type == MemoryPlanActionType.CREATE_CONTEXT:
+        return RefObjectKind.CONTEXT
     return None
+
+
+def _creation_action_name(object_kind: RefObjectKind) -> str:
+    return {
+        RefObjectKind.NODE: MemoryPlanActionType.CREATE_NODE.value,
+        RefObjectKind.MEMORY: MemoryPlanActionType.CREATE_MEMORY_LOG.value,
+        RefObjectKind.CONTEXT: MemoryPlanActionType.CREATE_CONTEXT.value,
+    }.get(object_kind, "a compatible creation action")
 
 
 def _verify_created_action_ref(action: Any, ref_context: Any, *, succeeded: bool) -> str | None:

@@ -57,6 +57,7 @@ class PlanExecutionMode(StrEnum):
 class MemoryPlanActionType(StrEnum):
     CREATE_MEMORY_LOG = "create_memory_log"
     CREATE_NODE = "create_node"
+    CREATE_CONTEXT = "create_context"
     UPDATE_NODE = "update_node"
     CREATE_RELATIONSHIP = "create_relationship"
     CREATE_RELATIONSHIP_STATE = "create_relationship_state"

@@ -34,7 +34,8 @@ Decide whether to answer directly, call `query_memory`, or call `ingest_memory`.
 Use the conversation messages and available tools.
 """
 
-REASONING_CHECKPOINT_SYSTEM_TEMPLATE = """# Role
+REASONING_CHECKPOINT_SYSTEM_TEMPLATE = (
+    """# Role
 You're a reasoner.
 
 # Task
@@ -60,9 +61,13 @@ Purpose:
 
 Task context:
 {task_context}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-PLANNING_CHECKPOINT_SYSTEM_TEMPLATE = """# Role
+PLANNING_CHECKPOINT_SYSTEM_TEMPLATE = (
+    """# Role
 You're a planner.
 
 # Task
@@ -95,9 +100,13 @@ Task context:
 
 Reasoning notes:
 {reasoning_notes}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE = """# Role
+MEMORY_LOG_EXTRACTION_SYSTEM_TEMPLATE = (
+    """# Role
 You're a memory-log ingestor.
 
 # Task
@@ -123,7 +132,10 @@ Purpose:
 
 Task context:
 {task_context}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
 MEMORY_QUERY_SYSTEM_TEMPLATE = """# Role
 You're a memory answerer.
@@ -150,7 +162,8 @@ Answer the user's memory question using supplied retrieval context and read tool
 Runtime appends question, retrieval context, available read tools, and expected output.
 """
 
-MEMORY_INGESTION_SYSTEM_TEMPLATE = """# Role
+MEMORY_INGESTION_SYSTEM_TEMPLATE = (
+    """# Role
 You're a memory reasoner.
 
 # Task
@@ -184,9 +197,13 @@ Hydrated graph context:
 
 Known aliases and candidate mentions:
 {aliases}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE = """# Role
+MEMORY_NODE_PLANNING_SYSTEM_TEMPLATE = (
+    """# Role
 You're a node planner.
 
 # Task
@@ -227,9 +244,13 @@ reuse an exact ref for the same object and never use an unseen internal identifi
 
 Existing graph candidates and possible duplicates:
 {duplicate_candidate_packets}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE = """# Role
+MEMORY_LOG_PLANNING_SYSTEM_TEMPLATE = (
+    """# Role
 You're a memory-log planner.
 
 # Task
@@ -248,6 +269,9 @@ Plan compact MemoryLogs and context records after node planning.
 - Keep irrelevant details out of planned storage.
 - Keep weak co-presence as log involvement.
 - Keep planned refs unique inside the plan.
+- Every new planned ref must have exactly one compatible creation action in this
+  plan: `create_memory_log` for MemoryLogs and `create_context` for Perceptions
+  or RelationshipContexts. Do not declare an optional or dangling context ref.
 - Produce a compact memory plan packet for edge planning.
 - Call `ask_clarification` before planning an affected MemoryLog when its host, involved identity, or required context remains a real unresolved gap; do not merely list it in the plan output.
 
@@ -269,9 +293,13 @@ reuse an exact ref for the same object and never use an unseen internal identifi
 
 Irrelevant details to avoid:
 {irrelevant_details_packet}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE = """# Role
+MEMORY_EDGE_PLANNING_SYSTEM_TEMPLATE = (
+    """# Role
 You're an edge planner.
 
 # Task
@@ -293,6 +321,9 @@ Plan durable relationships and context links after node and memory planning.
 - Keep weak co-presence as MemoryLog involvement.
 - Return an empty edge plan when there is no durable relationship or context link
   to write; do not invent an edge merely because people shared an event.
+- A RelationshipState can only target an already-created RelationshipContext.
+  A Perception is not a RelationshipContext. Context creation belongs in the
+  preceding memory-log plan and must complete before this edge plan executes.
 - If a listed endpoint is unresolved, defer only that edge and report the refs;
   do not claim that the node or memory packets are unavailable.
 - Keep planned refs unique inside the plan.
@@ -321,9 +352,13 @@ reuse an exact ref for the same object and never use an unseen internal identifi
 
 Relationship candidates:
 {relationship_candidate_packets}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-MEMORY_CREATION_SYSTEM_TEMPLATE = """# Role
+MEMORY_CREATION_SYSTEM_TEMPLATE = (
+    """# Role
 You're a memory action executor.
 
 # Task
@@ -339,6 +374,9 @@ Complete the current creation action by choosing deterministic tools and returni
 - When creating a node, preserve the planned node summary as its description
   unless a more precise source-grounded description is supplied to the tool.
 - Use tools for writes; do not narrate a write as complete until a tool confirms it.
+- For a `create_context` action, use `create_perception_context` for a Perception
+  or `create_relationship_context` for a RelationshipContext. Their target or
+  participant refs must already be bound; those tools create the required links.
 - If a tool returns a validation error, fix the arguments and retry when possible.
 - Call `ask_clarification` when a real unresolved gap blocks the action; do not expose a question directly or continue with an unsupported write.
 - Return compact created/updated refs and important diagnostics.
@@ -362,9 +400,13 @@ reuse an exact ref for the same object and never use an unseen internal identifi
 
 Tool error examples:
 {validation_error_examples}
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-GRAPH_UPDATE_SYSTEM_TEMPLATE = """# Role
+GRAPH_UPDATE_SYSTEM_TEMPLATE = (
+    """# Role
 You're a graph update agent.
 
 # Task
@@ -389,9 +431,13 @@ Apply a requested non-destructive graph update through read and write tools.
 
 # Context
 Runtime appends guidelines, desired work, target hints, graph context, tools, and expected output.
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
-CONTRADICTION_REVIEW_SYSTEM_TEMPLATE = """# Role
+CONTRADICTION_REVIEW_SYSTEM_TEMPLATE = (
+    """# Role
 You're a contradiction reviewer.
 
 # Task
@@ -415,7 +461,10 @@ Judge whether a proposed memory conflicts with existing graph evidence.
 
 # Context
 Runtime appends proposed write, evidence, affected refs, tools, and expected output.
-""" + "\n" + CLARIFICATION_POLICY
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+)
 
 OWNER_PROFILE_SYSTEM_TEMPLATE = """# Role
 You're an owner-profile context consumer.
@@ -449,7 +498,8 @@ Produce a read-only personality/profile-oriented result grounded in the approved
 Runtime appends the approved owner profile and caller context.
 """
 
-CLARIFICATION_AGENT_SYSTEM_TEMPLATE = """# Role
+CLARIFICATION_AGENT_SYSTEM_TEMPLATE = (
+    """# Role
 You're a clarification agent delegated by another LLM session.
 
 # Task
@@ -477,7 +527,12 @@ The invoking session supplies the doubts, conversation, and model-facing graph c
   the session may use up to fifty tool calls while investigating and questioning.
 - Complete the current turn's calls before waiting; never discard questions.
 - Do not create, update, approve, reject, or link graph records.
-""" + "\n" + CLARIFICATION_POLICY + "\n" + CLARIFICATION_EXAMPLES
+"""
+    + "\n"
+    + CLARIFICATION_POLICY
+    + "\n"
+    + CLARIFICATION_EXAMPLES
+)
 
 PROFILE_MEMORY_EXTRACTION_SYSTEM_TEMPLATE = """# Role
 You're a profile-memory extractor.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from my_digital_brain.agentic import (
     AgenticMemoryLogExtractionService,
     AgenticPlanningService,
@@ -1040,6 +1042,49 @@ def test_phase_actions_bind_planned_outputs_and_defer_unresolved_edges() -> None
         payload={"from_ref": "node_new_marco", "to_ref": "node_missing"},
     )
     assert _unresolved_edge_endpoint_refs(edge, refs) == ["node_missing"]
+
+
+def test_phase_plan_rejects_a_new_context_without_its_create_action() -> None:
+    refs = RefContext(session_id="context-materialization")
+    plan = MemoryLogMemoryPlan(
+        summary="A perception is needed.",
+        memory_plan_packet=MemoryPlanPacket(
+            planned_refs=[
+                PlannedRefPacket(
+                    ref="context_new_beach_mood",
+                    object_kind=RefObjectKind.CONTEXT,
+                    label="Perception",
+                    name="Beach mood",
+                )
+            ],
+            summary="The beach mood needs a context record.",
+        ),
+        steps=[
+            MemoryPlanStep(
+                step_id="memory_step_001",
+                phase=MemoryPlanningPhase.MEMORY_LOGS,
+                actions=[
+                    MemoryPlanAction(
+                        action_id="relationship_later",
+                        action_type=MemoryPlanActionType.CREATE_RELATIONSHIP,
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="context_new_beach_mood requires create_context"):
+        _validate_phase_plan_refs(plan, refs)
+
+    plan.steps[0].actions = [
+        MemoryPlanAction(
+            action_id="create_beach_mood",
+            action_type=MemoryPlanActionType.CREATE_CONTEXT,
+            target_refs=["context_new_beach_mood"],
+        )
+    ]
+
+    _validate_phase_plan_refs(plan, refs)
 
 
 def test_memory_ingestion_returns_a_required_phase_error_to_its_invoker(monkeypatch) -> None:

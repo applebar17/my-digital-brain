@@ -39,6 +39,8 @@ from my_digital_brain.graph.models import (
     GraphNodePatchModel,
     GraphRelationshipWrite,
     MemoryLogCreate,
+    PerceptionContextCreate,
+    RelationshipContextCreate,
     RelationshipStateWrite,
 )
 from my_digital_brain.graph.registry import (
@@ -48,8 +50,8 @@ from my_digital_brain.graph.registry import (
 
 logger = logging.getLogger(__name__)
 
-GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = (
-    CORE_RELATIONSHIP_TYPE_SET - set(GRAPH_MUTABLE_RELATIONSHIP_TYPES)
+GRAPH_UPDATE_BLOCKED_RELATIONSHIP_TYPES = CORE_RELATIONSHIP_TYPE_SET - set(
+    GRAPH_MUTABLE_RELATIONSHIP_TYPES
 )
 
 
@@ -958,7 +960,9 @@ class AgenticToolBindings:
             payload = arguments[definition.argument_name]
         except (KeyError, ValueError) as exc:
             return _update_exception_result(tool_name or "create_typed_node", exc)
-        return self._create_typed_graph_node(tool_name, definition.label, definition.create_model, payload)
+        return self._create_typed_graph_node(
+            tool_name, definition.label, definition.create_model, payload
+        )
 
     def _create_typed_graph_node(
         self, tool_name: str, label: str, contract: type[Any], payload: dict[str, Any]
@@ -1026,6 +1030,167 @@ class AgenticToolBindings:
             )
         except Exception as exc:
             return _update_exception_result(tool_name, exc)
+
+    def _handle_create_perception_context(
+        self,
+        perception_context: dict[str, Any],
+    ) -> ToolResult:
+        tool_name = "create_perception_context"
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                tool_name,
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        try:
+            request = PerceptionContextCreate.model_validate(perception_context)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+        action_error = self._validate_context_creation_action("Perception", tool_name)
+        if action_error is not None:
+            return action_error
+        target_id, error = self._resolve_ref(
+            request.target_ref,
+            expected_kind=RefObjectKind.NODE,
+            tool_name=tool_name,
+        )
+        if error is not None:
+            return error
+        try:
+            target = graph.get_node(target_id)
+            perception = graph.upsert_node(
+                "Perception",
+                request.perception.model_dump(exclude_none=True),
+            )
+            perception_id = str(perception.properties["id"])
+            graph.upsert_relationship("PERCEPTION_OF", perception_id, target_id, {})
+            graph.upsert_relationship("HAS_AFFECTIVE_CONTEXT", target_id, perception_id, {})
+            created_ref = self._bind_created_ref(
+                perception_id,
+                expected_kind=RefObjectKind.CONTEXT,
+                label="Perception",
+            )
+            refreshed = self._refresh_vectors(tool_name, [target_id, perception_id])
+            return _update_tool_result(
+                tool_name,
+                summary="Perception created and attached to its target.",
+                created_refs=[created_ref or perception_id],
+                affected_graph_ids=self._refs_for_backend_ids([target_id, perception_id]),
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={
+                    "perception": self._model_facing_value(perception),
+                    "target": self._model_facing_value(target),
+                },
+            )
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+
+    def _handle_create_relationship_context(
+        self,
+        relationship_context: dict[str, Any],
+    ) -> ToolResult:
+        tool_name = "create_relationship_context"
+        graph = self.context.graph_service
+        if graph is None:
+            return _update_tool_error(
+                tool_name,
+                "missing_dependency",
+                "Graph service is not configured.",
+                "Graph update cannot continue without graph_service.",
+                retryable=False,
+            )
+        try:
+            request = RelationshipContextCreate.model_validate(relationship_context)
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+        action_error = self._validate_context_creation_action("RelationshipContext", tool_name)
+        if action_error is not None:
+            return action_error
+        participant_ids, error = self._resolve_refs(
+            request.participant_refs,
+            expected_kind=RefObjectKind.NODE,
+            tool_name=tool_name,
+        )
+        if error is not None:
+            return error
+        try:
+            participants = [graph.get_node(participant_id) for participant_id in participant_ids]
+            context = graph.upsert_node(
+                "RelationshipContext",
+                request.relationship_context.model_dump(exclude_none=True),
+            )
+            context_id = str(context.properties["id"])
+            for participant_id in participant_ids:
+                graph.upsert_relationship("RELATIONSHIP_WITH", context_id, participant_id, {})
+                graph.upsert_relationship(
+                    "HAS_RELATIONSHIP_CONTEXT",
+                    participant_id,
+                    context_id,
+                    {},
+                )
+            created_ref = self._bind_created_ref(
+                context_id,
+                expected_kind=RefObjectKind.CONTEXT,
+                label="RelationshipContext",
+            )
+            refreshed = self._refresh_vectors(tool_name, [*participant_ids, context_id])
+            return _update_tool_result(
+                tool_name,
+                summary="Relationship context created and attached to its participants.",
+                created_refs=[created_ref or context_id],
+                affected_graph_ids=self._refs_for_backend_ids([*participant_ids, context_id]),
+                refreshed_vector_scopes=refreshed.get("refreshed_vector_scopes", []),
+                diagnostics=refreshed.get("diagnostics", []),
+                data={
+                    "relationship_context": self._model_facing_value(context),
+                    "participants": [self._model_facing_value(item) for item in participants],
+                },
+            )
+        except Exception as exc:
+            return _update_exception_result(tool_name, exc)
+
+    def _validate_context_creation_action(
+        self,
+        expected_label: str,
+        tool_name: str,
+    ) -> ToolResult | None:
+        """Ensure the selected typed tool materializes the planned context label."""
+
+        ref_context = self.context.ref_context
+        action = getattr(self.context.current_payload, "action", None)
+        if ref_context is None or action is None:
+            return None
+        planned_contexts = [
+            entry
+            for ref in list(getattr(action, "target_refs", []) or [])
+            if (entry := ref_context.entries.get(ref)) is not None
+            and entry.object_kind == RefObjectKind.CONTEXT
+            and not entry.backend_id
+        ]
+        if not planned_contexts:
+            return None
+        planned_label = planned_contexts[0].label
+        if planned_label in (None, expected_label):
+            return None
+        return _update_tool_error(
+            tool_name,
+            "context_creation_label_mismatch",
+            (
+                f"The current create_context action plans a {planned_label}, but "
+                f"{tool_name} creates a {expected_label}."
+            ),
+            f"Use the typed creation tool for {planned_label} and retry this action.",
+            retryable=True,
+            details={
+                "planned_ref": planned_contexts[0].ref,
+                "planned_label": planned_label,
+                "selected_tool": tool_name,
+            },
+        )
 
     def _handle_patch_typed_node(self, node_id: str, **arguments: Any) -> ToolResult:
         tool_name = self.context.current_tool_name or ""
@@ -1202,6 +1367,19 @@ class AgenticToolBindings:
         if error is not None:
             return error
         try:
+            context = graph.get_node(resolved_context_id)
+            if context.label != "RelationshipContext":
+                return _update_tool_error(
+                    tool_name,
+                    "relationship_state_context_label_mismatch",
+                    (
+                        f"Reference '{request.context_id}' resolves to {context.label}, but a "
+                        "RelationshipState can only attach to a RelationshipContext."
+                    ),
+                    "Create or use a bound RelationshipContext ref; a Perception cannot receive a relationship state.",
+                    retryable=True,
+                    details={"context_ref": request.context_id, "actual_label": context.label},
+                )
             properties = request.model_dump(
                 exclude={"context_id", "make_current"}, exclude_none=True
             )
@@ -1256,7 +1434,12 @@ class AgenticToolBindings:
         action_refs = list(getattr(action, "target_refs", []) or [])
         for ref in action_refs:
             entry = ref_context.entries.get(ref)
-            if entry is None or entry.object_kind != expected_kind or entry.backend_id:
+            if (
+                entry is None
+                or entry.object_kind != expected_kind
+                or entry.label not in (None, label)
+                or entry.backend_id
+            ):
                 continue
             ref_context.resolve_backend_id(ref, backend_id, status="created")
             return ref
@@ -1271,10 +1454,7 @@ class AgenticToolBindings:
         ref_context = self.context.ref_context
         if ref_context is None:
             return [str(item) for item in backend_ids]
-        return [
-            ref_context.ref_for_backend_id(str(item)) or str(item)
-            for item in backend_ids
-        ]
+        return [ref_context.ref_for_backend_id(str(item)) or str(item) for item in backend_ids]
 
     def _model_facing_value(self, value: Any) -> Any:
         return _model_facing_retrieval_value(_serialize(value), self.context.ref_context)
@@ -1400,10 +1580,7 @@ def _invalid_handoff_refs(
 ) -> list[str]:
     """Validate handoff refs against the active canonical context."""
 
-    allowed = {
-        str(ref)
-        for ref in ref_context.entries
-    }
+    allowed = {str(ref) for ref in ref_context.entries}
     referenced = {
         str(ref)
         for doubt in doubts
@@ -1480,7 +1657,8 @@ def _register_retrieval_object(value: Any, context: RefContext | None) -> str | 
             else RefObjectKind.MEDIA
             if label == "MediaAsset"
             else RefObjectKind.CONTEXT
-            if label in {
+            if label
+            in {
                 "Claim",
                 "Perception",
                 "RelationshipContext",

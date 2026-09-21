@@ -29,9 +29,9 @@ from my_digital_brain.prompts import PromptRegistry
 
 def test_graph_relationship_tool_schema_uses_graph_registry_enum() -> None:
     definition = default_agentic_tool_registry().get("upsert_graph_relationship")
-    relationship_schema = definition.spec["function"]["parameters"]["properties"][
-        "relationship"
-    ]["properties"]["relationship_type"]
+    relationship_schema = definition.spec["function"]["parameters"]["properties"]["relationship"][
+        "properties"
+    ]["relationship_type"]
 
     assert relationship_schema["enum"] == list(GRAPH_MUTABLE_RELATIONSHIP_TYPES)
     assert "SIBLING_OF" not in relationship_schema["enum"]
@@ -49,6 +49,22 @@ def test_person_node_tool_schema_exposes_only_explicit_person_fields() -> None:
         "status",
     }
     assert "summary" not in person_schema["properties"]
+
+
+def test_context_creation_tools_expose_explicit_dtos() -> None:
+    registry = default_agentic_tool_registry()
+    perception_schema = registry.get("create_perception_context").spec["function"]["parameters"][
+        "properties"
+    ]["perception_context"]
+    relationship_schema = registry.get("create_relationship_context").spec["function"][
+        "parameters"
+    ]["properties"]["relationship_context"]
+
+    assert set(perception_schema["properties"]) == {"target_ref", "perception"}
+    assert set(relationship_schema["properties"]) == {
+        "participant_refs",
+        "relationship_context",
+    }
 
 
 class FakeContextPackage(BaseModel):
@@ -234,7 +250,7 @@ def _execution_context(**kwargs: Any) -> AgenticToolExecutionContext:
     defaults = {
         "session_id": "session-1",
         "conversation_id": "conversation-1",
-            "application_user_id": "owner-1",
+        "application_user_id": "owner-1",
         "channel": "web",
         "current_text": "Yesterday I met Marco.",
     }
@@ -257,9 +273,14 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_target_evidence",
         "ask_clarification",
     ]
-    assert "structured reasoning notes" in PromptRegistry().load(
-        "reasoning_checkpoint",
-    ).template
+    assert (
+        "structured reasoning notes"
+        in PromptRegistry()
+        .load(
+            "reasoning_checkpoint",
+        )
+        .template
+    )
     assert generic_planning.prompt_id == "planning_checkpoint"
     assert generic_planning.allowed_tools == [
         "get_context_package",
@@ -268,13 +289,23 @@ def test_registry_validates_default_state_configs_and_reasoning_planning_states(
         "get_target_evidence",
         "ask_clarification",
     ]
-    assert "ordered process actions" in PromptRegistry().load(
-        "planning_checkpoint",
-    ).template
+    assert (
+        "ordered process actions"
+        in PromptRegistry()
+        .load(
+            "planning_checkpoint",
+        )
+        .template
+    )
     assert memory_log_extraction.allowed_tools == generic_planning.allowed_tools
-    assert "memory-log ingestor" in PromptRegistry().load(
-        "memory_log_extraction",
-    ).template
+    assert (
+        "memory-log ingestor"
+        in PromptRegistry()
+        .load(
+            "memory_log_extraction",
+        )
+        .template
+    )
 
 
 def test_wave2_entry_tools_are_registered_and_active_on_entry() -> None:
@@ -325,9 +356,7 @@ def test_agentic_tool_schemas_are_strict_openai_compatible() -> None:
 
 def _assert_objects_disallow_additional_properties(schema: dict[str, Any], *, path: str) -> None:
     schema_type = schema.get("type")
-    if schema_type == "object" or (
-        isinstance(schema_type, list) and "object" in schema_type
-    ):
+    if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
         assert schema.get("additionalProperties") is False, path
         properties = schema.get("properties", {})
         assert schema.get("required", []) == list(properties), path
@@ -418,11 +447,23 @@ def test_graph_update_tools_execute_direct_writes_and_report_shared_outputs() ->
     )
     patch = mapping["patch_person_node"](
         node_id="node-marco",
-        person={"description": "university friend", "display_name": None, "aliases": None, "known_since": None, "status": None},
+        person={
+            "description": "university friend",
+            "display_name": None,
+            "aliases": None,
+            "known_since": None,
+            "status": None,
+        },
     )
     rejected = mapping["patch_person_node"](
         node_id="node-marco",
-        person={"description": None, "display_name": None, "aliases": None, "known_since": None, "status": None},
+        person={
+            "description": None,
+            "display_name": None,
+            "aliases": None,
+            "known_since": None,
+            "status": None,
+        },
     )
 
     assert resolved.data["requires_clarification"] is False
@@ -450,7 +491,7 @@ def test_create_person_node_persists_explicit_description_as_graph_presentation(
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
     result = build_agentic_tool_mapping(config, execution_context)["create_person_node"](
         person={
-                "display_name": "Marco Rossi",
+            "display_name": "Marco Rossi",
             "description": "A university friend mentioned in the correction.",
             "aliases": [],
             "known_since": None,
@@ -465,6 +506,87 @@ def test_create_person_node_persists_explicit_description_as_graph_presentation(
     )
     assert result.data["node"]["presentation"]["summary"] == (
         "A university friend mentioned in the correction."
+    )
+
+
+def test_context_creation_tools_create_and_link_only_bound_targets() -> None:
+    graph = FakeGraphService()
+    refs = RefContext(session_id="context-creation")
+    refs.register_existing(
+        "person-alessandro", RefObjectKind.NODE, label="Person", name="Alessandro"
+    )
+    refs.register_existing("person-lorenzo", RefObjectKind.NODE, label="Person", name="Lorenzo")
+    refs.register_proposed(
+        "context_new_beach_mood",
+        RefObjectKind.CONTEXT,
+        label="Perception",
+        name="Beach mood",
+    )
+    perception_action = SimpleNamespace(target_refs=["context_new_beach_mood"])
+    config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
+    perception_result = build_agentic_tool_mapping(
+        config,
+        AgenticToolExecutionContext(
+            graph_service=graph,
+            ref_context=refs,
+            current_payload=SimpleNamespace(action=perception_action),
+        ),
+    )["create_perception_context"](
+        perception_context={
+            "target_ref": "node_0001",
+            "perception": {
+                "description": "The beach atmosphere felt relaxed.",
+                "perception_type": "mood",
+                "source_kind": "user_statement",
+            },
+        }
+    )
+
+    assert perception_result.status == "ok"
+    assert refs.get_entry("context_new_beach_mood").backend_id == "perception-1"
+    assert "upsert_relationship:PERCEPTION_OF:perception-1:person-alessandro" in graph.mutations
+    assert (
+        "upsert_relationship:HAS_AFFECTIVE_CONTEXT:person-alessandro:perception-1"
+        in graph.mutations
+    )
+
+    refs.register_proposed(
+        "context_new_lorenzo_friendship",
+        RefObjectKind.CONTEXT,
+        label="RelationshipContext",
+        name="Lorenzo friendship",
+    )
+    relationship_action = SimpleNamespace(target_refs=["context_new_lorenzo_friendship"])
+    relationship_result = build_agentic_tool_mapping(
+        config,
+        AgenticToolExecutionContext(
+            graph_service=graph,
+            ref_context=refs,
+            current_payload=SimpleNamespace(action=relationship_action),
+        ),
+    )["create_relationship_context"](
+        relationship_context={
+            "participant_refs": ["node_0001", "node_0002"],
+            "relationship_context": {
+                "description": "Alessandro and Lorenzo are friends.",
+                "relationship_type": "friendship",
+                "relationship_kind": "friends",
+                "relationship_detail": None,
+                "status": "active",
+                "closeness": None,
+            },
+        }
+    )
+
+    assert relationship_result.status == "ok"
+    assert refs.get_entry("context_new_lorenzo_friendship").backend_id == "relationshipcontext-1"
+    assert (
+        "upsert_relationship:RELATIONSHIP_WITH:relationshipcontext-1:person-alessandro"
+        in graph.mutations
+    )
+    assert (
+        "upsert_relationship:HAS_RELATIONSHIP_CONTEXT:person-lorenzo:relationshipcontext-1"
+        in graph.mutations
     )
 
 
@@ -491,7 +613,9 @@ def test_create_person_node_rejects_planning_only_summary_field() -> None:
 def test_create_person_node_requires_clarification_for_name_only_identity() -> None:
     graph = FakeGraphService()
     config = default_state_configs()[AgenticStateId.GRAPH_UPDATE]
-    result = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))["create_person_node"](
+    result = build_agentic_tool_mapping(config, _execution_context(graph_service=graph))[
+        "create_person_node"
+    ](
         person={
             "display_name": "Marco",
             "description": None,
@@ -594,9 +718,7 @@ def test_ask_clarification_rejects_refs_missing_from_current_registry() -> None:
 
     assert result.status == "recoverable_error"
     assert result.data["error_code"] == "invalid_clarification_reference"
-    assert result.data["validation_details"]["invalid_refs"] == [
-        "node_9999"
-    ]
+    assert result.data["validation_details"]["invalid_refs"] == ["node_9999"]
 
 
 def test_ask_clarification_is_not_exposed_to_conversation_entry() -> None:

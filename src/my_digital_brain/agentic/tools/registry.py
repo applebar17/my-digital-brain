@@ -21,6 +21,8 @@ from my_digital_brain.clarification.contracts import clarification_doubts_schema
 from my_digital_brain.graph.models import (
     GraphRelationshipWrite,
     MemoryLogCreate,
+    PerceptionContextCreate,
+    RelationshipContextCreate,
     RelationshipStateWrite,
 )
 
@@ -197,7 +199,9 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             states=graph_update_states,
             properties={
                 "query": string_property("Update text or target search query."),
-                "target_ids": array_property("Known model-facing node refs supplied by the caller."),
+                "target_ids": array_property(
+                    "Known model-facing node refs supplied by the caller."
+                ),
                 "limit": integer_property("Maximum candidate targets.", default=5, maximum=20),
             },
         ),
@@ -205,10 +209,42 @@ def _default_definitions() -> list[AgenticToolDefinition]:
             "create_memory_log",
             "Create one compact MemoryLog from the explicit memory_log object and link it to supplied refs.",
             states=[*graph_update_states, *memory_creation_states],
-            properties={"memory_log": _pydantic_object_property(MemoryLogCreate, "Explicit MemoryLog fields.")},
+            properties={
+                "memory_log": _pydantic_object_property(
+                    MemoryLogCreate, "Explicit MemoryLog fields."
+                )
+            },
         ),
         *_node_creation_definitions(
             [*graph_update_states, *memory_creation_states],
+        ),
+        _definition(
+            "create_perception_context",
+            (
+                "Create one Perception and attach it to its already-created target. "
+                "The tool writes both the Perception node and its required graph links."
+            ),
+            states=[*graph_update_states, *memory_creation_states],
+            properties={
+                "perception_context": _pydantic_object_property(
+                    PerceptionContextCreate,
+                    "Explicit Perception fields and one bound target ref.",
+                )
+            },
+        ),
+        _definition(
+            "create_relationship_context",
+            (
+                "Create one RelationshipContext and attach it to its already-created "
+                "participants. The tool writes the context node and its required graph links."
+            ),
+            states=[*graph_update_states, *memory_creation_states],
+            properties={
+                "relationship_context": _pydantic_object_property(
+                    RelationshipContextCreate,
+                    "Explicit RelationshipContext fields and at least two bound participant refs.",
+                )
+            },
         ),
         *_node_patch_definitions(graph_update_states),
         _definition(

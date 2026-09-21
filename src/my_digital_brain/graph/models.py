@@ -179,6 +179,36 @@ class TopicNodeCreate(GraphNodeCreateModel):
     aliases: list[str] = Field(default_factory=list)
 
 
+class PerceptionNodeCreate(GraphNodeCreateModel):
+    perception_type: str = Field(
+        description="Source-grounded kind of perception, such as mood, impression, or feeling."
+    )
+    source_kind: str | None = Field(
+        default=None,
+        description="Source-grounded origin of the perception, such as user_statement.",
+    )
+
+
+class RelationshipContextNodeCreate(GraphNodeCreateModel):
+    relationship_type: str = Field(
+        description="Source-grounded broad relationship type, such as friendship, family, or romantic."
+    )
+    relationship_kind: str | None = Field(
+        default=None,
+        description="Optional finer relationship kind, such as colleague or sibling.",
+    )
+    relationship_detail: str | None = Field(
+        default=None,
+        description="Specific source wording that describes the relationship.",
+    )
+    status: str | None = Field(
+        default=None, description="Source-grounded current relationship status."
+    )
+    closeness: str | None = Field(
+        default=None, description="Source-grounded closeness description."
+    )
+
+
 class GraphNodePatchModel(BaseModel):
     """Explicit model-facing fields that may be changed on an existing node."""
 
@@ -250,6 +280,41 @@ class SocialCircleNodePatch(GraphNodePatchModel):
 class TopicNodePatch(GraphNodePatchModel):
     name: str | None = None
     aliases: list[str] | None = None
+
+
+class PerceptionContextCreate(BaseModel):
+    """Explicit request to create and attach one Perception."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_ref: str = Field(
+        description="Existing, bound model ref for the graph object this perception concerns."
+    )
+    perception: PerceptionNodeCreate = Field(
+        description="Explicit writable fields for the new Perception node."
+    )
+
+
+class RelationshipContextCreate(BaseModel):
+    """Explicit request to create and attach one RelationshipContext."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    participant_refs: list[str] = Field(
+        min_length=2,
+        description=(
+            "At least two existing, bound model refs for the participants in this relationship."
+        ),
+    )
+    relationship_context: RelationshipContextNodeCreate = Field(
+        description="Explicit writable fields for the new RelationshipContext node."
+    )
+
+    @model_validator(mode="after")
+    def _validate_distinct_participants(self) -> "RelationshipContextCreate":
+        if len(set(self.participant_refs)) != len(self.participant_refs):
+            raise ValueError("participant_refs must contain each participant ref only once.")
+        return self
 
 
 class MemoryLogCreate(BaseModel):
@@ -563,8 +628,18 @@ class NodeSearchResult(BaseModel):
 
 def _node_presentation_title(label: str, properties: dict[str, Any]) -> str:
     for field in (
-        "title", "display_name", "name", "label_text", "profile_key", "value", "caption",
-        "text", "log_text", "description", "emotional_summary", "original_user_words",
+        "title",
+        "display_name",
+        "name",
+        "label_text",
+        "profile_key",
+        "value",
+        "caption",
+        "text",
+        "log_text",
+        "description",
+        "emotional_summary",
+        "original_user_words",
     ):
         value = properties.get(field)
         if isinstance(value, str) and value.strip():
