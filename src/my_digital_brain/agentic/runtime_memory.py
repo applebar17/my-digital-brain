@@ -19,6 +19,7 @@ from my_digital_brain.agentic.enums import (
     AgenticStateId,
     MemoryPlanActionType,
     MemoryPlanningPhase,
+    RefInventoryVerbosity,
     RefObjectKind,
 )
 from my_digital_brain.agentic.planning_contracts import (
@@ -350,7 +351,7 @@ class MemoryIngestionRuntimeService:
                     else []
                 ),
                 "reference_inventory": (
-                    payload.ref_context.render_prompt_inventory()
+                    payload.ref_context.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
                     if payload.ref_context is not None
                     else "No model-facing refs are known yet."
                 ),

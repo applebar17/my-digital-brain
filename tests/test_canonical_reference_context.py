@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from my_digital_brain.agentic.enums import RefObjectKind
+from my_digital_brain.agentic.enums import RefInventoryVerbosity, RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime import AgenticRuntime, _replace_pending_tool_messages
 from my_digital_brain.agentic.state import default_state_configs
@@ -58,7 +58,7 @@ def test_retrieval_context_maps_graph_ids_to_one_model_reference_context() -> No
     assert "person-lorenzo" not in rendered["reference_inventory"]
 
 
-def test_reference_inventory_explains_lifecycle_without_backend_ids() -> None:
+def test_reference_inventory_renders_levels_without_backend_ids() -> None:
     refs = RefContext(session_id="session-1")
     refs.register_existing(
         "person-jacopo-existing",
@@ -78,14 +78,33 @@ def test_reference_inventory_explains_lifecycle_without_backend_ids() -> None:
         status="created",
     )
 
+    compact = refs.render_prompt_inventory(RefInventoryVerbosity.JSON)
     inventory = refs.render_prompt_inventory()
+    guidance = refs.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
 
     assert '`node_0001` refers to the Person "Jacopo Brutti"' in inventory
-    assert "already exists; reuse this ref" in inventory
     assert '`node_new_jacopo_brutti` refers to the Person "Jacopo Brutti"' in inventory
-    assert "created earlier in this run; reuse this ref" in inventory
-    assert "person-jacopo-existing" not in inventory
-    assert "person-jacopo-created" not in inventory
+    assert "already exists; reuse this ref" not in inventory
+    assert "created earlier in this run; reuse this ref" not in inventory
+    assert "already exists; reuse this ref" in guidance
+    assert "created earlier in this run; reuse this ref" in guidance
+    assert json.loads(compact) == [
+        {
+            "ref": "node_0001",
+            "object_kind": "node",
+            "label": "Person",
+            "name": "Jacopo Brutti",
+        },
+        {
+            "ref": "node_new_jacopo_brutti",
+            "object_kind": "node",
+            "label": "Person",
+            "name": "Jacopo Brutti",
+        },
+    ]
+    for rendered in (compact, inventory, guidance):
+        assert "person-jacopo-existing" not in rendered
+        assert "person-jacopo-created" not in rendered
 
 
 def test_reference_inventory_allows_same_name_with_distinct_model_refs() -> None:

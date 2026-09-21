@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -8,6 +9,7 @@ from pydantic import Field, model_validator
 from my_digital_brain.agentic.base import AgenticModel
 from my_digital_brain.agentic.enums import (
     PacketDetailProfile,
+    RefInventoryVerbosity,
     RefObjectKind,
     RefResolutionStatus,
 )
@@ -360,28 +362,53 @@ class RefContext(AgenticModel):
         resolved_profile = PacketDetailProfile(profile)
         return [entry.model_facing_packet(resolved_profile) for entry in self.entries.values()]
 
-    def render_prompt_inventory(self) -> str:
-        """Explain run-scoped refs in plain language for model prompts.
+    def render_prompt_inventory(
+        self,
+        verbosity: RefInventoryVerbosity | int = RefInventoryVerbosity.IDENTITIES,
+    ) -> str:
+        """Render run-scoped refs at the detail appropriate for the caller.
 
-        The rendered inventory deliberately contains only model-facing handles and
-        their semantic meaning. Backend IDs remain available only to deterministic
-        tool handlers through :meth:`resolve`.
+        ``JSON`` exposes compact, machine-readable identity fields. ``IDENTITIES``
+        is the default plain-language identity inventory. ``GUIDANCE`` adds lifecycle
+        instructions for steps that need safe reuse/write decisions. Every level
+        excludes backend IDs, which remain available only to deterministic tool
+        handlers through :meth:`resolve`.
         """
 
+        resolved_verbosity = RefInventoryVerbosity(verbosity)
         if not self.entries:
-            return "No model-facing refs are known yet."
-        lines = [
-            "Reuse each exact ref below whenever it represents the same object; "
-            "do not use or invent unseen internal identifiers."
-        ]
+            return "[]" if resolved_verbosity == RefInventoryVerbosity.JSON else (
+                "No model-facing refs are known yet."
+            )
+        if resolved_verbosity == RefInventoryVerbosity.JSON:
+            return json.dumps(
+                [
+                    {
+                        "ref": entry.ref,
+                        "object_kind": RefObjectKind(entry.object_kind).value,
+                        "label": entry.label,
+                        "name": entry.name,
+                    }
+                    for entry in self.entries.values()
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        lines: list[str] = []
+        if resolved_verbosity == RefInventoryVerbosity.GUIDANCE:
+            lines.append(
+                "Reuse each exact ref below whenever it represents the same object; "
+                "do not use or invent unseen internal identifiers."
+            )
         for entry in self.entries.values():
             kind = RefObjectKind(entry.object_kind).value
             descriptor = _inventory_descriptor(entry, kind)
-            status = RefResolutionStatus(entry.resolution_status)
-            lines.append(
-                f"- `{entry.ref}` refers to {descriptor}. "
-                f"{_inventory_status_guidance(status)}"
-            )
+            line = f"- `{entry.ref}` refers to {descriptor}."
+            if resolved_verbosity == RefInventoryVerbosity.GUIDANCE:
+                status = RefResolutionStatus(entry.resolution_status)
+                line = f"{line} {_inventory_status_guidance(status)}"
+            lines.append(line)
         return "\n".join(lines)
 
     def delta_packet(

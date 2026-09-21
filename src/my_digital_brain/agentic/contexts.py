@@ -23,6 +23,7 @@ from my_digital_brain.agentic.enums import (
     ProfileMemoryVisibility,
     ReasoningInsightKind,
     ReasoningStorageRecommendationType,
+    RefInventoryVerbosity,
     RefObjectKind,
     ResponseRenderStyle,
     ToolResultStatus,
@@ -885,7 +886,7 @@ class MemoryIngestionContext(AgenticModel):
                     else None
                 ),
                 "reference_inventory": (
-                    self.ref_context.render_prompt_inventory()
+                    self.ref_context.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
                     if self.ref_context is not None
                     else None
                 ),
@@ -936,7 +937,7 @@ class MemoryCreationContext(AgenticModel):
                     else None
                 ),
                 "reference_inventory": (
-                    self.ref_context.render_prompt_inventory()
+                    self.ref_context.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
                     if self.ref_context is not None
                     else None
                 ),
@@ -988,7 +989,7 @@ class GraphUpdateContext(AgenticModel):
                     else None
                 ),
                 "reference_inventory": (
-                    self.ref_context.render_prompt_inventory()
+                    self.ref_context.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
                     if self.ref_context is not None
                     else None
                 ),

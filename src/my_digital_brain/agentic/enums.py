@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 
 
 class AgenticNodeKind(StrEnum):
@@ -78,6 +78,14 @@ class RefResolutionStatus(StrEnum):
     UPDATED = "updated"
     AMBIGUOUS = "ambiguous"
     MISSING = "missing"
+
+
+class RefInventoryVerbosity(IntEnum):
+    """Prompt rendering detail for the model-facing reference inventory."""
+
+    JSON = 0
+    IDENTITIES = 1
+    GUIDANCE = 2
 
 
 class PacketDetailProfile(StrEnum):

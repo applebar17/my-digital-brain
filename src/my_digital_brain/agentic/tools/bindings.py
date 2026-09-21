@@ -15,7 +15,11 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlanAction,
     QueryRetrievalPlanningContext,
 )
-from my_digital_brain.agentic.enums import AgenticStateId, RefObjectKind
+from my_digital_brain.agentic.enums import (
+    AgenticStateId,
+    RefInventoryVerbosity,
+    RefObjectKind,
+)
 from my_digital_brain.agentic.mutations import (
     AGENTIC_CREATABLE_NODE_LABELS,
     agentic_node_mutation_definition,
@@ -376,7 +380,7 @@ class AgenticToolBindings:
             )
             handoff_context = _serialize(self.context.current_payload) or {}
             handoff_context["reference_inventory"] = (
-                self.context.ref_context.render_prompt_inventory()
+                self.context.ref_context.render_prompt_inventory(RefInventoryVerbosity.GUIDANCE)
             )
             session_input = ClarificationSessionInput(
                 handoff=handoff,
