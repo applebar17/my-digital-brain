@@ -20,6 +20,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Chat activity and progress rendering](12-chat-activity-and-progress-rendering.md)
 - [Canonical Reference Context](13-canonical-reference-context.md)
 - [Reference coherence and recoverable structured validation](14-reference-coherence-and-recoverable-validation.md)
+- [Agentic continuity, reference rendering, and legacy retirement](16-agentic-continuity-reference-rendering-and-legacy-retirement.md)
 
 ## Wave Meaning
 

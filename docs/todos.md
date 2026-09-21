@@ -26,6 +26,27 @@ features:
   history projection, structured contradiction review, and frame-based final
   assistant ownership.
 
+## Agentic Runtime Continuity, Ref Rendering, And Legacy Retirement
+
+Priority: 1
+
+See [Agentic continuity, reference rendering, and legacy retirement](dev-plans/16-agentic-continuity-reference-rendering-and-legacy-retirement.md).
+
+This is the active cleanup and reliability wave for the current chat ingestion
+path. It exists because a model cannot reuse an identity or recover from a tool
+failure if the runtime hides the outcome, duplicates the provider tool output,
+or presents local refs without their human meaning.
+
+- Return every tool success, failure, and clarification outcome to its invoking
+  agent frame exactly once, keyed solely by the provider `tool_call_id`.
+- Add the compact `RefContext` prompt inventory and prove reference bindings
+  survive planning, child writes, and frame resume in the Jacopo regression.
+- Improve broad behavioural relationship guidance so explicit relationships are
+  planned while co-presence remains episodic involvement.
+- Migrate active consumers away from the old ingestion package, then delete the
+  superseded pipeline, registry, UAT helpers, tests, docs, and compatibility
+  paths rather than retaining parallel implementations.
+
 ## Identity And Ingestion Hardening
 
 Priority: 1

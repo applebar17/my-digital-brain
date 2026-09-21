@@ -89,14 +89,15 @@ unconditional final `MemoryIngestionResultContext(status="ok")` path.
 claim. It also makes testing misleading: a sparse graph looks like an
 extraction-quality issue rather than a failed transaction.
 
-**Proposed fix.** Make action outcomes explicit and terminal at the orchestration
-boundary:
+**Proposed fix.** Make action outcomes explicit and return them to the invoking
+agent frame:
 
-- return immediately on a non-recoverable child error; do not plan or execute
-  later phases from a failed prerequisite;
-- for a recoverable write/ref error, create a structured repair/resume state
-  with the failed action, safe diagnostic, and current ref packet; retry only
-  after backend repair or model correction;
+- deliver every child error as one structured tool output correlated to its
+  provider-issued tool-call ID; do not deterministically terminate the agent
+  frame or decide its semantic next action in the runtime;
+- let the invoking agent use the safe diagnostic and current ref packet to
+  retry with corrected arguments, re-plan, request clarification, defer the
+  affected fact, or explain the outcome;
 - construct final user-facing completion text from verified write receipts
   (created/updated IDs and counts), never from a planning summary;
 - mark a parent frame `failed` or `interrupted`, never `completed`, when any
@@ -105,9 +106,9 @@ boundary:
   fallback path.
 
 **Acceptance criteria.** A forced `create_memory_log` failure produces no
-success message, records an actionable trace error, and prevents the edge
-phase. A successful response is impossible unless the required write receipts
-are present.
+false success message, records an actionable trace error, and returns the
+error to the same invoking agent. A successful response is impossible unless
+the required write receipts are present.
 
 ### F3 — Clarification candidates are informational only
 
@@ -260,8 +261,8 @@ Reasoning inventory
 ### Wave 1 — Execution truthfulness and owner integrity
 
 1. Add the owner binding invariant and regression coverage for graph reset.
-2. Stop `memory_ingestion` on child `error`; propagate failed/interrupted
-   frames correctly.
+2. Return child `error` to the invoking agent frame once, preserve the frame
+   flow, and propagate truthful operational status to the trace.
 3. Derive final completion language from verified execution receipts.
 4. Add an integration test that intentionally removes the owner and asserts no
    false successful response.
