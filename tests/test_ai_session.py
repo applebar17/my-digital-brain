@@ -111,7 +111,7 @@ def test_tools_and_structured_terminal_output_share_one_session() -> None:
     assert len(result.messages) == 5
 
 
-def test_intermediate_agent_tool_result_requires_a_tool_follow_up() -> None:
+def test_intermediate_agent_tool_result_returns_to_the_invoker_before_its_final_reply() -> None:
     transport = ScriptedTransport(
         [
             ChatMessage(role="assistant", tool_calls=[_call("call-1", "agent")]),
@@ -133,9 +133,11 @@ def test_intermediate_agent_tool_result_requires_a_tool_follow_up() -> None:
         )
     )
 
-    assert isinstance(result, LLMSessionFailed)
-    assert "No tool result was promoted" in result.error
-    assert transport.requests[1].tool_choice == "required"
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.content == "child summary echoed as final"
+    assert result.messages[-2].role == "tool"
+    assert result.messages[-2].content != result.content
+    assert transport.requests[1].tool_choice is None
 
 
 def test_tool_batch_is_not_split_when_it_exceeds_cap() -> None:
@@ -191,6 +193,71 @@ def test_tool_errors_are_returned_in_the_transcript() -> None:
     tool_message = result.messages[-2]
     assert tool_message.role == "tool"
     assert "tool_execution_error" in str(tool_message.content)
+
+
+def test_replayed_provider_tool_call_id_reuses_the_persisted_output() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", tool_calls=[_call("call-1", "record")]),
+            ChatMessage(role="assistant", tool_calls=[_call("call-1", "record")]),
+            ChatMessage(role="assistant", content="The first attempt is recorded."),
+        ]
+    )
+    calls: list[str] = []
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Use the tool.",
+            toolbox=_toolbox("record"),
+            tools_mapping={"record": lambda: calls.append("record")},
+        )
+    )
+
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.content == "The first attempt is recorded."
+    assert calls == ["record"]
+    assert [event.call_id for event in result.tool_events] == ["call-1"]
+    assert [
+        message.tool_call_id for message in result.messages if message.role == "tool"
+    ] == ["call-1"]
+
+
+def test_nested_agent_error_returns_to_the_invoking_agent_for_a_final_response() -> None:
+    transport = ScriptedTransport(
+        [
+            ChatMessage(role="assistant", tool_calls=[_call("call-child", "child_agent")]),
+            ChatMessage(
+                role="assistant",
+                content="I could not complete that save because its target was unavailable.",
+            ),
+        ]
+    )
+
+    result = LLMSessionRunner(transport).run(
+        LLMSessionRequest(
+            system_prompt="Use the child agent and explain its confirmed outcome.",
+            toolbox=_toolbox("child_agent"),
+            tools_mapping={
+                "child_agent": lambda: ToolResult(
+                    status="error",
+                    output="The target reference is unavailable.",
+                    error={
+                        "code": "missing_target_reference",
+                        "message": "The target reference is unavailable.",
+                        "hint": "Resolve the target or ask a clarification.",
+                        "retryable": True,
+                    },
+                )
+            },
+        )
+    )
+
+    assert isinstance(result, LLMSessionCompleted)
+    assert result.content.startswith("I could not complete")
+    tool_messages = [message for message in result.messages if message.role == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].tool_call_id == "call-child"
+    assert "missing_target_reference" in (tool_messages[0].content or "")
 
 
 def test_pending_tool_can_resume_from_the_same_transcript() -> None:

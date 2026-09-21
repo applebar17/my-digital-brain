@@ -146,7 +146,7 @@ class MemoryIngestionRuntimeService:
                 node_action_result.compact_trace = compact_trace
                 return node_action_result
             if node_action_result.status != "ok":
-                return _failed_memory_phase_result(
+                return _memory_ingestion_action_error_result(
                     state_results,
                     compact_trace,
                     phase=MemoryPlanningPhase.NODES,
@@ -204,7 +204,7 @@ class MemoryIngestionRuntimeService:
                 memory_action_result.compact_trace = compact_trace
                 return memory_action_result
             if memory_action_result.status != "ok":
-                return _failed_memory_phase_result(
+                return _memory_ingestion_action_error_result(
                     state_results,
                     compact_trace,
                     phase=MemoryPlanningPhase.MEMORY_LOGS,
@@ -257,7 +257,7 @@ class MemoryIngestionRuntimeService:
                 edge_action_result.compact_trace = compact_trace
                 return edge_action_result
             if edge_action_result.status != "ok":
-                return _failed_memory_phase_result(
+                return _memory_ingestion_action_error_result(
                     state_results,
                     compact_trace,
                     phase=MemoryPlanningPhase.EDGES,
@@ -573,21 +573,29 @@ class MemoryIngestionRuntimeService:
         )
 
 
-def _failed_memory_phase_result(
+def _memory_ingestion_action_error_result(
     state_results: list[AgenticStateRunResult],
     compact_trace: list[dict[str, Any]],
     *,
     phase: MemoryPlanningPhase,
 ) -> AgenticRunResult:
-    """Stop required ingestion work without exposing a tool result as chat prose."""
+    """Return a failed action to the agent that invoked ingestion.
+
+    This service is itself an `ingest_memory` tool implementation. It records
+    the phase outcome and returns it to the caller; it never writes a final
+    chat response or decides the caller's semantic next action.
+    """
 
     return AgenticRunResult(
-        final_text="I could not save this memory safely, so I stopped before making further changes.",
+        final_text=(
+            "One ingestion action could not be completed. Review the returned "
+            "diagnostic and decide whether to retry, clarify, defer, or explain the outcome."
+        ),
         visited_states=[result.state_id for result in state_results],
         state_results=state_results,
         status="error",
         compact_trace=compact_trace,
-        metadata={"failed_phase": phase.value},
+        metadata={"failed_phase": phase.value, "requires_invoker_response": True},
     )
 
 
@@ -749,14 +757,14 @@ def _verify_created_action_ref(action: Any, ref_context: Any, *, succeeded: bool
     ]
     if len(output_refs) != 1:
         return (
-            f"The {action.action_type.value} action completed without one identifiable "
+            f"The {MemoryPlanActionType(action.action_type).value} action completed without one identifiable "
             f"planned {expected_kind.value} ref in target_refs."
         )
     output_ref = output_refs[0]
     if ref_context.entries[output_ref].backend_id:
         return None
     return (
-        f"The {action.action_type.value} action reported success, but planned ref "
+        f"The {MemoryPlanActionType(action.action_type).value} action reported success, but planned ref "
         f"'{output_ref}' was not bound to a backend object."
     )
 

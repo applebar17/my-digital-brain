@@ -28,7 +28,9 @@ from my_digital_brain.agentic.runtime_state import AgenticStateRunner
 from my_digital_brain.agentic.tools import (
     AgenticToolExecutionContext,
 )
-from my_digital_brain.ai.models import ToolResult
+from my_digital_brain.ai.models import ToolError, ToolResult
+from my_digital_brain.ai.schemas import ChatMessage
+from my_digital_brain.ai.session.continuation import upsert_tool_result_message
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.clarification.contracts import (
     ClarificationResolutionReport,
@@ -348,6 +350,7 @@ class AgenticRuntime:
             status="ok" if result.status == "ok" else result.status,
             output=summary,
             continuation_required=continuation_required,
+            error=_child_result_tool_error(result),
             data={
                 "operation": tool_name,
                 "summary": summary,
@@ -787,12 +790,11 @@ class AgenticRuntime:
             },
         )
 
-        tool_message = {
-            "role": "tool",
-            "tool_call_id": parent.active_tool_call_id,
-            "content": tool_result.model_dump_json(exclude_none=True),
-        }
-        parent_messages = [*parent.messages, tool_message]
+        parent_messages = _upsert_frame_tool_result(
+            parent.messages,
+            parent.active_tool_call_id,
+            tool_result,
+        )
         execution_context.frame_id = parent.frame_id
         execution_context.parent_frame_id = parent.parent_frame_id
         execution_context.parent_tool_call_id = parent.parent_tool_call_id
@@ -814,7 +816,6 @@ class AgenticRuntime:
                 "resumed_child_frame_id": child_frame.frame_id,
                 "resolved_clarifications": resolved_clarifications,
                 "clarification_report": clarification_report,
-                "force_tool_follow_up": tool_result.continuation_required,
             },
         )
         compact_trace = [_compact_state_trace(child_result), _compact_state_trace(parent_result)]
@@ -1200,35 +1201,42 @@ def _replace_pending_tool_messages(
     produce an invalid provider transcript with an orphaned tool response.
     """
 
-    replacement = tool_result.model_dump_json(exclude_none=True)
-    pending_ids = {str(value) for value in pending_tool_call_ids}
-    resumed_messages: list[dict[str, Any]] = []
-    replaced_ids: set[str] = set()
-    for message in messages:
-        if (
-            message.get("role") == "tool"
-            and str(message.get("tool_call_id")) in pending_ids
-        ):
-            tool_call_id = str(message["tool_call_id"])
-            resumed_messages.append(
-                {
-                    **message,
-                    "tool_call_id": tool_call_id,
-                    "content": replacement,
-                }
-            )
-            replaced_ids.add(tool_call_id)
-        else:
-            resumed_messages.append(message)
-    for tool_call_id in pending_ids - replaced_ids:
-        resumed_messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": replacement,
-            }
+    resumed_messages = list(messages)
+    for tool_call_id in dict.fromkeys(str(value) for value in pending_tool_call_ids if value):
+        resumed_messages = _upsert_frame_tool_result(
+            resumed_messages,
+            tool_call_id,
+            tool_result,
         )
     return resumed_messages
+
+
+def _upsert_frame_tool_result(
+    messages: list[dict[str, Any]],
+    tool_call_id: str,
+    tool_result: ToolResult,
+) -> list[dict[str, Any]]:
+    """Apply the shared provider tool-call-ID rule to persisted frame messages."""
+
+    provider_messages = [ChatMessage.model_validate(message) for message in messages]
+    upsert_tool_result_message(provider_messages, tool_call_id, tool_result)
+    return [message.model_dump(mode="json", exclude_none=True) for message in provider_messages]
+
+
+def _child_result_tool_error(result: AgenticRunResult) -> ToolError | None:
+    """Expose the most useful child failure to its invoking agent."""
+
+    if result.status in {"ok", "pending", "interrupted"}:
+        return None
+    for state_result in reversed(result.state_results):
+        for event in reversed(state_result.tool_events):
+            if event.error:
+                return ToolError.model_validate(event.error)
+    return ToolError(
+        message=result.final_text or "The child agent could not complete its operation.",
+        code="child_agent_error",
+        hint="Use the diagnostic data to adapt the next action or explain the outcome.",
+    )
 
 
 def _clarification_report_from_state_result(

@@ -18,6 +18,7 @@ from my_digital_brain.core.ids import new_uuid
 from ..models import ToolResult
 from ..schemas import ChatMessage
 from ..structured_schema import strict_response_format
+from .continuation import upsert_tool_result_message
 from .contracts import (
     DEFAULT_MAX_TOOL_CALLS,
     LLMCompletionRequest,
@@ -77,15 +78,12 @@ class LLMSessionRunner:
         tools_enabled = bool(request.toolbox and request.tools_mapping) and not self._cap_reached(
             request, executed
         )
-        continuation_required = bool(request.metadata.get("force_tool_follow_up"))
-
         while True:
             completion = self.transport.complete(
                 self._completion_request(
                     request,
                     messages,
                     tools_enabled,
-                    tool_choice="required" if continuation_required else None,
                 ),
             )
             last_metadata = completion.metadata
@@ -109,10 +107,7 @@ class LLMSessionRunner:
                 )
                 events.extend(new_events)
                 messages = new_messages
-                executed += len(tool_calls)
-                continuation_required = any(
-                    event.result.continuation_required for event in new_events
-                )
+                executed += len(new_events)
                 if pending:
                     continuation = LLMSessionContinuation(
                         session_id=session_id,
@@ -134,20 +129,6 @@ class LLMSessionRunner:
                 if self._cap_reached(request, executed):
                     tools_enabled = False
                 continue
-
-            if continuation_required:
-                return self._failure(
-                    session_id,
-                    messages,
-                    events,
-                    (
-                        "An intermediate tool result was returned to the invoking "
-                        "session, but the provider did not produce the required "
-                        "follow-up tool call. No tool result was promoted to a "
-                        "final assistant response."
-                    ),
-                    last_metadata,
-                )
 
             if request.output_schema is None:
                 return LLMSessionCompleted(
@@ -270,8 +251,15 @@ class LLMSessionRunner:
         events: list[ToolExecutionEvent] = []
         pending_calls: list[PendingToolCall] = []
         pending_events: list[ToolExecutionEvent] = []
+        seen_call_ids: set[str] = set()
         for raw_call in raw_calls:
             pending_call = _pending_tool_call(raw_call)
+            if pending_call.call_id in seen_call_ids or _has_persisted_tool_output(
+                messages,
+                pending_call.call_id,
+            ):
+                continue
+            seen_call_ids.add(pending_call.call_id)
             result = self.tool_executor.execute(pending_call, request.tools_mapping)
             event = ToolExecutionEvent(
                 call_id=pending_call.call_id,
@@ -283,7 +271,7 @@ class LLMSessionRunner:
             if result.status == "pending":
                 pending_calls.append(pending_call)
                 pending_events.append(event)
-            _upsert_tool_message(messages, pending_call.call_id, result)
+            upsert_tool_result_message(messages, pending_call.call_id, result)
         if _question_batch_overflow(pending_events):
             message = (
                 "This assistant turn requested more than five clarification questions. "
@@ -305,7 +293,7 @@ class LLMSessionRunner:
                         "details": details,
                     },
                 )
-                _upsert_tool_message(messages, event.call_id, event.result)
+                upsert_tool_result_message(messages, event.call_id, event.result)
             return [], {}, events, messages
 
         interaction = {
@@ -323,7 +311,7 @@ class LLMSessionRunner:
                     "clarification_packet": packet,
                     "tool_call_ids": [call.call_id for call in pending_calls],
                 }
-                _upsert_tool_message(messages, event.call_id, event.result)
+                upsert_tool_result_message(messages, event.call_id, event.result)
         return pending_calls, interaction, events, messages
 
     def _cap_reached(self, request: LLMSessionRequest, executed: int) -> bool:
@@ -368,14 +356,6 @@ def _pending_tool_call(raw_call: Any) -> PendingToolCall:
         call_id=call_id,
         name=name,
         arguments=arguments if isinstance(arguments, dict) else {},
-    )
-
-
-def _tool_message(call_id: str, result: ToolResult) -> ChatMessage:
-    return ChatMessage(
-        role="tool",
-        tool_call_id=call_id,
-        content=result.model_dump_json(exclude_none=True),
     )
 
 
@@ -436,17 +416,12 @@ def _combined_clarification_packet(
     return combined.model_dump(mode="json", exclude_none=True)
 
 
-def _upsert_tool_message(
-    messages: list[ChatMessage],
-    call_id: str,
-    result: ToolResult,
-) -> None:
-    replacement = _tool_message(call_id, result)
-    for index, message in enumerate(messages):
-        if message.role == "tool" and message.tool_call_id == call_id:
-            messages[index] = replacement
-            return
-    messages.append(replacement)
+def _has_persisted_tool_output(messages: list[ChatMessage], call_id: str) -> bool:
+    for message in reversed(messages):
+        if message.role != "tool" or message.tool_call_id != call_id:
+            continue
+        return True
+    return False
 
 
 def _repair_message(schema: type[BaseModel], exc: Exception) -> str:

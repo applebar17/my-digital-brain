@@ -4,15 +4,15 @@ import json
 
 from my_digital_brain.agentic.enums import RefObjectKind
 from my_digital_brain.agentic.refs import RefContext
+from my_digital_brain.agentic.runtime import AgenticRuntime, _replace_pending_tool_messages
 from my_digital_brain.agentic.state import default_state_configs
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext, build_agentic_tool_mapping
-from my_digital_brain.agentic.runtime import AgenticRuntime, _replace_pending_tool_messages
+from my_digital_brain.agentic.tools.bindings import _graph_context_from_retrieval
 from my_digital_brain.chat.models import AgenticFrame
 from my_digital_brain.chat.store import InMemoryChatSessionStore
 from my_digital_brain.clarification.contracts import ClarificationPacket, ClarificationQuestion
-from my_digital_brain.graph.models import NodeSearchResult
-from my_digital_brain.agentic.tools.bindings import _graph_context_from_retrieval
 from my_digital_brain.clarification.toolbox import ClarificationToolService
+from my_digital_brain.graph.models import NodeSearchResult
 
 
 def test_retrieval_context_maps_graph_ids_to_one_model_reference_context() -> None:
@@ -217,6 +217,11 @@ def test_resume_replaces_pending_tool_result_instead_of_appending_orphan() -> No
             "tool_call_id": "ask-text-call",
             "content": '{"status":"pending"}',
         },
+        {
+            "role": "tool",
+            "tool_call_id": "ask-text-call",
+            "content": '{"status":"pending"}',
+        },
     ]
 
     resumed = _replace_pending_tool_messages(
@@ -225,6 +230,10 @@ def test_resume_replaces_pending_tool_result_instead_of_appending_orphan() -> No
         ToolResult(status="ok", output="Lorenzo is my brother."),
     )
 
-    assert len(resumed) == len(messages)
+    assert len(resumed) == len(messages) - 1
+    assert sum(
+        message.get("role") == "tool" and message.get("tool_call_id") == "ask-text-call"
+        for message in resumed
+    ) == 1
     assert resumed[-1]["tool_call_id"] == "ask-text-call"
     assert '"status":"ok"' in resumed[-1]["content"]

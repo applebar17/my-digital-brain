@@ -23,12 +23,12 @@ from my_digital_brain.agentic import (
     MemoryPlanPacket,
     MemoryPlanStep,
     NeutralConversationMessage,
-    NodePlanPacket,
     NodeMemoryPlan,
+    NodePlanPacket,
+    PlannedRefPacket,
     PlanningPurposeGuidelines,
     PlanningTransformContext,
     PlanningTransformResultContext,
-    PlannedRefPacket,
     QueryRetrievalPlanningContext,
     ReasoningCheckpointContext,
     ReasoningPurposeGuidelines,
@@ -96,6 +96,14 @@ class ScriptedToolCallingProvider:
     def complete(self, request: LLMCompletionRequest) -> LLMCompletionResult:
         self.completion_calls += 1
         self.completion_messages.append(list(request.messages))
+        if request.response_format:
+            return LLMCompletionResult(
+                assistant_message=ChatMessage(
+                    role="assistant",
+                    content=json.dumps(self.structured_payloads.pop(0)),
+                ),
+                metadata=ProviderCallMetadata.fake(model=request.model),
+            )
         step = self.steps.pop(0) if self.steps else {"content": ""}
         tool_name = step.get("tool")
         tool_calls = []
@@ -111,8 +119,6 @@ class ScriptedToolCallingProvider:
                 }
             ]
         content = step.get("content")
-        if request.response_format and not tool_name:
-            content = json.dumps(self.structured_payloads.pop(0))
         return LLMCompletionResult(
             assistant_message=ChatMessage(
                 role="assistant",
@@ -399,9 +405,45 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {
+                "content": "Creating Marco.",
+                "tool": "create_person_node",
+                "arguments": {
+                    "person": {
+                        "display_name": "Marco Rossi",
+                        "description": "A university contact mentioned by the user.",
+                    }
+                },
+            },
             {"content": "Node action complete."},
+            {
+                "content": "Creating the memory log.",
+                "tool": "create_memory_log",
+                "arguments": {
+                    "memory_log": {
+                        "title": "Marco's university connection",
+                        "log_text": "Marco was from university, not work.",
+                        "host_target_ids": ["node_new_0001"],
+                        "primary_host_target_id": "node_new_0001",
+                        "involved_target_ids": ["node_new_0001"],
+                    }
+                },
+            },
             {"content": "Memory action complete."},
+            {
+                "content": "Linking Marco to the university.",
+                "tool": "upsert_graph_relationship",
+                "arguments": {
+                    "relationship": {
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_id": "node_new_0001",
+                        "to_id": "node_0001",
+                        "relationship_kind": "university connection",
+                    }
+                },
+            },
             {"content": "Edge action complete."},
+            {"content": "I've saved that Marco was from university."},
         ],
         structured_payloads=_memory_ingestion_structured_payloads(),
     )
@@ -492,7 +534,8 @@ def test_clarification_handoff_uses_structured_child_state() -> None:
                         }
                     ]
                 },
-            }
+            },
+            {"content": "I need one detail before I can continue."},
         ],
         structured_payloads=[
             {
@@ -893,6 +936,7 @@ def test_phase_actions_bind_planned_outputs_and_defer_unresolved_edges() -> None
         ),
         steps=[
             MemoryPlanStep(
+                step_id="node_step_001",
                 phase=MemoryPlanningPhase.NODES,
                 actions=[
                     MemoryPlanAction(
@@ -919,7 +963,7 @@ def test_phase_actions_bind_planned_outputs_and_defer_unresolved_edges() -> None
     assert _unresolved_edge_endpoint_refs(edge, refs) == ["node_missing"]
 
 
-def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> None:
+def test_memory_ingestion_returns_a_required_phase_error_to_its_invoker(monkeypatch) -> None:
     phases: list[MemoryPlanningPhase] = []
 
     def execute(_self, *_args, phase: MemoryPlanningPhase, **_kwargs):
@@ -943,6 +987,7 @@ def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> Non
             summary="Nodes planned.",
             steps=[
                 MemoryPlanStep(
+                    step_id="node_step_001",
                     phase=MemoryPlanningPhase.NODES,
                     actions=[MemoryPlanAction(action_type=MemoryPlanActionType.CREATE_NODE)],
                 )
@@ -953,6 +998,7 @@ def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> Non
             summary="Memory logs planned.",
             steps=[
                 MemoryPlanStep(
+                    step_id="memory_step_001",
                     phase=MemoryPlanningPhase.MEMORY_LOGS,
                     actions=[MemoryPlanAction(action_type=MemoryPlanActionType.CREATE_MEMORY_LOG)],
                 )
@@ -963,6 +1009,7 @@ def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> Non
             summary="Edges planned.",
             steps=[
                 MemoryPlanStep(
+                    step_id="edge_step_001",
                     phase=MemoryPlanningPhase.EDGES,
                     actions=[MemoryPlanAction(action_type=MemoryPlanActionType.UPDATE_NODE)],
                 )
@@ -978,17 +1025,54 @@ def test_memory_ingestion_stops_after_a_required_phase_error(monkeypatch) -> Non
 
     assert result.status == "error"
     assert result.metadata["failed_phase"] == MemoryPlanningPhase.NODES.value
+    assert result.metadata["requires_invoker_response"] is True
     assert phases == [MemoryPlanningPhase.NODES]
-    assert "could not save this memory safely" in (result.final_text or "")
+    assert "Review the returned diagnostic" in (result.final_text or "")
 
 
 def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     provider = ScriptedToolCallingProvider(
         [
             {"content": "Routing to ingestion.", "tool": "ingest_memory", "arguments": {}},
+            {
+                "content": "Creating Marco.",
+                "tool": "create_person_node",
+                "arguments": {
+                    "person": {
+                        "display_name": "Marco Rossi",
+                        "description": "A university contact mentioned by the user.",
+                    }
+                },
+            },
             {"content": "Node action complete."},
+            {
+                "content": "Creating the memory log.",
+                "tool": "create_memory_log",
+                "arguments": {
+                    "memory_log": {
+                        "title": "Marco's university connection",
+                        "log_text": "Marco was from university, not work.",
+                        "host_target_ids": ["node_new_0001"],
+                        "primary_host_target_id": "node_new_0001",
+                        "involved_target_ids": ["node_new_0001"],
+                    }
+                },
+            },
             {"content": "Memory action complete."},
+            {
+                "content": "Linking Marco to the university.",
+                "tool": "upsert_graph_relationship",
+                "arguments": {
+                    "relationship": {
+                        "relationship_type": "RELATIONSHIP_WITH",
+                        "from_id": "node_new_0001",
+                        "to_id": "node_0001",
+                        "relationship_kind": "university connection",
+                    }
+                },
+            },
             {"content": "Edge action complete."},
+            {"content": "I've saved that Marco was from university."},
         ],
         structured_payloads=_memory_ingestion_structured_payloads(),
     )
@@ -997,6 +1081,7 @@ def test_ingest_memory_tool_uses_child_frame_without_legacy_facade() -> None:
     result = runtime.run(
         _conversation("Yesterday I met Marco."),
         AgenticToolExecutionContext(
+            graph_service=FakeGraphService(),
             session_id="session-1",
             conversation_id="conversation-1",
             application_user_id="account-user-1",
@@ -1228,6 +1313,7 @@ def test_memory_log_extraction_service_runs_dedicated_state() -> None:
                 "candidates": [
                     {
                         "local_ref": "MEMORY_LOG_001",
+                        "title": "Merc at the barbeque",
                         "log_text": "Merc came to the barbeque.",
                         "host_refs": [
                             {
