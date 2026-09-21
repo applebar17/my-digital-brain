@@ -54,6 +54,60 @@ def test_retrieval_context_maps_graph_ids_to_one_model_reference_context() -> No
     assert "relationship-1" not in rendered_json
     assert lorenzo_ref in rendered_json
     assert "ref_context" in rendered
+    assert "reference_inventory" in rendered
+    assert "person-lorenzo" not in rendered["reference_inventory"]
+
+
+def test_reference_inventory_explains_lifecycle_without_backend_ids() -> None:
+    refs = RefContext(session_id="session-1")
+    refs.register_existing(
+        "person-jacopo-existing",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Jacopo Brutti",
+    )
+    refs.register_proposed(
+        "node_new_jacopo_brutti",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Jacopo Brutti",
+    )
+    refs.resolve_backend_id(
+        "node_new_jacopo_brutti",
+        "person-jacopo-created",
+        status="created",
+    )
+
+    inventory = refs.render_prompt_inventory()
+
+    assert '`node_0001` refers to the Person "Jacopo Brutti"' in inventory
+    assert "already exists; reuse this ref" in inventory
+    assert '`node_new_jacopo_brutti` refers to the Person "Jacopo Brutti"' in inventory
+    assert "created earlier in this run; reuse this ref" in inventory
+    assert "person-jacopo-existing" not in inventory
+    assert "person-jacopo-created" not in inventory
+
+
+def test_reference_inventory_allows_same_name_with_distinct_model_refs() -> None:
+    refs = RefContext(session_id="session-1")
+    refs.register_existing(
+        "person-jacopo-existing",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Jacopo Brutti",
+    )
+    refs.register_proposed(
+        "node_new_jacopo_brutti_event",
+        RefObjectKind.NODE,
+        label="Person",
+        name="Jacopo Brutti",
+    )
+
+    inventory = refs.render_prompt_inventory()
+
+    assert "node_0001" in inventory
+    assert "node_new_jacopo_brutti_event" in inventory
+    assert inventory.count('Person "Jacopo Brutti"') == 2
 
 
 def test_clarification_question_uses_canonical_refs_and_allows_proposals() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import re
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -145,6 +145,7 @@ class GraphContextPackage(AgenticModel):
         )
         if self.ref_context is not None:
             payload["ref_context"] = self.ref_context.model_facing_packet()
+            payload["reference_inventory"] = self.ref_context.render_prompt_inventory()
         return _compact_prompt_payload(payload)
 
 
@@ -833,6 +834,11 @@ class MemoryIngestionContext(AgenticModel):
                     if self.ref_context is not None
                     else None
                 ),
+                "reference_inventory": (
+                    self.ref_context.render_prompt_inventory()
+                    if self.ref_context is not None
+                    else None
+                ),
                 "ref_packets": self.ref_packets,
                 "resolved_clarifications": self.resolved_clarifications,
                 "owner_snapshot": self.owner_snapshot,
@@ -879,6 +885,11 @@ class MemoryCreationContext(AgenticModel):
                     if self.ref_context is not None
                     else None
                 ),
+                "reference_inventory": (
+                    self.ref_context.render_prompt_inventory()
+                    if self.ref_context is not None
+                    else None
+                ),
                 "ref_packets": self.ref_packets,
                 "resolved_clarifications": self.resolved_clarifications,
                 "owner_snapshot": self.owner_snapshot,
@@ -909,6 +920,33 @@ class GraphUpdateContext(AgenticModel):
     current_time: datetime = Field(default_factory=utc_now)
     timezone: str = "UTC"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_facing_payload(self) -> dict[str, Any]:
+        return _compact_prompt_payload(
+            {
+                "source_text": self.source_text,
+                "conversation": self.conversation,
+                "action": self.action,
+                "guidelines": self.guidelines,
+                "desired_work": self.desired_work,
+                "target_ids": self.target_ids,
+                "source_refs": self.source_refs,
+                "graph_context": self.graph_context,
+                "ref_context": (
+                    self.ref_context.model_facing_packet()
+                    if self.ref_context is not None
+                    else None
+                ),
+                "reference_inventory": (
+                    self.ref_context.render_prompt_inventory()
+                    if self.ref_context is not None
+                    else None
+                ),
+                "owner_snapshot": self.owner_snapshot,
+                "current_time": self.current_time,
+                "timezone": self.timezone,
+            }
+        )
 
 
 class ContradictionReviewContext(AgenticModel):

@@ -272,6 +272,7 @@ def _prompt_task_context(
     packet: dict[str, Any] = {
         "planning_scope": input_context.get("planning_scope"),
         "graph_context_view": input_context.get("graph_context_view"),
+        "reference_inventory": input_context.get("reference_inventory"),
         "entity_packet": input_context.get("entity_packet"),
         "memory_log_packet": input_context.get("memory_log_packet"),
         "time": {

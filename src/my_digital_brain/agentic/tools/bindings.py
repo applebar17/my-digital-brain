@@ -374,11 +374,15 @@ class AgenticToolBindings:
                 invoker_tool_call_id=self.context.current_tool_call_id,
                 parent_frame_id=self.context.frame_id,
             )
+            handoff_context = _serialize(self.context.current_payload) or {}
+            handoff_context["reference_inventory"] = (
+                self.context.ref_context.render_prompt_inventory()
+            )
             session_input = ClarificationSessionInput(
                 handoff=handoff,
                 conversation=conversation,
                 master_history=_master_history_messages(conversation),
-                context_payload=_serialize(self.context.current_payload) or {},
+                context_payload=handoff_context,
                 session_id=self.context.session_id or conversation.context_id,
                 parent_frame_id=self.context.frame_id,
                 parent_tool_call_id=self.context.current_tool_call_id,

@@ -11,6 +11,7 @@ from my_digital_brain.agentic.contexts import (
     MemoryPlan,
 )
 from my_digital_brain.agentic.enums import AgenticStateId
+from my_digital_brain.agentic.refs import RefContext
 from my_digital_brain.agentic.runtime_models import (
     AgenticRunResult,
     AgenticStateRunResult,
@@ -183,6 +184,12 @@ def _system_prompt_with_runtime_context(
         if profile_snapshot is not None and profile_purpose is not None
         else ""
     )
+    reference_inventory = _find_reference_inventory(payload) or _find_reference_inventory(
+        prompt_context
+    )
+    reference_section = (
+        f"Reference inventory:\n{reference_inventory}" if reference_inventory else ""
+    )
     if _uses_runtime_placeholders(prompt):
         prompt_context_payload = (
             prompt_context
@@ -210,6 +217,7 @@ def _system_prompt_with_runtime_context(
             ).rstrip()
             + ("\n\n" + owner_section if owner_section else "")
             + ("\n\n" + profile_section if profile_section else "")
+            + ("\n\n" + reference_section if reference_section else "")
             + "\n"
         )
     current_time = _find_prompt_value(payload, "current_time") or "unknown"
@@ -223,6 +231,8 @@ def _system_prompt_with_runtime_context(
         sections.append(owner_section)
     if profile_section:
         sections.append(profile_section)
+    if reference_section:
+        sections.append(reference_section)
     # if runtime_metadata:
     #     sections.append(_system_json_section("Runtime metadata", runtime_metadata))
     if prompt_context not in (None, "", [], {}):
@@ -278,6 +288,35 @@ def _find_profile_context(value: Any) -> tuple[Any, str] | None:
     if isinstance(value, list):
         for item in value:
             found = _find_profile_context(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _find_reference_inventory(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, RefContext):
+        return value.render_prompt_inventory()
+    ref_context = getattr(value, "ref_context", None)
+    if isinstance(ref_context, RefContext):
+        return ref_context.render_prompt_inventory()
+    if hasattr(value, "model_dump"):
+        return _find_reference_inventory(value.model_dump(mode="python", exclude_none=True))
+    if isinstance(value, dict):
+        inventory = value.get("reference_inventory")
+        if isinstance(inventory, str) and inventory.strip():
+            return inventory.strip()
+        nested_ref_context = value.get("ref_context")
+        if isinstance(nested_ref_context, RefContext):
+            return nested_ref_context.render_prompt_inventory()
+        for item in value.values():
+            found = _find_reference_inventory(item)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_reference_inventory(item)
             if found is not None:
                 return found
     return None

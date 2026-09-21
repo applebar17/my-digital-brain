@@ -217,7 +217,8 @@ Reasoning inventory packet:
 {reasoning_inventory_packet}
 
 Known refs:
-{ref_context_packet}
+Use the Reference inventory section appended to this prompt. It is authoritative:
+reuse an exact ref for the same object and never use an unseen internal identifier.
 
 Existing graph candidates and possible duplicates:
 {duplicate_candidate_packets}
@@ -258,7 +259,8 @@ Node plan packet:
 {node_plan_packet}
 
 Known refs:
-{ref_context_packet}
+Use the Reference inventory section appended to this prompt. It is authoritative:
+reuse an exact ref for the same object and never use an unseen internal identifier.
 
 Irrelevant details to avoid:
 {irrelevant_details_packet}
@@ -303,7 +305,8 @@ Memory plan packet:
 {memory_plan_packet}
 
 Known refs:
-{ref_context_packet}
+Use the Reference inventory section appended to this prompt. It is authoritative:
+reuse an exact ref for the same object and never use an unseen internal identifier.
 
 Relationship candidates:
 {relationship_candidate_packets}
@@ -341,6 +344,10 @@ Current action:
 
 Action packet:
 {action_packet}
+
+Known refs:
+Use the Reference inventory section appended to this prompt. It is authoritative:
+reuse an exact ref for the same object and never use an unseen internal identifier.
 
 Tool error examples:
 {validation_error_examples}

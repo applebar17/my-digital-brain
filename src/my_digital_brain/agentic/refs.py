@@ -360,6 +360,30 @@ class RefContext(AgenticModel):
         resolved_profile = PacketDetailProfile(profile)
         return [entry.model_facing_packet(resolved_profile) for entry in self.entries.values()]
 
+    def render_prompt_inventory(self) -> str:
+        """Explain run-scoped refs in plain language for model prompts.
+
+        The rendered inventory deliberately contains only model-facing handles and
+        their semantic meaning. Backend IDs remain available only to deterministic
+        tool handlers through :meth:`resolve`.
+        """
+
+        if not self.entries:
+            return "No model-facing refs are known yet."
+        lines = [
+            "Reuse each exact ref below whenever it represents the same object; "
+            "do not use or invent unseen internal identifiers."
+        ]
+        for entry in self.entries.values():
+            kind = RefObjectKind(entry.object_kind).value
+            descriptor = _inventory_descriptor(entry, kind)
+            status = RefResolutionStatus(entry.resolution_status)
+            lines.append(
+                f"- `{entry.ref}` refers to {descriptor}. "
+                f"{_inventory_status_guidance(status)}"
+            )
+        return "\n".join(lines)
+
     def delta_packet(
         self,
         refs: list[str],
@@ -468,6 +492,35 @@ def _required_backend_id(value: Any) -> str:
     if not normalized:
         raise ValueError("Backend ids must not be empty.")
     return normalized
+
+
+def _inventory_descriptor(entry: RefEntry, kind: str) -> str:
+    object_type = entry.label or entry.type or kind
+    title = entry.name or entry.summary
+    if title:
+        return f'the {object_type} "{title}"'
+    return f"a {object_type}"
+
+
+def _inventory_status_guidance(status: RefResolutionStatus) -> str:
+    guidance = {
+        RefResolutionStatus.EXISTING: "It already exists; reuse this ref for that object.",
+        RefResolutionStatus.PROPOSED: (
+            "It is planned but not created yet; keep this ref for the planned object."
+        ),
+        RefResolutionStatus.CREATED: (
+            "It was created earlier in this run; reuse this ref for that object."
+        ),
+        RefResolutionStatus.RESOLVED: "It is bound to an existing graph object; reuse this ref.",
+        RefResolutionStatus.UPDATED: "It was updated earlier in this run; reuse this ref.",
+        RefResolutionStatus.AMBIGUOUS: (
+            "It is an ambiguous candidate; clarify or resolve it before a durable write."
+        ),
+        RefResolutionStatus.MISSING: (
+            "It is unresolved; do not use it for a durable write until it is resolved."
+        ),
+    }
+    return guidance[status]
 
 
 def is_local_ref(value: str) -> bool:

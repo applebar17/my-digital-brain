@@ -473,6 +473,17 @@ def test_conversation_entry_ingest_tool_runs_memory_ingestion_child_frame() -> N
         "MemoryLogMemoryPlan",
         "EdgeMemoryPlan",
     ]
+    sibling_action_prompts = [
+        call["request"].system_prompt
+        for call in provider.calls
+        if call["request"].context is not None
+        and call["request"].context.purpose == AgenticStateId.MEMORY_CREATION.value
+        and "memory_action_0001" in call["request"].system_prompt
+    ]
+    assert sibling_action_prompts
+    assert '`node_new_0001` refers to the Person "Marco"' in sibling_action_prompts[0]
+    assert "created earlier in this run; reuse this ref" in sibling_action_prompts[0]
+    assert "person-1" not in sibling_action_prompts[0]
 
 
 def test_conversation_entry_has_no_pending_process_surface() -> None:

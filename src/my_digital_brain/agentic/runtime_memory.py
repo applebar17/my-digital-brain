@@ -349,6 +349,11 @@ class MemoryIngestionRuntimeService:
                     if payload.ref_context is not None
                     else []
                 ),
+                "reference_inventory": (
+                    payload.ref_context.render_prompt_inventory()
+                    if payload.ref_context is not None
+                    else "No model-facing refs are known yet."
+                ),
                 "ref_packets": payload.ref_packets,
                 "reasoning_packets": payload.reasoning_packets,
                 "node_plan_packet": (
