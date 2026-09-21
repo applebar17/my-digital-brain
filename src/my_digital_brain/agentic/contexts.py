@@ -503,12 +503,59 @@ class ReasoningDuplicateNote(AgenticModel):
         return self
 
 
+class RelationshipEvidenceHint(AgenticModel):
+    """Source-grounded evidence a later edge planner must evaluate."""
+
+    from_mention: str = Field(
+        description=(
+            "One source mention at one endpoint; use the source name or role, not a ref."
+        )
+    )
+    to_mention: str = Field(
+        description=(
+            "One source mention at the other endpoint; use the source name or role, not a ref."
+        )
+    )
+    relationship_summary: str = Field(
+        description=(
+            "Brief stated relationship meaning, such as siblings, partners, colleagues, "
+            "or parent and child."
+        )
+    )
+    evidence_text: str = Field(
+        description="Short source-grounded wording that explicitly supports the relationship."
+    )
+
+    @model_validator(mode="after")
+    def _validate_signal(self) -> "RelationshipEvidenceHint":
+        if not all(
+            value.strip()
+            for value in (
+                self.from_mention,
+                self.to_mention,
+                self.relationship_summary,
+                self.evidence_text,
+            )
+        ):
+            raise ValueError(
+                "Relationship evidence requires both endpoint mentions and stated evidence."
+            )
+        return self
+
+
 class MemoryIngestionReasoning(AgenticModel):
     highlights: ReasoningHighlights = Field(default_factory=ReasoningHighlights)
     possible_aliases: list[AliasReasoningHint] = Field(default_factory=list)
     irrelevant_details: list[IrrelevantDetailHint] = Field(default_factory=list)
     ambiguities: list[ReasoningAmbiguity] = Field(default_factory=list)
     duplicate_or_resolution_notes: list[ReasoningDuplicateNote] = Field(default_factory=list)
+    relationship_evidence: list[RelationshipEvidenceHint] = Field(
+        default_factory=list,
+        description=(
+            "Clearly stated durable relationship evidence for edge planning. Include only "
+            "source-grounded assertions with both endpoint mentions; do not add co-presence."
+        ),
+    )
     missing_context_questions: list[str] = Field(default_factory=list)
     planning_guidance: str = ""
 
@@ -521,6 +568,7 @@ class MemoryIngestionReasoning(AgenticModel):
             or self.irrelevant_details
             or self.ambiguities
             or self.duplicate_or_resolution_notes
+            or self.relationship_evidence
             or any(question.strip() for question in self.missing_context_questions)
             or self.planning_guidance.strip()
         )
@@ -773,6 +821,8 @@ class EdgeMemoryPlan(AgenticModel):
 
     @model_validator(mode="after")
     def _validate_phase_and_refs(self) -> "EdgeMemoryPlan":
+        if not self.steps:
+            return self
         _validate_steps_for_phase(self.steps, MemoryPlanningPhase.EDGES)
         for step in self.steps:
             for action in step.actions:

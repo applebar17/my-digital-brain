@@ -168,10 +168,13 @@ Identify high-level node, memory-log, and edge signals. Planning creates refs an
 - Mark irrelevant details so later steps do not store noise.
 - Split dense episodes into several memory highlights.
 - Keep weak co-presence as involvement, not durable edges.
+- Record a relationship evidence item only when the source clearly states a
+  durable relationship. Preserve both endpoint mentions and the supporting wording.
 - When a real unresolved context gap affects a later durable write, call `ask_clarification` now; do not leave it only as a reasoning note for planners.
 
 # Examples
 - "Lorenzo is my brother" -> family edge signal.
+- "Elena and Matteo are partners" -> relationship evidence with both names.
 - "Lorenzo was at the beach too" -> memory involvement, not a relationship edge.
 - "Merc" beside "Matteo Mercoldi" -> alias hint.
 
@@ -204,6 +207,8 @@ Plan which self-sustaining graph entities should be resolved or created before m
   is when the source supports one. It becomes the durable graph description;
   do not repeat the name, use generic labels, or invent biography.
 - Produce a compact node plan packet for later phases.
+- When relationship evidence names people, make sure each identified endpoint has
+  a reusable ref for the edge planner; do not infer a relationship from co-presence.
 - Call `ask_clarification` before proposing a node when a real context gap leaves its identity or intended attachment unresolved; do not merely add the gap to the plan output.
 
 # Examples
@@ -278,12 +283,16 @@ Plan durable relationships and context links after node and memory planning.
 - Weak co-presence: shared participation in an episode without durable relationship evidence.
 
 # Rules
-- Edge endpoints must be confirmed known refs, never loose names. The current
-  Known refs packet is the execution authority; planning packets are provenance.
+- Edge endpoints must be known refs, never loose names. Confirm them before
+  writing; the current Reference inventory is the execution authority.
 - For new edges, use short readable refs like `edge_new_user_lorenzo_brother`.
 - Use both the node plan packet and memory plan packet.
-- Create durable edges only for strong signals such as family, partner, explicit context, place/event links, or stated perceptions.
+- Turn clearly stated relationship evidence into typed relationship actions after
+  resolving both endpoints. Typical evidence includes family, partners/spouses,
+  colleagues, friends, or parent-child relationships when explicitly stated.
 - Keep weak co-presence as MemoryLog involvement.
+- Return an empty edge plan when there is no durable relationship or context link
+  to write; do not invent an edge merely because people shared an event.
 - If a listed endpoint is unresolved, defer only that edge and report the refs;
   do not claim that the node or memory packets are unavailable.
 - Keep planned refs unique inside the plan.
@@ -291,7 +300,9 @@ Plan durable relationships and context links after node and memory planning.
 
 # Examples
 - "Lorenzo is my brother" -> durable family edge.
+- "Elena and Matteo are partners" -> typed relationship action after both refs resolve.
 - "Marco was also at the beach" -> involvement only.
+- "Elena and Matteo are together" with an unclear meaning -> ask clarification.
 - "The perception is about Alessandro" -> context link to Alessandro.
 
 # Context

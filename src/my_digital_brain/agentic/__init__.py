@@ -2,38 +2,38 @@
 
 from my_digital_brain.agentic.contexts import (
     AgenticToolPayload,
+    AliasReasoningHint,
     AnswerContext,
     CandidateGraphContext,
     ChannelContextProjection,
     ChannelSessionMetadata,
-    ConversationContext,
     ContradictionJudgeResultContext,
     ContradictionReviewContext,
-    EvidenceSpan,
-    PlannedRefPacket,
-    NodePlanPacket,
-    NodeMemoryPlan,
-    MemoryPlanStep,
-    MemoryPlanPacket,
-    MemoryLogMemoryPlan,
+    ConversationContext,
     EdgeMemoryPlan,
-    ExtractionTaskContext,
-    GraphUpdateContext,
-    AliasReasoningHint,
     EdgeReasoningHighlights,
+    EvidenceSpan,
+    ExtractionTaskContext,
     GraphContextPackage,
+    GraphUpdateContext,
+    IrrelevantDetailHint,
     MaintenanceReviewContext,
     MaintenanceReviewResultContext,
-    IrrelevantDetailHint,
-    MemoryIngestionReasoning,
     MaintenanceSuggestionContext,
-    NodeReasoningHighlights,
     MemoryCreationContext,
     MemoryCreationResultContext,
     MemoryIngestionContext,
+    MemoryIngestionReasoning,
     MemoryIngestionResultContext,
+    MemoryLogMemoryPlan,
     MemoryPlan,
     MemoryPlanAction,
+    MemoryPlanPacket,
+    MemoryPlanStep,
+    NodeMemoryPlan,
+    NodePlanPacket,
+    NodeReasoningHighlights,
+    PlannedRefPacket,
     PlanningContext,
     ProfileExtractionContext,
     ProfileExtractionResultContext,
@@ -44,13 +44,14 @@ from my_digital_brain.agentic.contexts import (
     ReasoningAmbiguity,
     ReasoningCheckpointContext,
     ReasoningCheckpointResultContext,
-    ReasoningDuplicateNote,
-    ReasoningHighlights,
     ReasoningClarificationCandidateContext,
+    ReasoningDuplicateNote,
     ReasoningEntityUnderstandingContext,
+    ReasoningHighlights,
     ReasoningInsightContext,
     ReasoningPurposeGuidelines,
     ReasoningStorageRecommendationContext,
+    RelationshipEvidenceHint,
     ResolutionContext,
     SourceContext,
     ToolResultContext,
@@ -66,24 +67,32 @@ from my_digital_brain.agentic.enums import (
     ContradictionSeverity,
     MaintenanceSuggestionType,
     MemoryPlanActionType,
-    PlanExecutionMode,
     MemoryPlanningPhase,
-    PacketDetailProfile,
-    RefObjectKind,
-    RefResolutionStatus,
     NeutralMessageKind,
+    PacketDetailProfile,
+    PlanExecutionMode,
     ProfileMemoryCategory,
     ProfileMemoryStability,
     ProfileMemoryVisibility,
     ReasoningInsightKind,
     ReasoningStorageRecommendationType,
+    RefObjectKind,
+    RefResolutionStatus,
     ResponseRenderStyle,
     ToolResultStatus,
+)
+from my_digital_brain.agentic.history import (
+    AgenticHistoryService,
+    HistoryProjectionPolicy,
 )
 from my_digital_brain.agentic.messages import (
     NeutralConversationMessage,
     ToolCall,
     ToolOutput,
+)
+from my_digital_brain.agentic.planning import (
+    AgenticMemoryLogExtractionService,
+    AgenticPlanningService,
 )
 from my_digital_brain.agentic.planning_contracts import (
     PlanningActionContext,
@@ -91,13 +100,16 @@ from my_digital_brain.agentic.planning_contracts import (
     PlanningTransformContext,
     PlanningTransformResultContext,
 )
-from my_digital_brain.agentic.planning import (
-    AgenticMemoryLogExtractionService,
-    AgenticPlanningService,
+from my_digital_brain.agentic.query import (
+    MemoryQueryFoundationResult,
+    MemoryQueryFoundationService,
 )
-from my_digital_brain.agentic.history import (
-    AgenticHistoryService,
-    HistoryProjectionPolicy,
+from my_digital_brain.agentic.reasoning import AgenticReasoningService
+from my_digital_brain.agentic.refs import (
+    RefContext,
+    RefEntry,
+    RefPacketBuilder,
+    build_ref_packet,
 )
 from my_digital_brain.agentic.runtime import (
     AgenticRuntime,
@@ -109,17 +121,6 @@ from my_digital_brain.agentic.runtime_models import (
     AgenticStateRunResult,
     AgenticToolEvent,
 )
-from my_digital_brain.agentic.refs import (
-    RefContext,
-    RefEntry,
-    RefPacketBuilder,
-    build_ref_packet,
-)
-from my_digital_brain.agentic.query import (
-    MemoryQueryFoundationResult,
-    MemoryQueryFoundationService,
-)
-from my_digital_brain.agentic.reasoning import AgenticReasoningService
 from my_digital_brain.agentic.state import (
     AgenticStateConfig,
     default_state_configs,
@@ -217,6 +218,7 @@ __all__ = [
     "ReasoningCheckpointContext",
     "ReasoningCheckpointResultContext",
     "ReasoningDuplicateNote",
+    "RelationshipEvidenceHint",
     "ReasoningClarificationCandidateContext",
     "ReasoningEntityUnderstandingContext",
     "ReasoningHighlights",
