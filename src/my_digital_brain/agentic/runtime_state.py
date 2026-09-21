@@ -40,6 +40,7 @@ from my_digital_brain.ai.session import (
     LLMSessionFailed,
     LLMSessionRequest,
 )
+from my_digital_brain.ai.session.continuation import canonicalize_tool_result_messages
 from my_digital_brain.ai.tools import ToolBox
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
@@ -47,6 +48,18 @@ from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.prompts import PromptRegistry
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _session_input_message_count(messages: list[ChatMessage]) -> int:
+    """Return the transcript prefix retained by ``LLMSessionRunner``.
+
+    The runner adds a system message only when the supplied transcript does not
+    already start with one. State continuation must slice after that exact
+    prefix; otherwise its last input (commonly a tool result) is persisted
+    again as if it were new output.
+    """
+
+    return len(messages) if messages and messages[0].role == "system" else len(messages) + 1
 
 
 @dataclass(slots=True)
@@ -539,7 +552,7 @@ class AgenticStateRunner:
             assistant_text=None,
             message_delta=[
                 ChatMessage.model_validate(message)
-                for message in messages[1 + len(request.messages) :]
+                for message in messages[_session_input_message_count(request.messages) :]
                 if message.get("role") in {"assistant", "tool"}
             ],
             tool_events=tool_events,
@@ -623,7 +636,9 @@ class AgenticStateRunner:
             model=route.model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            messages=[ChatMessage.model_validate(message) for message in messages],
+            messages=canonicalize_tool_result_messages(
+                [ChatMessage.model_validate(message) for message in messages]
+            ),
             toolbox=toolbox,
             tools_mapping=tools_mapping,
             max_tool_calls=state_config.max_tool_calls,
@@ -653,7 +668,7 @@ class AgenticStateRunner:
             return AgenticStateRunResult(
                 state_id=state_id,
                 assistant_text=result.error,
-                message_delta=result.messages[len(messages) :],
+                message_delta=result.messages[_session_input_message_count(request.messages) :],
                 tool_events=execution_context.tool_events[event_start:],
                 terminal=True,
                 status="error",
@@ -676,7 +691,7 @@ class AgenticStateRunner:
         return AgenticStateRunResult(
             state_id=state_id,
             assistant_text=result.content or None,
-            message_delta=result.messages[len(messages) :],
+            message_delta=result.messages[_session_input_message_count(request.messages) :],
             tool_events=tool_events,
             terminal=True,
             status="error" if has_error else "ok",

@@ -20,6 +20,9 @@ def upsert_tool_result_message(
     persisted output rather than executing or appending another result.
     """
 
+    canonical_messages = canonicalize_tool_result_messages(messages)
+    if canonical_messages != messages:
+        messages[:] = canonical_messages
     matching_indexes = [
         index
         for index, message in enumerate(messages)
@@ -37,6 +40,38 @@ def upsert_tool_result_message(
     return result
 
 
+def canonicalize_tool_result_messages(
+    messages: list[ChatMessage],
+) -> list[ChatMessage]:
+    """Keep exactly one tool result for every provider-issued call ID.
+
+    A provider transcript is append-only except for a pending channel result,
+    which is replaced by its resolved result. If a persistence or resume path
+    presents the same call ID more than once, retain the first completed result
+    (or replace an initial pending result with its completion) at its original
+    position. This prevents duplicate tool outputs without deduplicating
+    distinct tool calls by content or name.
+    """
+
+    canonical: list[ChatMessage] = []
+    tool_indexes: dict[str, int] = {}
+    for message in messages:
+        call_id = message.tool_call_id if message.role == "tool" else None
+        if not call_id:
+            canonical.append(message)
+            continue
+        existing_index = tool_indexes.get(call_id)
+        if existing_index is None:
+            tool_indexes[call_id] = len(canonical)
+            canonical.append(message)
+            continue
+        existing = _tool_result_from_message(canonical[existing_index])
+        candidate = _tool_result_from_message(message)
+        if existing.status == "pending" and candidate.status != "pending":
+            canonical[existing_index] = message
+    return canonical
+
+
 def continuation_with_tool_results(
     continuation: LLMSessionContinuation,
     results: dict[str, ToolResult],
@@ -52,7 +87,10 @@ def continuation_with_tool_results(
         raise ValueError(f"Tool result group mismatch (missing={missing}, extra={extra}).")
     for call_id, result in results.items():
         upsert_tool_result_message(messages, call_id, result)
-    return continuation.model_copy(update={"messages": messages}, deep=True)
+    return continuation.model_copy(
+        update={"messages": canonicalize_tool_result_messages(messages)},
+        deep=True,
+    )
 
 
 def _tool_message(call_id: str, result: ToolResult) -> ChatMessage:

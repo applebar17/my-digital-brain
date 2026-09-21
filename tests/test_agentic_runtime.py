@@ -683,6 +683,74 @@ def test_resumed_child_report_reaches_parent_invoker_tool_output() -> None:
     assert "clarified_values" in tool_message.content
 
 
+def test_parent_resume_does_not_repeat_its_input_tool_result_in_message_delta() -> None:
+    """A non-system frame must not treat its input tool result as new output."""
+
+    provider = ScriptedToolCallingProvider([{"content": "I could not complete the ingestion."}])
+    runtime = AgenticRuntime(_runner(provider))
+    store = InMemoryChatSessionStore()
+    session = store.get_or_create_session(
+        channel="web",
+        external_conversation_id="conversation-1",
+        owner_id="owner-1",
+    )
+    conversation = _conversation("Remember that I met Amos.")
+    parent = AgenticFrame(
+        frame_id="parent-frame-no-system",
+        session_id=session.session_id,
+        state_id=AgenticStateId.CONVERSATION_ENTRY.value,
+        status="waiting_child",
+        messages=[
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call-ingest-memory",
+                        "type": "function",
+                        "function": {"name": "ingest_memory", "arguments": "{}"},
+                    }
+                ],
+            }
+        ],
+        context_payload={"conversation": conversation.model_dump(mode="json")},
+        active_tool_call_id="call-ingest-memory",
+        active_tool_name="ingest_memory",
+    )
+    child = AgenticFrame(
+        frame_id="child-frame-error",
+        session_id=session.session_id,
+        state_id=AgenticStateId.MEMORY_INGESTION.value,
+        status="error",
+        parent_frame_id=parent.frame_id,
+        parent_tool_call_id="call-ingest-memory",
+    )
+    store.save_agentic_frame(session.session_id, parent)
+
+    result = runtime._resume_parent_frame(
+        parent,
+        child_frame=child,
+        child_result=AgenticStateRunResult(
+            state_id=AgenticStateId.MEMORY_INGESTION,
+            assistant_text="The ingestion failed.",
+            status="error",
+        ),
+        execution_context=AgenticToolExecutionContext(
+            chat_store=store,
+            session_id=session.session_id,
+            frame_id=parent.frame_id,
+            agentic_runtime=runtime,
+            conversation_context=conversation,
+        ),
+    )
+
+    parent_result = result.state_results[-1]
+    assert [message.role for message in parent_result.message_delta] == ["assistant"]
+    saved_parent = store.get_agentic_frame(parent.frame_id)
+    tool_messages = [message for message in saved_parent.messages if message["role"] == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["tool_call_id"] == "call-ingest-memory"
+
+
 def test_child_reuses_provider_parent_tool_call_id(monkeypatch) -> None:
     runtime = AgenticRuntime(_runner(ScriptedToolCallingProvider([])))
     store = InMemoryChatSessionStore()

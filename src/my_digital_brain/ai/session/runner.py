@@ -18,7 +18,7 @@ from my_digital_brain.core.ids import new_uuid
 from ..models import ToolResult
 from ..schemas import ChatMessage
 from ..structured_schema import strict_response_format
-from .continuation import upsert_tool_result_message
+from .continuation import canonicalize_tool_result_messages, upsert_tool_result_message
 from .contracts import (
     DEFAULT_MAX_TOOL_CALLS,
     LLMCompletionRequest,
@@ -52,10 +52,11 @@ class LLMSessionRunner:
 
     def run(self, request: LLMSessionRequest) -> LLMSessionResult:
         session_id = request.session_id or "session-local"
+        request_messages = canonicalize_tool_result_messages(list(request.messages))
         messages = (
-            list(request.messages)
-            if request.messages and request.messages[0].role == "system"
-            else [ChatMessage(role="system", content=request.system_prompt), *request.messages]
+            request_messages
+            if request_messages and request_messages[0].role == "system"
+            else [ChatMessage(role="system", content=request.system_prompt), *request_messages]
         )
         events: list[ToolExecutionEvent] = []
         if request.continuation is not None:
@@ -184,7 +185,9 @@ class LLMSessionRunner:
         continuation = request.continuation
         assert continuation is not None
         session_id = request.session_id or continuation.session_id
-        messages = list(request.messages or continuation.messages)
+        messages = canonicalize_tool_result_messages(
+            list(request.messages or continuation.messages)
+        )
         events = list(continuation.tool_events)
         pending_ids = {call.call_id for call in continuation.pending_tool_calls}
         completed_ids = {

@@ -30,7 +30,10 @@ from my_digital_brain.agentic.tools import (
 )
 from my_digital_brain.ai.models import ToolError, ToolResult
 from my_digital_brain.ai.schemas import ChatMessage
-from my_digital_brain.ai.session.continuation import upsert_tool_result_message
+from my_digital_brain.ai.session.continuation import (
+    canonicalize_tool_result_messages,
+    upsert_tool_result_message,
+)
 from my_digital_brain.ai.tracing import traceable
 from my_digital_brain.clarification.contracts import (
     ClarificationResolutionReport,
@@ -1051,7 +1054,9 @@ class AgenticRuntime:
 
         interruption = dict(state_result.metadata.get("interruption") or {})
         frame_id = str(interruption.get("frame_id") or execution_context.frame_id or new_uuid())
-        messages = list(interruption.get("messages") or base_messages or [])
+        messages = _canonicalize_frame_messages(
+            list(interruption.get("messages") or base_messages or [])
+        )
         packet_payload = interruption.get("clarification_packet")
         packet = (
             ClarificationPacket.model_validate(packet_payload)
@@ -1136,7 +1141,7 @@ class AgenticRuntime:
                 update={
                     "status": "completed" if state_result.status == "ok" else state_result.status,
                     "metadata": metadata,
-                    "messages": full_messages,
+                    "messages": _canonicalize_frame_messages(full_messages),
                     "active_tool_call_id": None,
                     "active_tool_name": None,
                     "clarification_packet": None,
@@ -1218,8 +1223,19 @@ def _upsert_frame_tool_result(
 ) -> list[dict[str, Any]]:
     """Apply the shared provider tool-call-ID rule to persisted frame messages."""
 
-    provider_messages = [ChatMessage.model_validate(message) for message in messages]
+    provider_messages = canonicalize_tool_result_messages(
+        [ChatMessage.model_validate(message) for message in messages]
+    )
     upsert_tool_result_message(provider_messages, tool_call_id, tool_result)
+    return [message.model_dump(mode="json", exclude_none=True) for message in provider_messages]
+
+
+def _canonicalize_frame_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize persisted provider messages by their provider tool-call ID."""
+
+    provider_messages = canonicalize_tool_result_messages(
+        [ChatMessage.model_validate(message) for message in messages]
+    )
     return [message.model_dump(mode="json", exclude_none=True) for message in provider_messages]
 
 
