@@ -9,6 +9,8 @@ from silently becoming production architecture.
 - [Reference client assessment](reference-ai-clients-assessment.md): what the
   imported `ai_clients` package demonstrates, what must not be copied, and its
   current repository status.
+- [Client-runtime rebuild plan](client-runtime-rebuild-plan.md): inventory,
+  endpoint decision, migration waves, and exit criteria.
 
 ## Rules
 
