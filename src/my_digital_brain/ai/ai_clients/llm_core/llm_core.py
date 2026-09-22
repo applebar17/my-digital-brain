@@ -40,10 +40,6 @@ from my_digital_brain.ai.tracing import (
     tracing_context,
 )
 
-# Tooling guard knobs (can be tweaked per instance)
-DEFAULT_TOOL_MESSAGE_TOKEN_RATIO = 0.20  # tool output cap as % of model context (20%)
-
-
 log_name_main = "llm_interface_core"
 
 
@@ -103,7 +99,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         base_path: Path = Path("."),
         max_tokens_per_message_ratio: Optional[
             float
-        ] = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO,
+        ] = None,
         provider: Provider = None,
         *args,
         **kwargs,
