@@ -109,6 +109,11 @@ base-state implementation, using the
 [preparation specification](../runtime/agentic-state-preparation.md). Do not
 introduce a generic plan executor or mandatory extra model call.
 
+Translate each current capability through the
+[state and tool taxonomy](../application-states/state-and-tool-taxonomy.md)
+before migrating it. Its record identifies whether the target is a deterministic
+tool, LLM-only state, dynamic state, or composite state/tool.
+
 Exit criterion: one end-to-end ingestion with a real tool failure and a
 clarification pause resumes the same transcript correctly.
 

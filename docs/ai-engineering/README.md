@@ -10,6 +10,8 @@ provider behavior, and runtime control cannot drift independently.
 - [Contracts](contracts/README.md): DTO-first tool, output, error, and
   structured-output contracts.
 - [Runtime](runtime/README.md): provider-neutral session and tool-call protocol.
+- [Application states](application-states/README.md): current capability map to
+  deterministic tools, LLM-only states, and dynamic agentic states.
 - [Providers](providers/README.md): provider adapter boundary and conformance.
 - [Context and prompts](context-and-prompts/README.md): model-facing context and
   prompt assets.
