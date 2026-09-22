@@ -2,12 +2,13 @@
 
 ## Status
 
-`src/my_digital_brain/ai/ai_clients/` is currently an untracked imported
-reference package. The active application does not import it. It still contains
-imports from its original `boris.boriscore` package namespace, so it is not
-safe or runnable as an in-place replacement.
+`src/my_digital_brain/ai/ai_clients/` is an imported reference package on the
+clean-slate migration branch. The active application does not import it. Its
+copied `boris.boriscore` imports have been replaced with project-local imports,
+but it still depends on provider/runtime packages that are not declared as
+application dependencies.
 
-It is useful design evidence, not production code yet.
+It is useful design evidence and a migration source, not production code yet.
 
 ## Valuable behavior to preserve
 
@@ -30,7 +31,7 @@ per-call trace record.
 
 | Reference behavior | Why it is unsuitable as the target | Target rule |
 | --- | --- | --- |
-| `boris.*` imports and copied package namespace | The package is not standalone in this repository. | Rebuild only reviewed pieces under `my_digital_brain.ai`; do not patch imports ad hoc. |
+| Copied package namespace and undeclared optional dependencies | Import normalization alone does not establish a supported application module. | Keep it isolated, declare or remove each dependency deliberately, and port reviewed pieces under `my_digital_brain.ai`. |
 | Dataclass and dictionary fallback parsing | It permits ambiguous handler input and hides contract drift. | Pydantic input/output DTOs; parse once at the runtime boundary. |
 | `partial` mapping and `fn(**parsed_kwargs)` | Tool signatures are not self-documenting or consistently typed. | Typed `ToolDefinition` plus `handler(context, input_dto)`. |
 | `tc.id` used directly | Identifier semantics differ by provider endpoint. | Adapter normalizes the provider ID into `provider_call_id`. |
