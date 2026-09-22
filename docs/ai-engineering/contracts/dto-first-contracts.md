@@ -49,6 +49,10 @@ Every model-facing DTO has `extra="forbid"`, precise field descriptions, and
 the smallest required shape. Domain records, database UUIDs, provenance, and
 transport metadata are backend-owned and must not be requested from the model.
 
+The provider-neutral definition, semantic field-schema requirements,
+OpenAI-compatible declaration compilation, and toolbox composition are defined
+in [tool definition and toolbox contracts](tool-definition-and-toolbox.md).
+
 ## Tool registration and invocation
 
 A registered tool is a typed unit:

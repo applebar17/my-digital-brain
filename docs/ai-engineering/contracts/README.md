@@ -8,6 +8,10 @@ are generated from or checked against them.
 
 - [DTO-first contract baseline](dto-first-contracts.md): required shape of tool
   definitions, calls, outputs, errors, structured model output, and validation.
+- [Tool definition and toolbox contracts](tool-definition-and-toolbox.md):
+  typed tool registration, semantic field schemas, OpenAI function-declaration
+  adapters, state-specific toolbox composition, and retirement of string
+  dispatch.
 - [Generalized AI principles](generalized-ai-principles.md): retained broad
   cross-use-case principles to classify into the canonical documents over time.
 

@@ -6,6 +6,9 @@ This folder owns model-facing instructions and context construction policies.
 
 - Context package contracts and rendering levels.
 - [Prompting guidelines](prompting-guidelines.md).
+- [Prompt lifecycle and versioning](prompt-lifecycle-and-versioning.md):
+  file-backed versioned templates, typed runtime rendering, trace snapshots,
+  and migration of code constants.
 - [Prompt inventory](prompt-inventory.md).
 - Prompt rendering tests and example fixtures.
 - Guidance for reference aliases, summaries, and user-safe language.
