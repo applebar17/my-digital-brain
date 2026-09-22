@@ -92,6 +92,12 @@ Move `agentic/runtime_state.py`, chat, ingestion, and clarification persistence
 to the canonical session/continuation DTOs. Keep an adapter only while each
 consumer moves; delete it immediately after its last caller is migrated.
 
+Implement `BaseAgenticState` only after the canonical session loop and typed
+toolbox registration exist. Migrate one concrete state at a time using the
+[agentic state framework](../runtime/agentic-state-framework.md); it must
+delegate to the canonical client runtime rather than retaining a second
+conversation/tool loop.
+
 Exit criterion: one end-to-end ingestion with a real tool failure and a
 clarification pause resumes the same transcript correctly.
 

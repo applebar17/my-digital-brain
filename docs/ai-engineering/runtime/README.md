@@ -5,6 +5,9 @@ tool execution, nested agent tools, continuation, and terminal results.
 
 ## Contents
 
+- [Agentic state framework](agentic-state-framework.md): reusable internal LLM
+  conversations, their caller contract, toolbox configuration, and nested
+  agent-state invocation.
 - [Tool-calling protocol](tool-calling-protocol.md): the canonical lifecycle
   and invariants for every provider turn.
 
