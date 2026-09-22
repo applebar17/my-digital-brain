@@ -9,6 +9,13 @@ superseded.
 
 - DTO-first and annotation-first design is mandatory at every application
   boundary.
+- AI modules follow the repository's binding
+  [dependency-oriented module design](../../requirements/technical/dependency-oriented-module-design.md):
+  contracts and protocols first, then helpers, abstractions, concrete adapters,
+  orchestration, and explicit composition. Runtime imports must remain acyclic.
+- Important runtime methods document their purpose, immediate collaborators,
+  contract guarantees, and material side effects. They do not contain reasoning
+  traces or restate line-by-line implementation.
 - Provider tool-call IDs are preserved and normalized by adapters.
 - Tool invocation, provider protocols, and final user responses are distinct
   layers.

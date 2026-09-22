@@ -8,6 +8,13 @@ stable application-facing capability (`run_session`, provider routing,
 structured output, embeddings, transcription, and resumable clarification)
 while removing incorrect or duplicated tool-loop logic.
 
+The replacement follows the repository's binding
+[dependency-oriented module design](../../requirements/technical/dependency-oriented-module-design.md).
+The runtime's code should therefore be readable from contracts and protocols,
+through helpers and base abstractions, to concrete adapters, orchestration, and
+finally the composition boundary. Important runtime methods must document their
+immediate collaborators and material side effects.
+
 This is a migration plan, not authorization to run multiple production client
 frameworks indefinitely.
 

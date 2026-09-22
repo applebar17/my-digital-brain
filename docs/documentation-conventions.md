@@ -39,3 +39,7 @@ standard. Any new interface across model, provider, runtime, API, domain, or
 persistence boundaries requires an explicit typed contract. Untyped dictionaries
 may exist only at an external parsing boundary and must be converted immediately
 to the relevant DTO.
+
+Module layout, inheritance, acyclic imports, and contextual documentation for
+important methods are governed by the binding
+[dependency-oriented module design](requirements/technical/dependency-oriented-module-design.md).
