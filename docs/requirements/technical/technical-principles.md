@@ -30,6 +30,24 @@ confirmed obsolete path. Compatibility code is acceptable only when it
 protects a current external contract and has an identified owner, tests, and
 an explicit removal condition.
 
+## Explicit Scope And Minimum Design
+
+Development must implement the behavior explicitly accepted by the product
+owner, and no more. Agents and developers may identify an additional concern
+and propose a small, concrete solution, but must not add it to the codebase
+until that solution is expressly accepted.
+
+In particular, do not introduce internal processing statuses, API or UI payload
+fields, validation gates, fallback paths, retry behavior, background work, or
+agentic routing/state logic merely because they might be useful. Each must have
+a confirmed user, functional, operational, or contractual need.
+
+When requirements are uncertain, preserve the smallest correct path that meets
+the accepted behavior. Stop and request a decision before adding a new
+observable behavior, state transition, cross-boundary contract, or failure
+policy. Prefer deleting an unaccepted implementation over retaining it as a
+"just in case" compatibility or extensibility mechanism.
+
 ## Provenance First
 
 Every stored fact should be traceable to one or more sources:
