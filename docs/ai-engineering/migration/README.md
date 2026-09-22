@@ -1,0 +1,19 @@
+# AI runtime migration
+
+This folder records the controlled transition from the current AI runtime to
+the documented target. It prevents reference code and experimental behavior
+from silently becoming production architecture.
+
+## Contents
+
+- [Reference client assessment](reference-ai-clients-assessment.md): what the
+  imported `ai_clients` package demonstrates, what must not be copied, and its
+  current repository status.
+
+## Rules
+
+- No production import may be switched to a reference package without a
+  reviewed migration plan, DTO conformance tests, and removal of superseded code.
+- There is one canonical runtime after migration; adapters and compatibility
+  shims are temporary and have explicit retirement tasks.
+- A migration wave changes one boundary at a time and commits independently.

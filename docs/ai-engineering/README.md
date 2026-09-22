@@ -1,10 +1,43 @@
-# AI Engineering Principles
+# AI engineering
+
+This is the canonical entry point for AI-related architecture, contracts, and
+migration decisions. It is organized by responsibility so that prompts, tools,
+provider behavior, and runtime control cannot drift independently.
+
+## Documentation map
+
+- [Foundations](foundations/README.md): binding principles and vocabulary.
+- [Contracts](contracts/README.md): DTO-first tool, output, error, and
+  structured-output contracts.
+- [Runtime](runtime/README.md): provider-neutral session and tool-call protocol.
+- [Providers](providers/README.md): provider adapter boundary and conformance.
+- [Context and prompts](context-and-prompts/README.md): model-facing context and
+  prompt assets.
+- [Observability and evaluation](observability-and-evaluation/README.md): traces,
+  diagnostics, fixtures, and regressions.
+- [Migration](migration/README.md): reference-code assessment and retirement
+  path toward one canonical runtime.
+
+## Binding baseline
+
+All new AI application boundaries are DTO-first and annotation-first. Tool
+calls keep their provider-issued identity, receive exactly one matched output,
+and never become a user-facing final response. The detailed requirements are in
+[DTO-first contract baseline](contracts/dto-first-contracts.md) and the
+[tool-calling protocol](runtime/tool-calling-protocol.md).
+
+## Retained baseline material
+
+The remainder of this file is the previous broad AI engineering baseline. It is
+retained for useful domain context while the canonical rules are decomposed into
+the folders above. New work must follow the new foldered documentation; a later
+wave will classify or relocate the retained material.
 
 Related architecture note: [Agentic tool frame runtime](../architecture/agentic-tool-frame-runtime.md).
 
-Prompting guidelines: [prompting-guidelines.md](prompting-guidelines.md).
+Prompting guidelines: [context-and-prompts/prompting-guidelines.md](context-and-prompts/prompting-guidelines.md).
 
-Active prompt inventory: [prompt-inventory.md](prompt-inventory.md).
+Active prompt inventory: [context-and-prompts/prompt-inventory.md](context-and-prompts/prompt-inventory.md).
 
 ## Purpose
 

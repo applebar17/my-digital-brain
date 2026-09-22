@@ -227,7 +227,7 @@ Priority: 2
 
 Priority: 2
 
-- Reconcile `docs/ai-engineering/prompt-inventory.md` with actual ownership.
+- Reconcile `docs/ai-engineering/context-and-prompts/prompt-inventory.md` with actual ownership.
   `ProfileMemoryExtractor` remains wired in the ingestion factory, so
   `profile_memory_extraction` must either be documented as active or migrated
   deliberately before removal.

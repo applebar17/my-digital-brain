@@ -4,6 +4,8 @@ This documentation describes the foundation for a personal digital brain: a grap
 
 ## Start Here
 
+- [Documentation conventions](documentation-conventions.md): required README,
+  indexing, status, and DTO-first documentation rules.
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
 - [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
@@ -11,8 +13,10 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Agentic process implementation plan](dev-plans/08-agentic-process-design.md): implementation roadmap derived from the architecture design.
 - [Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md): locked baseline for whole-source graph context, structured reasoning, entity-first staging, duplicate handling, and relationship planning.
 - [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
-- [AI engineering principles](ai-engineering/README.md): prompt, schema, context, tool, model-routing, and guardrail principles.
-- [Use-case-agnostic AI engineering principles](ai-engineering/USE_CASE_AGNOSTIC.md): generic version of the same AI engineering principles without repository-specific modeling terms.
+- [AI engineering](ai-engineering/README.md): canonical contracts, runtime,
+  providers, context, observability, and controlled migration documentation.
+- [Generalized AI principles](ai-engineering/contracts/generalized-ai-principles.md):
+  broad cross-use-case guidance retained as reference material.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Frontend UI product requirements](requirements/ui/frontend-ui-product-requirements.md): product brief for chat, graph exploration, evidence, timeline, map, and analytics UI.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
@@ -54,6 +58,10 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 | `network/` | Graph schema, entity taxonomy, relation taxonomy, identity resolution, and provenance. |
 | `flows/` | User and system workflows such as ingestion, clarification, querying, and visualization. |
 | `external-integrations/` | Interfaces with Telegram, LLM providers, media processors, and future data sources. |
+
+Every documentation directory has a `README.md` with its purpose and direct
+index. See [Documentation conventions](documentation-conventions.md) for the
+required maintenance rule.
 
 ## Current Baseline Decisions
 
