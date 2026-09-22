@@ -104,6 +104,11 @@ state migration. It replaces loose metadata-backed master histories and keeps
 parent/child state-local transcripts separate; do not retain a parallel history
 path after a caller has moved.
 
+Add optional structured reasoning/planning preparation only as part of the
+base-state implementation, using the
+[preparation specification](../runtime/agentic-state-preparation.md). Do not
+introduce a generic plan executor or mandatory extra model call.
+
 Exit criterion: one end-to-end ingestion with a real tool failure and a
 clarification pause resumes the same transcript correctly.
 

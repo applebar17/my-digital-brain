@@ -156,6 +156,11 @@ extension point only after at least one accepted concrete state needs it and the
 shared behavior is explicit. Prefer passing a prepared invocation DTO over
 making a base class guess caller intent.
 
+When a concrete state configures optional structured reasoning or planning
+preparation, the base invocation lifecycle runs those subcalls before the main
+session. Their contract and limits are defined in
+[agentic-state reasoning and planning preparation](agentic-state-preparation.md).
+
 Important `invoke` methods and purpose-specific configuration methods follow
 the contextual method-documentation rule: state their purpose, immediate
 collaborators (for example, prompt builder, toolbox, or client), contract, and
