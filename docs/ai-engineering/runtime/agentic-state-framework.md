@@ -47,8 +47,9 @@ needed for that internal conversation:
 - **System prompt**: caller-built text. The base state does not compose prompt
   templates or infer missing instructions.
 - **Internal conversation history**: the selected master or local history
-  supplied by the invoker. The state creates a local working transcript and
-  does not mutate the caller's history object.
+  supplied by the invoker through the shared
+  [`AgenticHistorySession`](agentic-history-session.md). The state creates a
+  local working transcript and does not mutate the caller's history object.
 - **Invocation request**: the externally configured purpose, user message, or
   agentic request. It is appended once as the final `user` request in the
   state-local history.
@@ -59,6 +60,8 @@ needed for that internal conversation:
 
 The LLM client itself, logging, provider route, and other executable resources
 are runtime dependencies of the state, not conversation-history payloads.
+The history-session specification owns master-history sharing, state-run
+linkage, explicit promotion, and local-history release.
 
 ### `BaseAgenticState`
 

@@ -98,6 +98,12 @@ toolbox registration exist. Migrate one concrete state at a time using the
 delegate to the canonical client runtime rather than retaining a second
 conversation/tool loop.
 
+Introduce the shared
+[AgenticHistorySession](../runtime/agentic-history-session.md) with the base
+state migration. It replaces loose metadata-backed master histories and keeps
+parent/child state-local transcripts separate; do not retain a parallel history
+path after a caller has moved.
+
 Exit criterion: one end-to-end ingestion with a real tool failure and a
 clarification pause resumes the same transcript correctly.
 

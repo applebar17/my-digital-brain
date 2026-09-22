@@ -5,6 +5,8 @@ tool execution, nested agent tools, continuation, and terminal results.
 
 ## Contents
 
+- [Agentic history session](agentic-history-session.md): centralized shared and
+  state-local history ownership across direct and nested agentic invocations.
 - [Agentic state framework](agentic-state-framework.md): reusable internal LLM
   conversations, their caller contract, toolbox configuration, and nested
   agent-state invocation.
