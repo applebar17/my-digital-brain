@@ -47,7 +47,12 @@ Owns the agentic behavior of the system. It decides whether an incoming message 
 
 The AI Manager coordinates model calls, speech-to-text, source storage, extraction, clarification, resolution, and calls to the Network API. It should remain dynamic and tool-driven rather than fully deterministic.
 
-The target runtime model for this layer is defined in [Agentic tool frame runtime](agentic-tool-frame-runtime.md). Agentic behavior should be modeled as purpose-oriented frames with explicit prompts, context packages, allowed tools, forbidden tools, output schemas, and provider tool-call continuations.
+The target runtime model for this layer is defined in the
+[AI engineering documentation](../ai-engineering/README.md). Agentic behavior
+uses purpose-oriented states with explicit prompts, typed context packages,
+toolboxes, DTO contracts, and provider tool-call continuations. Application
+capabilities with known state dependencies are coordinated by
+[deterministic agentic workflows](deterministic-agentic-workflows.md).
 
 ### Network API
 
@@ -67,7 +72,10 @@ Responsibilities:
 
 The Network API should validate graph writes and keep them auditable. The AI Manager can be dynamic, but graph mutations should still be structured.
 
-The Network API also owns ID translation for model contexts. Internal persistent UUIDs can be mapped to short LLM-facing aliases such as `NODE_000001` and resolved back before any graph operation.
+The Network API also owns private ID translation for model contexts. Persisted
+identifiers are mapped to run-scoped, readable model references and resolved
+back before graph operations. Owner context is a safe projection of the active
+owner, not a backend ID.
 
 ### Source And Evidence Store
 
@@ -101,9 +109,12 @@ Processes media sources into derived artifacts. For the early product, the most 
 
 Clarification is part of the AI Manager ingestion loop, not a standalone public API or heavy workflow engine. The MVP only needs enough persisted state to resume the latest pending ingestion for a Telegram chat and expire it when it is no longer relevant.
 
-### Resolution Engine
+### Identity Lookup And Resolution Support
 
-Matches candidate entities and relationships against the existing graph. It decides whether to reuse, merge, create, reject, or ask for clarification.
+Provides deterministic, bounded lookup and candidate-context construction for
+states that need graph identity evidence. It does not decide whether an agent
+should reuse, create, merge, reject, or clarify; those are semantic state
+decisions validated by backend contracts.
 
 ### Personal Profile Agent
 
@@ -182,10 +193,14 @@ The first version is personal-first. Public-product requirements such as multi-t
 2. The raw source is stored with metadata.
 3. Voice messages are transcribed and stored as derived source artifacts.
 4. The AI Manager decides whether the input starts a new process or resumes a pending one.
-5. Extraction creates candidate entities and relationships from text or transcript.
-6. Validation checks structure and confidence.
-7. Clarification is requested by the AI Manager if useful.
-8. Resolution compares candidates with existing graph state through the Network API.
+5. A capability-specific workflow invokes reasoning and ingestion states with
+   typed context and toolboxes.
+6. Deterministic services retrieve bounded graph evidence, validate DTOs, and
+   perform graph writes requested through valid tools.
+7. Clarification pauses and resumes the originating state through the normal
+   tool-call continuation when useful.
+8. Identity lookup provides evidence for semantic resolution; it never makes an
+   automatic graph-identity decision.
 9. Graph writes create or update entities, relationships, evidence links, and embeddings.
 10. Durable user traits are routed to the personal profile agent when detected.
 11. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.

@@ -1,5 +1,11 @@
 # Memory Ingestion Reasoning, Planning, And LLM-Facing Refs
 
+> **Migration source — do not use for new implementation.** Reference-context
+> rendering, bounded packet, reasoning-boundary, and dependency principles are
+> being migrated to the clean-slate documentation. The generic plan/action
+> executor, old prompt registry, and implementation waves are not target
+> architecture.
+
 ## Purpose
 
 This document locks the next ingestion architecture enhancement after the

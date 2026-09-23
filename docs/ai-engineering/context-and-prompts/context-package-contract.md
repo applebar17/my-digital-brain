@@ -60,6 +60,12 @@ example, `MemoryQueryContextPacket` and a future ingestion context packet own
 their domain fields; their renderers emit the sections needed by their selected
 prompt template.
 
+When a state must refer to graph objects, its domain packet carries the typed
+`ReferenceContext` defined in [reference context and owner projection](reference-context-and-owner-projection.md).
+The reference renderer then emits a named section at the caller's deliberate
+verbosity level. Owner context uses the same boundary through its dedicated
+safe projection; backend owner IDs never enter a prompt slot.
+
 ## Selection rules
 
 - Include source wording and evidence when a state must ground memory writes,

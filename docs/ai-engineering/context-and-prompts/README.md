@@ -7,6 +7,9 @@ This folder owns model-facing instructions and context construction policies.
 - [Context package contract](context-package-contract.md): typed context
   construction, rendering boundaries, model-visible selection rules, and nested
   state restriction.
+- [Reference context and owner projection](reference-context-and-owner-projection.md):
+  run-scoped model references, owner packet, private ID mapping, and rendering
+  levels 0–2.
 - [Prompting guidelines](prompting-guidelines.md).
 - [Prompt lifecycle and versioning](prompt-lifecycle-and-versioning.md):
   file-backed versioned templates, typed runtime rendering, trace snapshots,

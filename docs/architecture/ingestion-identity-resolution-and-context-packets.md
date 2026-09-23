@@ -2,7 +2,11 @@
 
 ## Status
 
-Design agreed for implementation. This document captures the behavior discussed for resolving planned entities against existing graph nodes before extraction and write planning.
+Migration source — do not use this document for new implementation. Its retained
+reference safety, bounded candidate-context, and additive-update principles are
+being moved to the clean-slate AI context and deterministic workflow documents.
+Its mandatory identity-resolution stage, static owner alias, and old execution
+mechanics are not target architecture.
 
 ## Locked Decisions
 
