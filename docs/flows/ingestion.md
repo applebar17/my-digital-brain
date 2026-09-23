@@ -55,8 +55,8 @@ implemented and tested.
    normal chat, then resume ingestion only when appropriate.
 19. User receives a concise ingestion summary when useful.
 
-The dedicated wave-1 implementation plan is
-[Ingestion reasoning refinement wave 1](../dev-plans/10-ingestion-reasoning-refinement-wave-1.md).
+The current phased ingestion coordination contract is
+[Deterministic agentic workflows](../architecture/deterministic-agentic-workflows.md).
 Generated natural-language graph query fan-out is intentionally out of scope
 for the first refinement baseline; whole-source hybrid retrieval is the v1
 context strategy.

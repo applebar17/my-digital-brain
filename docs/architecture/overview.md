@@ -94,8 +94,8 @@ Stores embeddings for semantic retrieval. The application should access it throu
 The vector store is a semantic lookup index, not the source of truth for
 memories. Vector records must point back to Neo4j graph targets and relational
 vector record metadata. Retrieval must hydrate Chroma hits through Neo4j before
-answer generation. Detailed implementation decisions are defined in
-[Graph-RAG and vector retrieval implementation plan](../dev-plans/09-graph-rag-and-vector-retrieval.md).
+answer generation. The current contract is in
+[Vector retrieval and indexing](../network/vector-retrieval.md).
 
 ### LLM Extraction
 

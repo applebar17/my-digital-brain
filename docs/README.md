@@ -17,7 +17,6 @@ then deleted, not preserved as a legacy archive.
 | `requirements/`, `network/`, `flows/`, `mvp/` | Retain functional product/domain material; refresh cross-links and remove superseded runtime detail. | One current product and domain specification. |
 | `ai-engineering/` | Retain as the clean-slate AI documentation base; decompose its remaining broad duplicate material. | One current AI contract and runtime specification. |
 | `architecture/` | Review each agentic/ingestion architecture document in detail; migrate valid concepts into the appropriate canonical document. | Only cross-component architecture remains; superseded agentic documents are deleted. |
-| `dev-plans/` | Check for an unowned functional decision, migrate it if needed, then delete every numbered plan. | No completed planning backlog remains. |
 | `external-integrations/` | Retain channel/media requirements; move provider-runtime content to `ai-engineering/providers/`. | Integration-specific documentation only. |
 | `uat/` | Keep unchanged for now. | Deferred cleanup. |
 
@@ -29,7 +28,6 @@ inbound links have been updated.
   indexing, status, and DTO-first documentation rules.
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
-- [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
 - [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
 - [AI engineering](ai-engineering/README.md): canonical contracts, runtime,
   providers, context, observability, and controlled migration documentation.
@@ -68,7 +66,6 @@ The graph is queried as a Graph-RAG system. It supports semantic search through 
 | --- | --- |
 | `requirements/` | Product, functional, and technical requirements. |
 | `mvp/` | Practical first implementation scope and baseline decisions. |
-| `dev-plans/` | Multi-wave development plans for major implementation areas. |
 | `ai-engineering/` | Principles for prompts, structured outputs, context building, tools, agents, and guardrails. |
 | `architecture/` | System decomposition, data flow, component responsibilities, and future decisions. |
 | `network/` | Graph schema, entity taxonomy, relation taxonomy, identity resolution, and provenance. |

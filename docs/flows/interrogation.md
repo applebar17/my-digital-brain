@@ -28,9 +28,8 @@ The frontend displays places and place-linked events geographically. This helps 
 
 ## Graph-RAG Flow
 
-Implementation decisions for vectorization, semantic retrieval, graph
-hydration, multi-target vector records, and answer grounding are locked in
-[Graph-RAG and vector retrieval implementation plan](../dev-plans/09-graph-rag-and-vector-retrieval.md).
+The vector-index, semantic retrieval, graph-hydration, and answer-grounding
+contract is defined in [Vector retrieval and indexing](../network/vector-retrieval.md).
 
 1. User asks a question.
 2. System classifies intent: lookup, exploration, summary, comparison, timeline, contradiction check, or graph operation.

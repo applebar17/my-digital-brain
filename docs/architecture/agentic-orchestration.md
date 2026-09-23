@@ -3,7 +3,7 @@
 > versioning principles now belong to `docs/ai-engineering/`. Its
 > pending-process routing, handoff metadata, generic action plans, and old
 > runtime inventory are not target architecture. Delete this source after the
-> remaining development-plan inbound links are retired.
+> final inbound-link review.
 
 # Agentic Orchestration Architecture
 

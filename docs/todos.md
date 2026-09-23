@@ -30,7 +30,8 @@ features:
 
 Priority: 1
 
-See [Agentic continuity, reference rendering, and legacy retirement](dev-plans/16-agentic-continuity-reference-rendering-and-legacy-retirement.md).
+The canonical runtime, history, tool-call, workflow, and reference contracts
+are in `docs/ai-engineering/` and `docs/architecture/`.
 
 This is the active cleanup and reliability wave for the current chat ingestion
 path. It exists because a model cannot reuse an identity or recover from a tool
@@ -79,7 +80,9 @@ Priority: 1
 
 Priority: 1
 
-See [Reference coherence and recoverable structured validation](dev-plans/14-reference-coherence-and-recoverable-validation.md).
+The current reference and validation boundaries are in
+[Reference context and owner projection](ai-engineering/context-and-prompts/reference-context-and-owner-projection.md)
+and the runtime tool-calling protocol.
 
 The first implementation waves now make readable local-ref names tolerant and
 give the model a bounded same-history repair path when structured output is
@@ -151,7 +154,8 @@ Priority: 1
 
 Priority: 1
 
-See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.md).
+The current continuation and workflow contracts are in the AI runtime and
+[deterministic workflow documentation](architecture/deterministic-agentic-workflows.md).
 
 - Replace generic top-level ingestion summaries with a backend-owned execution
   receipt containing confirmed created/updated records, counts, deferred facts,
@@ -170,7 +174,8 @@ See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.m
 
 Priority: 2
 
-See [Ingestion execution integrity](dev-plans/15-ingestion-execution-integrity.md).
+The future recovery design must preserve the existing workflow and tool-call
+continuity contracts.
 
 - Persist and revisit durable relationship actions deferred solely because an
   endpoint was not resolved at ingestion time. Completed nodes and MemoryLogs
@@ -267,8 +272,9 @@ Priority: 3
 
 Priority: 3
 
-Design is captured in
-[MemoryLog vectorization and node update flow](dev-plans/11-node-log-vectorization-and-update-flow.md).
+The current domain and retrieval rules are in
+[MemoryLog model](network/memory-log-model.md) and
+[Vector retrieval and indexing](network/vector-retrieval.md).
 
 - Add first-class semantic `MemoryLog` records with multiple host and involved
   links while retaining one primary host.
