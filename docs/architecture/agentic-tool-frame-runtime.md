@@ -1,5 +1,11 @@
 # Agentic Tool Frame Runtime
 
+> **Migration source — do not use for new implementation.** Its retained
+> provider-call continuation and compact nested-result rules now belong to the
+> clean-slate runtime and history documents. Its `AgenticFrame` persistence
+> shape, generic `MemoryPlan` executor, and old state inventory are not target
+> architecture. Delete this source after final inbound-link review.
+
 ## Purpose
 
 This document locks the target runtime model for agentic chat, memory ingestion,
