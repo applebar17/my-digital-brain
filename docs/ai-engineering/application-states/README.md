@@ -11,6 +11,10 @@ and dynamic agentic states before concrete migration work begins.
 - [State and tool taxonomy with current map](state-and-tool-taxonomy.md):
   terminology, invocation patterns, the `query_memory` example, target
   classification of current capabilities, and required state documentation.
+- [Conversation entry state](conversation-entry-state.md): top-level chat
+  responsibility and its two agentic tools.
+- [Memory query state](memory-query-state.md): deterministic retrieval/hydration
+  followed by a grounded LLM query state.
 
 ## Status
 

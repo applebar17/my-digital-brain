@@ -97,6 +97,28 @@ its local state. The history session records the origin and advances the master
 revision. It does not automatically promote state reasoning, raw tool arguments,
 tool outputs, traces, status messages, or a child’s full local transcript.
 
+### Paused continuation
+
+`PausedStateContinuationDTO` is the minimum persisted record for a state-local
+provider transcript awaiting external input. It is not a second agentic-frame
+framework and it does not own domain workflow.
+
+Its required linkage is:
+
+- `state_run_id` for the paused state;
+- the exact state-local provider transcript;
+- `open_provider_call_id` for the pausing tool call that must receive one
+  eventual matched output;
+- the typed interaction packet needed by the channel, including a
+  `clarification_ref` when the pause is a clarification;
+- the existing parent state-run and parent provider-call linkage held by the
+  related `StateHistory`.
+
+The persistence boundary may map this continuation to a backend UUID, but it
+does not expose that UUID to models or users. A clarification's
+`clarification_ref` correlates its internal packet and later resolution; the
+provider call ID continues to govern transcript pairing.
+
 ## Integration points
 
 | Collaborator | Interaction with `AgenticHistorySession` |
@@ -172,6 +194,12 @@ orchestrator persists the canonical continuation plus the state-run linkage.
 When input arrives, it reloads the same history session/state run, lets the
 client append the matching tool output, and resumes that local provider
 transcript. This is the existing continuation rule, not a second history flow.
+
+For a paused child agent, only the deepest paused child owns the interaction
+packet rendered to the user. Ancestor state runs retain their open parent tool
+call and await the compact child result, but never create another clarification
+packet or a second user-visible question. Once the child completes, its handler
+returns one matched output to the parent and normal nested resumption continues.
 
 ## History selection and restriction
 

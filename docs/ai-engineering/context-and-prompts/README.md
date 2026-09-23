@@ -2,9 +2,11 @@
 
 This folder owns model-facing instructions and context construction policies.
 
-## Planned contents
+## Contents
 
-- Context package contracts and rendering levels.
+- [Context package contract](context-package-contract.md): typed context
+  construction, rendering boundaries, model-visible selection rules, and nested
+  state restriction.
 - [Prompting guidelines](prompting-guidelines.md).
 - [Prompt lifecycle and versioning](prompt-lifecycle-and-versioning.md):
   file-backed versioned templates, typed runtime rendering, trace snapshots,

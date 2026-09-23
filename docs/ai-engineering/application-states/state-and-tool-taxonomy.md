@@ -113,6 +113,6 @@ Each state integration document must state, briefly:
 7. **Completion behavior**: final result, parent tool output, or continuation
    when awaiting user input.
 
-Prompt templates and toolbox registration/configuration are intentionally
-deferred. Their future specifications must attach to these state records rather
-than create alternative state or tool classifications.
+Prompt templates and toolbox registration/configuration are specified in their
+dedicated documents. Concrete state records select those configurations; they
+must not create alternative state or tool classifications.
