@@ -5,6 +5,9 @@ the rest of the application from SDK request/response shapes.
 
 ## Planned contents
 
+- [Provider integration boundary](provider-integration-boundary.md): OpenAI and
+  Azure normalization, capability scope, configuration snapshots, privacy
+  handoff, and typed error boundary.
 - OpenAI / Azure OpenAI normalization, including provider call-ID mapping.
 - Provider capability matrix: tools, strict schemas, structured output,
   streaming, usage, and error metadata.
@@ -19,6 +22,6 @@ instructions for the adapter to serialize.
 
 ## Temporary documentation migration ledger
 
-Retain this folder as the destination for current OpenAI/Azure adapter
-specification. Extract only provider-specific material from
-`external-integrations/llm-integration.md`, then delete that duplicate source.
+The provider-specific material from `external-integrations/llm-integration.md`
+has moved here. Keep this folder as the sole provider adapter specification;
+the ledger disappears when the broader AI documentation migration is complete.

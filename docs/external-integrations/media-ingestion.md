@@ -26,7 +26,8 @@ Potential media sources:
 3. Extract metadata such as timestamp, filename, MIME type, size, sender, and channel.
 4. Run type-specific processing when enabled.
 5. Produce text artifacts such as captions, OCR text, transcripts, or summaries.
-6. Feed extracted text into the normal ingestion flow.
+6. Feed extracted text into the shared ingestion workflow as a derived source
+   artifact.
 7. Link generated entities and relationships back to the media source.
 
 ## Voice Message Pipeline
@@ -39,7 +40,7 @@ Voice messages should follow a dedicated pipeline:
 4. Transcribe the audio with speech-to-text.
 5. Store the transcript as a derived source artifact linked to the original audio.
 6. Optionally produce time-coded transcript segments.
-7. Run the transcript through the normal LLM extraction pipeline.
+7. Run the transcript through the normal ingestion workflow.
 8. Preserve transcript confidence and uncertain spans.
 9. Ask clarifications through chat when transcription or memory extraction is ambiguous.
 10. Link graph entities, relationships, claims, and profile memories back to both transcript and original audio.
@@ -108,6 +109,9 @@ Entities extracted from media should link back to:
 - Derived text artifact.
 - Processing run.
 - Model or tool version.
+
+Provider-specific speech-to-text configuration and response normalization are
+defined at the [provider integration boundary](../ai-engineering/providers/provider-integration-boundary.md).
 
 ## Open Questions
 

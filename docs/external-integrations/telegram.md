@@ -16,16 +16,16 @@ Telegram is the likely first ingestion and chat interface. It gives the user a l
 
 ## Useful Commands
 
-Potential commands:
+Optional commands may provide an explicit intent hint during early usage:
 
 - `/remember`: explicitly ingest a memory.
 - `/ask`: ask the digital brain a question.
-- `/status`: show pending clarifications or processing state.
-- `/cancel`: cancel the current pending ingestion.
 - `/correct`: start a correction flow.
 - `/help`: list available commands.
 
-Free-form messages can still be supported, but explicit commands may reduce ambiguity during early development.
+Free-form messages remain first-class. Commands do not create a second workflow
+or expose runtime-control mechanics such as provider continuations, status,
+cancel, or resume to the model by default.
 
 ## Message Lifecycle
 
@@ -36,11 +36,16 @@ Free-form messages can still be supported, but explicit commands may reduce ambi
 5. Voice messages are stored as audio sources and sent to the transcription pipeline.
 6. Ingestion flow starts from text or transcript.
 7. Clarification questions are sent back through Telegram if needed.
-8. Later replies are sent through the shared conversation runtime with pending process context attached when available.
+8. A clarification answer is submitted through the shared conversation runtime
+   and resumes the originating state through its matching provider tool output.
 
-Telegram must not own clarification semantics. It only transports messages and renders responses from the backend.
+Telegram must not own clarification semantics. It only transports normal
+messages, backend final replies, and structured clarification interactions.
 
-Default rendering should send the backend `primary_text` as one Telegram message. Structured response sidecars such as actions, evidence, pending process metadata, and diagnostics are backend/web UI metadata unless a later Telegram-specific renderer explicitly supports them.
+Default rendering sends the backend final text as one Telegram message.
+Structured clarification packets may be rendered as a short question with
+optional Telegram choices and free text. Tool calls, provider IDs, actions,
+evidence payloads, and diagnostics are never rendered as normal user messages.
 
 ## Identity And Security
 

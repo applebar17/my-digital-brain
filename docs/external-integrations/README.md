@@ -4,7 +4,6 @@ Contracts and policies for systems outside the application boundary.
 
 ## Contents
 
-- [LLM integration](llm-integration.md): provider integration direction.
 - [Media ingestion](media-ingestion.md): future media processing and input.
 - [Telegram](telegram.md): chat-channel integration.
 
@@ -15,8 +14,7 @@ this folder documents the integration-specific concerns.
 
 | File | Transaction action |
 | --- | --- |
-| `llm-integration.md` | Extract current provider-specific configuration and adapter concerns to `ai-engineering/providers/`, then delete this duplicate source. |
-| `media-ingestion.md` | Keep as a functional integration requirement; refresh only its links. |
-| `telegram.md` | Keep as a functional channel-integration requirement; refresh only its links. |
+| `media-ingestion.md` | Current functional integration requirement. Keep it aligned with the shared ingestion workflow and provider boundary. |
+| `telegram.md` | Current functional channel requirement. Keep it transport-focused and aligned with provider-tool-call clarification continuation. |
 
 This table is removed once the provider extraction is complete.
