@@ -35,6 +35,9 @@ an opaque backend decision.
 - The LLM decides which doubts to investigate and which question to ask. The
   backend validates contracts, manages session continuation, renders packets,
   and maps references; it does not make the semantic decision.
+- Every LLM-originated doubt has one verbose `clarification_ref` that correlates
+  the invoker handoff, clarification-agent work, interaction packet, normalized
+  answer, resolution report, and resumed invoker tool output.
 - Clarification result statuses guide LLM behavior but do not deterministically
   stop, reject, or branch the broader pipeline.
 - The clarification agent has no graph-write capability.
@@ -48,7 +51,8 @@ an opaque backend decision.
 The lifecycle is a sequence of resumed API calls over an accumulating history.
 It must never rerun or restart the enclosing pipeline from the beginning.
 
-1. An invoking LLM session decides that one or more doubts require user input.
+1. An invoking LLM session decides that one or more doubts require user input
+   and assigns one `clarification_ref` to each logical doubt.
 2. It calls `ask_clarification` with a detailed list of doubts and supplied
    model-facing references.
 3. The backend creates or resumes a clarification-agent session with:
@@ -60,8 +64,10 @@ It must never rerun or restart the enclosing pipeline from the beginning.
 4. The clarification agent may query the graph and may issue one or more
    questioning tool calls, including parallel calls when questions are
    independent.
-5. A questioning tool produces a channel-neutral question packet. The
-   frontend, Telegram adapter, or terminal renderer presents it to the user.
+5. A questioning tool produces a channel-neutral question packet carrying the
+   originating `clarification_ref`. The frontend, Telegram adapter, or terminal
+   renderer presents it to the user without rendering the internal ref as chat
+   text.
 6. The user answers with the available text, audio, selection, or combination
    of modalities. Text input must remain available even when suggestions or
    buttons are shown.
@@ -71,7 +77,7 @@ It must never rerun or restart the enclosing pipeline from the beginning.
 8. The clarification session continues until it has enough information to
    report its current understanding. It may ask more questions when necessary.
 9. The clarification agent returns one structured resolution entry for every
-   supplied doubt.
+   supplied `clarification_ref`.
 10. The validated resolution report becomes the tool output of the original
     invoker session. The invoker resumes with its existing transcript and
     decides whether to create, update, attach, defer, or perform another
@@ -123,6 +129,55 @@ This is the complete transcript for the delegated session. It may contain:
 The session is resumed by appending to this history and making another API
 call. It is not reconstructed from the original user message.
 
+## Clarification Correlation Reference
+
+`clarification_ref` is the single model-generated correlation reference for
+one logical doubt. It is needed for internal agent, tool, and backend
+coordination; it is never rendered as a user-facing chat identifier.
+
+It is distinct from both of these identifiers:
+
+- `provider_call_id`: provider-issued identity that pairs one tool call with
+  one tool output in the active transcript;
+- backend `clarification_record_id`: a durable UUID or equivalent persistence
+  key, mapped internally to the originating state run and `clarification_ref`.
+
+The field belongs to the model-facing DTO and has this semantic description:
+
+```python
+clarification_ref: str = Field(
+    description=(
+        "A unique, verbose reference for this one unresolved doubt within the "
+        "current invoking state run, for example "
+        "`clarification_identity_amos_full_name`. Reuse the exact value in "
+        "every clarification request and consume the matching resolution. "
+        "Do not use a UUID, database ID, provider tool-call ID, or a generic "
+        "sequence such as `DOUBT_001`."
+    )
+)
+```
+
+The ref expresses the subject and missing decision, not the answer. Examples:
+
+- `clarification_identity_amos_full_name`;
+- `clarification_relationship_elena_matteo_meaning`;
+- `clarification_location_beach_outing_city`.
+
+The ref is unique within its originating `state_run_id`, not globally. A
+clarification request retried with the same state run and ref is the same
+logical action: the backend returns its existing open interaction or completed
+resolution rather than creating a duplicate question. If the same ref is sent
+with incompatible doubt content, the backend returns an actionable recoverable
+tool error telling the model to use a distinct verbose ref. This is correlation
+and idempotency protection, not a deterministic semantic decision or pipeline
+gate.
+
+Every internal clarification packet and the final `ask_clarification` tool
+output explicitly carries the ref. This lets the invoking agent apply a
+resolution to the exact doubt that caused it, even when several doubts or
+questions are active. Individual questioning-tool call IDs and channel packet
+IDs remain transport associations; they never replace `clarification_ref`.
+
 ## Invoker Handoff Contract
 
 The invoker must provide verbose, source-grounded doubts. A doubt is a
@@ -131,7 +186,7 @@ to produce a particular answer.
 
 Each doubt must identify:
 
-- a run-scoped `doubt_id`;
+- a run-scoped `clarification_ref`;
 - a detailed description of the uncertainty;
 - one or more model-facing refs;
 - missing information, when known;
@@ -144,7 +199,7 @@ Example:
 {
   "doubts": [
     {
-      "doubt_id": "DOUBT_001",
+      "clarification_ref": "clarification_identity_amos_full_name",
       "doubt": "Amos is mentioned only by first name and no similar person was found in the graph.",
       "refs": ["CANDIDATE_PERSON_004"],
       "missing_information": "Full name or another distinguishing detail",
@@ -235,8 +290,8 @@ The clarification agent receives a small, read-only toolbox.
 
 Each questioning tool creates a canonical question packet and hands control to
 the channel. It does not write the graph. The tool specification must carry
-the selected interaction mode, question, target refs, evidence refs, options,
-summaries, and custom-answer policy.
+the originating `clarification_ref`, selected interaction mode, question,
+target refs, evidence refs, options, summaries, and custom-answer policy.
 
 Question options may point only to model-facing refs supplied by the backend.
 The clarification agent cannot invent graph IDs or candidate refs.
@@ -277,7 +332,7 @@ Allowed status values are:
 
 Each entry should contain, when applicable:
 
-- the original `doubt_id`;
+- the original `clarification_ref`;
 - the current status;
 - the question and normalized user answer;
 - selected model-facing refs;
@@ -295,6 +350,8 @@ full context and its instructions.
 The clarification-agent system prompt must instruct the model to:
 
 - address the supplied doubts rather than invent unrelated questions;
+- preserve each supplied `clarification_ref` exactly and return a resolution
+  only for that ref;
 - query the graph before asking questions when more context may resolve the
   doubt;
 - ask concise, user-understandable questions;
@@ -486,7 +543,7 @@ Activities:
 - Ensure channel adapters do not reconstruct semantic decisions or duplicate
   validation logic.
 - Preserve question IDs, packet IDs, and answer associations across retries or
-  delayed responses.
+  delayed responses, always with their originating `clarification_ref`.
 - Defer audio/media capture, upload, storage, and transcription integration to
   a later wave; this wave only preserves the canonical transport fields.
 
@@ -551,7 +608,7 @@ Activities:
 - A single reusable policy guides context inspection, detailed doubt handoffs,
   model-facing reference safety, custom answers, explicit-versus-inferred data,
   defer/ignore behavior, and continuation after reports.
-- Invoker prompts consume the complete report by `doubt_id`, apply clarified
+- Invoker prompts consume the complete report by `clarification_ref`, apply clarified
   values to structured fields, and choose the next action without restarting.
 - The clarification agent receives compact examples for no-match identity,
   duplicate candidates, missing fields, correction, confirmation, and
@@ -638,6 +695,8 @@ The implementation is acceptable when:
 
 - `ask_clarification` starts a dedicated clarification-agent session;
 - the clarification session inherits the master history and supplied doubts;
+- every internal packet and returned resolution correlates to its supplied
+  `clarification_ref` without exposing that ref in user-facing chat text;
 - every resumed call appends to existing session history;
 - no pipeline is restarted from the beginning;
 - text and audio are interchangeable wherever a text answer is supported;
