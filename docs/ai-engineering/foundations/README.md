@@ -20,3 +20,10 @@ superseded.
 - Tool invocation, provider protocols, and final user responses are distinct
   layers.
 - Prompts influence behavior; typed contracts and backend code enforce it.
+
+## Temporary documentation migration ledger
+
+This folder is retained as the destination for concise cross-cutting AI
+principles extracted from broad duplicate material. Add a focused document only
+when a reviewed rule has no more specific canonical owner; otherwise keep the
+rule with its contract or runtime specification.

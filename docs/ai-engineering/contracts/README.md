@@ -12,8 +12,8 @@ are generated from or checked against them.
   typed tool registration, semantic field schemas, OpenAI function-declaration
   adapters, state-specific toolbox composition, and retirement of string
   dispatch.
-- [Generalized AI principles](generalized-ai-principles.md): retained broad
-  cross-use-case principles to classify into the canonical documents over time.
+- `generalized-ai-principles.md`: temporary source for reviewed concept
+  migration; it is not an active contract and is deleted when complete.
 
 ## Ownership
 
@@ -24,3 +24,11 @@ are generated from or checked against them.
 
 No provider-native object, raw JSON dictionary, or database record may become a
 cross-layer contract by convention.
+
+## Temporary documentation migration ledger
+
+Keep the focused DTO and toolbox contracts. Review
+`generalized-ai-principles.md` rule by rule, move a still-valid rule to its
+specific owner in `contracts/`, `runtime/`, `context-and-prompts/`, or another
+canonical folder, then delete `generalized-ai-principles.md`. It must not remain
+as a competing broad contract.

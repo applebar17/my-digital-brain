@@ -4,6 +4,15 @@
 
 These plans break the project into multi-wave development topics. They are not rigid delivery commitments. They are a planning map for building the MVP while keeping the implementation agile and personal-first.
 
+## Temporary documentation migration ledger
+
+Every numbered plan is a target-deletion source. Before deleting a plan, check
+whether it contains a still-unowned functional decision; if it does, migrate
+that decision to its canonical requirement, domain, flow, architecture, or AI
+engineering document. Plans never remain as future implementation authority.
+When all checks are complete, delete the numbered files and replace this README
+with a concise statement that no active plans are retained.
+
 ## Topic Plans
 
 - [Memory graph database definition](01-memory-graph-database.md)
@@ -20,6 +29,7 @@ These plans break the project into multi-wave development topics. They are not r
 - [Chat activity and progress rendering](12-chat-activity-and-progress-rendering.md)
 - [Canonical Reference Context](13-canonical-reference-context.md)
 - [Reference coherence and recoverable structured validation](14-reference-coherence-and-recoverable-validation.md)
+- [Ingestion execution integrity](15-ingestion-execution-integrity.md)
 - [Agentic continuity, reference rendering, and legacy retirement](16-agentic-continuity-reference-rendering-and-legacy-retirement.md)
 
 ## Wave Meaning

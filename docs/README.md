@@ -4,19 +4,35 @@ This documentation describes the foundation for a personal digital brain: a grap
 
 ## Start Here
 
+## Temporary documentation migration ledger
+
+This section is a working transaction record for the clean-slate documentation
+migration. It is intentionally temporary and will be removed once the actions
+below are complete. The target documentation retains only current functional
+and technical guidance; deprecated approaches are migrated where useful and
+then deleted, not preserved as a legacy archive.
+
+| Area | Current action | Target outcome |
+| --- | --- | --- |
+| `requirements/`, `network/`, `flows/`, `mvp/` | Retain functional product/domain material; refresh cross-links and remove superseded runtime detail. | One current product and domain specification. |
+| `ai-engineering/` | Retain as the clean-slate AI documentation base; decompose its remaining broad duplicate material. | One current AI contract and runtime specification. |
+| `architecture/` | Review each agentic/ingestion architecture document in detail; migrate valid concepts into the appropriate canonical document. | Only cross-component architecture remains; superseded agentic documents are deleted. |
+| `dev-plans/` | Check for an unowned functional decision, migrate it if needed, then delete every numbered plan. | No completed planning backlog remains. |
+| `external-integrations/` | Retain channel/media requirements; move provider-runtime content to `ai-engineering/providers/`. | Integration-specific documentation only. |
+| `uat/` | Keep unchanged for now. | Deferred cleanup. |
+
+Each child README records its local migration action. Do not delete a source
+document until its retained concepts have an accepted canonical owner and its
+inbound links have been updated.
+
 - [Documentation conventions](documentation-conventions.md): required README,
   indexing, status, and DTO-first documentation rules.
 - [Product foundation](requirements/product-foundation.md): vision, goals, non-goals, and core assumptions.
 - [MVP baseline](mvp/baseline.md): practical first implementation target and architectural stance.
 - [Development plans](dev-plans/README.md): multi-wave plans for graph, ingestion, chat tooling, frontend, integrations, and add-ons.
-- [Agentic orchestration architecture](architecture/agentic-orchestration.md): purpose-oriented agentic states, state handoffs, toolboxes, and prompt scaffolding.
-- [Agentic process implementation plan](dev-plans/08-agentic-process-design.md): implementation roadmap derived from the architecture design.
-- [Ingestion reasoning refinement wave 1](dev-plans/10-ingestion-reasoning-refinement-wave-1.md): locked baseline for whole-source graph context, structured reasoning, entity-first staging, duplicate handling, and relationship planning.
 - [Project TODOs](todos.md): deferred follow-ups for provider smoke tests, rendering, tracing, UAT, and hardening.
 - [AI engineering](ai-engineering/README.md): canonical contracts, runtime,
   providers, context, observability, and controlled migration documentation.
-- [Generalized AI principles](ai-engineering/contracts/generalized-ai-principles.md):
-  broad cross-use-case guidance retained as reference material.
 - [Functional capabilities](requirements/functional/core-capabilities.md): what the system must do from the user's point of view.
 - [Frontend UI product requirements](requirements/ui/frontend-ui-product-requirements.md): product brief for chat, graph exploration, evidence, timeline, map, and analytics UI.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
@@ -29,13 +45,11 @@ This documentation describes the foundation for a personal digital brain: a grap
 - [Temporal model](network/temporal-model.md): exact, fuzzy, observed, valid, and source time modeling.
 - [Personal profile memory](network/personal-profile-memory.md): personality traits, preferences, stable user context, and LLM configuration memory.
 - [Ingestion flow](flows/ingestion.md): conversational ingestion, clarification loops, extraction, and graph writes.
-- [Structured ingestion objects](flows/structured-ingestion-objects.md): candidate entities, relationships, claims, metadata patches, and validation objects.
 - [Entity resolution flow](flows/entity-resolution.md): duplicate prevention, ambiguous matches, merges, and splits.
 - [Interrogation flow](flows/interrogation.md): Graph-RAG, natural language querying, graph queries, and answer grounding.
 - [Memory management agent](flows/memory-management-agent.md): simple agent/toolbox for corrections, contradictions, and maintenance.
 - [Privacy and trust](requirements/privacy-and-trust.md): privacy zones, trust levels, and answer behavior.
 - [Telegram integration](external-integrations/telegram.md): first likely chat interface.
-- [LLM integration](external-integrations/llm-integration.md): how models are used for extraction, clarification, resolution, and querying.
 - [Media ingestion](external-integrations/media-ingestion.md): future handling of images, audio, documents, and other sources.
 
 ## Core Idea

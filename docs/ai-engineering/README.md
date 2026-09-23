@@ -4,6 +4,15 @@ This is the canonical entry point for AI-related architecture, contracts, and
 migration decisions. It is organized by responsibility so that prompts, tools,
 provider behavior, and runtime control cannot drift independently.
 
+## Temporary documentation migration ledger
+
+This folder is the clean-slate AI documentation base. The foldered documents
+below are the target source of truth. The large retained baseline currently in
+this README and `contracts/generalized-ai-principles.md` must be decomposed:
+migrate only still-valid rules into focused documents, then delete the duplicate
+source material and reduce this README to its index. Do not preserve a second
+AI-runtime narrative after that transaction.
+
 ## Documentation map
 
 - [Foundations](foundations/README.md): binding principles and vocabulary.
@@ -17,8 +26,8 @@ provider behavior, and runtime control cannot drift independently.
   prompt assets.
 - [Observability and evaluation](observability-and-evaluation/README.md): traces,
   diagnostics, fixtures, and regressions.
-- [Migration](migration/README.md): reference-code assessment and retirement
-  path toward one canonical runtime.
+- [Migration](migration/README.md): temporary implementation transition
+  documents, deleted when the runtime migration is complete.
 
 ## Binding baseline
 
@@ -34,8 +43,6 @@ The remainder of this file is the previous broad AI engineering baseline. It is
 retained for useful domain context while the canonical rules are decomposed into
 the folders above. New work must follow the new foldered documentation; a later
 wave will classify or relocate the retained material.
-
-Related architecture note: [Agentic tool frame runtime](../architecture/agentic-tool-frame-runtime.md).
 
 Prompting guidelines: [context-and-prompts/prompting-guidelines.md](context-and-prompts/prompting-guidelines.md).
 

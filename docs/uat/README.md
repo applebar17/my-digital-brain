@@ -1,5 +1,10 @@
 # UAT Reports
 
+## Temporary documentation migration ledger
+
+Keep this folder unchanged for now. Its cleanup is deferred until the
+clean-slate runtime and its test strategy are implemented.
+
 This folder is the default output location for plain-text UAT snapshots.
 
 The report script reads from a running backend API and writes a human-readable

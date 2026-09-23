@@ -20,3 +20,9 @@ tool execution, nested agent tools, continuation, and terminal results.
 The runtime is an orchestration mechanism, not a place for ingestion, graph,
 clarification, or UI-specific rules. Those concerns belong to registered tools
 and application services.
+
+## Temporary documentation migration ledger
+
+Keep and refine these clean-slate runtime specifications. During architecture
+cleanup, migrate only compatible cross-component rules here; do not copy old
+frame, pending-process, fallback, or alternate-loop behavior into this folder.

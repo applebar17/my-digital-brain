@@ -18,3 +18,11 @@ This folder owns model-facing instructions and context construction policies.
 Prompts guide behavior. DTO field descriptions define expected data. Backend
 code owns validation, execution ordering, IDs, authorization, and persistence.
 No prompt may be relied on to repair a broken tool-call transcript.
+
+## Temporary documentation migration ledger
+
+Keep the prompting guidelines and lifecycle policy. Refresh the prompt
+inventory when the new concrete states and file-backed templates are
+implemented. Existing code-constant prompt material is migrated to the
+versioned template source and then deleted; no duplicate production prompt
+source remains.

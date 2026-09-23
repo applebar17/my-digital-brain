@@ -15,6 +15,12 @@ and dynamic agentic states before concrete migration work begins.
 ## Status
 
 This is the application-integration layer of the clean-slate documentation.
-Prompt templates and toolbox registration/management are deliberately not
-specified here; they are the next design topic and will extend this map once
-accepted.
+Prompt templates and toolbox registration are specified in their dedicated
+folders; this map is refreshed once concrete state bindings are designed.
+
+## Temporary documentation migration ledger
+
+Keep this taxonomy and refresh it as concrete states are designed. It receives
+only the current state classification and integration specification; old state
+inventories are not retained after their useful capability mapping has moved
+here.

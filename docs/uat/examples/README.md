@@ -10,3 +10,8 @@ manual UAT scenarios in the parent folder.
 - `missing-entity-candidates.json`: candidate data for the request.
 
 These fixtures are diagnostic examples, not production contracts.
+
+## Temporary documentation migration ledger
+
+Keep these fixtures unchanged for now with the parent UAT material. Reassess
+their ownership only during the deferred UAT cleanup.

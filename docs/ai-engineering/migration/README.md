@@ -19,3 +19,10 @@ from silently becoming production architecture.
 - There is one canonical runtime after migration; adapters and compatibility
   shims are temporary and have explicit retirement tasks.
 - A migration wave changes one boundary at a time and commits independently.
+
+## Temporary documentation migration ledger
+
+These two files exist only to guide the implementation transition. Keep them
+current while the clean-slate runtime is being migrated; once that migration is
+complete, delete this folder's transition documents rather than retaining them
+as future implementation guidance.
