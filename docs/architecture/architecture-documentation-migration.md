@@ -99,7 +99,7 @@ Do not reproduce a retired concept merely to preserve historical detail.
 it is cleaned in the next wave; no documentation or code links to a deleted
 architecture source.
 
-### Wave 3 — Finalize Architecture indexing
+### Wave 3 — Finalize Architecture indexing (completed)
 
 - Reduce `architecture/README.md` to its folder purpose and retained
   documents.

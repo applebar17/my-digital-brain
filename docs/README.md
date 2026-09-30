@@ -35,6 +35,8 @@ inbound links have been updated.
 - [Frontend UI product requirements](requirements/ui/frontend-ui-product-requirements.md): product brief for chat, graph exploration, evidence, timeline, map, and analytics UI.
 - [Technical principles](requirements/technical/technical-principles.md): engineering constraints and architecture principles.
 - [Architecture overview](architecture/overview.md): major components and how they interact.
+- [System architecture](architecture/system-architecture.md): consumers,
+  application boundaries, external services, storage, and deployment posture.
 - [Deterministic agentic workflows](architecture/deterministic-agentic-workflows.md):
   current ingestion-state sequencing and typed handoff contract.
 - [Graph model](network/graph-model.md): entity types, relationship types, evidence, identity, and provenance.
