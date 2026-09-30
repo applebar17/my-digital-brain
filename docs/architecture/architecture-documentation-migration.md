@@ -80,7 +80,7 @@ needed to make their roles unambiguous.
 detail and contain no old pending-process, static-reference, or generic-plan
 contract.
 
-### Wave 2 — Retire superseded architecture sources
+### Wave 2 — Retire superseded architecture sources (completed)
 
 Before deletion, audit direct Markdown links and search for terms that would
 leave a live reference to the four source documents. Update any such links to
