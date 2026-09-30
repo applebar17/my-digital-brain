@@ -46,6 +46,9 @@ the semantic resolution decision.
   appending the matching provider tool output.
 - A state returns a compact typed result and reference delta, never its raw
   provider transcript, internal reasoning, or backend identifiers.
+- Each state owns a small proposal/result DTO for its specific handoff. The
+  next deterministic write receives an explicit command DTO; persisted records
+  receive backend-owned identifiers and provenance only after that boundary.
 
 ## Related documentation
 

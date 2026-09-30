@@ -131,6 +131,11 @@ Useful properties:
 - `transcript_ref`
 - `metadata`
 
+The original artifact remains the evidence anchor. A transcript, caption, OCR
+result, or other derived text links back to that artifact and never replaces it.
+Every derived graph write preserves its source/evidence relationship and any
+applicable processing-run provenance.
+
 ### Claim
 
 An explicit fact or inferred statement that can be supported, contradicted, or revised.

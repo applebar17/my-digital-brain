@@ -135,7 +135,7 @@ names, implementation status model, or generic toolbox declaration.
 **Exit condition:** delete `memory-management-agent.md` after its functional
 content and examples have moved.
 
-## Wave 4 — Decompose and delete ingestion-object catalogue
+## Wave 4 — Decompose and delete ingestion-object catalogue (completed)
 
 Migrate only these high-level concepts from `structured-ingestion-objects.md`:
 

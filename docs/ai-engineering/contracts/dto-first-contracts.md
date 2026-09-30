@@ -49,6 +49,35 @@ Every model-facing DTO has `extra="forbid"`, precise field descriptions, and
 the smallest required shape. Domain records, database UUIDs, provenance, and
 transport metadata are backend-owned and must not be requested from the model.
 
+## Proposal, command, and persisted-record boundary
+
+An LLM returns a semantic proposal DTO: source-grounded content, model-facing
+references, and only the explicit fields required for the receiving state. It
+does not return storage identifiers, provenance records, timestamps, lifecycle
+state, or arbitrary metadata.
+
+The receiving backend state validates that proposal and creates an explicit,
+purpose-specific command DTO for a deterministic write. The command contains
+only the fields the target service needs. The service enriches the persisted
+record with backend-owned identifiers, source and evidence links, actor or run
+information, and storage metadata.
+
+```text
+model proposal DTO
+  -> state validation and reference resolution
+  -> typed deterministic command DTO
+  -> persisted record with backend-owned provenance
+```
+
+Do not introduce a generic graph-write plan, an untyped action list, or a
+catch-all candidate object to bridge these responsibilities. A new semantic
+need receives a small state-local proposal and an explicit target command.
+
+The source record remains the evidence anchor for every derived write. A
+derived transcript is linked to its original artifact; it does not replace it.
+See [graph model](../../network/graph-model.md#source) and
+[media ingestion](../../external-integrations/media-ingestion.md).
+
 The provider-neutral definition, semantic field-schema requirements,
 OpenAI-compatible declaration compilation, and toolbox composition are defined
 in [tool definition and toolbox contracts](tool-definition-and-toolbox.md).
