@@ -11,6 +11,8 @@ documentation.
 - [Entity resolution](entity-resolution.md)
 - [Interrogation](interrogation.md)
 - [Memory-management agent](memory-management-agent.md)
+- [Flow documentation migration](flow-documentation-migration.md): temporary
+  keep/move/delete plan for this folder; delete it when the migration completes.
 
 ## Temporary documentation migration ledger
 
