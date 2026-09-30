@@ -105,22 +105,12 @@ The change record should preserve:
 
 This keeps the current state easy to query while preserving a historical log for deeper inspection.
 
-## Memory Management Agent
+## Maintenance integration
 
-Lifecycle changes should eventually be handled by a dedicated memory management agent using safe tools:
-
-- Mark stale.
-- Mark disputed.
-- Confirm.
-- Expire.
-- Archive.
-- Delete.
-- Merge.
-- Split.
-- Attach evidence.
-- Ask clarification.
-
-The agent should act conservatively and involve the user when the action affects important or sensitive memory. Memory maintenance should be mostly opt-in until real usage shows which prompts are useful instead of noisy.
+Future owner-facing corrections, conflict review, lifecycle changes, and
+merge/split decisions are defined in the functional
+[memory maintenance and corrections requirement](../requirements/functional/memory-maintenance-and-corrections.md).
+They are not a current agent or automatic maintenance process.
 
 ## User Experience Principle
 

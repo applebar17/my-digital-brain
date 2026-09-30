@@ -6,6 +6,7 @@ User-observable behavior and functional acceptance expectations.
 
 - [Core capabilities](core-capabilities.md)
 - [Clarification agent and UX](clarification-agent-and-ux.md)
+- [Memory maintenance and corrections](memory-maintenance-and-corrections.md)
 
 ## Temporary documentation migration ledger
 

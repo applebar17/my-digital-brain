@@ -47,7 +47,7 @@ inbound links have been updated.
 - [Ingestion flow](flows/ingestion.md): conversational ingestion, clarification loops, extraction, and graph writes.
 - [Entity resolution flow](flows/entity-resolution.md): duplicate prevention, ambiguous matches, merges, and splits.
 - [Interrogation flow](flows/interrogation.md): Graph-RAG, natural language querying, graph queries, and answer grounding.
-- [Memory management agent](flows/memory-management-agent.md): simple agent/toolbox for corrections, contradictions, and maintenance.
+- [Memory maintenance and corrections](requirements/functional/memory-maintenance-and-corrections.md): future owner-facing correction, lifecycle, conflict, and merge/split behavior.
 - [Privacy and trust](requirements/privacy-and-trust.md): privacy zones, trust levels, and answer behavior.
 - [Telegram integration](external-integrations/telegram.md): first likely chat interface.
 - [Media ingestion](external-integrations/media-ingestion.md): future handling of images, audio, documents, and other sources.

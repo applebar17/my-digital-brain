@@ -95,7 +95,7 @@ mechanics.
 runtime design, deprecated IDs, plan terminology, or stale pending-process
 mechanics.
 
-## Wave 3 — Preserve future memory maintenance clearly
+## Wave 3 — Preserve future memory maintenance clearly (completed)
 
 Create `docs/requirements/functional/memory-maintenance-and-corrections.md`.
 It documents future product behavior without claiming that a maintenance agent
