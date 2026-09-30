@@ -148,6 +148,7 @@ and error-continuity contracts.
 
 ## Related documentation
 
+- [System architecture](system-architecture.md)
 - [Agentic state framework](../ai-engineering/runtime/agentic-state-framework.md)
 - [Agentic history session](../ai-engineering/runtime/agentic-history-session.md)
 - [Tool-calling protocol](../ai-engineering/runtime/tool-calling-protocol.md)

@@ -1,218 +1,122 @@
-# Architecture Overview
+# Architecture overview
 
-## High-Level Components
+## Purpose
 
-```text
-User
-  |
-  v
-Chat Interface / Frontend / External Sources
-  |
-  v
-Ingestion API
-  |
-  v
-AI Manager
-  |
-  |----> Model Providers / Speech-to-Text / External Tools
-  |
-  |----> Source Store / Evidence Store / Media Processing
-  |
-  v
-Network API
-  |
-  |----> Entity + Relationship CRUD
-  |----> Graph Query + Search
-  |----> Resolution + Contradiction Checks
-  |----> Statistics + Retrieval Context
-  |
-  |----> Neo4j Graph Database
-  |----> Relational Operational Database
-  |----> Vector Database
-  |----> Source / Media Storage
-  |
-  v
-Chat Answers + Graph UI
-```
+This document defines system-level component ownership and the end-to-end data
+lifecycle. The visual topology, deployment posture, external dependencies, and
+data stores are defined once in the [system architecture](system-architecture.md).
 
-## Component Responsibilities
+The AI runtime is specified in [AI engineering](../ai-engineering/README.md).
+This document does not define provider transcripts, prompt templates, tool
+schemas, state-local history, or graph-write DTOs.
 
-### Ingestion Interfaces
+## Component responsibilities
 
-Receive input from Telegram, the frontend, and future external services. They normalize text messages, voice messages, and other media into source records.
+### Ingestion interfaces and API gateway
+
+The web frontend, Telegram, and future channels submit text and media through
+the API and channel gateway. The gateway authenticates where applicable,
+normalizes a channel request into an application request, and returns only
+user-safe responses, activity, and clarification packets. Consumers do not
+call graph, vector, or AI providers directly.
 
 ### AI Manager
 
-Owns the agentic behavior of the system. It decides whether an incoming message is a new memory, a query, a clarification answer, a correction, or a tool-driven operation.
+The AI Manager is the application boundary for conversational capability. It
+uses the conversation entry state to interpret a user interaction and invoke a
+configured query, ingestion, or later approved capability.
 
-The AI Manager coordinates model calls, speech-to-text, source storage, extraction, clarification, resolution, and calls to the Network API. It should remain dynamic and tool-driven rather than fully deterministic.
+Semantic decisions are agentic: an LLM state interprets source meaning,
+available evidence, ambiguity, and appropriate tool use. Scheduling is
+deterministic where dependencies are known: a workflow passes typed compact
+results, selected history, and `ReferenceContext` between states in the
+declared order. Validation, ID translation, and graph writes remain
+deterministic backend responsibilities.
 
-The target runtime model for this layer is defined in the
-[AI engineering documentation](../ai-engineering/README.md). Agentic behavior
-uses purpose-oriented states with explicit prompts, typed context packages,
-toolboxes, DTO contracts, and provider tool-call continuations. Application
-capabilities with known state dependencies are coordinated by
-[deterministic agentic workflows](deterministic-agentic-workflows.md).
+The concrete runtime, history, tool, prompt, and state contracts belong to
+[AI engineering](../ai-engineering/README.md). The current scheduling boundary
+is [deterministic agentic workflows](deterministic-agentic-workflows.md).
 
-### Network API
+### Memory network services
 
-Provides the stable interface to the memory network and graph database.
+Memory network services provide stable graph-domain operations:
 
-Responsibilities:
+- entity, relationship, claim, context, and memory-log storage;
+- source and evidence linking;
+- graph query, retrieval hydration, and statistics;
+- deterministic identity lookup evidence and bounded context construction;
+- domain validation, auditability, and private-ID translation.
 
-- Entity CRUD.
-- Relationship CRUD.
-- Claim and metadata storage.
-- Source and evidence linking.
-- Graph queries.
-- Retrieval context assembly.
-- Entity resolution support.
-- Contradiction checks.
-- Statistics and diagnostics.
+They never receive provider-native objects or permit model-authored database
+operations. Model-facing references are run-scoped `ReferenceContext` entries;
+the active owner is a safe projection, never a backend identifier.
 
-The Network API should validate graph writes and keep them auditable. The AI Manager can be dynamic, but graph mutations should still be structured.
+### Source, media, and asynchronous processing
 
-The Network API also owns private ID translation for model contexts. Persisted
-identifiers are mapped to run-scoped, readable model references and resolved
-back before graph operations. Owner context is a safe projection of the active
-owner, not a backend ID.
+Source services preserve raw text, attachments, transcripts, and user
+confirmations. Media processing creates derived artifacts, such as speech-to-
+text transcripts, while retaining the original artifact as the evidence anchor.
 
-### Source And Evidence Store
+Background workers run explicitly queued work such as transcription, embedding
+refresh, and approved asynchronous jobs. They do not own interactive provider
+continuation or user-facing chat routing.
 
-Preserves raw inputs, metadata, transcripts, attachments, and user confirmations. The graph should reference this store instead of copying every raw artifact into graph properties.
+### Retrieval and query
 
-### Relational Operational Store
+Retrieval combines semantic search with graph hydration and evidence-aware
+answer generation. The vector index accelerates semantic lookup but is never
+the memory source of truth. Its current boundary is defined in
+[vector retrieval and indexing](../network/vector-retrieval.md).
 
-Stores application runtime data that should not live directly in the graph, such as Telegram chat records, pending ingestion sessions, provider request logs, job state, prompt/schema registries, vector record references, backup/export records, and audit logs.
+### Future capabilities
 
-The relational store can be local or remote. It supports the application, but the graph remains the canonical memory model.
+Personal profile memory, owner-facing corrections, contradiction review, and
+memory maintenance are product capabilities. They become concrete states only
+when their purpose-specific DTOs, tools, and workflow dependencies are
+approved; they are not active architecture modules by name today.
 
-### Vector Store
+## Clarification boundary
 
-Stores embeddings for semantic retrieval. The application should access it through a protocolled interface, with Chroma as the local option and Azure AI services as the cloud option.
+Clarification is part of the requesting agentic state, not a separate public
+API or a generic pending-process router. A clarification tool call pauses that
+state's provider transcript. The user's answer supplies one matching tool
+output, and the same state resumes with its preserved typed context and
+reference context.
 
-The vector store is a semantic lookup index, not the source of truth for
-memories. Vector records must point back to Neo4j graph targets and relational
-vector record metadata. Retrieval must hydrate Chroma hits through Neo4j before
-answer generation. The current contract is in
-[Vector retrieval and indexing](../network/vector-retrieval.md).
+The API may expose an understandable waiting state to the frontend or Telegram,
+but that display state never selects a backend route. The canonical behavior is
+defined in the [tool-calling protocol](../ai-engineering/runtime/tool-calling-protocol.md).
 
-### LLM Extraction
+## Data lifecycle
 
-Converts source records into candidate entities, candidate relationships, summaries, missing-field signals, and ambiguity signals.
+1. A channel supplies text, voice, or another source artifact through the API.
+2. Source services preserve the raw input and channel metadata; media may
+   produce a linked derived artifact such as a transcript.
+3. Conversation entry invokes the configured application capability.
+4. A known capability workflow prepares bounded context and invokes its states
+   with typed DTOs, selected history, and model-safe references.
+5. States use configured tools; deterministic services retrieve graph evidence,
+   validate inputs, and perform allowed graph writes.
+6. When useful, clarification pauses the originating state and resumes it by
+   the normal matched tool-output continuation.
+7. Graph writes preserve source/evidence relationships and trigger any approved
+   indexing or asynchronous follow-up work.
+8. Query capabilities retrieve, hydrate, and ground a response in memory and
+   evidence for chat or graph rendering.
 
-### Media Processing
+## Decisions to make during implementation
 
-Processes media sources into derived artifacts. For the early product, the most important media process is speech-to-text transcription for voice messages. The transcript then enters the normal ingestion flow while preserving a link back to the original audio.
+- Exact relational, vector, object-storage, queue, authentication, and secret
+  service choices.
+- Concrete provider/model routes behind the provider boundary.
+- Exact API surface for graph/domain services.
+- Backup, export, retention, and deletion behavior.
+- Approval criteria for future profile, correction, and maintenance states.
 
-### Clarification Handling
+## Related documentation
 
-Clarification is part of the AI Manager ingestion loop, not a standalone public API or heavy workflow engine. The MVP only needs enough persisted state to resume the latest pending ingestion for a Telegram chat and expire it when it is no longer relevant.
-
-### Identity Lookup And Resolution Support
-
-Provides deterministic, bounded lookup and candidate-context construction for
-states that need graph identity evidence. It does not decide whether an agent
-should reuse, create, merge, reject, or clarify; those are semantic state
-decisions validated by backend contracts.
-
-### Personal Profile Agent
-
-Detects durable information about the owner of the brain, such as personality traits, preferences, communication style, stable goals, dislikes, habits, and important self-descriptions. It writes these as profile memory proposals, not as unreviewed prompt instructions.
-
-### Graph Writer
-
-Applies validated changes to the graph database. It should be deterministic, auditable, and idempotent.
-
-### Retrieval And Query Layer
-
-Supports Graph-RAG, semantic search, graph traversal, structured queries, and answer grounding.
-
-### Frontend
-
-Provides search, graph visualization, entity inspection, evidence inspection, and later correction workflows.
-
-## Suggested Initial Runtime Shape
-
-The first practical implementation can be modular without being over-distributed:
-
-- One backend service containing the AI Manager and Network API layers.
-- One Neo4j graph database.
-- One relational operational database.
-- One vector database.
-- One source/evidence store.
-- One Telegram bot integration.
-- One web frontend.
-- Background jobs for extraction, voice transcription, media processing, embeddings, and graph maintenance.
-
-This keeps the system understandable while preserving clear boundaries for later scaling.
-
-## Deployment Modes
-
-The architecture should support both local-friendly and cloud-friendly deployment.
-
-### Local-Friendly Mode
-
-Local mode is optimized for personal privacy, experimentation, and offline-friendly development.
-
-Expected shape:
-
-- Docker Compose or equivalent local container orchestration.
-- Backend service running locally.
-- Local graph database.
-- Local Postgres or lightweight source store.
-- Local vector database, initially Chroma.
-- Local file/object storage for media.
-- Optional local LLM and embedding models.
-- Optional local chat interface when Telegram is not desired.
-
-Local mode should be able to run without exposing a public webhook. Telegram can still be supported through polling, tunnels, or an optional cloud relay, but the core system should not depend on public hosting.
-
-### Cloud-Friendly Mode
-
-Cloud mode is optimized for reliable availability and external integrations.
-
-Expected shape:
-
-- Hosted backend service.
-- Managed or self-hosted graph database.
-- Managed Postgres or equivalent operational store.
-- Cloud vector store through Azure AI services.
-- Object storage for media.
-- Queue and background workers.
-- Telegram webhook endpoint.
-- Cloud LLM providers, local models, or a hybrid provider strategy.
-
-### Public Product Later
-
-The first version is personal-first. Public-product requirements such as multi-tenancy, billing, onboarding, plan limits, and customer support should not drive the early architecture, but the system should avoid choices that make those impossible later.
-
-## Data Lifecycle
-
-1. A source is received from a text message, voice message, or another ingestion channel.
-2. The raw source is stored with metadata.
-3. Voice messages are transcribed and stored as derived source artifacts.
-4. The AI Manager decides whether the input starts a new process or resumes a pending one.
-5. A capability-specific workflow invokes reasoning and ingestion states with
-   typed context and toolboxes.
-6. Deterministic services retrieve bounded graph evidence, validate DTOs, and
-   perform graph writes requested through valid tools.
-7. Clarification pauses and resumes the originating state through the normal
-   tool-call continuation when useful.
-8. Identity lookup provides evidence for semantic resolution; it never makes an
-   automatic graph-identity decision.
-9. Graph writes create or update entities, relationships, evidence links, and embeddings.
-10. Durable user traits are routed to the personal profile agent when detected.
-11. Retrieval uses the graph, embeddings, and approved profile memory to answer questions or power visualization.
-
-## Architecture Decisions To Make
-
-- Exact relational database implementation.
-- Exact vector store implementation details behind the `VectorStore` protocol.
-- LLM provider and model strategy.
-- Queue/background worker technology.
-- Authentication and user identity model.
-- Exact AI Manager tool surface.
-- Exact Network API surface.
-- Local, hosted, hybrid, and future public-product deployment boundaries.
-- Backup, export, and deletion model.
+- [System architecture](system-architecture.md)
+- [Deterministic agentic workflows](deterministic-agentic-workflows.md)
+- [AI engineering](../ai-engineering/README.md)
+- [External integrations](../external-integrations/README.md)
+- [Graph model](../network/graph-model.md)

@@ -29,7 +29,7 @@ docs/architecture/
 | --- | --- |
 | `README.md` | Concise folder purpose and index. No migration ledger once complete. |
 | `system-architecture.md` | Consumers, application boundaries, external dependencies, data stores, and deployment posture. |
-| `overview.md` | Component ownership, system boundaries, deployment posture, and data lifecycle. |
+| `overview.md` | Component ownership, application boundaries, and data lifecycle. |
 | `deterministic-agentic-workflows.md` | MVP workflow scheduling, dependency order, typed state handoffs, approved parallelism, and future coordinator boundary. |
 
 No new Architecture document is needed for AI internals. Those concepts already
@@ -61,7 +61,7 @@ have focused owners.
 
 ## Migration waves
 
-### Wave 1 — Establish the retained architecture boundary
+### Wave 1 — Establish the retained architecture boundary (completed)
 
 Update `overview.md` and `deterministic-agentic-workflows.md` only where
 needed to make their roles unambiguous.
@@ -76,7 +76,7 @@ needed to make their roles unambiguous.
   agent-to-agent coordination only if state entrypoints and DTO contracts stay
   stable.
 
-**Exit condition:** the two retained documents link outward for AI-runtime
+**Exit condition:** the retained documents link outward for AI-runtime
 detail and contain no old pending-process, static-reference, or generic-plan
 contract.
 
@@ -101,15 +101,15 @@ architecture source.
 
 ### Wave 3 — Finalize Architecture indexing
 
-- Reduce `architecture/README.md` to its folder purpose and two retained
+- Reduce `architecture/README.md` to its folder purpose and retained
   documents.
 - Remove its temporary migration ledger.
 - Update the root documentation index only if its Architecture descriptions
   need wording changes.
-- Delete this migration plan.
+- Keep this migration plan until the companion alignment wave has completed.
 
-**Exit condition:** the target folder structure is exact and every retained
-file has one non-overlapping responsibility.
+**Exit condition:** apart from this temporary plan, the target folder structure
+is exact and every retained file has one non-overlapping responsibility.
 
 ### Wave 4 — Align dependent product documentation
 
@@ -131,6 +131,16 @@ activity, but it must not define backend routing.
 **Exit condition:** product, UI, MVP, technical, workflow, and runtime
 documentation all describe the same clarification model.
 
+### Wave 5 — Close the migration
+
+- Verify no documentation or code links to retired Architecture sources.
+- Verify the root documentation index describes the retained Architecture
+  documents accurately.
+- Delete this migration plan.
+
+**Exit condition:** the target folder structure is exact, all migration
+ledgers related to Architecture are gone, and this plan has no remaining role.
+
 ## Implementation-boundary reminders
 
 The following DTOs will be designed with their concrete implementations, not
@@ -146,7 +156,8 @@ plan, action executor, reference family, or new orchestration layer.
 
 ## Validation checklist
 
-- The folder contains only its target files when complete.
+- The folder contains only its target files when complete; this plan remains
+  only until Wave 5.
 - No link refers to a deleted Architecture source.
 - `overview.md` contains no “latest pending ingestion” or channel-specific
   resume contract.
