@@ -20,6 +20,7 @@ templates, state-local history, reference rendering, or generic agent plans.
 ```text
 docs/architecture/
   README.md
+  system-architecture.md
   overview.md
   deterministic-agentic-workflows.md
 ```
@@ -27,6 +28,7 @@ docs/architecture/
 | Target file | Long-term responsibility |
 | --- | --- |
 | `README.md` | Concise folder purpose and index. No migration ledger once complete. |
+| `system-architecture.md` | Consumers, application boundaries, external dependencies, data stores, and deployment posture. |
 | `overview.md` | Component ownership, system boundaries, deployment posture, and data lifecycle. |
 | `deterministic-agentic-workflows.md` | MVP workflow scheduling, dependency order, typed state handoffs, approved parallelism, and future coordinator boundary. |
 
