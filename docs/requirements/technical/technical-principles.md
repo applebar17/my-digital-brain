@@ -89,15 +89,30 @@ The system should separate:
 
 The AI Manager can be flexible. The Network API and graph mutation layer should remain structured, validated, and auditable.
 
-Not every edge case needs explicit deterministic handling in v1. The system should keep a small set of safe tools, persist minimal pending state, expire abandoned processes, and add more explicit handling only when real usage proves it necessary.
+Not every edge case needs explicit deterministic handling in v1. The system
+should keep a small set of safe tools, persist a minimal paused continuation
+only when external input is awaited, expire it under an approved policy, and
+add more explicit handling only when real usage proves it necessary.
 
-The conversational LLM chooses actions and proposes parameters. Backend services validate parameters, own process state, and perform all state changes. Top-level tools should remain few and stable: start memory ingestion, query memory context, and propose memory correction. Resume, cancel, expire, validation, clarification handling, and write execution are backend process operations, not broad conversational tools.
+The conversational LLM chooses actions and proposes parameters. Backend services
+validate parameters, own continuation state, and perform all state changes.
+Top-level tools remain few and stable: `query_memory` and `ingest_memory`.
+Clarification is a configured pausing tool; validation, continuation, and write
+execution are runtime or backend responsibilities, not broad conversational
+tools.
 
-Pending process state should be treated as context for future runtime or agent calls, not as a rigid route that consumes the next message automatically. Conversation history should be available for context building, while the model-facing context remains scoped and low-noise.
+Conversation history remains available for context building while model-facing
+context stays scoped and low-noise. A paused provider call resumes only through
+its matching tool output; a generic pending-process route must not consume the
+next user message.
 
-Chat responses should optimize for natural conversation. The default response shape should expose one `primary_text` message plus structured sidecars for pending process metadata, actions, evidence, diagnostics, and rendering hints. Telegram can render the primary text only, while web chat can use the sidecars for richer UI.
+Normal chat renders one final user-facing assistant message. Activity events
+and clarification interaction packets are separate UI data; technical
+diagnostics stay in developer observability rather than a general chat sidecar.
 
-Chat sessions, conversation messages, and process sessions should remain separate concepts. Link them through explicit process identifiers instead of mixing ingestion state into the chat runtime.
+Visible chat history and state-local/provider history are separate concepts.
+`AgenticHistorySession` owns state-run and paused-continuation linkage instead
+of mixing ingestion state into the chat runtime.
 
 ## Idempotent Ingestion
 
@@ -105,11 +120,18 @@ Ingestion should be resumable and idempotent. Reprocessing the same source shoul
 
 This requires stable source identifiers, extraction run identifiers, deduplication checks, and merge policies.
 
-Structured ingestion objects should sit between extraction and graph writes. The graph writer should consume validated write plans, not raw LLM output.
+Purpose-specific proposal DTOs should sit between model output and graph writes.
+The graph writer consumes explicit validated command DTOs, never raw LLM output
+or a generic write plan.
 
-Clarification state should be minimal. It exists so the AI Manager can resume a pending ingestion after a later chat message when appropriate, not as a separate clarification subsystem or strict workflow engine.
+Clarification state is minimal and exists only to resume the originating paused
+state through its matching tool output. It is not a separate clarification
+subsystem or strict workflow engine.
 
-Ingestion complexity should be decided after a cheap mention scan and compact graph-context retrieval. Raw text alone is not enough to know whether an ingestion is simple, ambiguous, contradictory, or relationship-heavy. The ingestion planner should propose semantic actions, not graph writes or DB-shaped extraction tasks. Backend code compiles those actions into constrained extractor calls.
+Ingestion receives bounded graph context before semantic work. A state may use
+configured reasoning or planning preparation, but neither produces graph writes
+or DB-shaped tasks. Deterministic services validate explicit DTOs and execute
+the supported commands.
 
 ## Local And Cloud Portability
 

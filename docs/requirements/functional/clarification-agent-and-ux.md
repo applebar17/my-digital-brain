@@ -201,10 +201,10 @@ Example:
     {
       "clarification_ref": "clarification_identity_amos_full_name",
       "doubt": "Amos is mentioned only by first name and no similar person was found in the graph.",
-      "refs": ["CANDIDATE_PERSON_004"],
+      "refs": ["node_candidate_amos"],
       "missing_information": "Full name or another distinguishing detail",
       "why_blocking": "The identity is incomplete and may produce an ambiguous person node.",
-      "evidence_refs": ["CANDIDATE_EVENT_001"]
+      "evidence_refs": ["memory_candidate_dinner"]
     }
   ]
 }
@@ -505,12 +505,13 @@ Activities:
 - Exclude system prompts, tool calls, tool schemas, graph lookups, packet and
   option IDs, provider diagnostics, and clarification-agent reasoning.
 - Pass a snapshot of master history into each clarification child session.
-- Keep the complete resumed child transcript in `AgenticFrame.messages`.
+- Keep the complete resumed child transcript in the child state's local
+  provider history.
 - Promote clarification question/answer pairs only after the child session
   completes, preserving question order and normalized audio text.
 - Keep backend-only source and promotion keys in separate session metadata so
   repeated completion cannot duplicate exchanges.
-- Continue using the existing `AgenticFrame.expires_at` retention mechanism for
+- Continue using the existing paused-continuation retention policy for
   abandoned sessions without adding a dedicated cleanup subsystem.
 
 Exit criteria:
@@ -520,7 +521,7 @@ Exit criteria:
   from the original user message.
 - Completed clarification exchanges are promoted exactly once and in order.
 - Pending child sessions do not modify master history.
-- Existing frame parent/child linkage and expiry behavior remain unchanged.
+- Existing state-run parent/child linkage and expiry behavior remain unchanged.
 
 ### Wave 4: Channel And API Integration
 
@@ -570,15 +571,15 @@ Activities:
 - Return the complete validated `ClarificationResolutionReport` as the
   `ask_clarification` tool output to the invoker, including statuses,
   clarified values, selected refs, evidence, and remaining uncertainty.
-- Preserve the report when a completed child resumes its parent and when
-  nested parent frames are resumed; never reduce it to only a summary or
+- Preserve the report when a completed child resumes its parent state and when
+  nested parent states resume; never reduce it to only a summary or
   derived answer list.
 - Ensure clarified values are available to the invoker's next structured
   proposal.
 - Verify that the invoker can create, update, attach, ask again, or defer based
   on the report and its own instructions.
-- Persist the report in completed child-frame metadata while keeping the
-  canonical transcript in `AgenticFrame.messages`.
+- Persist the report in the completed child-state result or audit record; the
+  child transcript is not a second durable history source.
 - Preserve provenance and original user wording in the report; keep only the
   clean question/answer exchange in Wave 3 master-history promotion.
 - Treat `resolved_clarifications` as derived runtime context only. The
@@ -628,17 +629,17 @@ Exit criteria:
 
 ### Wave 7: Hardening, Observability, And Cleanup
 
-**Status:** implemented. Backend continuation, channel contracts, structured
-observability, frontend clarification components, context redaction, and
-directly superseded clarification paths have been hardened.
+**Status:** historical implementation note. It does not certify conformance
+with the clean-slate runtime; the functional requirements in this document
+remain binding.
 
 **Goal:** Verify the complete behavior and remove directly superseded code.
 
 Activities:
 
-- The web client uses the active agentic frame and clarification packet as its
-  only clarification lifecycle source; stale pending-process UI contracts are
-  removed.
+- The web client uses the active paused-state continuation and clarification
+  packet as its only clarification lifecycle source; stale pending-process UI
+  contracts are removed.
 - Web clarification questions enforce response modes locally, preserve packet
   progress and edits, render option summaries, and show structured retryable or
   terminal errors inline and in the status bar.
@@ -683,8 +684,8 @@ without weakening the mandatory requirements above:
 
 1. Token-threshold context compaction remains deferred; the clarification agent
    continues to inherit the existing master-history snapshot.
-2. Abandoned clarification sessions continue to use the existing
-   `AgenticFrame.expires_at` retention behavior; no new cleanup worker is added.
+2. Abandoned clarification sessions use the existing paused-continuation
+   retention policy; no new cleanup worker is added.
 
 These are implementation and product-detail decisions. They must not become
 new deterministic pipeline gates or create parallel clarification flows.

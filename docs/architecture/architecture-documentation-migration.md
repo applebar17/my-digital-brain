@@ -111,7 +111,7 @@ architecture source.
 **Exit condition:** apart from this temporary plan, the target folder structure
 is exact and every retained file has one non-overlapping responsibility.
 
-### Wave 4 — Align dependent product documentation
+### Wave 4 — Align dependent product documentation (completed)
 
 This companion wave is outside the Architecture folder but required to remove
 contradictory behavior claims discovered during its review.
@@ -120,6 +120,8 @@ Review and update:
 
 - `docs/mvp/baseline.md`;
 - `docs/requirements/functional/core-capabilities.md`;
+- `docs/requirements/functional/clarification-agent-and-ux.md` for its stale
+  static-reference example and retired frame-retention wording;
 - `docs/requirements/ui/frontend-ui-product-requirements.md`;
 - `docs/requirements/technical/technical-principles.md`.
 
@@ -128,7 +130,7 @@ sidecar assumptions with user-facing waiting/clarification behavior and the
 canonical paused-state tool continuation. UI status may describe visible
 activity, but it must not define backend routing.
 
-**Exit condition:** product, UI, MVP, technical, workflow, and runtime
+**Exit condition:** product, UI, MVP, technical, functional, workflow, and runtime
 documentation all describe the same clarification model.
 
 ### Wave 5 — Close the migration

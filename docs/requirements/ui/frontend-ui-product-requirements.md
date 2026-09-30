@@ -81,72 +81,58 @@ The chat must support these core workflows:
 - answer a clarification question;
 - ask a question about the graph;
 - propose a correction;
-- cancel or skip a pending process when appropriate;
+- continue normal chat while a clarification interaction awaits an answer;
 - inspect evidence returned with an answer.
 
 ### Required Layout
 
 The chat view should include:
 
-- session header with conversation status and pending process status when one
-  exists;
+- session header with a concise user-facing activity state when work is active;
 - message timeline with user and assistant messages;
-- assistant message rendering based primarily on `primary_text`;
+- final assistant-message rendering without raw tool output or implementation
+  details;
 - composer for text input;
 - future-ready attachment or audio affordance for voice/media;
-- pending clarification display when the backend returns `pending_process`;
+- structured clarification interaction display when the backend requests an
+  answer;
 - evidence side panel or expandable evidence references;
-- action buttons when the backend returns `actions`;
-- non-intrusive status area for loading, failed requests, cancelled processes,
-  and accepted background work.
+- approved confirmation controls when a product capability requires them;
+- non-intrusive status area for loading, failed requests, and accepted
+  background work.
 
 Diagnostics must not be shown by default. They can be exposed only behind a
 developer/debug affordance.
 
-### Backend Contracts
+### Backend interaction boundary
 
-The chat UI should use:
+The API contract is defined with the implementation; this product requirement
+does not prescribe endpoints or transport field names. The UI needs only these
+semantic interactions:
 
-- `POST /chat/messages`
-- `GET /chat/sessions/{session_id}`
-- `POST /chat/sessions/{session_id}/cancel`
+- submit text or media as a normal conversation input;
+- render final assistant content, user-safe activity, evidence references, and
+  an optional clarification interaction packet;
+- submit a clarification answer through the packet's opaque backend
+  association; it does not send a generic pending-process identifier;
+- render an approved confirmation interaction when a capability supplies one;
+- access developer diagnostics only through a separate debug experience.
 
-The web chat request payload includes:
-
-- `conversation_id`
-- `sender_id`
-- `owner_id`
-- `message_id`
-- `text`
-- `media_refs`
-- `reply_to_message_id`
-- `pending_process_id`
-- `conversation_history_refs`
-- `received_at`
-- `metadata`
-
-The visible assistant message should come from `ChatResponse.primary_text`.
-Structured sidecars should support UI behavior:
-
-- `pending_process`: show the active question/context and attach the process id
-  to the next relevant message;
-- `actions`: render explicit commands, especially confirmation actions;
-- `evidence`: render source or graph references that can open the evidence
-  drawer or graph detail;
-- `diagnostics`: hide unless debugging;
-- `status`: show lightweight state such as ok, accepted, needs user input,
-  failed, or cancelled.
+Activity and clarification packets are operational UI data, not assistant
+messages. Their internal correlation IDs, provider call IDs, and state-run IDs
+are never user-facing text.
 
 ### Chat Interaction Rules
 
-Clarification questions should feel like normal chat messages. The UI should not
-turn them into heavy forms unless the backend returns a clearly structured
-action.
+Clarification questions should feel integrated with chat, but render as
+structured interaction cards rather than raw assistant/tool prose. The UI
+should not turn them into heavy forms unless the semantic interaction requires
+multiple selections or confirmation.
 
-If a pending process exists, the composer should preserve normal user freedom.
-The user may answer, ask a new question, send a new memory, correct something,
-or cancel. The frontend should pass pending context to the backend but must not
-decide the business meaning of the next message.
+The composer preserves normal user freedom while a clarification interaction is
+visible. The frontend never decides whether arbitrary text resumes a state;
+only an answer submitted through the displayed packet becomes the matching tool
+output for that interaction.
 
 When the assistant response includes evidence, the user should be able to:
 
@@ -517,8 +503,7 @@ Every major surface must define states for:
 - backend unavailable;
 - authentication failure;
 - request failed;
-- pending process waiting for user input;
-- cancelled process;
+- clarification interaction awaiting an answer;
 - stale or archived data hidden by filters;
 - partial data where evidence or coordinates are missing.
 

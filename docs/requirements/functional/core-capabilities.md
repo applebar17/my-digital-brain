@@ -15,7 +15,7 @@ The system must:
 - Extract candidate profile memories when the user reveals durable traits, preferences, or goals.
 - Detect missing or ambiguous information.
 - Ask focused clarification questions when needed.
-- Apply user answers back to the pending ingestion.
+- Apply a clarification answer back to the originating paused state.
 - Write confirmed or sufficiently confident facts into the graph.
 - Store uncertain facts with explicit confidence and provenance when appropriate.
 
@@ -58,7 +58,10 @@ Clarification should be triggered by:
 
 Clarification should stay lightweight and agentic. The system should preserve low-precision or uncertain memories when asking would create unnecessary friction.
 
-The MVP should not expose a separate clarification API. It should store minimal pending ingestion state and let the AI Manager resume the latest waiting ingestion for the Telegram chat.
+The MVP should not expose a separate clarification workflow or a latest-
+ingestion router. A clarification answer is associated with its channel-neutral
+interaction packet, becomes the matching tool output for the paused provider
+call, and resumes the originating state.
 
 ## Entity Resolution And Unification
 

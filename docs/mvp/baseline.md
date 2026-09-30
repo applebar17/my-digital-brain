@@ -12,10 +12,10 @@ High-level shape:
 
 ```text
 Telegram Bot / Web Chat
-  -> Conversation Runtime
-      -> AI Manager / backend tool facade
-          -> OpenAI / Azure OpenAI / speech-to-text / tools
-          -> Network API
+  -> API and conversation entry
+      -> AI Manager: capability workflows and AI runtime
+          -> provider adapters: LLM / embeddings / speech-to-text
+          -> memory network services
               -> Neo4j Graph Database
               -> Relational operational database
               -> Vector database
@@ -28,7 +28,8 @@ Telegram Bot / Web Chat
 2. The chat consumer sends normalized text or voice inputs to the backend.
 3. Voice messages are transcribed when speech-to-text is configured.
 4. The AI Manager decides whether the input is a memory ingestion, clarification answer, query, correction, or tool request.
-5. The AI Manager extracts candidate graph updates or query plans.
+5. The configured capability state interprets the input using bounded context
+   and its approved tools.
 6. The Network API performs graph CRUD, search, query, storage, statistics, and retrieval operations.
 7. The AI Manager responds through Telegram or asks a clarification when useful.
 
@@ -41,11 +42,14 @@ Principles:
 - Keep the AI Manager responsible for conversational flow.
 - Give the AI Manager tools to interact with the graph and sources.
 - Keep graph writes validated and auditable.
-- Persist only the minimal state needed to resume pending work.
-- Treat pending process state as context for the next processing step, not as a strict route that consumes the next message automatically.
+- Persist a minimal paused continuation only while a configured tool awaits
+  external input.
 - Keep conversation history available for context building while keeping model-facing context scoped and low-noise.
-- Keep chat sessions separate from process sessions such as ingestion sessions, linked only through pending process identifiers.
-- Render one primary assistant message by default; structured response metadata should support the runtime and web UI without making chat feel mechanical.
+- Keep durable chat history distinct from state-local/provider history; the
+  centralized history session owns their state-run linkage.
+- Render one final assistant message by default. Activity and clarification
+  packets support UI interaction without becoming chat content or a generic
+  sidecar protocol.
 - Let edge cases exist until they are common or harmful enough to justify explicit handling.
 - Prefer useful memory capture over complete process coverage.
 
@@ -55,26 +59,28 @@ Clarification is part of the AI Manager ingestion loop. It is not a standalone p
 
 MVP behavior:
 
-- If an ingestion needs clarification, store a pending process context for the conversation.
-- Later chat messages are processed with that pending context and conversation history available.
-- The AI Manager can classify the later message as a clarification answer, new memory, question, correction, cancellation, or normal chat.
-- The AI Manager resumes extraction, resolution, and graph update only when that classification makes resumption appropriate.
-- Pending sessions have expiration.
+- If a configured state needs clarification, its provider tool call pauses.
+- The backend persists the minimum typed continuation needed to resume that
+  state and expires an abandoned continuation under the approved retention
+  policy.
+- The submitted answer becomes the one matching tool output for the open call.
+- The same originating state resumes with its preserved history, typed context,
+  and model-facing references.
+- An unrelated new conversation request does not pass through a generic
+  pending-process router.
 
 Minimal persisted state:
 
-- `ingestion_session_id`
 - `conversation_id`
-- `channel`
-- `status`
-- `pending_question`
-- `pending_process_context`
-- `conversation_history_refs`
-- `candidate_graph_snapshot`
+- `state_run_id` and parent linkage when applicable
+- opaque channel interaction association
+- the open provider-call association
+- typed state context and local-history reference
 - `expires_at`
 - `updated_at`
 
-This is state for continuity, not a separate clarification subsystem or rigid workflow engine.
+This is state for continuation, not a separate clarification subsystem or rigid
+workflow engine.
 
 ## Chat Runtime Baseline
 
@@ -84,32 +90,21 @@ Baseline decisions:
 
 - Telegram and web chat both map into internal `ChatSession` and `ConversationMessage` records.
 - Chat messages/history are stored separately from chat session state.
-- Chat sessions and ingestion sessions are separate, linked through pending process ids.
-- `ChatResponse` has a single `primary_text` for normal rendering.
-- Optional structured sidecars such as pending process metadata, actions, evidence, and diagnostics may be returned for web UI or runtime use.
-- Telegram renders the normal response as one message.
-- Web chat renders the normal response as one assistant message and may add UI affordances around it.
+- State-local/provider history is separate from visible chat history and is
+  linked through the centralized history service.
+- A completed interaction renders one final user-facing assistant message.
+- Activity events and clarification packets are separate operational UI data;
+  evidence is exposed only where it is useful to the user.
+- Telegram and web chat render the same semantic interaction in channel-
+  appropriate forms.
 - MVP web chat uses a static bearer token, not a full user account system.
 
 ## Agent Tools
 
-The AI Manager can eventually use tools such as:
-
-- `ingest_text`
-- `ingest_voice_transcript`
-- `resume_pending_ingestion`
-- `restart_process`
-- `skip_clarification`
-- `expire_pending_process`
-- `query_graph`
-- `create_or_update_entity`
-- `create_or_update_relationship`
-- `detect_contradictions`
-- `ask_user_clarification`
-- `store_source`
-- `get_entity_context`
-
-Tools should be auditable when they change graph state.
+Conversation entry exposes a deliberately small top-level tool surface:
+`query_memory` and `ingest_memory`. Child states receive only their configured
+toolboxes. `ask_clarification` is available only where a state can pause for
+external input; deterministic graph tools remain state-specific and auditable.
 
 ## Technology Direction
 
@@ -144,7 +139,7 @@ This is a baseline, not a lock-in. Choices can evolve as implementation pressure
 - Relational operational storage.
 - Vector store protocol.
 - LLM-facing ID aliases for model contexts.
-- Minimal pending ingestion state.
+- Minimal paused-state continuation.
 - Voice transcript provenance.
 - Entity resolution basics.
 - Local/cloud-friendly configuration.
