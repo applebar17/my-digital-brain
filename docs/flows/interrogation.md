@@ -1,128 +1,67 @@
-# Interrogation Flow
+# Interrogation flow
 
 ## Purpose
 
-The interrogation flow lets the user query the digital brain through natural language, structured queries, and graph navigation.
+Interrogation lets a user ask about their memory through natural language,
+structured inspection, or graph navigation. Answers are grounded in retrieved
+graph facts and source evidence, with uncertainty made clear when memory is
+missing, incomplete, inferred, or disputed.
 
-## Query Modes
+## Query modes
 
-### Natural Language
+- **Natural language:** ask a question, request a summary or comparison, or
+  explore a person, event, place, relationship, or period.
+- **Structured inspection:** use advanced graph-oriented queries or filters
+  when that capability is intentionally exposed.
+- **Visual navigation:** open focused graph neighborhoods, timelines, maps,
+  sources, evidence, and related memory details.
 
-The user asks a question in ordinary language. The system converts the question into retrieval actions, graph traversals, and answer generation.
+## Functional journey
 
-### Structured Query
+```text
+user question
+  -> relevant graph memory is retrieved and hydrated
+  -> evidence, time, relationships, and affective context are considered
+  -> grounded answer and optional focused graph view are returned
+  -> user may refine, navigate, or correct the result
+```
 
-Advanced users or internal tools can run graph-native or SQL-like queries against the memory graph.
+Semantic retrieval identifies candidate pointers; graph hydration establishes
+the facts available to an answer. The system does not present a vector hit as
+memory truth by itself.
 
-### Visual Navigation
+## Answer expectations
 
-The frontend displays relevant subgraphs and lets the user expand, filter, inspect, and traverse connected entities.
+- Ground answers in retrieved graph records and source evidence.
+- State uncertainty, missing context, inferred information, and material
+  conflicts when they affect the answer.
+- Include emotional or perceptual context only when relevant, and distinguish
+  user-stated content from inference where possible.
+- Treat `MemoryLog` hits as gateways to their hosts, involved targets, and
+  context; normal graph views focus on hydrated domain objects.
+- Do not mutate memory while answering a question. A correction or new memory
+  follows the ingestion flow.
 
-### Timeline View
+## Visualization handoff
 
-The frontend displays memories by event time, source time, or ingestion time. This is important for browsing memories without needing to know the exact query.
+When useful, interrogation returns a focused result for the UI: seed objects,
+related objects and relationships, evidence references, relevant timeline
+grouping, location grouping, and safe display-oriented ranking information. It
+must not return the entire graph, raw vector payloads, or backend identifiers.
 
-### Map View
-
-The frontend displays places and place-linked events geographically. This helps the user explore memories by city, venue, trip, or recurring location.
-
-## Graph-RAG Flow
-
-The vector-index, semantic retrieval, graph-hydration, and answer-grounding
-contract is defined in [Vector retrieval and indexing](../network/vector-retrieval.md).
-
-1. User asks a question.
-2. System classifies intent: lookup, exploration, summary, comparison, timeline, contradiction check, or graph operation.
-3. Semantic retrieval finds relevant sources, entities, claims, and summaries.
-4. Graph traversal expands around high-confidence hits, including perception and relationship-context nodes for any relevant memory target.
-5. Evidence is gathered and ranked.
-6. Affective context such as emotional summaries, original user wording, and user-stated perceptions is included when it helps answer the question.
-7. The answer generator produces a grounded response.
-8. The response includes uncertainty, missing information, and source references where useful.
-9. Contradictions are surfaced when they materially affect the answer.
-10. The user can follow up, ask for visualization, or correct the graph.
-
-## Retrieval Strategy
-
-Retrieval should combine:
-
-- Embedding search over sources and entity summaries.
-- Embedding search over `MemoryLog` micro-log records, folded back into their
-  host/canonical domain nodes for default graph rendering.
-- Semantic text-to-node retrieval that turns a natural language query into likely
-  graph seed nodes before graph expansion.
-- Exact graph lookup for names, aliases, dates, and places.
-- Graph expansion from retrieved entities.
-- Expansion through perceptions, affective fields, and relationship contexts.
-- Time and location filters.
-- Relationship type filters.
-- Confidence and provenance filters.
-
-The system should avoid answering from embeddings alone when graph evidence is available.
-
-Semantic text-to-node retrieval is a dedicated retrieval feature, not part of the
-graph storage foundation. The graph layer should expose seed-based query helpers;
-the retrieval layer decides how natural language maps to those seeds.
-
-Semantic retrieval should treat Chroma hits as candidate pointers into Neo4j.
-Vector hits must be hydrated through graph targets, canonical merge resolution,
-source/evidence lookup, affective context, and graph-neighborhood expansion before
-answer generation.
-
-When a vector hit points to a `MemoryLog`, retrieval should hydrate the log, its
-primary host, additional host targets, involved targets, and relevant context.
-The graph workspace should render the hydrated domain nodes by default; the log
-itself belongs in the clicked node's timeline/detail view unless debugging.
-
-## Answer Grounding
-
-Answers should be based on graph facts and evidence, not only model memory.
-
-The system should expose:
-
-- Which entities were used.
-- Which relationships were used.
-- Which sources support the answer.
-- Whether facts are inferred, confirmed, or uncertain.
-- Which emotional or perceptual context is user-stated versus inferred.
-- Conflicts or missing data.
-
-## Example Questions
+## Examples
 
 - What do I know about Marco Rossi?
 - Who was involved in the dinner where we discussed the new project?
-- Show me events connected to Milan in 2025.
-- Which people are connected to both Capco and my university memories?
-- What places in Italy have I mentioned most often?
-- Do I have conflicting information about where that meeting happened?
+- Show memories connected to Milan in 2025.
 - What happened with Alessandro?
 - What emotional memories do I associate with that period?
-- Why does that place, object, topic, or project feel important to me?
+- Do I have conflicting information about where that meeting happened?
 
-## Structured Query Requirements
+## Related documentation
 
-The query layer should support:
-
-- Entity search by type, name, alias, and embedding.
-- Relationship traversal by type and depth.
-- Affective-context lookup for any memory-bearing node or important relationship.
-- Filtering by confidence, source, date, and place.
-- Neighborhood extraction for frontend visualization.
-- Explain/debug mode for retrieval traces.
-- Timeline extraction for chronological visualization.
-- Map result extraction for geographic visualization.
-
-## Visualization Handoff
-
-When a natural language query produces graph results, the system should be able to hand the result set to the frontend as:
-
-- Seed entities.
-- Expanded relationships.
-- Ranking scores.
-- Suggested filters.
-- Evidence references.
-- Layout hints.
-- Timeline grouping when time is relevant.
-- Geographic grouping when places are relevant.
-
-The frontend should then render a focused graph neighborhood instead of the entire brain.
+- [Memory query state](../ai-engineering/application-states/memory-query-state.md)
+- [Vector retrieval and indexing](../network/vector-retrieval.md)
+- [Context package contract](../ai-engineering/context-and-prompts/context-package-contract.md)
+- [Frontend UI product requirements](../requirements/ui/frontend-ui-product-requirements.md)
+- [MemoryLog model](../network/memory-log-model.md)

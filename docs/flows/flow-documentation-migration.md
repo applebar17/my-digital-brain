@@ -38,7 +38,7 @@ backend implementation details to their existing canonical owners. The target
 | `memory-management-agent.md` | Future maintenance product behavior. | Rename and move to functional requirements as `memory-maintenance-and-corrections.md`; future state behavior later belongs in application-state conventions. | The current agent/toolbox contract, static tool list, and premature implementation detail. |
 | `structured-ingestion-objects.md` | None as a standalone catalogue. | Proposal-versus-persisted-record boundary to AI contracts; source/media provenance to domain/integration docs; MemoryLog to network; state-specific DTOs to state conventions. | Generic candidate graph, generic extraction/action/write plans, old ref vocabulary, and deprecated staged-pipeline DTOs. |
 
-## Wave 1 — State-convention source of truth
+## Wave 1 — State-convention source of truth (completed)
 
 Create `docs/ai-engineering/application-states/ingestion/` with a README and
 one document for each current ingestion state:
@@ -59,7 +59,7 @@ does not duplicate a full prompt body or provider transcript mechanics.
 **Exit condition:** the deterministic workflow and every retained ingestion
 flow can point to state conventions rather than explain internal LLM behavior.
 
-## Wave 2 — Rewrite current functional flows
+## Wave 2 — Rewrite current functional flows (completed)
 
 ### Ingestion
 
