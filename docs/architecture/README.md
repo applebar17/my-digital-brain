@@ -10,6 +10,8 @@ folder must not retain a competing agentic-runtime contract.
 - [Deterministic agentic workflows](deterministic-agentic-workflows.md): MVP
   workflow scheduling, typed handoffs, phase dependencies, and future
   coordinator replacement boundary.
+- [Architecture documentation migration](architecture-documentation-migration.md):
+  temporary keep/move/delete plan for this folder; delete it when complete.
 - [Agentic orchestration](agentic-orchestration.md): source review required;
   migrate valid functional concepts, then delete.
 - [Agentic tool-frame runtime](agentic-tool-frame-runtime.md): source review
