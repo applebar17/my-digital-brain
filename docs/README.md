@@ -16,7 +16,7 @@ then deleted, not preserved as a legacy archive.
 | --- | --- | --- |
 | `requirements/`, `network/`, `flows/`, `mvp/` | Retain functional product/domain material; refresh cross-links and remove superseded runtime detail. | One current product and domain specification. |
 | `ai-engineering/` | Retain as the clean-slate AI documentation base; decompose its remaining broad duplicate material. | One current AI contract and runtime specification. |
-| `architecture/` | Review each agentic/ingestion architecture document in detail; migrate valid concepts into the appropriate canonical document. | Only cross-component architecture remains; superseded agentic documents are deleted. |
+| `architecture/` | Completed: retain only the current system topology, component/lifecycle overview, and deterministic workflow coordination. | Only cross-component architecture remains; superseded agentic documents are deleted. |
 | `external-integrations/` | Retain channel/media requirements; move provider-runtime content to `ai-engineering/providers/`. | Integration-specific documentation only. |
 | `uat/` | Keep unchanged for now. | Deferred cleanup. |
 
