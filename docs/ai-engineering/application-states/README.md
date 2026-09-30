@@ -15,6 +15,8 @@ and dynamic agentic states before concrete migration work begins.
   responsibility and its two agentic tools.
 - [Memory query state](memory-query-state.md): deterministic retrieval/hydration
   followed by a grounded LLM query state.
+- [Ingestion application states](ingestion/README.md): behavioral conventions,
+  typed handoffs, and prompt boundaries for the phased ingestion workflow.
 
 ## Status
 
