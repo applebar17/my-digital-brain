@@ -1,29 +1,16 @@
 # AI engineering foundations
 
-This folder will contain the concise, canonical principles that govern every
-AI-related implementation. Existing broad principles remain in the parent
-README as retained baseline material until they are decomposed and explicitly
-superseded.
+This folder is the entry point for cross-cutting AI design constraints. The
+rules themselves are maintained by their specific owners below; this index
+does not restate them.
 
-## Initial decisions
+## Canonical owners
 
-- DTO-first and annotation-first design is mandatory at every application
-  boundary.
-- AI modules follow the repository's binding
-  [dependency-oriented module design](../../requirements/technical/dependency-oriented-module-design.md):
-  contracts and protocols first, then helpers, abstractions, concrete adapters,
-  orchestration, and explicit composition. Runtime imports must remain acyclic.
-- Important runtime methods document their purpose, immediate collaborators,
-  contract guarantees, and material side effects. They do not contain reasoning
-  traces or restate line-by-line implementation.
-- Provider tool-call IDs are preserved and normalized by adapters.
-- Tool invocation, provider protocols, and final user responses are distinct
-  layers.
-- Prompts influence behavior; typed contracts and backend code enforce it.
-
-## Temporary documentation migration ledger
-
-This folder is retained as the destination for concise cross-cutting AI
-principles extracted from broad duplicate material. Add a focused document only
-when a reviewed rule has no more specific canonical owner; otherwise keep the
-rule with its contract or runtime specification.
+- [Dependency-oriented module design](../../requirements/technical/dependency-oriented-module-design.md):
+  module layering, acyclic imports, inheritance, and method documentation.
+- [DTO-first contracts](../contracts/dto-first-contracts.md): typed boundaries,
+  field descriptions, validation, and recoverable structured-output errors.
+- [State and tool taxonomy](../application-states/state-and-tool-taxonomy.md):
+  choosing deterministic capabilities, LLM-only states, and dynamic states.
+- [Prompting guidelines](../context-and-prompts/prompting-guidelines.md):
+  behavioral prompt content and avoiding duplicated backend guarantees.

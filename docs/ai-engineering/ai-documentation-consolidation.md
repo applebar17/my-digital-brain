@@ -84,7 +84,7 @@ is not made into a new runtime feature by this documentation cleanup.
 **Exit condition:** each retained rule has exactly one owner; outdated proposals
 are marked for removal rather than rewritten as current guidance.
 
-### Wave 2 — Retire broad duplicate sources
+### Wave 2 — Retire broad duplicate sources (completed)
 
 - Remove `contracts/generalized-ai-principles.md` from the contracts index and
   delete it.
@@ -98,7 +98,9 @@ are marked for removal rather than rewritten as current guidance.
 
 ### Wave 3 — Close and validate
 
-- Update root documentation links only if the AI section description needs it.
+- Remove duplicated AI and runtime decisions from the root documentation
+  landing page; point readers to their canonical owners.
+- Update root documentation links and migration ledger to reflect completion.
 - Search the repository for links to removed sources and stale terminology that
   was unique to the deleted broad material.
 - Check Markdown formatting and ensure every surviving concept points to its
