@@ -29,6 +29,9 @@ AI-runtime narrative after that transaction.
 - [Migration](migration/README.md): temporary implementation transition
   documents, deleted when the runtime migration is complete.
 
+- [AI engineering documentation consolidation](ai-documentation-consolidation.md):
+  temporary source cleanup plan; delete when complete.
+
 ## Binding baseline
 
 All new AI application boundaries are DTO-first and annotation-first. Tool
