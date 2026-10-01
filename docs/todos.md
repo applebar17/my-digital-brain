@@ -228,14 +228,16 @@ Priority: 2
   threshold. Preserve recent messages and important promoted clarification
   exchanges while emitting no backend metadata.
 
-## Prompt Inventory And Runtime Cleanup
+## Prompt And Runtime Mapping Cleanup
 
 Priority: 2
 
-- Reconcile `docs/ai-engineering/context-and-prompts/prompt-inventory.md` with actual ownership.
-  `ProfileMemoryExtractor` remains wired in the ingestion factory, so
-  `profile_memory_extraction` must either be documented as active or migrated
-  deliberately before removal.
+- Audit production prompt/state mappings against actual runtime ownership; the
+  separate inventory document was retired because state documents and prompt
+  lifecycle documentation are the canonical owners. `ProfileMemoryExtractor`
+  remains wired in the ingestion factory, so `profile_memory_extraction` must
+  either be documented with its owning state or deliberately migrated before
+  removal.
 - Remove stale documentation and inactive prompt mappings only after production
   references are verified. Do not add compatibility aliases or duplicate prompt
   owners.

@@ -68,15 +68,15 @@ Rules should guide model judgment. Do not include rules for constraints already 
 Usually unnecessary:
 
 ```text
-Execute exactly one current MemoryPlanAction.
+Use the current request as your task.
 ```
 
-If the current action is already appended as the latest user message and the tool loop only gives the model that action, this rule is noise.
+If the state invocation already appends the request as its user message and provides only that task, this rule is noise.
 
 Better:
 
 ```text
-Use the current action as the task. If a tool rejects your arguments, fix the arguments and retry when the correction is clear.
+Use the current request as your task. If a tool rejects your arguments, fix the arguments and retry when the correction is clear.
 ```
 
 Good behavioral rules:

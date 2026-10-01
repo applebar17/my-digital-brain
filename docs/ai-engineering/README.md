@@ -22,11 +22,6 @@ by one focused document; this page only indexes those owners.
   traces, diagnostics, fixtures, and regression evaluation.
 - [Migration](migration/README.md): active implementation transition records.
 
-## Active documentation transaction
-
-- [AI documentation consolidation](ai-documentation-consolidation.md):
-  temporary source cleanup plan; removed when its waves are complete.
-
 ## How to use this section
 
 Start with the document that owns the boundary being changed. Update that
