@@ -27,7 +27,10 @@ Telegram Bot / Web Chat
 1. The user interacts through Telegram or web chat.
 2. The chat consumer sends normalized text or voice inputs to the backend.
 3. Voice messages are transcribed when speech-to-text is configured.
-4. The AI Manager decides whether the input is a memory ingestion, clarification answer, query, correction, or tool request.
+4. The AI Manager interprets the message as an ingestion, query, or other
+   approved capability. An answer submitted through a clarification interaction
+   is associated with its paused provider call and resumes that originating
+   state.
 5. The configured capability state interprets the input using bounded context
    and its approved tools.
 6. The Network API performs graph CRUD, search, query, storage, statistics, and retrieval operations.
@@ -35,7 +38,9 @@ Telegram Bot / Web Chat
 
 ## Architecture Stance
 
-The MVP should be agentic and dynamic. It should not try to deterministically model every possible conversational branch upfront.
+Semantic decisions inside states are agentic. Workflows schedule known
+dependencies deterministically without attempting to model every conversational
+branch upfront.
 
 Principles:
 
