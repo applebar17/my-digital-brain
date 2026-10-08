@@ -10,8 +10,3 @@ Cross-cutting engineering requirements that implementation must satisfy.
 
 The repository-wide documentation convention is defined in
 [Documentation conventions](../../documentation-conventions.md).
-
-## Temporary documentation migration ledger
-
-Keep both binding technical requirements. They remain the repository-wide
-constraints while the AI runtime and architecture documents are replaced.

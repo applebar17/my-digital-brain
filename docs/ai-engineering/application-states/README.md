@@ -2,9 +2,10 @@
 
 ## Purpose
 
-This folder maps application-specific agentic capabilities onto the reusable AI
-runtime framework. It distinguishes deterministic services/tools from LLM-only
-and dynamic agentic states before concrete migration work begins.
+This folder maps application-specific capabilities onto the reusable AI runtime
+framework. It identifies which capabilities are deterministic services/tools,
+LLM-only states, or dynamic agentic states and specifies their application-level
+responsibilities.
 
 ## Contents
 
@@ -20,13 +21,7 @@ and dynamic agentic states before concrete migration work begins.
 
 ## Status
 
-This is the application-integration layer of the clean-slate documentation.
-Prompt templates and toolbox registration are specified in their dedicated
-folders; this map is refreshed once concrete state bindings are designed.
-
-## Temporary documentation migration ledger
-
-Keep this taxonomy and refresh it as concrete states are designed. It receives
-only the current state classification and integration specification; old state
-inventories are not retained after their useful capability mapping has moved
-here.
+These documents specify intended application integration. They do not imply
+that every documented capability is implemented. Prompt templates, toolbox
+contracts, and runtime mechanics remain owned by their dedicated AI-engineering
+documents.

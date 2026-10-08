@@ -20,9 +20,5 @@ from silently becoming production architecture.
   shims are temporary and have explicit retirement tasks.
 - A migration wave changes one boundary at a time and commits independently.
 
-## Temporary documentation migration ledger
-
-These two files exist only to guide the implementation transition. Keep them
-current while the clean-slate runtime is being migrated; once that migration is
-complete, delete this folder's transition documents rather than retaining them
-as future implementation guidance.
+The migration sequence and exit criteria are defined in the
+[client-runtime rebuild plan](client-runtime-rebuild-plan.md).
