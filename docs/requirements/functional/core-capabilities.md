@@ -8,8 +8,9 @@ each capability.
 
 The owner can submit a memory or update through natural interaction. The
 application preserves the original source, identifies useful memory content,
-and records supported information with its source context. Voice capture is an
-early capability: the original audio remains linked to its derived transcript.
+and records supported entities and meaningful relationships with their source
+context. Voice capture is an early capability: the original audio remains
+linked to its derived transcript.
 
 The owner can also ask a question, suggest a correction, or answer an active
 clarification in the same conversation. The [ingestion flow](../../flows/ingestion.md)
@@ -40,6 +41,16 @@ Stable traits, preferences, vocabulary, and goals can be represented separately
 from episodic memories. The owner can inspect and correct this understanding.
 Its domain and retrieval behavior are defined in [Personal Profile
 Memory](../../network/personal-profile-memory.md).
+
+## Entity metadata and enrichment
+
+When supported, entity details can include useful structured contact data,
+external references, place details, and information obtained through an
+external provider. The owner can inspect, correct, or remove stored details,
+and externally sourced values remain distinguishable from user-provided
+memory. Data semantics belong to the [network
+model](../../network/README.md); provider-specific requirements belong to
+[External Integrations](../../external-integrations/README.md).
 
 ## Query and retrieval
 

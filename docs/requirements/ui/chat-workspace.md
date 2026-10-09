@@ -43,8 +43,9 @@ not a nested tool result or progress event.
 
 Clarification appears as a structured interaction in the current conversation,
 not as a completed assistant response or an opaque loading state. The owner can
-answer through the available response controls and may provide free text when
-suggested choices do not fit.
+answer through the modes supported by that question. Available answer modes and
+custom-answer behavior are defined in the [functional clarification
+requirements](../functional/clarification-agent-and-ux.md).
 
 After submission, the chat indicates that the answer is being used and reflects
 the resumed work. The frontend does not infer whether arbitrary text should
@@ -52,9 +53,7 @@ resume a clarification; only an answer associated with the displayed
 interaction is submitted as its response.
 
 Do not render clarification references, provider call IDs, database IDs, raw
-validation errors, or agent/tool transcripts as chat text. See the [functional
-clarification requirements](../functional/clarification-agent-and-ux.md) for
-question behavior and answer expectations.
+validation errors, or agent/tool transcripts as chat text.
 
 ## Evidence navigation
 

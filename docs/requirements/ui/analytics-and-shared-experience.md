@@ -50,9 +50,8 @@ The domain meaning is owned by [affective memory](../../network/affective-memory
 
 Major surfaces provide understandable states for empty data, no search result,
 no selection, dense graph results, unavailable services, failed requests,
-missing evidence or coordinates, and data hidden by a filter. A clarification
-waiting for an answer is an interaction state, not an indefinite loading
-indicator; chat-specific behavior is defined in [Chat Workspace
+missing evidence or coordinates, and data hidden by a filter. Chat-specific
+loading and clarification presentation is defined in [Chat Workspace
 Requirements](chat-workspace.md).
 
 ### Accessibility and responsiveness
