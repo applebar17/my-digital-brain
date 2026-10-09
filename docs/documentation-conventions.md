@@ -44,9 +44,7 @@ Module layout, inheritance, acyclic imports, and contextual documentation for
 important methods are governed by the binding
 [dependency-oriented module design](requirements/technical/dependency-oriented-module-design.md).
 
-## Scope discipline
+## Scope ownership
 
-Documentation, plans, and implementation distinguish accepted requirements from
-unaccepted proposals. A proposal may explain a risk or offer a minimal option;
-it is not authorization to add behavior. The binding rule is
-[Explicit scope and minimum design](requirements/technical/technical-principles.md#explicit-scope-and-minimum-design).
+The binding rule for accepted scope and minimum design is maintained in
+[Technical Principles](requirements/technical/technical-principles.md#explicit-scope-and-minimum-design).

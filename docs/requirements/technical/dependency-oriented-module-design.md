@@ -121,24 +121,11 @@ def execute_tool_call(
 The named dependencies must remain true. Update this documentation in the same
 change when the method's immediate collaborators or side effects change.
 
-## AI runtime application
+## Applying the standard
 
-For the AI runtime, this standard has concrete consequences:
-
-- Provider-specific message shapes end at the provider adapter; the generic
-  runtime consumes and produces canonical DTOs only.
-- Tool registration and execution are lower-level capabilities. The session
-  loop coordinates them but does not know ingestion, graph, or UI details.
-- A provider adapter, tool executor, and session runtime must not instantiate
-  one another directly. Their assembly belongs to a composition boundary.
-- A child agent implements the same typed tool contract as any other tool; it
-  does not introduce a second session-loop path.
-- Tool call IDs, transcript state, and continuation behavior are owned by
-  explicit DTOs and services, not ad hoc method-local dictionaries.
-
-The [AI engineering foundations](../../ai-engineering/foundations/README.md)
-apply this standard to the clean-slate migration. The detailed migration order
-remains in the [client-runtime rebuild plan](../../ai-engineering/migration/client-runtime-rebuild-plan.md).
+Apply this module-design standard to AI components as to other application
+modules. AI-specific contracts and runtime responsibilities are owned by
+[AI Engineering](../../ai-engineering/README.md); they are not repeated here.
 
 ## Review checklist
 

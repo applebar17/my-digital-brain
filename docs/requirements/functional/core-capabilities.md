@@ -1,171 +1,72 @@
-# Functional Capabilities
+# Core Functional Capabilities
 
-## Conversational Ingestion
+This document states the product-level capability requirements. The linked
+flow, domain, AI, and UI documents own the detailed behavior and contracts for
+each capability.
 
-The user can send text or voice messages through a chat interface such as Telegram. Messages may describe memories, corrections, facts, events, people, places, or objects.
+## Conversational capture
 
-The system must:
+The owner can submit a memory or update through natural interaction. The
+application preserves the original source, identifies useful memory content,
+and records supported information with its source context. Voice capture is an
+early capability: the original audio remains linked to its derived transcript.
 
-- Receive user input from one or more ingestion channels.
-- Preserve the raw input as source evidence.
-- Transcribe voice messages into derived text evidence.
-- Let the AI Manager decide whether the input is a new memory, query, correction, or clarification answer.
-- Extract candidate entities and relationships.
-- Extract candidate contact details, external references, and metadata patches when present.
-- Extract candidate profile memories when the user reveals durable traits, preferences, or goals.
-- Detect missing or ambiguous information.
-- Ask focused clarification questions when needed.
-- Apply a clarification answer back to the originating paused state.
-- Write confirmed or sufficiently confident facts into the graph.
-- Store uncertain facts with explicit confidence and provenance when appropriate.
+The owner can also ask a question, suggest a correction, or answer an active
+clarification in the same conversation. The [ingestion flow](../../flows/ingestion.md)
+owns the functional sequence and [external integration
+requirements](../../external-integrations/README.md) own channel and media
+specifics.
 
-## Personal Profile Memory
+## Clarification
 
-The system should detect stable information about the owner of the brain and store it separately from ordinary memories.
+When missing or ambiguous context materially affects correctness, the
+application can ask a focused question and apply the answer to the existing
+work. It should preserve useful low-precision information rather than interrupt
+for every uncertainty. The complete user-facing requirement is in
+[Clarification Agent and UX](clarification-agent-and-ux.md).
 
-It should support:
+## Identity and entity resolution
 
-- Personality traits.
-- Communication preferences.
-- Stable goals.
-- Work style.
-- Recurring interests.
-- Privacy preferences.
-- User-specific vocabulary.
+The application considers existing graph context when deciding whether new
+information refers to an existing entity. It must support incomplete names,
+aliases, homonyms, repeated descriptions, and changing facts without silently
+merging distinct identities. See [Entity Resolution](../../flows/entity-resolution.md)
+for the functional decisions and [Graph Model](../../network/graph-model.md)
+for domain semantics.
 
-Profile memory should be used to improve future LLM behavior, retrieval, and clarification decisions. It must remain inspectable and correctable by the user.
+## Owner profile memory
 
-## Clarification Loop
+Stable traits, preferences, vocabulary, and goals can be represented separately
+from episodic memories. The owner can inspect and correct this understanding.
+Its domain and retrieval behavior are defined in [Personal Profile
+Memory](../../network/personal-profile-memory.md).
 
-The ingestion process must be able to pause and ask questions such as:
+## Query and retrieval
 
-- Where did this happen?
-- Who was involved?
-- Which Marco do you mean?
-- Was this in Rome, Milan, or somewhere else in Italy?
-- Did this event happen today, yesterday, or on another date?
-- Is this a new person or someone already in the graph?
+The owner can ask natural-language questions about stored memories. Answers
+must be grounded in relevant graph context and available evidence, and must
+communicate uncertainty rather than overstate weak or conflicting support. The
+[Interrogation Flow](../../flows/interrogation.md) owns query behavior; retrieval
+and indexing semantics are in [Vector Retrieval](../../network/vector-retrieval.md).
 
-Clarification should be triggered by:
+## Structured inspection
 
-- Missing required fields for an entity or relationship.
-- Multiple plausible matches during entity resolution.
-- Low confidence extraction.
-- Conflicting facts already present in the graph.
-- User-configured policies for sensitive facts.
-- Contact details, addresses, or external enrichment results would be stored or changed.
-- Meaningful contradictions that would affect future answers.
+Advanced users may inspect the graph through structured queries. This is not a
+required path for ordinary memory capture or question answering. If exposed, it
+must support entity lookup, relationship traversal, and filtering by relevant
+time, type, confidence, or source without bypassing normal access controls.
 
-Clarification should stay lightweight and agentic. The system should preserve low-precision or uncertain memories when asking would create unnecessary friction.
+## Graph exploration
 
-The MVP should not expose a separate clarification workflow or a latest-
-ingestion router. A clarification answer is associated with its channel-neutral
-interaction packet, becomes the matching tool output for the paused provider
-call, and resumes the originating state.
+The owner can inspect relevant graph neighborhoods, entity and relationship
+details, evidence, and available timeline or map context. The [UI
+requirements](../ui/README.md) define presentation and interaction; the
+[network documentation](../../network/README.md) defines what graph data means.
 
-## Entity Resolution And Unification
+## Future capabilities
 
-The system must identify when new information refers to an existing entity.
-
-It must handle:
-
-- Homonymous people.
-- Nicknames and aliases.
-- Incomplete locations.
-- Repeated events described with different wording.
-- Objects with similar names.
-- Organizations that changed name or have abbreviations.
-- Conflicting or evolving facts.
-
-Resolution should use a combination of deterministic rules, embeddings, graph context, source metadata, LLM reasoning, and user confirmation.
-
-## Entity Metadata And Enrichment
-
-The system should support useful structured metadata on entities without turning metadata into an uncontrolled dumping ground.
-
-It should support:
-
-- Contact details for people and organizations.
-- External references such as provider IDs, map links, profile URLs, and contact-app IDs.
-- Enriched place data such as normalized addresses and coordinates.
-- Runtime lookup for information that should not be stored permanently.
-- Cached enrichment with expiration when freshness matters.
-- Provenance and confirmation status for stored enrichment.
-
-Contact details and enriched external data should be inspectable, correctable, and removable.
-
-## Interrogation
-
-The user can ask natural language questions such as:
-
-- Who did I meet in Milan last spring?
-- What do I know about Luca?
-- Show me memories related to my trip to Japan.
-- What places are connected to Capco events?
-- Which people have I mentioned together most often?
-- What is the latest phone number I have for Luca?
-- Open the map link for the restaurant I went to with Giulia.
-- Show me a timeline of my memories from last summer.
-- Show me memories around Milan on a map.
-
-The system must:
-
-- Retrieve relevant graph entities, relationships, and source evidence.
-- Use semantic search and graph traversal together.
-- Generate grounded answers.
-- Expose uncertainty and provenance.
-- Offer follow-up navigation paths.
-
-## Structured Querying
-
-The system should support structured queries for advanced inspection. The exact language is open, but candidates include Cypher, Gremlin, SQL over graph tables, or a query builder that compiles to the selected backend.
-
-Structured queries should support:
-
-- Entity lookup.
-- Relationship traversal.
-- Filtering by time, place, type, confidence, and source.
-- Neighborhood extraction for visualization.
-- Debugging of ingestion and unification decisions.
-
-## Visualization
-
-The frontend should display relevant portions of the graph.
-
-It should support:
-
-- Entity detail views.
-- Relationship lists.
-- Interactive graph neighborhoods.
-- Timeline view.
-- Map view.
-- Search and filtering.
-- Source/evidence inspection.
-- Confidence and ambiguity indicators.
-- Manual merge, split, and correction workflows in later versions.
-- Profile memory inspection and correction in later versions.
-
-## Deployment And Access
-
-The system should support:
-
-- Local personal use through containers or a local runtime.
-- Cloud deployment for always-on integrations.
-- Local chat or frontend access when Telegram is unavailable or not desired.
-- Telegram integration when public connectivity is available.
-- Migration between local and cloud modes through backup and restore.
-
-## Media And External Sources
-
-The system should ingest voice messages early and should eventually ingest:
-
-- Voice messages.
-- Images.
-- Other audio files.
-- Documents.
-- Links and web pages.
-- Calendar entries.
-- Location history or check-ins, if explicitly enabled.
-- Other personal data exports.
-
-The first version should model media as source evidence even if deep media understanding is deferred. Voice messages are the exception: they should be transcribed early because spoken memory capture is a core ingestion behavior.
+Media beyond voice, owner-facing merge/split actions, and broader external data
+sources are staged separately. Their requirements live in [Memory Maintenance
+and Corrections](memory-maintenance-and-corrections.md) and [External
+Integrations](../../external-integrations/README.md); this document does not
+commit them to the MVP.
