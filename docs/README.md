@@ -29,5 +29,6 @@ repeating their content.
 | [Flows](flows/README.md) | User-facing and end-to-end capability flows. |
 | [External integrations](external-integrations/README.md) | Channel and media integration requirements. |
 | [UAT](uat/README.md) | Manual test instructions, fixtures, and generated reports. |
+| [Plans](plans/README.md) | Multi-wave plans, issue breakdowns, and task-level implementation sequencing. |
 
 Project follow-up work is tracked separately in [todos.md](todos.md).

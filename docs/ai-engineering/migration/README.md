@@ -1,24 +1,21 @@
 # AI runtime migration
 
-This folder records the controlled transition from the current AI runtime to
-the documented target. It prevents reference code and experimental behavior
-from silently becoming production architecture.
+This folder contains technical assessments that inform migration work. The
+work breakdown and wave/task sequencing live in the indexed
+[plans area](../../plans/README.md), not in this technical reference section.
 
 ## Contents
 
 - [Reference client assessment](reference-ai-clients-assessment.md): what the
   imported `ai_clients` package demonstrates, what must not be copied, and its
-  current repository status.
-- [Client-runtime rebuild plan](client-runtime-rebuild-plan.md): inventory,
-  endpoint decision, migration waves, and exit criteria.
+  current repository status; claims about current callers must be verified by
+  the Wave 0 census before they drive implementation.
+- [Agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md):
+  the current multi-wave planning entry point; Wave 0 is the only defined wave.
 
 ## Rules
 
-- No production import may be switched to a reference package without a
-  reviewed migration plan, DTO conformance tests, and removal of superseded code.
-- There is one canonical runtime after migration; adapters and compatibility
-  shims are temporary and have explicit retirement tasks.
-- A migration wave changes one boundary at a time and commits independently.
-
-The migration sequence and exit criteria are defined in the
-[client-runtime rebuild plan](client-runtime-rebuild-plan.md).
+- This folder records technical assessments and contracts; it does not own
+  task-level migration sequencing.
+- The plan folder records work sequencing and links to technical sources of
+  truth instead of duplicating runtime design.

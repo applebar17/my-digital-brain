@@ -12,10 +12,10 @@ pipeline language, dependency-injection system, status model, or domain
 workflow. Specific ingestion, retrieval, clarification, and chat behavior is
 configured by the states that need it.
 
-The framework builds on the imported `ai_clients` design as its client-facing
-foundation, but it does not authorize use of the copied reference package in
-the active application. Its typed replacement remains governed by the
-[client-runtime rebuild plan](../migration/client-runtime-rebuild-plan.md).
+The framework takes the user's `ai_clients` design as client-facing reference,
+but this specification does not select or authorize a production client
+implementation. Current-code inventory and implementation sequencing are
+tracked in the [agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md).
 
 ## Responsibility boundary
 
@@ -186,15 +186,9 @@ Tool success and failure remain model-transcript events, not state final chat
 messages. A child state result becomes visible to a parent model only through
 the parent’s matched tool output.
 
-## Implementation order
+## Implementation planning
 
-Document and test the framework before migrating application agents:
-
-1. establish canonical session, tool, and structured-output DTOs;
-2. establish the generic client runtime and typed toolbox registration;
-3. implement the base invocation/result DTOs and `BaseAgenticState`;
-4. migrate one accepted concrete state at a time, deleting its superseded
-   invocation path immediately after its final caller moves.
-
-No state migration may retain a second client loop, untyped tool mapping, or
-legacy conversation path in parallel with the canonical one.
+This document owns the target framework semantics, not the implementation
+sequence. Wave and task planning lives in the
+[agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md)
+and will be defined only after its Wave 0 census is complete.

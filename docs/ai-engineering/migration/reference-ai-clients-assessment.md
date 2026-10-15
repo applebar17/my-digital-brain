@@ -9,6 +9,9 @@ but it still depends on provider/runtime packages that are not declared as
 application dependencies.
 
 It is useful design evidence and a migration source, not production code yet.
+This is a focused technical comparison, not the implementation plan. The
+current application import/caller census and all disposition decisions are
+owned by [Wave 0](../../plans/agentic-framework-rebuild/wave-0-census/README.md).
 
 ## Valuable behavior to preserve
 
@@ -48,7 +51,6 @@ canonicalization. Its failures indicate that ownership and contracts have
 drifted across the larger agentic layer, not that the basic loop should be
 replaced by copied code.
 
-The migration should therefore establish the DTO registry and transcript
-invariants first, migrate provider adapters and tool dispatch second, then
-delete the obsolete runtime paths. It must not run both client frameworks in
-parallel indefinitely.
+Do not infer a migration sequence from this comparison. Wave 0 will compare the
+current session/tool path with this reference package and identify the actual
+reuse boundary before implementation waves are defined.
