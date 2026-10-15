@@ -2,16 +2,26 @@
 
 **Status: In progress**
 
+## Source-of-truth rule
+
+The accepted technical and functional documents define the target. Source code
+and tests are evidence of current callers, data crossings, persistence, and
+observable behavior; they do not override an accepted target contract. Record
+any implementation/documentation mismatch as a discrepancy and identify the
+owning document to reconcile. Do not infer a new design or implementation task
+from current code alone.
+
 The inventories are initial screens. During review, each source-file entry
 must satisfy the shared assessment fields in
 [census scope](../issue-0.1-scope-and-boundaries/define-census-scope.md),
 including a single treatment classification and supporting evidence or an
 open question.
 
-Inventory every production consumer of the current agentic package and identify
-what crosses the boundary: DTOs, state invocations, tool execution, persisted
-history, chat activity, and API results. Separate stable application
-responsibility from the agentic mechanism that will be replaced.
+Inventory the production consumers and dependencies around the current agentic
+package. Record DTOs, state invocations, tool execution, persisted history,
+chat activity, and API results that cross boundaries. Identify stable
+application responsibilities against accepted docs, separately from old
+agentic mechanisms that the rebuild replaces.
 
 ## Tasks
 

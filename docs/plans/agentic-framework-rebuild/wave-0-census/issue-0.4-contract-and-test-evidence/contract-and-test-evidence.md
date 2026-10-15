@@ -60,9 +60,10 @@ or removal once the replacement behavior is specified.
 - Clarification is nested within execution and must preserve a resumable caller
   interaction. Current pending DTOs can originate from both AI-session and
   agentic-state result types; their ownership needs consolidation.
-- Tool call/provider transcript correlation is already represented in the AI
-  session layer and has regression tests. Compare its contracts to the user's
-  `ai_clients` reference implementation before choosing the rebuilt boundary.
+- Tool call/provider transcript correlation is represented in the current AI
+  session layer and has regression tests. Compare current callers and data
+  crossings with the required `ai_clients` target and canonical tool-calling
+  contract; do not reopen the client-layer selection.
 - The current source has `AgenticStateRunner`/`AgenticHistoryService`, whereas
   the target docs specify `BaseAgenticState`/`AgenticHistorySession`. Treat this
   as a genuine implementation gap to plan for, not as an already completed

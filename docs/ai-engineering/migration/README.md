@@ -6,10 +6,9 @@ work breakdown and wave/task sequencing live in the indexed
 
 ## Contents
 
-- [Reference client assessment](reference-ai-clients-assessment.md): what the
-  imported `ai_clients` package demonstrates, what must not be copied, and its
-  current repository status; claims about current callers must be verified by
-  the Wave 0 census before they drive implementation.
+- [Required client-layer target](reference-ai-clients-assessment.md): the
+  selected `ai_clients` package, its responsibilities, known discrepancies to
+  address against the canonical contracts, and its current integration status.
 - [Agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md):
   the current multi-wave planning entry point; Wave 0 is the only defined wave.
 

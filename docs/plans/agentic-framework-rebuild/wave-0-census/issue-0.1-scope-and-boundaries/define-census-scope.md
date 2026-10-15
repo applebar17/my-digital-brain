@@ -57,11 +57,12 @@ identify behavior worth extracting independently.
 - Relevant tests for runtime, tool bindings, history, chat rendering/activity,
   clarification continuation, ingestion stages, contracts, and graph writes.
 
-The user's `ai_clients` implementation is the technical reference baseline
-for the new agentic layer, not part of the old application pipeline census.
-Compare current boundaries with its stated DTO/tool-call behavior; do not
-replicate its files or inherit current agentic implementation structure by
-default.
+The user's `ai_clients` package is the required target client layer, not part
+of the old application-pipeline census. Compare active application/session
+boundaries against its provider-adapter and tool-loop responsibilities and the
+canonical DTO/runtime specifications. Focused corrections to the package are
+allowed where a concrete discrepancy is found; do not choose a competing
+client loop or inherit the old agentic structure by default.
 
 For the ingestion-specific inventories, paths are relative to
 `src/my_digital_brain/ingestion/`; `contracts/` and `extractors/` are literal

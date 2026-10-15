@@ -4,18 +4,21 @@
 
 **Binding framework specification.** An agentic state is a typed, reusable
 internal LLM conversation. It receives caller-selected context, carries out one
-purpose through the canonical AI client/runtime, and returns its result to the
-caller.
+purpose through the required `ai_clients` client layer, and returns its result
+to the caller.
 
 This framework is intentionally small. It does not define a fixed orchestrator,
 pipeline language, dependency-injection system, status model, or domain
 workflow. Specific ingestion, retrieval, clarification, and chat behavior is
 configured by the states that need it.
 
-The framework takes the user's `ai_clients` design as client-facing reference,
-but this specification does not select or authorize a production client
-implementation. Current-code inventory and implementation sequencing are
-tracked in the [agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md).
+`src/my_digital_brain/ai/ai_clients/` is the required target client layer, not
+merely an example. Its provider/adapter approach and `LLMInterfaceCore` are the
+base for this framework. Make only focused corrections where that package
+disagrees with the canonical DTO and runtime contracts; do not create a parallel
+client or tool loop. The target boundary and adoption notes are indexed in the
+[AI runtime migration docs](../migration/README.md). Current-code inventory and
+implementation sequencing are tracked in the [agentic framework rebuild plan](../../plans/agentic-framework-rebuild/README.md).
 
 ## Responsibility boundary
 
@@ -23,9 +26,10 @@ An agentic state composes an LLM client; it does not inherit from the client.
 
 | Component | Owns | Does not own |
 | --- | --- | --- |
-| `LLMInterfaceCore` / canonical replacement | provider request translation, provider transcript, tool-call loop, and provider-call ID pairing | domain-specific prompt construction or agent purpose |
-| `BaseAgenticState` | local invocation context, one request appended to local history, client request assembly, and state result normalization | provider-specific tool-message protocol or a second tool loop |
-| Concrete state | recurring system-prompt, toolbox, request, and output choices for one purpose | unrelated orchestration or provider configuration |
+| `LLMInterfaceCore` in the required `ai_clients` layer | request parameter management, provider invocation through an adapter, iterative tool-call execution, and provider-call ID pairing | domain-specific prompt construction or agent purpose |
+| Provider adapter | OpenAI/Azure-specific request and response translation to/from client contracts | agentic-state policy, tool selection, or another tool loop |
+| `BaseAgenticState` | local invocation context, one request appended to local history, client call assembly, and state result normalization | provider parameter management, provider protocol handling, or a second tool loop |
+| Concrete state | recurring system prompt, typed toolbox, request, and output choices for one purpose | unrelated orchestration or provider configuration |
 | Invoker | chooses direct invocation or tool registration, supplies appropriate history/context, and consumes the result | child state internals |
 
 This separation preserves the dependency direction defined by
@@ -77,10 +81,11 @@ Its sequential responsibility is:
 2. create the state-local transcript from its system prompt and supplied
    history;
 3. append the invocation request as one user message;
-4. ask the client to normalize the request, including the supplied toolbox and
-   optional structured-output request;
-5. invoke the client session through its `call(...)` entrypoint;
-6. map the canonical session outcome to an `AgenticStateResultDTO` for the
+4. pass the prepared client request, toolbox, and optional structured-output
+   request to `LLMInterfaceCore.call(...)`;
+5. let the client layer manage request parameters, provider calls, and any tool
+   loop using the supplied executable mapping;
+6. map the canonical client outcome to an `AgenticStateResultDTO` for the
    invoker.
 
 The base state never manually appends provider tool messages, allocates tool

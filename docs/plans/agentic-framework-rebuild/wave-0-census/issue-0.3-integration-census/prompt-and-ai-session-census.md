@@ -2,6 +2,12 @@
 
 **Status: In progress**
 
+The accepted prompt and AI-runtime documents define the target. This census
+maps current prompt IDs/templates and provider/session callers to the required
+`ai_clients` client layer. Record concrete package discrepancies and
+integration needs rather than treating current session code as a competing
+design.
+
 ## Prompts
 
 | File | Useful evidence | Do not carry forward by default | Initial disposition |
@@ -16,18 +22,34 @@
 
 ## Active AI-session/provider boundary
 
-| File/group | Useful evidence | What remains undecided | Initial disposition |
+| File/group | Useful evidence | Do not carry forward by default | Census outcome |
 | --- | --- | --- | --- |
-| `src/my_digital_brain/ai/session/contracts.py` | Current session request/result/tool-call/tool mapping DTOs. | Whether these contracts are used or replaced by the user's `ai_clients` package. | Compare to reference package contracts; no assumed port. |
-| `src/my_digital_brain/ai/session/runner.py` | Current tool-call iteration and continuation behavior. | Whether new states call this loop or the selected AI client directly. | Inspect correctness and caller boundary; candidate dependency, not assumed target. |
-| `src/my_digital_brain/ai/session/tool_executor.py` | Current backend mapping and tool result/error execution. | Whether it duplicates the desired `llm_core` mapping protocol. | Compare behavior and DTOs directly to reference package. |
-| `src/my_digital_brain/ai/session/continuation.py` | Session continuation serialization. | Persistence owner and whether state history/session owns continuation. | Inspect data lifecycle; avoid duplicate history/continuation managers. |
-| `src/my_digital_brain/ai/session/__init__.py` | Public session API. | Which package becomes canonical. | Update after the AI-client/runtime boundary decision. |
-| `src/my_digital_brain/ai/providers/`, `ai/client/`, `ai/models.py`, `ai/tools/` | Provider request/response schemas, SDK setup, tool spec and typed error/result structures. | Their retention/replacement scope relative to the user's reference package. | Census only direct dependencies and DTO mismatches; decision may need user input. |
+| `src/my_digital_brain/ai/ai_clients/` | Required target: `LLMInterfaceCore` parameter handling, adapter-based provider calls, and shared tool loop. | Existing loose or legacy implementation details that disagree with canonical DTO/protocol docs. | Confirm public call/tool contracts and record focused package corrections needed to match the docs. OpenAI/Azure are the initial adapter direction. |
+| `src/my_digital_brain/ai/session/contracts.py` | Current session request/result/tool-call/mapping DTOs crossing active application callers. | Treating these as canonical if they duplicate or conflict with the required client-layer contracts. | Map actual callers and required data to target client/state DTOs; retain only app-facing needs not owned by `ai_clients`. |
+| `src/my_digital_brain/ai/session/runner.py` | Current tool-call iteration, provider resumption, and terminal outcomes. | A second tool loop in agentic states or in parallel with the required client loop. | Compare behavior with canonical tool protocol; capture only integration requirements/discrepancies. |
+| `src/my_digital_brain/ai/session/tool_executor.py` | Current backend tool-name-to-callable execution path and error conversion. | Duplicate mapping/dispatch/serialization ownership beside typed client/tool contracts. | Map current executable dependencies; target tool execution stays in the required client loop. |
+| `src/my_digital_brain/ai/session/continuation.py` | Current persisted continuation representation and callers. | A separate continuation owner that duplicates the accepted state-history/client transcript contract. | Map storage boundary and state/client data crossing; identify any required focused adapter, not an alternate loop. |
+| `src/my_digital_brain/ai/session/__init__.py` | Active public session API imports. | Keeping an obsolete session API solely for compatibility after caller migration. | Inventory imports/callers to plan a clean transition to `ai_clients`; no client-selection decision remains. |
+| `src/my_digital_brain/ai/providers/`, `ai/client/`, `ai/models.py`, `ai/tools/` | Existing provider configuration, SDK use, schemas, and typed error/result dependencies. | Assuming this parallel client stack is the target or removing a capability without tracing a real consumer. | Map actual consumers and capabilities to required `ai_clients` adapters; flag concrete missing provider/service support for discussion. |
+
+## Accepted tool-cap behavior
+
+The target behavior is now defined in the canonical
+[tool-calling protocol](../../../../ai-engineering/runtime/tool-calling-protocol.md):
+the required `ai_clients` layer has a configurable tool-call cap with a
+configured default. Reaching it does not terminate the interaction. Calls that
+cannot be executed receive synthetic outputs paired to their original
+provider-issued IDs; the next provider request has no toolbox and produces the
+assistant response returned to the invoker. During the client census, record
+whether the current implementation matches this contract, including how its
+existing round cap and repeated-call guard affect the flow. Treat those
+implementation details as evidence, not as target policy.
 
 ## Completion output
 
 Produce a prompt ID → actual caller/state → version/template map and a concise
-comparison of the current AI-session/tool path with the user-provided
-`ai_clients` design. Do not choose a provider endpoint or port code during this
-census. Surface any decision needed before implementation-wave planning.
+integration map from active callers to the required `ai_clients` interface.
+Record concrete disagreements between the package and accepted DTO/provider/
+tool-loop docs as focused corrections. Do not port code or select an alternate
+client during this census; surface only capability/contract questions that the
+docs do not already answer.

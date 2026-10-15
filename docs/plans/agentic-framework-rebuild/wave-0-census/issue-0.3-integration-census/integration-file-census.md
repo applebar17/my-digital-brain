@@ -14,7 +14,7 @@ The following files were found importing `my_digital_brain.agentic` directly.
 Confirm the list with a repository-wide import/call-site search and inspect
 each implementation before assigning final dispositions.
 
-| Current file / role | Useful signal | Do not port | Treatment (with evidence/open point) |
+| Current file | Integration responsibility / useful signal | Initial treatment (verify against docs and callers) |
 | --- | --- | --- |
 | `src/my_digital_brain/chat/activity.py` | User-visible activity labels are product behavior; current state-ID mapping is an implementation dependency. | Retain UX intent; decouple from current state enum. |
 | `src/my_digital_brain/chat/agentic_renderer.py` | Maps run/interruptions to API chat response, clarification packet, and diagnostics. | Retain API behavior/DTO contract; rebuild mapping against new result DTOs. |
@@ -55,20 +55,26 @@ The linked tasks must inspect each relevant file individually, record its
 disposition and rationale, and add newly discovered callers. Keep the source
 inventory in this plan; do not add migration banners to production files.
 
-## Observed control-flow outline (to verify against tests and all branches)
+## Observed current control-flow outline (evidence only)
+
+This records the current implementation path, not the target architecture. The
+target boundaries are defined in the linked AI-engineering specifications and
+the accepted application/workflow documentation.
 
 ```text
 Chat route/channel
   -> ChatRuntime persists/loads conversation and calls AgenticRuntime
   -> AgenticRuntime invokes AgenticStateRunner for a configured state
-  -> provider-neutral AI session executes model/tool turns
+  -> current provider-neutral `ai/session` executes model/tool turns
   -> tool binding invokes deterministic graph/retrieval/clarification capability
      or starts a nested child frame/state
   -> AgenticRunResult / interruption is translated to chat response or persisted
 ```
 
-Ingestion is a separate deterministic sequence that invokes LLM-backed
-reasoning/planning/extraction and resolution at selected stages:
+The current ingestion implementation follows a deterministic sequence that
+invokes LLM-backed reasoning/planning/extraction and resolution at selected
+stages. Treat this sequence as evidence to reconcile with the accepted
+workflow documentation, not as target truth:
 
 ```text
 source -> graph-context pack -> reasoning -> entity plan -> identity lookup
@@ -86,9 +92,9 @@ owner per continuation contract.
 
 The documented `BaseAgenticState` and `AgenticHistorySession` abstractions are
 not implemented under those names in this source tree: current entry points
-include `AgenticStateRunner` and `AgenticHistoryService`. This is a target/code
-mismatch to carry into migration design, not evidence that the target docs or
-the current implementation should be copied as-is.
+include `AgenticStateRunner` and `AgenticHistoryService`. Record this as an
+implementation gap against the target docs. Do not revise the target contract
+to fit the old implementation.
 
 ## Per-file record format
 
