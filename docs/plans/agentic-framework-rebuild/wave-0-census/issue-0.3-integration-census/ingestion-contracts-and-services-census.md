@@ -2,65 +2,101 @@
 
 **Status: In progress**
 
-## Principle
+## Current consumers and boundary
 
-Existing DTOs are evidence about required data, not automatically the new
-contract. Crosswalk their fields to the domain/API/graph owner and identify
-which deterministic services can stay outside the new agentic package.
+The ingestion package is not one indivisible agentic runtime. Current
+in-repository consumers cross several boundaries:
 
-## Deterministic/context/build/write modules
+- `api/routes/graph.py` uses ingestion vector-scope/retrieval DTOs for the graph
+  API.
+- `rag/` uses ingestion vector scopes and ingestion results in retrieval and
+  graph vectorization.
+- `graph/context_package.py` uses `RunReferenceRegistry` to create local aliases
+  while building a graph-context response.
+- `clarification/toolbox.py` uses ingestion reference kinds and deterministic
+  identity lookup when resolving clarification context.
+- The separate `ingestion.IngestionService` collaborators are exercised by
+  tests and UAT scripts; no in-repository application call path to that service
+  was found. See the [orchestration census](ingestion-orchestration-file-census.md).
 
-| File | Useful behavior or data meaning | What to verify / not duplicate | Initial disposition |
-| --- | --- | --- | --- |
-| `assembly.py` | Candidate data assembled into ingestion graph. | Ownership and deterministic merge semantics. | Candidate deterministic service; verify before retention. |
-| `candidate_context.py` | Bounded hydration of candidate context. | Bound/limit policy and reference mapping. | Candidate reusable context service; retype boundary. |
-| `context_rendering.py` | Human/model-facing rendering of graph context packs. | Overlap with `RefContext` rendering and prompt context rendering. | Preserve only distinct presentation behavior. |
-| `graph_context_pack.py` | Retrieves and compacts graph context for one ingestion source. | Search policy versus agent decision and model-facing projection. | Candidate deterministic retrieval/context builder. |
-| `enrichment.py` | Enriches extracted memory logs with planned tasks. | Whether data comes from model output or deterministic enrichment. | Keep functional requirements; separate model and deterministic fields. |
-| `validation.py` | Candidate and write-plan validation. | Hard stops versus recoverable model feedback; duplicate graph validation. | Preserve deterministic persistence safety; make model-repair errors actionable. |
-| `executor.py` | Applies a validated write plan through graph services. | Transactionality, idempotency, ordering, and failure results. | Strong deterministic capability candidate; decide independently of agentic rebuild. |
-| `write_plan.py` | Converts accepted candidate graph to graph mutations. | Mapping completeness and canonical graph DTO alignment. | Inspect deterministic mapping; retain only if contracts remain canonical. |
-| `write_plan_helpers.py` | Shared write-plan mapping helpers. | Duplicate or generic conversion logic. | Candidate helper only after call-site review. |
-| `write_plan_serializers.py` | Write-plan serialization. | Whether serializers duplicate Pydantic API serialization. | Retain only required persistence/wire format. |
-| `exceptions.py` | Ingestion-specific error categories. | Duplicate generic runtime/tool errors. | Preserve stable application error meaning; separate model-recoverable validation. |
-| `enums.py` | Ingestion/write-plan statuses. | Leaking internal stages as public API statuses. | Reassign values to canonical contract owner. |
-| `extractors/__init__.py` | Extractor public interface. | Old extractor assembly coupling. | Rebuild exports. |
-| `extractors/base.py` | Structured focused-LLM extraction execution. | Second tool/session loop or provider plumbing. | Determine if extraction becomes state or typed operation; do not port loop. |
-| `extractors/entity.py` | Entity extraction fields and instructions. | Duplicate entity schema outside graph DTO owner. | Extract field semantics; regenerate explicit output DTO. |
-| `extractors/relationship.py` | Relationship extraction. | Relationship enum drift versus graph ontology. | Extract functional relation semantics; align to canonical ontology. |
-| `extractors/relationship_context.py` | Relationship context extraction. | Difference from relationship/relationship-state contract. | Clarify distinct output need; merge or retire if duplicate. |
-| `extractors/claim.py` | Claim extraction fields. | Graph DTO field alignment. | Extract needed behavior/fields. |
-| `extractors/perception.py` | Perception extraction fields. | Difference from claims/context records. | Confirm product/domain distinction; preserve only if needed. |
-| `extractors/profile.py` | Profile memory extraction. | Profile memory storage and privacy contract ownership. | Cross-reference network/privacy requirements; retype if retained. |
-| `extractors/metadata_patch.py` | Node metadata patch extraction. | Duplicate node-patch generation and graph mutation schemas. | Compare with graph patch DTOs; one source of truth. |
+This distinction matters: a DTO or deterministic capability may support a
+real API/RAG/graph boundary even when its surrounding ingestion service is not
+the active chat runtime. Dispositions below use the [shared census
+classification](../issue-0.1-scope-and-boundaries/define-census-scope.md) and
+are evidence-based migration proposals, not authorization to retain old
+implementation structure.
+
+## Deterministic, context, build, and write modules
+
+| Current file | Current role | Useful signal | Do not port | Treatment |
+| --- | --- | --- | --- | --- |
+| `src/my_digital_brain/ingestion/assembly.py` | Combines drafts and plans into a candidate memory graph. | Candidate grouping and merge behavior before validation. | Assume the current aggregate is an LLM or graph-storage contract. | Review behavior for migration — retain only the needed candidate-building semantics. |
+| `src/my_digital_brain/ingestion/candidate_context.py` | Hydrates bounded graph details for identity candidates. | Evidence selection and context-size bounds. | Candidate hydration rules hidden in a state or assumed to resolve identity automatically. | Review behavior for migration — keep as a deterministic capability only if an accepted state needs it. |
+| `src/my_digital_brain/ingestion/context_rendering.py` | Renders ingestion graph-context packs for different purposes. | Distinct audience-specific context facts and rendering behavior. | Duplicate reference rendering or prompt templating. | Review behavior for migration — compare against the canonical context/reference renderer and keep one owner per representation. |
+| `src/my_digital_brain/ingestion/graph_context_pack.py` | Builds graph context for an ingestion source using graph/vector retrieval. | Retrieval inputs, bounded result selection, and source-context composition. | Assume its current packet is the new model prompt contract. | Review behavior for migration — separate required retrieval behavior from model-facing projection. |
+| `src/my_digital_brain/ingestion/enrichment.py` | Adds planned-task information to extracted memory-log data. | Which fields are derived deterministically versus generated by a model. | Silent field invention or duplicated enrichment in extraction and persistence. | Review behavior for migration — retain only explicit, contract-backed derivations. |
+| `src/my_digital_brain/ingestion/validation.py` | Validates candidate graphs and graph write plans. | Persistence-safety checks and actionable validation findings. | Duplicate checks or opaque hard stops that prevent model repair where repair is valid. | Review behavior for migration — keep required storage safety and align model-repair errors with accepted policy. |
+| `src/my_digital_brain/ingestion/executor.py` | Applies a graph write plan through graph services. | Mutation ordering, transactional boundary, and write outcomes. | Hidden model decisions or untyped mutation arguments in the executor. | Review behavior for migration — assess as a deterministic graph capability independent of the old pipeline. |
+| `src/my_digital_brain/ingestion/write_plan.py` | Maps candidate/resolution outputs into graph writes. | Explicit candidate-to-persistence mapping and action ordering. | Treat the model proposal as equivalent to an accepted durable mutation. | Review behavior for migration — preserve explicit mapping only where it matches canonical graph DTOs. |
+| `src/my_digital_brain/ingestion/write_plan_helpers.py` | Supplies helper transformations for write-plan construction. | Concrete shared mappings and their call sites. | Generic or duplicated conversion helpers without a single owner. | Review behavior for migration — keep only referenced, non-duplicated mappings. |
+| `src/my_digital_brain/ingestion/write_plan_serializers.py` | Serializes write-plan objects for current consumers. | Any required persisted or wire representation. | A second serialization contract duplicating Pydantic/domain serializers. | Review behavior for migration — retain only a verified storage/API serialization need. |
+| `src/my_digital_brain/ingestion/exceptions.py` | Defines ingestion-specific failures. | User/application meaning of ingestion failures. | Duplicate generic tool/runtime exceptions. | Review behavior for migration — map only stable application error meanings to the owning layer. |
+| `src/my_digital_brain/ingestion/enums.py` | Defines ingestion, extraction, and write-plan vocabulary. | Values consumed by graph/RAG/API or required for domain behavior. | Internal stage identifiers exposed as product statuses without a need. | Review behavior for migration — retain externally required values at their canonical owner. |
+| `src/my_digital_brain/ingestion/extractors/__init__.py` | Exports the focused extraction implementations. | Current extractor capability names used by tests/UAT. | Re-exporting a parallel extractor hierarchy after states own LLM calls. | Rebuild from specification — expose only the target extraction-state or typed operation surface. |
+| `src/my_digital_brain/ingestion/extractors/base.py` | Runs focused structured extraction through the current provider/router. | Extraction request/result semantics and provider configuration needs. | A second provider/tool loop beside `ai_clients`. | Rebuild from specification — place model invocation in the accepted state/client boundary. |
+| `src/my_digital_brain/ingestion/extractors/entity.py` | Extracts entity drafts from a source and task. | Explicit entity fields and source-evidence behavior. | A second entity schema or implicit mapping to persisted nodes. | Rebuild from specification — define output DTOs from accepted graph/application contracts. |
+| `src/my_digital_brain/ingestion/extractors/relationship.py` | Extracts relationship drafts. | Relationship endpoint/type/evidence requirements. | Relationship vocabulary that drifts from the supported graph ontology. | Rebuild from specification — align typed output to the canonical relationship vocabulary. |
+| `src/my_digital_brain/ingestion/extractors/relationship_context.py` | Extracts relationship-context drafts. | The target workflow distinguishes a relationship context object from the durable relationship edge. | Old extractor implementation and DTO wiring. | Rebuild from specification — keep the documented context-vs-edge distinction and map to the explicit write-state contract. |
+| `src/my_digital_brain/ingestion/extractors/claim.py` | Extracts claim drafts. | Claim evidence and field semantics. | Treating draft shape as persisted graph shape. | Rebuild from specification — map required claim output to the graph contract. |
+| `src/my_digital_brain/ingestion/extractors/perception.py` | Extracts perception drafts. | Perception meaning and source attribution. | Duplicate claim/context semantics under another name. | Review behavior for migration — verify the distinct domain meaning before defining state output. |
+| `src/my_digital_brain/ingestion/extractors/profile.py` | Extracts profile-memory updates. | Profile update semantics and privacy-relevant fields. | An agent-owned storage schema or unreviewed profile write policy. | Review behavior for migration — align to the accepted profile/domain and privacy contracts. |
+| `src/my_digital_brain/ingestion/extractors/metadata_patch.py` | Extracts metadata patch proposals for existing nodes. | Explicit property-level patch semantics. | Dynamic or generic properties unsupported by graph DTOs. | Rebuild from specification — derive named output fields from canonical graph patch contracts. |
 
 ## Contract files
 
-| File | Data/behavior to extract | What not to assume | Initial disposition |
-| --- | --- | --- | --- |
-| `contracts/__init__.py` | Current DTO export map. | Export map equals target ownership. | Rebuild exports after field crosswalk. |
-| `contracts/base.py` | Pydantic validation/config conventions. | Separate `IngestionModel` remains necessary. | Compare to canonical DTO base; consolidate. |
-| `contracts/source.py` | Source text/provenance and run identifiers. | Internal IDs are model-facing or all source fields belong in prompts. | Preserve required source/API boundary fields; project context separately. |
-| `contracts/shared.py` | Temporal/affective common fields. | Shared model implies shared owner or required on every object. | Crosswalk with network/domain DTOs; avoid generic reuse without need. |
-| `contracts/context.py` | Graph context item/pack/view shapes. | Current packet shape is an API or prompt contract. | Extract required context fields and render goals. |
-| `contracts/planning.py` | Extraction task/plan DTOs. | Planning artifact necessarily executes directly. | Retain task meaning; new state output DTO should match accepted workflow. |
-| `contracts/refined_drafts.py` | Reasoning and phased entity/memory/relationship plans. | Current ref/action execution semantics are target. | High-value workflow evidence; redesign each handoff with explicit typed contracts. |
-| `contracts/drafts.py` | Structured drafts for entities, relations, claims, perceptions, patches. | Draft and persisted DTO are interchangeable. | Keep separation if functionally needed; make mapping explicit. |
-| `contracts/candidates.py` | Candidate graph aggregates and entity/relationship records. | Candidate records belong to LLM runtime. | Determine application ownership and required lifecycle; candidate boundary likely remains useful. |
-| `contracts/memory_logs.py` | Memory-log data, source, links, updates, media refs. | Any field can be generated without corresponding graph/API storage. | Map each field to graph persistence and frontend display contract. |
-| `contracts/identity_resolution.py` | Candidate lookup, local identity refs, proposal/status types. | Second ref/status model can coexist with agentic `RefContext`. | Compare field-by-field; select one owner for local refs. |
-| `contracts/resolution.py` | Resolved-entity map and status. | Resolution proposal, resolution decision, and map have identical roles. | Preserve distinctions only where stage contracts require them. |
-| `contracts/resolution_actions.py` | Ordered resolution steps and available action names. | Action planning and execution are same contract. | Extract exact sequence/tool requirements; rebuild DTO-first. |
-| `contracts/results.py` | Ingestion outcome and context package. | Internal execution details belong in outward API result. | Preserve user/API-visible status; replace runtime internals. |
-| `contracts/pending.py` | Pending clarification and resume information. | Old continuation IDs/snapshots are target API. | Preserve user-continuation needs; derive storage contract separately. |
-| `contracts/validation.py` | Validation issues and result shape. | Errors should deterministically stop model work. | Preserve diagnostics; define recoverable model feedback per accepted policy. |
-| `contracts/write_plan.py` | Node, relationship, and graph write plan DTOs. | Planning proposal equals accepted/durable mutation. | Preserve explicit mapping if still used; tie fields to graph write DTOs. |
-| `contracts/vector_scopes.py` | Vector retrieval scopes, strategy, hit and request data. | Agentic rebuild owns vector retrieval schema. | Likely deterministic retrieval boundary; assess independent owner. |
+| Current file | Current role | Useful signal | Do not port | Treatment |
+| --- | --- | --- | --- | --- |
+| `src/my_digital_brain/ingestion/contracts/__init__.py` | Re-exports the ingestion DTO surface. | Existing imports used by graph API, RAG, clarification, tests, and UAT. | Assume the current export list is the target package organization. | Keep/adapt integration boundary — retain only DTO exports required by verified consumers. |
+| `src/my_digital_brain/ingestion/contracts/base.py` | Defines common Pydantic behavior for ingestion models. | Existing validation/config conventions that affect serialized data. | A specialized base class without a concrete target need. | Review behavior for migration — compare actual behavior with canonical DTO conventions. |
+| `src/my_digital_brain/ingestion/contracts/source.py` | Models source evidence, source records, and extraction-run identity. | Provenance and source fields needed across ingestion stages. | Expose internal run identifiers to the model or API without purpose. | Review behavior for migration — preserve required provenance at the correct application boundary. |
+| `src/my_digital_brain/ingestion/contracts/shared.py` | Holds shared temporal and affective field models. | Domain field meaning and optionality. | Share a model merely because fields look similar. | Review behavior for migration — assign fields to their canonical domain owners. |
+| `src/my_digital_brain/ingestion/contracts/context.py` | Defines graph context items, packs, and rendered views. | Facts and reference context needed by specific ingestion steps. | Assume every context shape is an API or prompt contract. | Review behavior for migration — retain required context semantics and render through canonical context docs. |
+| `src/my_digital_brain/ingestion/contracts/planning.py` | Defines extraction task and plan data. | Task intent and task-to-extractor association. | Assume a plan automatically executes or has model-independent authority. | Rebuild from specification — align artifacts to the agreed workflow and typed tool/state boundaries. |
+| `src/my_digital_brain/ingestion/contracts/refined_drafts.py` | Defines reasoning and phased entity/memory/relationship plan artifacts. | Current stage handoffs, fields, and reference semantics. | Carry current action/state mechanics into the target by default. | Rebuild from specification — derive DTOs from accepted workflow behavior and reference context. |
+| `src/my_digital_brain/ingestion/contracts/drafts.py` | Defines generated drafts for entities, relations, claims, perceptions, and patches. | Explicit structured-output field candidates and source evidence. | Treat generated drafts as candidates, graph nodes, or persisted records interchangeably. | Rebuild from specification — maintain explicit output-to-domain mapping. |
+| `src/my_digital_brain/ingestion/contracts/candidates.py` | Defines assembled candidate graph objects and batches. | Data needed between extraction, resolution, validation, and write planning. | Place candidate aggregates in the generic AI-client layer. | Review behavior for migration — keep only as an application/workflow contract if the target sequence needs it. |
+| `src/my_digital_brain/ingestion/contracts/memory_logs.py` | Defines memory-log drafts, stored-shaped records, links, media, and node patches. | Field semantics that must align with graph persistence and frontend rendering. | Ask models for or store fields with no matching graph/API contract. | Review behavior for migration — crosswalk fields to graph storage and frontend contracts before retaining. |
+| `src/my_digital_brain/ingestion/contracts/identity_resolution.py` | Defines lookup requests/results, candidate evidence, references, and proposals. | What the model may resolve and what deterministic lookup returns. | Maintain a second local-reference/status model beside the canonical reference context. | Rebuild from specification — align lookup/proposal DTOs to the accepted reference and tool contracts. |
+| `src/my_digital_brain/ingestion/contracts/resolution.py` | Defines resolution decisions, results, and resolved-entity mappings. | Distinct roles among decision, result, and final reference map. | Collapse or duplicate stage outputs without call-path evidence. | Rebuild from specification — keep only explicit artifacts needed by the agreed workflow. |
+| `src/my_digital_brain/ingestion/contracts/resolution_actions.py` | Defines ordered resolution actions and tool-action batches. | Current action inputs, ordering, and execution effects. | Treat planning an action and applying a graph mutation as one untyped operation. | Rebuild from specification — map each required action to a typed tool/service boundary. |
+| `src/my_digital_brain/ingestion/contracts/results.py` | Defines ingestion results and context packages. | Result data used by callers, especially vectorization and reporting. | Leak internal orchestration traces as the outward result contract. | Keep/adapt integration boundary — preserve verified consumer fields and rework internal details. |
+| `src/my_digital_brain/ingestion/contracts/pending.py` | Defines pending clarification/continuation data. | User answer association and data needed to resume safely. | Bind durable continuation to obsolete state/frame internals without a requirement. | Review behavior for migration — map required resume data to canonical history/session contracts. |
+| `src/my_digital_brain/ingestion/contracts/validation.py` | Defines validation issues and results. | Human-readable diagnostics and validity data. | Validation failures that terminate model work without a recoverable error path. | Review behavior for migration — keep needed diagnostics and align model-facing repair errors to accepted policy. |
+| `src/my_digital_brain/ingestion/contracts/write_plan.py` | Defines graph node/relationship writes and their plan. | Explicit durable mutation data and write ordering. | Treat a generated proposal as an already accepted graph write. | Keep/adapt integration boundary — align required write DTOs with graph service contracts. |
+| `src/my_digital_brain/ingestion/contracts/vector_scopes.py` | Defines vector-scope configuration, requests, hits, and retrieval results. | RAG/API fields and vector retrieval strategy used outside the old ingestion runtime. | Make vector retrieval contracts dependent on agentic-state implementation. | Keep/adapt integration boundary — preserve verified RAG/API behavior and maintain one canonical DTO owner. |
 
-## Completion output
+## Evidence and open points
 
-Inspect validators, graph writes, service callers, and tests before confirming
-any “retain” candidate. In particular, explain the ownership and field mapping
-between ingestion drafts/candidates, graph write models, and stored graph
-objects. Record field-level uncertainty for the later contract-definition
-work; do not expand Wave 0 into redesigning those DTOs.
+The inventory covers all 39 files in the two sections above. The repository
+search confirms direct consumers under `api/routes/graph.py`, `graph/`,
+`rag/`, and `clarification/`; focused tests exercise assembly, validation,
+identity lookup, candidate hydration, extraction, reference handling, and
+write execution. Issue 0.4 will map individual test cases to claimed behavior.
+
+The functional distinction between a durable relationship edge and a
+relationship-context object is already defined in the
+[workflow architecture](../../../../architecture/deterministic-agentic-workflows.md)
+and [memory/context write-state contract](../../../../ai-engineering/application-states/ingestion/memory-context-write-state.md);
+the census does not reopen that product decision.
+
+One integration question remains: `RunReferenceRegistry` is used to build
+graph-context response aliases, while the canonical `ReferenceContext` is an
+internal model-context contract. The frontend type includes `alias_map`, but
+the current retrieval-evidence panel renders matched records rather than that
+map. Trace whether any other consumer depends on `alias_map` before deciding
+whether the registry or output field can be retired or replaced.
+
+No field-level DTO redesign is performed in this census. The relevant graph,
+RAG, ingestion, and clarification contract owners are cross-referenced in the
+[system architecture](../../../../architecture/system-architecture.md) and
+the [AI engineering index](../../../../ai-engineering/README.md).
