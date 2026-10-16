@@ -10,28 +10,33 @@ must continue to work, and the internal dependency that should be replaced.
 
 ## Direct-import files
 
-The following files were found importing `my_digital_brain.agentic` directly.
-Confirm the list with a repository-wide import/call-site search and inspect
-each implementation before assigning final dispositions.
+A repository search of `src/my_digital_brain/` confirms 15 production files
+directly importing `my_digital_brain.agentic`. The table is the initial
+file-by-file assessment; the linked subsystem inventories continue the review
+of callers and boundary details. Treatment labels follow the shared
+[census classification](../issue-0.1-scope-and-boundaries/define-census-scope.md).
 
-| Current file | Integration responsibility / useful signal | Initial treatment (verify against docs and callers) |
-| --- | --- | --- |
-| `src/my_digital_brain/chat/activity.py` | User-visible activity labels are product behavior; current state-ID mapping is an implementation dependency. | Retain UX intent; decouple from current state enum. |
-| `src/my_digital_brain/chat/agentic_renderer.py` | Maps run/interruptions to API chat response, clarification packet, and diagnostics. | Retain API behavior/DTO contract; rebuild mapping against new result DTOs. |
-| `src/my_digital_brain/chat/factory.py` | Composition root constructs provider, router, history, state runner, and runtime. | Retain application composition boundary; replace agentic wiring. |
-| `src/my_digital_brain/chat/runtime.py` | Chat session lifecycle, messages, persistence, clarification answer/resume, and root invocation. | Keep stable chat/API/persistence responsibilities; replace agentic runtime calls. |
-| `src/my_digital_brain/clarification/context_projection.py` | Projects caller doubts/context into clarification-facing entity/reference details. | Retain clarified functional input needs; rebuild projection DTO boundary. |
-| `src/my_digital_brain/clarification/toolbox.py` | Candidate lookup/context/question capabilities and human-facing question construction. | Preserve accepted clarification behavior and backend capabilities; rebuild typed toolbox integration. |
-| `src/my_digital_brain/ingestion/identity_lookup.py` | Deterministic identity search and local-ref registration against graph services. | Keep deterministic identity behavior only if independently useful; replace agentic RefContext coupling. |
-| `src/my_digital_brain/ingestion/pending.py` | Converts session/agent results into resumable ingestion pending results. | Preserve pause/resume outcomes; replace current runtime-specific adapters. |
-| `src/my_digital_brain/ingestion/planning_contexts.py` | Builds state-specific planning context from source, reasoning, and hydrated graph context. | Preserve functional context requirements; rebuild DTO assembly for new states. |
-| `src/my_digital_brain/ingestion/planning_guidelines.py` | Shared planning-specific behavioral guidance. | Re-evaluate prompt ownership; avoid Python constants duplicating prompt templates. |
-| `src/my_digital_brain/ingestion/prompt_builders.py` | Formats state context and history into prompts for ingestion calls. | Preserve necessary context facts; rebuild using the versioned prompt/context boundary. |
-| `src/my_digital_brain/ingestion/resolution_agent.py` | Calls an LLM-backed resolution proposal flow with read capabilities. | Preserve purpose and output requirements; remove current agentic runtime/tool coupling. |
-| `src/my_digital_brain/ingestion/resolution_toolboxes.py` | Declares the resolution agent's model-visible backend tools. | Preserve required capabilities; rebuild as typed tool definitions. |
-| `src/my_digital_brain/ingestion/runtime_service.py` | Ingestion entry point and mixin composition, calls reasoning/planning/extraction and deterministic services. | High-value sequence evidence; classify deterministic services separately and rebuild agentic orchestration. |
-| `src/my_digital_brain/ingestion/runtime_stages.py` | Reasoning, planning, extraction, and handoff stages. | Functional sequencing/context evidence; do not carry current mixin/state-runner implementation forward by default. |
-| `src/my_digital_brain/logging.py` | Configures logger names and levels, including current agentic namespace. | Retain app logging policy; update logger names after package cutover. |
+| Current file | Current role | Useful signal | Do not port | Treatment |
+| --- | --- | --- | --- | --- |
+| `src/my_digital_brain/chat/activity.py` | Maps agentic state IDs to chat activity copy. | User-facing progress labels and intent. | Coupling product copy to the old state enum. | Review behavior for migration — remap reviewed activity to target states. |
+| `src/my_digital_brain/chat/agentic_renderer.py` | Converts run results into chat responses, clarification packets, and diagnostics. | Observable chat response semantics and API mapping. | Old run-result DTO as the target contract. | Keep/adapt integration boundary — preserve chat-facing contract and adapt mapping. |
+| `src/my_digital_brain/chat/factory.py` | Composes providers, history, state runner, and chat runtime. | Application composition boundary and dependencies. | Construction of the old agentic runtime stack. | Keep/adapt integration boundary — replace only the agentic wiring. |
+| `src/my_digital_brain/chat/runtime.py` | Owns chat session lifecycle, persistence, invocation, and clarification resume. | Stable session and human-interaction behavior. | Current agentic frame/history types at the application boundary. | Keep/adapt integration boundary — retain chat lifecycle, reconnect to target runtime. |
+| `src/my_digital_brain/clarification/context_projection.py` | Projects references and caller context for clarification. | Information a clarification interaction needs from its invoker. | Dependence on the old `RefContext` and enum types. | Review behavior for migration — retain required context meaning with target DTOs. |
+| `src/my_digital_brain/clarification/toolbox.py` | Implements clarification lookup/context/question capabilities. | Human-facing question behavior and deterministic lookup capabilities. | Old reference types and agentic-specific tool dispatch. | Review behavior for migration — preserve accepted capabilities, rebind to typed tools. |
+| `src/my_digital_brain/ingestion/identity_lookup.py` | Performs deterministic graph identity lookup and updates local references. | Candidate lookup behavior and the graph-to-model reference boundary. | Old `RefContext` implementation as the new framework contract. | Review behavior for migration — assess deterministic lookup independently from agentic refs. |
+| `src/my_digital_brain/ingestion/pending.py` | Maps runtime results into persisted ingestion pending interactions. | Pause/resume data required by the application. | Old runtime result DTO as the durable interaction contract. | Review behavior for migration — preserve required continuation behavior with target DTOs. |
+| `src/my_digital_brain/ingestion/planning_contexts.py` | Builds planning contexts from source, conversation, and graph candidates. | Functional context supplied to each planning step. | Existing state-specific DTO ownership as target schema. | Review behavior for migration — map needed context to accepted DTOs. |
+| `src/my_digital_brain/ingestion/planning_guidelines.py` | Constructs purpose-specific planning guidance. | Behavioral instructions and distinctions among planning purposes. | Duplicate or implicit prompt ownership in Python model classes. | Review behavior for migration — retain only approved guidance in versioned prompts. |
+| `src/my_digital_brain/ingestion/prompt_builders.py` | Builds ingestion prompt messages and projects history/context. | Required context facts and history projection behavior. | A second prompt/version or history ownership mechanism. | Review behavior for migration — reconcile useful projection with canonical prompt/history docs. |
+| `src/my_digital_brain/ingestion/resolution_agent.py` | Runs identity-resolution and clarification-related model/tool behavior. | Resolution purpose, decisions, and caller-visible outcomes. | Existing agentic runtime/tool implementation. | Rebuild from specification — use census evidence to define the replacement state/tool boundary. |
+| `src/my_digital_brain/ingestion/resolution_toolboxes.py` | Declares model-facing resolution tool schemas. | Required resolution capabilities and their semantic inputs. | Current schemas as an independent contract source. | Review behavior for migration — retain needed capability meaning, regenerate from typed DTOs. |
+| `src/my_digital_brain/ingestion/runtime_service.py` | Composes ingestion stages and deterministic collaborators. | End-to-end sequence and deterministic service seams. | Current mixin composition as the target workflow design. | Review behavior for migration — preserve reviewed sequence; recompose from accepted workflow docs. |
+| `src/my_digital_brain/ingestion/runtime_stages.py` | Implements reasoning, planning, extraction, and handoffs. | Stage order, supplied context, and handoff data. | Current stage/mixin implementation and agentic DTO wiring. | Review behavior for migration — retain functional requirements, rebuild against target states. |
+
+`src/my_digital_brain/logging.py` is not a direct importer: it configures the
+`my_digital_brain.agentic` logger namespace. It is listed separately below as
+an adjacent operational integration.
 
 ## Additional execution-path packages
 
@@ -45,6 +50,7 @@ outside the rebuild.
 | `chat/`, `api/routes/chat.py`, `clarification/` | API/channel callers, session/message persistence, chat rendering/activity, clarification questions/answers, and resume behavior. | Detailed file-by-file task below; distinguish stable API/channel/data contracts from agentic result/runtime coupling. |
 | `ingestion/` | Source through reasoning/planning/extraction/resolution, clarification, graph writes, pause/resume, vectorization, and UAT paths. | Detailed file-by-file tasks below; separately assess deterministic service behavior and agentic orchestration. |
 | `prompts/` | Prompt IDs, versions, registry/templates, ingestion/clarification guidance. | Detailed file-by-file task below; preserve approved behavior and version provenance, remap to new states, retire unused prompts. |
+| `src/my_digital_brain/logging.py` | Configures the logger name for the old agentic namespace; it does not import the package. | Retain application logging policy; update/remove the namespace when the new package boundary is established. |
 | `ai/session/` | Active provider-neutral tool/session loop used by the current state runner. | Detailed boundary assessment below; decide retain/wrap/replace only after comparison with the user’s AI-client package. |
 | `ai/providers/`, `ai/client/`, `ai/models.py`, `ai/tools/` | Provider DTOs, completion transport, tool specs/execution, and SDK setup beneath agentic code. | Assess the integration boundary and direct contracts; don’t expand this into an AI-client rebuild without evidence. |
 
@@ -98,9 +104,9 @@ to fit the old implementation.
 
 ## Per-file record format
 
-For every file, document the production caller, agentic imports, DTOs crossing
-the boundary, observable behavior that must remain, what should be replaced,
-and the proposed disposition. Include relevant callers that do not import the
-package directly if the call graph reveals them. Do not label stable routes,
-API DTOs, or storage responsibilities as disposable merely because their
-current implementation calls the agentic runtime.
+Use the shared four-field assessment for every source file: current role,
+useful signal, do not port, and one treatment classification with a concise
+rationale or open question. Add caller/import details only as evidence needed
+to support those fields; do not create a second assessment template. Do not
+label stable routes, API DTOs, or storage responsibilities as disposable
+merely because their current implementation calls the agentic runtime.

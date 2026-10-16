@@ -48,7 +48,8 @@ identify behavior worth extracting independently.
 ## Initial scope discovered
 
 - 23 files under `src/my_digital_brain/agentic/` (core and tools).
-- 16 other production files directly importing `my_digital_brain.agentic`.
+- 15 other production files directly importing `my_digital_brain.agentic`;
+  `logging.py` configures the namespace but does not import the package.
 - The connected `src/my_digital_brain/ingestion/` package (64 files), because
   it contains both the current multi-stage agentic workflow and deterministic
   extraction/context/graph-write collaborators.
