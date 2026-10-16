@@ -1,6 +1,6 @@
 # Census ingestion contracts and deterministic collaborators
 
-**Status: In progress**
+**Status: Complete**
 
 ## Current consumers and boundary
 
@@ -73,12 +73,12 @@ implementation structure.
 | `src/my_digital_brain/ingestion/contracts/resolution.py` | Defines resolution decisions, results, and resolved-entity mappings. | Distinct roles among decision, result, and final reference map. | Collapse or duplicate stage outputs without call-path evidence. | Rebuild from specification — keep only explicit artifacts needed by the agreed workflow. |
 | `src/my_digital_brain/ingestion/contracts/resolution_actions.py` | Defines ordered resolution actions and tool-action batches. | Current action inputs, ordering, and execution effects. | Treat planning an action and applying a graph mutation as one untyped operation. | Rebuild from specification — map each required action to a typed tool/service boundary. |
 | `src/my_digital_brain/ingestion/contracts/results.py` | Defines ingestion results and context packages. | Result data used by callers, especially vectorization and reporting. | Leak internal orchestration traces as the outward result contract. | Keep/adapt integration boundary — preserve verified consumer fields and rework internal details. |
-| `src/my_digital_brain/ingestion/contracts/pending.py` | Defines pending clarification/continuation data. | User answer association and data needed to resume safely. | Bind durable continuation to obsolete state/frame internals without a requirement. | Review behavior for migration — map required resume data to canonical history/session contracts. |
+| `src/my_digital_brain/ingestion/contracts/pending.py` | Defines `IngestionPendingInteraction` for the deprecated ingestion service. | Historical pause/resume fields only; chat clarification has its own contract. | Reuse this legacy DTO as the framework or chat continuation contract. | Retire — no production caller was found outside the deprecated ingestion service. |
 | `src/my_digital_brain/ingestion/contracts/validation.py` | Defines validation issues and results. | Human-readable diagnostics and validity data. | Validation failures that terminate model work without a recoverable error path. | Review behavior for migration — keep needed diagnostics and align model-facing repair errors to accepted policy. |
 | `src/my_digital_brain/ingestion/contracts/write_plan.py` | Defines graph node/relationship writes and their plan. | Explicit durable mutation data and write ordering. | Treat a generated proposal as an already accepted graph write. | Keep/adapt integration boundary — align required write DTOs with graph service contracts. |
 | `src/my_digital_brain/ingestion/contracts/vector_scopes.py` | Defines vector-scope configuration, requests, hits, and retrieval results. | RAG/API fields and vector retrieval strategy used outside the old ingestion runtime. | Make vector retrieval contracts dependent on agentic-state implementation. | Keep/adapt integration boundary — preserve verified RAG/API behavior and maintain one canonical DTO owner. |
 
-## Evidence and open points
+## Evidence and boundary notes
 
 The inventory covers all 39 files in the two sections above. The repository
 search confirms direct consumers under `api/routes/graph.py`, `graph/`,
@@ -92,12 +92,16 @@ relationship-context object is already defined in the
 and [memory/context write-state contract](../../../../ai-engineering/application-states/ingestion/memory-context-write-state.md);
 the census does not reopen that product decision.
 
-One integration question remains: `RunReferenceRegistry` is used to build
-graph-context response aliases, while the canonical `ReferenceContext` is an
-internal model-context contract. The frontend type includes `alias_map`, but
-the current retrieval-evidence panel renders matched records rather than that
-map. Trace whether any other consumer depends on `alias_map` before deciding
-whether the registry or output field can be retired or replaced.
+`RunReferenceRegistry` has two distinct observed uses. The deprecated ingestion
+pipeline uses it for its model-reference and write flow; separately,
+`graph/context_package.py` uses it to assemble graph-context responses that
+include `alias_map`. The graph API returns that response shape, and the
+frontend declares the field in its graph type, although no frontend rendering
+use was found. Treat the graph route payload as an integration contract to
+preserve/adapt until its API contract is explicitly reviewed; do not remove it
+solely because the current UI does not display the field. The internal
+reference-context contract remains defined by the canonical AI-engineering
+documentation.
 
 No field-level DTO redesign is performed in this census. The relevant graph,
 RAG, ingestion, and clarification contract owners are cross-referenced in the

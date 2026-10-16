@@ -1,6 +1,6 @@
 # Census application integration files
 
-**Status: In progress**
+**Status: Complete**
 
 ## Objective
 
@@ -55,12 +55,13 @@ outside the rebuild.
 | `ai/session/` | Active provider-neutral tool/session loop used by the current state runner. | Detailed boundary assessment below; decide retain/wrap/replace only after comparison with the user’s AI-client package. |
 | `ai/providers/`, `ai/client/`, `ai/models.py`, `ai/tools/` | Provider DTOs, completion transport, tool specs/execution, and SDK setup beneath agentic code. | Assess the integration boundary and direct contracts; don’t expand this into an AI-client rebuild without evidence. |
 
-## Required follow-up within this issue
+## Completion evidence
 
-The direct-import table is an initial census, not the complete pipeline map.
-The linked tasks must inspect each relevant file individually, record its
-disposition and rationale, and add newly discovered callers. Keep the source
-inventory in this plan; do not add migration banners to production files.
+The 15 direct production imports are individually assessed above. Chat,
+clarification, ingestion, prompts, and provider/session boundaries are detailed
+in the linked file censuses; the review also records graph, retrieval, and API
+consumers that depend on ingestion DTOs without depending on
+`IngestionService`. No migration banners were added to production files.
 
 ## Observed current control-flow outline (evidence only)
 
@@ -104,12 +105,12 @@ source -> graph-context pack -> reasoning -> entity plan -> identity lookup
        -> resolution proposals -> write plan -> graph executor -> vectorization
 ```
 
-Clarification can arise within child/tool execution and is represented through
-pending interaction/continuation data before the caller resumes. The code has
-both `pending_from_session(...)` and `pending_from_agentic(...)`; census the
-callers and data paths to determine whether these are intentionally distinct or
-duplicated continuation adapters. The new framework should have one clear
-owner per continuation contract.
+The deprecated `IngestionService` path represented pauses through
+`pending_from_session(...)` and `pending_from_agentic(...)`; repository search
+found these adapters only in that retired path. Its `IngestionPendingInteraction`
+is distinct from the chat clarification contract and is marked for retirement.
+Chat clarification and resume behavior are assessed separately in the linked
+chat/clarification census.
 
 The documented `BaseAgenticState` and `AgenticHistorySession` abstractions are
 not implemented under those names in this source tree: current entry points

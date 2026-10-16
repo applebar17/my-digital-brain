@@ -1,6 +1,6 @@
 # Census ingestion orchestration files
 
-**Status: In progress**
+**Status: Complete**
 
 ## Current call-path finding
 

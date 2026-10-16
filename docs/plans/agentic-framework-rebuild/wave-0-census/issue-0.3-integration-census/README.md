@@ -1,6 +1,6 @@
 # Issue 0.3 — application integration census
 
-**Status: In progress**
+**Status: Complete**
 
 ## Source-of-truth rule
 
@@ -30,6 +30,13 @@ agentic mechanisms that the rebuild replaces.
 - [Census ingestion orchestration files](ingestion-orchestration-file-census.md)
 - [Census ingestion contracts and deterministic collaborators](ingestion-contracts-and-services-census.md)
 - [Census prompts and the AI-session boundary](prompt-and-ai-session-census.md)
+
+The census confirms that chat ingestion uses the current `AgenticRuntime`;
+the package-exported `ingestion.IngestionService` is deprecated migration
+residue with no production caller and is marked for retirement without an
+adapter. Verified API/RAG/graph/clarification consumers of adjacent contracts
+are assessed separately and are not discarded merely because the old service
+used them.
 
 ## Dependencies
 

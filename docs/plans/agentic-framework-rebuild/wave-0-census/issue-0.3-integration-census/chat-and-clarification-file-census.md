@@ -1,6 +1,6 @@
 # Census chat and clarification files
 
-**Status: In progress**
+**Status: Complete**
 
 ## Boundary observed in the current application
 
