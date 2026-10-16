@@ -86,13 +86,16 @@ The repository contains two distinct ingestion paths; do not conflate them:
    code.
 2. `ingestion.runtime_service.IngestionService` implements a separate
    reasoning/planning/extraction/write pipeline. A repository search found no
-   in-repository application call site for this service; it is constructed by
-   ingestion tests and UAT scripts, and exported from the package. Its
-   sequence is evidence, not proof that it is the active chat pipeline.
+   production call site for this service; it is constructed by ingestion tests
+   and UAT scripts and exported from the package. The user confirmed it is
+   deprecated migration residue and should be retired without an external
+   compatibility adapter. Tests/UAT are behavior evidence, not application
+   consumers. The detailed census records which pipeline-only modules retire
+   and which independently consumed capabilities need separate assessment.
 
-The separate `IngestionService` path follows this sequence. Treat it as
-behavior/test evidence to reconcile with the accepted workflow documentation,
-not as target truth:
+The deprecated `IngestionService` path followed this sequence. Retire its
+orchestration implementation; use the sequence only as historical behavior
+evidence when checking accepted workflow requirements, not as target truth:
 
 ```text
 source -> graph-context pack -> reasoning -> entity plan -> identity lookup

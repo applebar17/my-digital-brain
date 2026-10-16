@@ -15,9 +15,12 @@ in-repository consumers cross several boundaries:
   while building a graph-context response.
 - `clarification/toolbox.py` uses ingestion reference kinds and deterministic
   identity lookup when resolving clarification context.
-- The separate `ingestion.IngestionService` collaborators are exercised by
-  tests and UAT scripts; no in-repository application call path to that service
-  was found. See the [orchestration census](ingestion-orchestration-file-census.md).
+- The separate `ingestion.IngestionService` pipeline is exercised by tests
+  and UAT scripts, but has no production caller. It is confirmed deprecated
+  migration residue and will be retired without a compatibility adapter. This
+  does not by itself retire ingestion DTOs or deterministic capabilities that
+  have independently verified API, graph, retrieval, or clarification
+  consumers. See the [orchestration census](ingestion-orchestration-file-census.md).
 
 This distinction matters: a DTO or deterministic capability may support a
 real API/RAG/graph boundary even when its surrounding ingestion service is not

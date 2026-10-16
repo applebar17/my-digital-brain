@@ -13,9 +13,11 @@ conflated:
    This is the active in-repository chat path observed in code.
 2. `ingestion.runtime_service.IngestionService` implements a separate
    reasoning/planning/extraction/write pipeline. A repository search found no
-   non-test production call site for this service; it is constructed by
-   ingestion tests and exported from the package. Its sequence is evidence,
-   not proof that it is the active chat pipeline.
+   production call site for this service; it is constructed by ingestion tests
+   and UAT scripts and exported from the package. The user confirmed this is
+   residue from a deprecated migration and should be retired, with no external
+   compatibility adapter. Its tests/UAT remain behavioral evidence only, not
+   supported application consumers.
 
 The target workflow is defined by the accepted AI/application design docs, not
 by either current implementation. The distinction above records where current
@@ -25,15 +27,15 @@ behavior is observed so the census can map it accurately.
 
 | Current file | Current role | Useful signal | Do not port | Treatment |
 | --- | --- | --- | --- | --- |
-| `src/my_digital_brain/ingestion/__init__.py` | Exports ingestion services, domain DTOs, and helpers. | Existing import surface and DTO/service consumers. | Assume every export is a required public contract. | Review behavior for migration — retain only exports with verified production or accepted use. |
-| `src/my_digital_brain/ingestion/service.py` | Re-exports `IngestionService` from `runtime_service.py`. | Existing package-level constructor import used by tests and UAT scripts. | Keep a compatibility wrapper without a confirmed application consumer need. | Decision needed — no in-repo application caller was found; confirm whether external consumers depend on this import before retirement. |
-| `src/my_digital_brain/ingestion/runtime_service.py` | Composes the separate ingestion pipeline and its deterministic/model collaborators. | Sequence, dependency seams, and result behavior exercised by tests and UAT scripts. | Treat it as the active chat ingestion entrypoint or port its mixin structure. | Review behavior for migration — use as evidence; no in-repo application call site found. |
-| `src/my_digital_brain/ingestion/runtime_pipeline.py` | Runs source processing and continuation stages for `IngestionService`. | Stage order and resume behavior in this tested path. | Pipeline control through mixin inheritance. | Review behavior for migration — compare required sequence with accepted workflow docs. |
-| `src/my_digital_brain/ingestion/runtime_stages.py` | Implements reasoning, planning, extraction, and handoffs in that pipeline. | Inputs, outputs, and stage-specific context. | Implicit handoffs and direct old-agentic DTO wiring. | Review behavior for migration — preserve only stage behavior confirmed by the target workflow. |
-| `src/my_digital_brain/ingestion/runtime_candidate_flow.py` | Prepares and resolves candidate graph content. | Candidate lifecycle and sequencing around identity resolution. | Hidden state mutation through service mixins. | Review behavior for migration — reconcile behavior with canonical ingestion flow. |
-| `src/my_digital_brain/ingestion/runtime_completion.py` | Completes graph writes, vectorization, and final ingestion status. | Write/vectorization ordering and observable result semantics. | Conflating model completion with durable-write completion. | Review behavior for migration — assess deterministic collaborators independently. |
-| `src/my_digital_brain/ingestion/runtime_helpers.py` | Shared helpers used by ingestion pipeline stages. | Concrete transformations or batching rules with real callers. | A general helper module mixing unrelated model and domain behavior. | Review behavior for migration — retain only helpers with a clear single owner and consumer. |
-| `src/my_digital_brain/ingestion/runtime_uat.py` | Provides UAT-oriented execution paths on the ingestion service. | Existing end-to-end/UAT coverage and scenarios. | Test-only workflow methods embedded in production runtime composition. | Review behavior for migration — keep useful test scenarios outside the target runtime. |
+| `src/my_digital_brain/ingestion/__init__.py` | Exports ingestion services, domain DTOs, and helpers, including the deprecated `IngestionService`. | DTO and helper imports with independently verified production consumers. | Treat the `IngestionService` export as a supported external contract. | Keep/adapt integration boundary — retain verified DTO/capability exports and remove the `IngestionService` export with the retired pipeline. |
+| `src/my_digital_brain/ingestion/service.py` | Re-exports `IngestionService` from `runtime_service.py`. | Historical package import and test/UAT setup evidence. | Compatibility wrapper for a retired service. | Retire — remove the export with the deprecated pipeline; no external compatibility surface is required. |
+| `src/my_digital_brain/ingestion/runtime_service.py` | Composes the separate ingestion pipeline and its deterministic/model collaborators. | Historical sequence and behaviors that may be useful when defining the replacement workflow. | Treat it as the active chat ingestion entrypoint or port its mixin structure. | Retire — deprecated parallel pipeline with no production caller. |
+| `src/my_digital_brain/ingestion/runtime_pipeline.py` | Runs source processing and continuation stages for `IngestionService`. | Historical stage order and resume scenarios. | Pipeline control through mixin inheritance. | Retire — exclusive orchestration code for the deprecated service. |
+| `src/my_digital_brain/ingestion/runtime_stages.py` | Implements reasoning, planning, extraction, and handoffs in that pipeline. | Historical inputs, outputs, and stage-specific context for comparison with target specs. | Implicit handoffs and direct old-agentic DTO wiring. | Retire — exclusive stage implementation for the deprecated service. |
+| `src/my_digital_brain/ingestion/runtime_candidate_flow.py` | Prepares and resolves candidate graph content. | Historical candidate lifecycle and identity-resolution scenarios. | Hidden state mutation through service mixins. | Retire — exclusive orchestration mixin; reassess any domain behavior separately from this service. |
+| `src/my_digital_brain/ingestion/runtime_completion.py` | Completes graph writes, vectorization, and final ingestion status. | Historical write/vectorization ordering and result scenarios. | Conflating model completion with durable-write completion. | Retire — exclusive orchestration mixin; keep independently consumed write/vector services under their own contracts. |
+| `src/my_digital_brain/ingestion/runtime_helpers.py` | Helpers used by the deprecated ingestion pipeline mixins. | Any behavior later confirmed necessary by the target workflow. | Preserve helper module or transformations solely to support the retired pipeline. | Retire — current callers are confined to the deprecated service/mixins. |
+| `src/my_digital_brain/ingestion/runtime_uat.py` | Provides UAT-oriented execution paths on the ingestion service. | Test scenarios useful for future end-to-end verification. | Test-only workflow methods embedded in production runtime composition. | Retire with the service; recreate only required scenarios against the target workflow. |
 | `src/my_digital_brain/ingestion/pending.py` | Converts session/agent outcomes into ingestion pending interactions. | Human pause/resume information required by callers. | Binding the durable contract to either old result class. | Review behavior for migration — retain required continuation meaning using canonical state/history DTOs. |
 | `src/my_digital_brain/ingestion/planning_contexts.py` | Builds typed context for ingestion planning calls. | Relevant source, prior reasoning, and graph-candidate facts. | Treating current packet classes as target DTOs. | Review behavior for migration — crosswalk needed fields to canonical context contracts. |
 | `src/my_digital_brain/ingestion/planning_guidelines.py` | Builds purpose-specific planning instructions. | Functional distinctions among entity, memory, relationship, and missing-entity planning. | Duplicated prompt policy in Python constants and versioned templates. | Review behavior for migration — retain approved behavior in the canonical prompt source. |
@@ -56,8 +58,9 @@ behavior is observed so the census can map it accurately.
 All 25 files in this orchestration inventory exist under
 `src/my_digital_brain/ingestion/`. The in-repository call-site search found
 `IngestionService` construction in tests and UAT scripts, but no application
-call site; its export in `ingestion/__init__.py` is not itself evidence of an
-application caller. The
+call site. Per the user's decision, its export in `ingestion/__init__.py` does
+not imply a compatibility requirement; retire the service and its exclusive
+orchestration path. The
 active chat route reaches memory ingestion through `AgenticRuntime` and
 `MemoryIngestionRuntimeService`, as recorded in the
 [integration call-path census](integration-file-census.md).
