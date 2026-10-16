@@ -77,10 +77,21 @@ Chat route/channel
   -> AgenticRunResult / interruption is translated to chat response or persisted
 ```
 
-The current ingestion implementation follows a deterministic sequence that
-invokes LLM-backed reasoning/planning/extraction and resolution at selected
-stages. Treat this sequence as evidence to reconcile with the accepted
-workflow documentation, not as target truth:
+The repository contains two distinct ingestion paths; do not conflate them:
+
+1. Chat-driven ingestion calls `AgenticRuntime._run_memory_ingestion_planning`,
+   which delegates to `agentic.runtime_memory.MemoryIngestionRuntimeService`
+   for run and resume. This is the active in-repository chat path observed in
+   code.
+2. `ingestion.runtime_service.IngestionService` implements a separate
+   reasoning/planning/extraction/write pipeline. A repository search found no
+   in-repository application call site for this service; it is constructed by
+   ingestion tests and UAT scripts, and exported from the package. Its
+   sequence is evidence, not proof that it is the active chat pipeline.
+
+The separate `IngestionService` path follows this sequence. Treat it as
+behavior/test evidence to reconcile with the accepted workflow documentation,
+not as target truth:
 
 ```text
 source -> graph-context pack -> reasoning -> entity plan -> identity lookup
