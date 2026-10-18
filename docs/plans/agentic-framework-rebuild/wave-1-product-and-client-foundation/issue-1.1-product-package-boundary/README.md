@@ -1,6 +1,6 @@
 # Issue 1.1 — establish the `product` package boundary
 
-**Status: Not started**
+**Status: Done**
 
 Create the neutral target import root for new code. This is a parallel target
 boundary, not a repository-wide rename; the old application remains runnable

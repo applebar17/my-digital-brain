@@ -58,6 +58,24 @@ This plan is the work breakdown; design sources remain in
   each issue, discuss and agree its functional behavior, DTOs, scope, and
   verification with the user.
 
+## Development and testing guidelines
+
+- Test functional behavior and communication across meaningful boundaries:
+  caller-to-state, state-to-tool/child-state, tool-to-service, and workflow/API
+  handoffs where applicable.
+- Prefer a small number of scenario tests that show the data passed, the result
+  returned, and the externally observable effect. Keep tests readable as
+  examples of the intended behavior.
+- Do not add micro-tests for package names/imports, trivial getters, private
+  helpers, or implementation details that do not protect a functional
+  contract. Avoid duplicating coverage already provided by a broader scenario.
+- Retain focused tests for critical protocol guarantees that can otherwise
+  corrupt a conversation, such as matched tool outputs, recoverable tool
+  failures, child-state return to the invoker, and continuation after a human
+  answer.
+- Add the smallest test set that gives confidence in the task's agreed
+  acceptance behavior; do not optimize for line or branch coverage.
+
 ## Collaboration rule
 
 Before each implementation task, discuss its purpose, DTOs and function
