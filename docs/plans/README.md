@@ -9,8 +9,11 @@ owners and describe the work needed to reach the agreed target.
 Each plan contains wave folders; each wave contains issue folders; each issue
 contains task Markdown files. Every folder has a `README.md` defining its
 scope, indexing its contents, and linking relevant dependencies. A task file
-should be actionable and identify its code/DTO boundaries, dependencies, and
-acceptance evidence where known.
+uses a brief agile story (what and why), identifies where the change belongs,
+states the functional data exchanged at relevant boundaries, and records
+dependencies and acceptance evidence where known. DTO notes describe only
+communication meaning and important payload elements, not every implementation
+class or field.
 
 ## Status tracking
 
@@ -34,7 +37,8 @@ must follow the accepted technical specification.
 
 ## Plans
 
-- [Agentic framework rebuild](agentic-framework-rebuild/README.md): census the
-  current agentic pipeline and its integrations before defining implementation
-  waves. Wave 0 is the only scoped wave so far; later waves require the census
-  findings and product/technical decisions.
+- [Product runtime and agentic framework rebuild](agentic-framework-rebuild/README.md):
+  migrate into the neutral `product` namespace, keeping the reusable framework
+  separate from application states and workflow. Wave 0 is complete; proposed
+  implementation waves are indexed in the plan and reviewed task by task
+  before coding.
