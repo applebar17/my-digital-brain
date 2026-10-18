@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from collections import Counter
 
-from my_digital_brain.ai.ai_clients.llm_core.llm_core import (
+from product.ai.ai_clients.llm_core.llm_core import (
     LLMInterfaceCore as LLMInterface,
 )
-from my_digital_brain.ai.ai_clients.dataclasses.dataclasses_config import (
+from product.ai.ai_clients.dataclasses.dataclasses_config import (
     ClientConfigSnapshot,
     EnvPaths,
     Provider,

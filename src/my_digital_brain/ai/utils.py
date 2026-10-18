@@ -1,6 +1,6 @@
 """Compatibility exports for tracing utilities."""
 
-from .tracing import (
+from product.ai.tracing import (
     get_trace_parent_headers,
     set_trace_metadata,
     set_trace_name,

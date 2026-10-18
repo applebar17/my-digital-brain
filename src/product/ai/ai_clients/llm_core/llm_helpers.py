@@ -15,20 +15,20 @@ from collections import Counter
 from typing import Union, List, Optional, Mapping, Dict, Any, Sequence, Type
 
 from dotenv import load_dotenv
-from my_digital_brain.ai.ai_clients.dataclasses.dataclasses_config import Provider
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
     msg_text,
     msg_from_loose,
 )
-from my_digital_brain.ai.ai_clients.providers.base import LLMProviderAdapter
-from my_digital_brain.ai.ai_clients.providers.registry import (
+from product.ai.ai_clients.providers.base import LLMProviderAdapter
+from product.ai.ai_clients.providers.registry import (
     get_adapter,
     Adapters,
 )
-from my_digital_brain.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
-from my_digital_brain.ai.ai_clients.utils.utils import (
+from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
+from product.ai.ai_clients.utils.utils import (
     _close_stack,
     _extract_top_level_json,
     _sanitize_json_candidate,
@@ -36,7 +36,7 @@ from my_digital_brain.ai.ai_clients.utils.utils import (
     _env,
     _TASK_KINDS,
 )
-from my_digital_brain.ai.ai_clients.protocols.protocol_tools import (
+from product.ai.ai_clients.protocols.protocol_tools import (
     UpdateNodeArgs,
     RetrieveNodeArgs,
     CreateNodeArgs,

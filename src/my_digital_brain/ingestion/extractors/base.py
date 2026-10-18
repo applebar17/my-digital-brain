@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from my_digital_brain.ai.protocols import LLMProvider, ModelRouter
 from my_digital_brain.ai.schemas import AIRequestContext
 from my_digital_brain.ai.session import LLMSessionCompleted, LLMSessionRequest
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 from my_digital_brain.ingestion.contracts import (
     CandidateOutput,
     ExtractionTask,

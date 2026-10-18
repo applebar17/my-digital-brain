@@ -9,17 +9,17 @@ from typing import List, Optional, Union, Any
 from anthropic import Anthropic
 from anthropic.types.message import Message  # must exist or import will fail loudly
 
-from my_digital_brain.ai.ai_clients.providers.base import LLMProviderAdapter, ProviderConfig
-from my_digital_brain.ai.ai_clients.protocols.protocol_role_spec import get_role_spec
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.providers.base import LLMProviderAdapter, ProviderConfig
+from product.ai.ai_clients.protocols.protocol_role_spec import get_role_spec
+from product.ai.ai_clients.protocols.protocol_chat import (
     ChatRequest,
     ChatResponse,
     Msg,
 )
-from my_digital_brain.ai.ai_clients.utils.utils import _clean_val
+from product.ai.ai_clients.utils.utils import _clean_val
 
 # Local helpers (mirrors your OpenAI utils module layout)
-from my_digital_brain.ai.ai_clients.providers.anthropic.utils import (
+from product.ai.ai_clients.providers.anthropic.utils import (
     build_anthropic_payload,
     from_anthropic_response,
     response_format_to_schema,
@@ -32,7 +32,7 @@ try:
 except Exception:  # pragma: no cover
     wrap_anthropic = None
 
-from my_digital_brain.ai.tracing import (
+from product.ai.tracing import (
     traceable,
     get_trace_parent_headers,
     tracing_context,

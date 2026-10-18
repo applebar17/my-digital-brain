@@ -20,7 +20,7 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionFunctionMessageParam,
 )
 
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatResponse,
     ChatRequest,
@@ -29,7 +29,7 @@ from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
     BorisToolFunction,
     TextPart,
 )
-from my_digital_brain.ai.ai_clients.protocols.protocol_tools import ToolResultBase
+from product.ai.ai_clients.protocols.protocol_tools import ToolResultBase
 
 # ---------------------- Internal → provider param names ----------------------
 

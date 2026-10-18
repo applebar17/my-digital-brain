@@ -34,7 +34,7 @@ from my_digital_brain.ai.session.continuation import (
     canonicalize_tool_result_messages,
     upsert_tool_result_message,
 )
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 from my_digital_brain.clarification.contracts import (
     ClarificationResolutionReport,
     ClarificationSessionInput,

@@ -9,7 +9,7 @@ from typing import Any
 
 from my_digital_brain.ai.context import ContextBudgetResolver, GenAIContextManager
 from my_digital_brain.ai.tokenizer import TokenCounter
-from my_digital_brain.ai.tracing import traceable, wrap_openai_client
+from product.ai.tracing import traceable, wrap_openai_client
 
 from .context_ops import GenAIContextMixin
 from .retrying import GenAIRetryMixin

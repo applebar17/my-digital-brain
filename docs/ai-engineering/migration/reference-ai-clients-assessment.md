@@ -2,7 +2,7 @@
 
 ## Status
 
-`src/my_digital_brain/ai/ai_clients/` is the required target client layer for
+`src/product/ai/ai_clients/` is the required target client layer for
 the rebuilt agentic framework. It is not currently imported by the active
 application, and its provider/runtime dependencies still need an explicit
 production dependency decision. The package is the selected foundation; it is

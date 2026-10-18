@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Sequence, Union, cast, Type
 
 from anthropic.types.message import Message  # must exist or import will fail loudly
 
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
     ChatResponse,

@@ -1,6 +1,6 @@
 # Task 1.2.1 — locate `ai_clients` under `product`
 
-**Status: Not started**
+**Status: In progress**
 
 ## User story
 
@@ -10,15 +10,17 @@ tool-loop implementation rather than importing old session code.
 
 ## What and why
 
-Move/adapt the selected package into the target namespace, keep its internal
-module layering, and declare only dependencies that are actually required.
-Preserve its provider/adapter separation and avoid a second client package.
+Move the selected package and its shared tracing dependency into the target
+namespace, rebase internal imports, and retain its module layering. This task is
+a path/import migration only; contract and dependency alignment is intentionally
+deferred to the later Wave 1 review task.
 
 ## Where
 
-- `src/product/ai/ai_clients/` and its package imports.
-- Dependency and test configuration; retain old package files until cutover if
-  existing application imports still need them.
+- `src/product/ai/ai_clients/` and its internal imports.
+- Shared tracing utility at `src/product/ai/tracing.py` and existing callers
+  that need this common utility.
+- `pyproject.toml` and AI-engineering references to the selected client path.
 
 ## Functional communication DTOs
 
@@ -30,6 +32,7 @@ response as defined in the [client assessment](../../../../ai-engineering/migrat
 
 - Depends on Task 1.1.1.
 - Public client entrypoint and required provider adapters import from `product`.
-- Dependencies are declared and tests run without relying on undeclared
-  environment packages.
+- Client modules have no import back into `my_digital_brain`.
+- Existing application code can continue using the shared tracer without a
+  duplicated implementation.
 - No provider/tool-loop logic is copied into `product.agentic`.

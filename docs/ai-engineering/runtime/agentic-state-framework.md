@@ -12,7 +12,7 @@ pipeline language, dependency-injection system, status model, or domain
 workflow. Specific ingestion, retrieval, clarification, and chat behavior is
 configured by the states that need it.
 
-`src/my_digital_brain/ai/ai_clients/` is the required target client layer, not
+`src/product/ai/ai_clients/` is the required target client layer, not
 merely an example. Its provider/adapter approach and `LLMInterfaceCore` are the
 base for this framework. Make only focused corrections where that package
 disagrees with the canonical DTO and runtime contracts; do not create a parallel

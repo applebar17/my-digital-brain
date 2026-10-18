@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     import chromadb
 
 from my_digital_brain.config import Settings
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 
 
 class VectorStore(Protocol):

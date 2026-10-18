@@ -9,13 +9,13 @@ from openai import OpenAI, AzureOpenAI
 from anthropic import Anthropic
 from tiktoken import Encoding
 
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ToolSpec,
     ChatRequest,
     ChatResponse,
 )
-from my_digital_brain.ai.ai_clients.utils.logging import log_message
+from product.ai.ai_clients.utils.logging import log_message
 
 
 AllClients = Union[OpenAI, AzureOpenAI, Anthropic]

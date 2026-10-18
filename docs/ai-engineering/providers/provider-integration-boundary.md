@@ -11,7 +11,7 @@ the same application-facing contracts. Embedding and speech-to-text providers
 follow the same boundary.
 
 The required implementation base for the agentic LLM client is
-[`ai_clients`](../../../src/my_digital_brain/ai/ai_clients/README.md). Its
+[`ai_clients`](../../../src/product/ai/ai_clients/README.md). Its
 `LLMInterfaceCore` owns request parameter handling, provider invocation through
 adapters, and the shared tool loop. Agentic states call that layer and provide
 state-specific context and toolbox configuration; they do not reimplement the

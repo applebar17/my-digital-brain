@@ -10,23 +10,23 @@ from typing import Union, List, Optional, Mapping, Dict, Any, Sequence, Type
 
 from dotenv import load_dotenv, dotenv_values
 
-from my_digital_brain.ai.ai_clients.dataclasses.dataclasses_config import Provider
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
 )
-from my_digital_brain.ai.ai_clients.providers.base import ProviderConfig, LLMProviderAdapter
-from my_digital_brain.ai.ai_clients.providers.registry import (
+from product.ai.ai_clients.providers.base import ProviderConfig, LLMProviderAdapter
+from product.ai.ai_clients.providers.registry import (
     resolve_model as registry_resolve_model,
     canonicalize_provider,
     get_adapter,
     Adapters,
 )
-from my_digital_brain.ai.ai_clients.utils.logging import log_message
-from my_digital_brain.ai.ai_clients.utils.utils import (
+from product.ai.ai_clients.utils.logging import log_message
+from product.ai.ai_clients.utils.utils import (
     _non_empty_items,
     _clean_val,
 )
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 
 
 log_name_main = "llm_interface_base"

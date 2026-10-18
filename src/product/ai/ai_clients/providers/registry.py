@@ -3,12 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Optional, Dict, Union, Type, TypeVar
 
-from my_digital_brain.ai.ai_clients.providers.base import LLMProviderAdapter
-from my_digital_brain.ai.ai_clients.providers.openai.openai_adapter import OpenAIAdapter
-from my_digital_brain.ai.ai_clients.providers.openai.azure_openai_adapter import (
+from product.ai.ai_clients.providers.base import LLMProviderAdapter
+from product.ai.ai_clients.providers.openai.openai_adapter import OpenAIAdapter
+from product.ai.ai_clients.providers.openai.azure_openai_adapter import (
     AzureOpenAIAdapter,
 )
-from my_digital_brain.ai.ai_clients.providers.anthropic.anthropic_adapter import (
+from product.ai.ai_clients.providers.anthropic.anthropic_adapter import (
     AnthropicAdapter,
 )
 

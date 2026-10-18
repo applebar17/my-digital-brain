@@ -13,7 +13,7 @@ from my_digital_brain.agentic.history import AgenticHistoryService
 from my_digital_brain.agentic.runtime import AgenticRuntime
 from my_digital_brain.agentic.tools import AgenticToolExecutionContext
 from my_digital_brain.ai.logging import log_event
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 from my_digital_brain.chat.agentic_renderer import render_agentic_chat_response
 from my_digital_brain.chat.enums import (
     ChatChannel,

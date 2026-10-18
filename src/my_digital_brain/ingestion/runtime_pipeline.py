@@ -7,7 +7,7 @@ from typing import Any
 
 from my_digital_brain.ai.logging import log_event
 from my_digital_brain.ai.session import LLMSessionAwaitingTool
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 from my_digital_brain.ingestion.candidate_context import CandidateContextHydrationError
 from my_digital_brain.ingestion.contracts import (
     GraphContextRenderPurpose,

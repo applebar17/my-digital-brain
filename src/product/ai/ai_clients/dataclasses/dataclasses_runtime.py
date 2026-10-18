@@ -7,7 +7,7 @@ from enum import Enum
 from collections import Counter
 import json
 
-from my_digital_brain.ai.ai_clients.llm_core.llm_core import (
+from product.ai.ai_clients.llm_core.llm_core import (
     LLMInterfaceCore as LLMInterface,
 )
 

@@ -7,7 +7,7 @@ calls and tool outputs remain inside the model transcript; neither is a final
 chat API message.
 
 The required owner of this loop is `LLMInterfaceCore` in
-[`ai_clients`](../../../src/my_digital_brain/ai/ai_clients/README.md), using its
+[`ai_clients`](../../../src/product/ai/ai_clients/README.md), using its
 provider adapters. Agentic states configure the toolbox and call the client;
 they do not parse provider tool-call objects, run a second loop, or synthesize
 tool-call IDs. See the [agentic-state framework](agentic-state-framework.md)

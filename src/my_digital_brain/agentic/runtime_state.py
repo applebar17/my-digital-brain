@@ -42,7 +42,7 @@ from my_digital_brain.ai.session import (
 )
 from my_digital_brain.ai.session.continuation import canonicalize_tool_result_messages
 from my_digital_brain.ai.tools import ToolBox
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 from my_digital_brain.core.ids import new_uuid
 from my_digital_brain.debug import AIFlowTraceSection, record_ai_flow_event
 from my_digital_brain.prompts import PromptRegistry

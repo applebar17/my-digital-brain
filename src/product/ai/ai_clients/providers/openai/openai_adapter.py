@@ -11,14 +11,14 @@ from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion
 
 # ------ Boris ------
-from my_digital_brain.ai.ai_clients.providers.base import LLMProviderAdapter, ProviderConfig
-from my_digital_brain.ai.ai_clients.protocols.protocol_role_spec import get_role_spec
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.providers.base import LLMProviderAdapter, ProviderConfig
+from product.ai.ai_clients.protocols.protocol_role_spec import get_role_spec
+from product.ai.ai_clients.protocols.protocol_chat import (
     ChatRequest,
     ChatResponse,
 )
-from my_digital_brain.ai.ai_clients.utils.utils import _clean_val
-from my_digital_brain.ai.ai_clients.providers.openai.utils import (
+from product.ai.ai_clients.utils.utils import _clean_val
+from product.ai.ai_clients.providers.openai.utils import (
     _wants_structured_output,
     _from_openai_response,
     _build_openai_payload,
@@ -29,7 +29,7 @@ try:
 except Exception:  # pragma: no cover
     wrap_openai = None
 
-from my_digital_brain.ai.tracing import (
+from product.ai.tracing import (
     traceable,
     get_trace_parent_headers,
     tracing_context,

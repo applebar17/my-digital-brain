@@ -12,16 +12,16 @@ try:
 except Exception:  # pragma: no cover
     wrap_openai = None
 
-from my_digital_brain.ai.ai_clients.providers.base import ProviderConfig
-from my_digital_brain.ai.ai_clients.providers.openai.utils import _from_openai_response
-from my_digital_brain.ai.ai_clients.providers.openai.openai_adapter import (
+from product.ai.ai_clients.providers.base import ProviderConfig
+from product.ai.ai_clients.providers.openai.utils import _from_openai_response
+from product.ai.ai_clients.providers.openai.openai_adapter import (
     OpenAIAdapter,
 )
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.protocols.protocol_chat import (
     ChatResponse,
     ChatRequest,
 )
-from my_digital_brain.ai.tracing import traceable
+from product.ai.tracing import traceable
 
 
 class AzureOpenAIAdapter(OpenAIAdapter):

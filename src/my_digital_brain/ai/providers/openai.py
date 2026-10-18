@@ -32,7 +32,7 @@ from ..session import (
     LLMSessionResult,
     LLMSessionRunner,
 )
-from ..tracing import traceable
+from product.ai.tracing import traceable
 
 
 class OpenAIProvider:

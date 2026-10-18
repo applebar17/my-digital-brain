@@ -12,8 +12,8 @@ from collections.abc import Mapping  # at top of file if not present
 
 from dotenv import load_dotenv
 
-from my_digital_brain.ai.ai_clients.dataclasses.dataclasses_config import Provider
-from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
+from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
+from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
     ToolSpec,
@@ -21,19 +21,19 @@ from my_digital_brain.ai.ai_clients.protocols.protocol_chat import (
     ToolCalled,
     ChatResponse,
 )
-from my_digital_brain.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
-from my_digital_brain.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
-from my_digital_brain.ai.ai_clients.providers.base import LLMProviderAdapter
-from my_digital_brain.ai.ai_clients.providers.registry import (
+from product.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
+from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
+from product.ai.ai_clients.providers.base import LLMProviderAdapter
+from product.ai.ai_clients.providers.registry import (
     get_adapter,
     Adapters,
 )
 
-from my_digital_brain.ai.ai_clients.protocols.protocol_tools import (
+from product.ai.ai_clients.protocols.protocol_tools import (
     ToolResultBase,
     ToolCallRecord,
 )
-from my_digital_brain.ai.tracing import (
+from product.ai.tracing import (
     traceable,
     set_trace_metadata,
     get_trace_parent_headers,

@@ -10,7 +10,7 @@ import urllib.request
 from typing import Any
 
 from ..models import ToolError, ToolResult, ToolSpec
-from ..tracing import traceable
+from product.ai.tracing import traceable
 
 
 DEFAULT_SEARXNG_TIMEOUT_SECONDS = 20.0
