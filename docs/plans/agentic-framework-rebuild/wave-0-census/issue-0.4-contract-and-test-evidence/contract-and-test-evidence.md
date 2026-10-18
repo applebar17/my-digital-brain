@@ -1,6 +1,6 @@
 # Map contracts and test evidence
 
-**Status: In progress**
+**Status: Complete**
 
 ## Objective
 
@@ -36,8 +36,8 @@ coverage and mismatches without treating current code as the target design.
 | `tests/test_chat_agentic_renderer.py` | Final answer/clarification/result mapping. |
 | `tests/test_interactive_ingestion_clarifications.py` | Ingestion pause and continuation behavior. |
 | `tests/test_clarification_toolbox.py`, `tests/test_clarification_contracts.py` | Clarification tools, DTOs, options, and output behavior. |
-| `tests/test_ingestion_runtime.py` | End-to-end stage sequence, context handoff, and resolution planning. |
-| `tests/test_ingestion_write_execution.py` | Candidate→write mapping, graph writes, idempotency, vectorization outcomes. |
+| `tests/test_ingestion_runtime.py` | Historical `IngestionService` stage sequence, context handoff, and resolution scenarios; not tests of the active chat ingestion path. |
+| `tests/test_ingestion_write_execution.py` | Mix of graph write-plan/executor contracts and legacy service-level orchestration/vectorization outcomes. |
 | `tests/test_ingestion_contracts.py` | Ingestion DTO schema/validation behavior. |
 | `tests/test_ingestion_planning_scaffolding.py` | Planning contracts and prompt context. |
 | `tests/test_ingestion_extractors.py` | Structured extraction schemas and extractor behavior. |
@@ -122,30 +122,33 @@ to their independent graph contract, not by retaining the old orchestrator.
 | Prompt policy includes clarification guidance only for states that may ask questions, and the clarification prompt describes human-facing scenarios. | Current prompt constants plus `clarification_policy.py` | `test_clarification_policy_is_shared_by_capable_prompts_only`, `test_clarification_agent_contains_human_friendly_scenario_guidance` | Prompt behavior; static checks only | Re-evaluate accepted useful instruction content and move it into the selected versioned Markdown source. These tests do not measure generated question quality. |
 | Production prompt identity/version resolves to one explicit template source. | `PromptRegistry` and prompt files | `test_active_prompt_constants_match_default_registry`, `test_prompt_registry_loads_default_templates_and_renders_variables` | Internal implementation / migration mismatch | The active-constant equality test enshrines the current constants-first registry, contrary to the accepted Markdown-only production prompt source. Replace it with tests for exact `(prompt_id, version)` resolution, rendering, and missing-slot behavior. |
 
-## Initial behavioral findings
+## Census conclusions and evidence gaps
 
-- The ingestion pipeline is deterministic in its stage ordering today, while
-  reasoning, planning, extraction, and resolution are selected LLM calls. This
-  is evidence for functional responsibilities, not a decision that the current
-  stage structure must be preserved.
-- Graph mutation is a distinct deterministic write-plan/executor boundary;
-  candidate extraction/proposals are not themselves proof that a durable write
-  occurred. Census that mapping and failure/result contract explicitly.
-- Clarification is nested within execution and must preserve a resumable caller
-  interaction. Current pending DTOs can originate from both AI-session and
-  agentic-state result types; their ownership needs consolidation.
-- Tool call/provider transcript correlation is represented in the current AI
-  session layer and has regression tests. Compare current callers and data
-  crossings with the required `ai_clients` target and canonical tool-calling
-  contract; do not reopen the client-layer selection.
-- The current source has `AgenticStateRunner`/`AgenticHistoryService`, whereas
-  the target docs specify `BaseAgenticState`/`AgenticHistorySession`. Treat this
-  as a genuine implementation gap to plan for, not as an already completed
-  migration.
+| Finding | Evidence | Consequence for later work |
+| --- | --- | --- |
+| The active application path does not use the required `ai_clients` package. | Source search found no application imports of `my_digital_brain.ai.ai_clients`; `test_ai_session.py` tests the separate legacy loop, not `LLMInterfaceCore` integration. | Treat client integration and its behavioral tests as unimplemented target work. Do not infer completion from the package's presence or its own internal tests. |
+| Current tool-loop tests verify useful transcript semantics but include an accepted-contract conflict. | `test_tool_errors_are_returned_in_the_transcript`, nested-agent error/call-ID tests, and pending-resume tests establish correlation and return-to-caller scenarios. `test_tool_batch_is_not_split_when_it_exceeds_cap` executes both calls when the configured cap is one. | Preserve call-ID pairing, error return, nested tool resumption, and valid pause/resume. Rewrite the cap test to the accepted [tool-calling protocol](../../../../ai-engineering/runtime/tool-calling-protocol.md), which fabricates matched outputs for calls declined at the cap, disables tools, and lets the provider generate the final reply. |
+| State-local/master history and model-context filtering are tested against `AgenticHistoryService`, while the target specifies `AgenticHistorySession`. | `tests/test_agentic_history.py` covers projection, metadata filtering, promotion, transcript roles, summaries, and non-mutation. | Preserve the behaviors required by the target history spec; replace implementation-coupled expectations such as helper names, exact summary text, and the current projection class. |
+| Chat and clarification tests cover response persistence, structured question/answer association, hidden answer context, partial answers, and resumption. | `tests/test_chat_runtime.py`, `test_chat_agentic_renderer.py`, `test_clarification_contracts.py`, `test_clarification_toolbox.py`, `test_interactive_ingestion_clarifications.py`. | Keep user-visible/API semantics and the original-invoker continuation. Replace frame and legacy ingestion-pending persistence. Static prompt assertions are not evidence that generated questions are consistently natural or contextually appropriate. |
+| `IngestionService` tests describe a deprecated parallel ingestion pipeline, not the chat application's current path. | `tests/test_ingestion_runtime.py` constructs the deprecated service; several tests in `test_ingestion_write_execution.py` assert its orchestration and vectorization outcomes. The active chat path is catalogued in Issue 0.3. | Use legacy pipeline tests as historical scenarios only. Retire tests coupled exclusively to `IngestionService`; re-express only confirmed ingestion behavior against the target states and deterministic graph/RAG boundaries. |
+| Tests establish some typed output and write-boundary rules, but do not prove the full model-output-to-storage crosswalk or end-to-end repair after a domain validation error. | Explicit node-tool DTO tests, ingestion DTO tests, graph write-plan/executor tests, and the generic structured-output repair test cover separate pieces. No ingestion test demonstrates same-state repair of a recoverable semantic validation error. | Preserve explicit DTO mapping and deterministic persistence safety. Add a focused target test that feeds a human-readable recoverable validation error back to the producing state and verifies corrected output, where that workflow is configured. |
+| Existing prompt tests mainly pin implementation constants or check for guidance text. | `test_active_prompt_constants_match_default_registry`, prompt-hardening tests, and prompt-context tests. | Replace constant-equality tests with exact versioned Markdown selection/rendering tests. Retain useful behavioral guidance, but use behavioral/evaluation evidence—not substring assertions—to claim question or reasoning quality. |
+| Existing graph payload includes `alias_map`, though the frontend currently only declares its type. | Issue 0.3 traces the graph-context API response and the frontend graph DTO; the evidence panel does not render the map. | Preserve/adapt it as an API boundary until that API contract is reviewed; this is distinct from internal model-facing reference context. |
+
+## Test disposition rule
+
+An assertion tied to an internal class, frame, mixin, or implementation sequence
+is not itself a requirement. When its implementation is retired, retire that
+assertion unless it protects a separately identified behavior; rewrite useful
+scenarios against the target DTOs and entrypoints. Tests for stable chat/API,
+graph, persistence, and provider transcript contracts should be retained or
+adapted at the boundary that owns each contract. The `IngestionService`
+retirement decision from Issue 0.3 applies here: its tests are not external
+compatibility requirements.
 
 ## Required output
 
-For each behavior, cite the owning code and tests, classify it as required
-observable behavior / backend contract / internal implementation, and note any
-missing or contradictory evidence. These findings become inputs to the later
-implementation-wave plan; do not define those waves in this task.
+Each behavior group above cites its owning code/DTO boundary and representative
+tests, classifies the protected behavior, and records conflicts or missing
+coverage. These findings become inputs to the later implementation-wave plan;
+this issue does not define those waves.

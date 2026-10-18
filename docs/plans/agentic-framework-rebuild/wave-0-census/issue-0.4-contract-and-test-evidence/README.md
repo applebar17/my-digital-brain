@@ -1,6 +1,6 @@
 # Issue 0.4 — contracts, behavior, and test evidence
 
-**Status: In progress**
+**Status: Complete**
 
 Use tests, API boundaries, state prompts/configuration, and current design docs
 to distinguish required user-visible behavior from accidental runtime
