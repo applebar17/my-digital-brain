@@ -1,6 +1,6 @@
 # Wave 0 — current-pipeline census
 
-**Status: In progress**
+**Status: Complete**
 
 ## Goal
 
@@ -26,6 +26,11 @@ deletion solely because of its current location or age.
   not to carry forward, and one treatment classification, with rationale.
 - No implementation wave is proposed until the census is complete and any
   material uncertainty is surfaced for review.
+
+Wave 0's census is complete. The file treatments are evidence-based proposals,
+not implementation authorization. Review the census dispositions and agree the
+replacement scope and waves together before defining implementation tasks; see
+the [rebuild plan](../README.md).
 
 ## Rules
 
