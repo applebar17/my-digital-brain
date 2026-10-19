@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Dict, Union, Type, TypeVar
+from typing import Optional, Dict, Union, Type
 
 from product.ai.ai_clients.providers.base import LLMProviderAdapter
 from product.ai.ai_clients.providers.openai.openai_adapter import OpenAIAdapter
@@ -153,9 +153,7 @@ def resolve_model(
     default_name = provider_defaults.get(kind)
     if default_name:
         # default can also be an alias; resolve for consistency
-        return canonicalize_model(
-            provider, default_name
-        )  # returns alias target or the same string
+        return canonicalize_model(provider, default_name)  # returns alias target or the same string
 
     raise ValueError(
         f"No model configured for provider={provider!r}, kind={kind!r}. "

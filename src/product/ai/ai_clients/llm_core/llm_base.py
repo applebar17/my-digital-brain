@@ -3,18 +3,16 @@ from __future__ import annotations
 
 import os
 import logging
-import tiktoken
 from pathlib import Path
 from platformdirs import user_config_dir
-from typing import Union, List, Optional, Mapping, Dict, Any, Sequence, Type
+from typing import Union, List, Optional, Any
 
 from dotenv import load_dotenv, dotenv_values
 
-from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
 from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
 )
-from product.ai.ai_clients.providers.base import ProviderConfig, LLMProviderAdapter
+from product.ai.ai_clients.providers.base import Provider, ProviderConfig, LLMProviderAdapter
 from product.ai.ai_clients.providers.registry import (
     resolve_model as registry_resolve_model,
     canonicalize_provider,
@@ -26,7 +24,6 @@ from product.ai.ai_clients.utils.utils import (
     _non_empty_items,
     _clean_val,
 )
-from product.ai.tracing import traceable
 
 
 log_name_main = "llm_interface_base"
@@ -58,9 +55,7 @@ class LLMInterfaceBase:
         self.logger = logger
         self.base_path = Path(base_path)
         self.provider = provider
-        self._log(
-            f"[llm_interface_base.init] Base path LLMInterface = {self.base_path}"
-        )
+        self._log(f"[llm_interface_base.init] Base path LLMInterface = {self.base_path}")
 
         # Load local .env if present
         try:
@@ -82,9 +77,7 @@ class LLMInterfaceBase:
             self._adapters_cache = {}
 
         try:
-            super().__init__(
-                base_path=self.base_path, logger=self.logger, *args, **kwargs
-            )
+            super().__init__(base_path=self.base_path, logger=self.logger, *args, **kwargs)
         except TypeError:
             try:
                 super().__init__(*args, **kwargs)
@@ -127,13 +120,9 @@ class LLMInterfaceBase:
                 applied.append(k)
 
         if applied:
-            self._log(
-                f"Loaded env keys from files: {', '.join(sorted(applied))}", "debug"
-            )
+            self._log(f"Loaded env keys from files: {', '.join(sorted(applied))}", "debug")
         else:
-            self._log(
-                "No env keys loaded from files (OS env already complete?).", "debug"
-            )
+            self._log("No env keys loaded from files (OS env already complete?).", "debug")
 
     def _load_env_vars(self) -> None:
         E = os.getenv
@@ -153,9 +142,7 @@ class LLMInterfaceBase:
 
         self.azure_endpoint = _val("BORIS_AZURE_OPENAI_ENDPOINT")
         self.azure_api_key = _val("BORIS_AZURE_OPENAI_API_KEY")
-        self.azure_api_version = (
-            _val("BORIS_AZURE_OPENAI_API_VERSION") or "2025-04-01-preview"
-        )
+        self.azure_api_version = _val("BORIS_AZURE_OPENAI_API_VERSION") or "2025-04-01-preview"
 
         self.anthropic_api_key = _val("BORIS_ANTHROPIC_API_KEY")
         self.anthropic_base_url = _val("BORIS_ANTHROPIC_BASE_URL")
@@ -176,10 +163,8 @@ class LLMInterfaceBase:
             return p if p in ("openai", "azure", "anthropic") else None
 
         self.route_by_task: dict[str, Optional[str]] = {
-            "chat": _prov_norm(_val("BORIS_PROVIDER_CHAT"))
-            or _prov_norm(default_provider),
-            "coding": _prov_norm(_val("BORIS_PROVIDER_CODING"))
-            or _prov_norm(default_provider),
+            "chat": _prov_norm(_val("BORIS_PROVIDER_CHAT")) or _prov_norm(default_provider),
+            "coding": _prov_norm(_val("BORIS_PROVIDER_CODING")) or _prov_norm(default_provider),
             "reasoning": _prov_norm(_val("BORIS_PROVIDER_REASONING"))
             or _prov_norm(default_provider),
             "embedding": _prov_norm(_val("BORIS_PROVIDER_EMBEDDING"))
@@ -206,16 +191,10 @@ class LLMInterfaceBase:
             return _val(f"BORIS_{p.upper()}_MODEL_{t.upper()}")
 
         models_by_provider: dict[str, dict[str, Optional[str]]] = {
-            "openai": {
-                t: _mk("openai", t)
-                for t in ("chat", "coding", "reasoning", "embedding")
-            },
-            "azure": {
-                t: _mk("azure", t) for t in ("chat", "coding", "reasoning", "embedding")
-            },
+            "openai": {t: _mk("openai", t) for t in ("chat", "coding", "reasoning", "embedding")},
+            "azure": {t: _mk("azure", t) for t in ("chat", "coding", "reasoning", "embedding")},
             "anthropic": {
-                t: _mk("anthropic", t)
-                for t in ("chat", "coding", "reasoning", "embedding")
+                t: _mk("anthropic", t) for t in ("chat", "coding", "reasoning", "embedding")
             },
         }
 
@@ -242,9 +221,7 @@ class LLMInterfaceBase:
         self.resolved_models: dict[str, Optional[str]] = {}
         for t in ("chat", "coding", "reasoning", "embedding"):
             p = self.route_by_task[t]
-            self.resolved_models[t] = (
-                models_by_provider.get(p or "", {}).get(t) if p else None
-            )
+            self.resolved_models[t] = models_by_provider.get(p or "", {}).get(t) if p else None
 
         # Pick a default self.provider for initial adapter (use chat)
         self.provider = self.route_by_task["chat"] or inferred or "openai"
@@ -305,9 +282,7 @@ class LLMInterfaceBase:
         self.cfg = cfg
 
         try:
-            self._log(
-                f"[adapters] using provider={key} ({adapter.describe(cfg)})", "debug"
-            )
+            self._log(f"[adapters] using provider={key} ({adapter.describe(cfg)})", "debug")
         except Exception:
             pass
 
@@ -359,9 +334,7 @@ class LLMInterfaceBase:
 
         # 3) As a last resort, infer from creds (stable order)
         if not p:
-            if getattr(self, "azure_endpoint", None) and getattr(
-                self, "azure_api_key", None
-            ):
+            if getattr(self, "azure_endpoint", None) and getattr(self, "azure_api_key", None):
                 p = "azure"
             elif getattr(self, "anthropic_api_key", None):
                 p = "anthropic"
@@ -399,9 +372,7 @@ class LLMInterfaceBase:
             return self._resolve_model_for_kind(kind, explicit=explicit)
         except ValueError:
             if kind != "embedding":
-                return self._resolve_model_for_kind(
-                    "chat"
-                )  # legacy alias to chat model
+                return self._resolve_model_for_kind("chat")  # legacy alias to chat model
             raise ValueError(
                 f"No model configured for kind={kind!r}. "
                 f"Use 'boris ai models --provider <p> --{kind} <model>' "
@@ -462,9 +433,7 @@ class LLMInterfaceBase:
         return self._ensure_adapter_for_provider(prov)
 
     def describe_config(self) -> str:
-        base = (
-            self.openai_base_url or self.azure_endpoint or self.anthropic_base_url or ""
-        )
+        base = self.openai_base_url or self.azure_endpoint or self.anthropic_base_url or ""
         chat = self._resolve_model_for_kind("chat")
         coding = self._resolve_model_for_kind("coding")
         reasoning = self._resolve_model_for_kind("reasoning")

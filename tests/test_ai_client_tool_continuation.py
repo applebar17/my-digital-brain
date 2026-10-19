@@ -8,7 +8,7 @@ from typing import Any
 
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
-from product.ai.ai_clients.protocols.protocol_tools import ToolErrorDTO, ToolResultBase
+from product.ai.ai_clients.protocols.protocol_tools import ToolErrorDTO, ToolOutputDTO
 
 
 class ScriptedProvider:
@@ -109,10 +109,10 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
         handler_calls.append("failing_handler")
         raise TypeError("handler input was not usable")
 
-    def domain_failure() -> ToolResultBase:
+    def domain_failure() -> ToolOutputDTO:
         handler_calls.append("domain_failure")
-        return ToolResultBase(
-            ok=False,
+        return ToolOutputDTO(
+            status="error",
             error=ToolErrorDTO(code="not_found", message="The requested item was not found."),
         )
 
@@ -202,6 +202,36 @@ def test_previously_seen_call_id_is_skipped_for_the_rest_of_the_session(
     assert [
         message.meta["tool_call_id"] for message in provider.requests[2] if message.role == "tool"
     ] == ["session-call"]
+
+
+def test_invalid_tool_arguments_return_a_correlated_error_and_resume(
+    monkeypatch: Any,
+) -> None:
+    handler_calls: list[str] = []
+
+    def lookup(value: str) -> dict[str, str]:
+        handler_calls.append(value)
+        return {"result": value}
+
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(_tool_call("invalid-call", "lookup", "{not-json")),
+            _assistant_final_response(
+                "The tool arguments were invalid, so I could not look it up."
+            ),
+        ],
+    )
+
+    response = client.call(_request(), {"lookup": lookup})
+
+    assert response.message.content == "The tool arguments were invalid, so I could not look it up."
+    assert handler_calls == []
+    tool_message = next(message for message in provider.requests[1] if message.role == "tool")
+    assert tool_message.meta["tool_call_id"] == "invalid-call"
+    output = json.loads(str(tool_message.content))
+    assert output["status"] == "error"
+    assert output["error"]["code"] == "invalid_tool_arguments"
 
 
 def test_tool_call_cap_returns_correlated_errors_then_requests_a_final_answer(

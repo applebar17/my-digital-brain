@@ -29,7 +29,6 @@ from product.ai.ai_clients.protocols.protocol_chat import (
     BorisToolFunction,
     TextPart,
 )
-from product.ai.ai_clients.protocols.protocol_tools import ToolResultBase
 
 # ---------------------- Internal → provider param names ----------------------
 
@@ -75,12 +74,8 @@ def _normalize_one_tool(tool: Any) -> ChatCompletionToolParam:
         if not name:
             raise ValueError(f"Tool spec missing name: {d}")
 
-        description = d.get("description") or (d.get("function") or {}).get(
-            "description"
-        )
-        parameters = (
-            d.get("parameters") or (d.get("function") or {}).get("parameters") or {}
-        )
+        description = d.get("description") or (d.get("function") or {}).get("description")
+        parameters = d.get("parameters") or (d.get("function") or {}).get("parameters") or {}
         strict = (
             d.get("strict") is True
             or ((d.get("function") or {}).get("strict") is True)
@@ -160,9 +155,7 @@ def _build_openai_payload(req: "ChatRequest") -> Dict[str, Any]:
     }
     # tools (+ optional parallel_tool_calls)
     if req.tools:
-        tools_norm = to_openai_tools(
-            req.tools
-        )  # returns List[ChatCompletionToolParam] | None
+        tools_norm = to_openai_tools(req.tools)  # returns List[ChatCompletionToolParam] | None
         if tools_norm:
             payload["tools"] = tools_norm
             if "parallel_tool_calls" in req.params:
@@ -314,9 +307,7 @@ def _as_text_or_parts(
         return content
     if isinstance(content, str):
         return content
-    return [
-        {"type": "text", "text": p.text} for p in content if getattr(p, "text", None)
-    ]
+    return [{"type": "text", "text": p.text} for p in content if getattr(p, "text", None)]
 
 
 def _as_plain_text(content: Union[str, List["TextPart"]]) -> str:
@@ -336,11 +327,7 @@ def _coerce_tool_calls(raw: Any) -> Optional[List[Dict[str, Any]]]:
     out: List[Dict[str, Any]] = []
     for i, tc in enumerate(raw):
         # SDK object?
-        if (
-            hasattr(tc, "type")
-            and getattr(tc, "type") == "function"
-            and hasattr(tc, "function")
-        ):
+        if hasattr(tc, "type") and getattr(tc, "type") == "function" and hasattr(tc, "function"):
             fn = tc.function
             name = getattr(fn, "name", None)
             args = getattr(fn, "arguments", "{}")

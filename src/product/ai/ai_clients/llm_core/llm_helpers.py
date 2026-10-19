@@ -1,7 +1,6 @@
 # boris/boriscore/ai_clients/client_oai.py
 from __future__ import annotations
 
-import re
 import json
 import logging
 from pathlib import Path
@@ -11,10 +10,9 @@ try:  # pragma: no cover
     from tiktoken import Encoding
 except Exception:  # pragma: no cover
     tiktoken = None  # we will fall back to a 4 chars ≈ 1 token heuristic
-from collections import Counter
-from typing import Union, List, Optional, Dict, Any, Sequence, Type
+from typing import Union, List, Optional, Dict, Any, Sequence
 
-from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
+from product.ai.ai_clients.providers.base import Provider
 from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
@@ -22,24 +20,7 @@ from product.ai.ai_clients.protocols.protocol_chat import (
     msg_from_loose,
 )
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
-from product.ai.ai_clients.utils.utils import (
-    _close_stack,
-    _extract_top_level_json,
-    _sanitize_json_candidate,
-    _strip_code_fence,
-    _env,
-)
-from product.ai.ai_clients.protocols.protocol_tools import (
-    UpdateNodeArgs,
-    RetrieveNodeArgs,
-    CreateNodeArgs,
-    DeleteNodeArgs,
-    RunTerminalCommandsArgs,
-    InvokeAIAgentArgs,
-    ToolResultBase,
-    ChangeKind,
-    ToolArgs,
-)
+from product.ai.ai_clients.utils.utils import _env
 
 
 # -------------------------------------------------------------------
@@ -62,7 +43,6 @@ DEFAULT_OUTPUT_RESERVE = 1_024  # tokens to leave for completion
 
 # Tooling guard knobs (can be tweaked per instance)
 DEFAULT_TOOL_CALL_CAP = 20  # max provider tool calls executed per turn
-DEFAULT_TOOL_REPEAT_CAP = 2  # same (fn+args) allowed this many times
 DEFAULT_TOOL_MESSAGE_TOKEN_RATIO = 0.20  # tool output cap as % of model context (20%)
 DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = 3_500  # if remaining context < margin, disable tools
 
@@ -75,10 +55,9 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
 
     What this layer does
     --------------------
-    • Configures helper knobs (tool output cap ratio, output reserve, repeat/round caps).
+    • Configures helper knobs (tool output cap ratio, output reserve, call cap).
     • Initializes per-turn tool loop state via `_ensure_runtime_caps()`.
-    • Provides shared helpers used by the core API (token counting, truncation, JSON salvage,
-      protocol arg/result shaping, etc.).
+    • Provides shared helpers used by the core API (token counting, truncation, and budgeting).
 
     What this layer does NOT do
     ---------------------------
@@ -118,15 +97,13 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
     output_reserve_tokens : int
     tool_disable_margin_tokens : int
     tool_call_cap : int
-    tool_repeat_cap : int
     azure_deployment_to_base : dict
     model_context_overrides : dict
-    _tool_state : dict  # { tool_calls_processed: int, sig_counts: Counter }
 
     Notes
     -----
-    - Changing helper knobs at runtime is supported; call `_ensure_runtime_caps()` if you
-      reset `_tool_state`.
+    - Changing helper knobs at runtime is supported; call `_ensure_runtime_caps()` to
+      restore configured defaults when needed.
     """
 
     def __init__(
@@ -168,19 +145,11 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
         )
 
     def _ensure_runtime_caps(self) -> None:  #
-        if not hasattr(self, "_tool_state") or self._tool_state is None:
-            self._tool_state = {
-                "tool_calls_processed": 0,
-                "sig_counts": Counter(),
-            }
-
         # Instance-level knobs with sensible defaults
         if not hasattr(self, "tool_disable_margin_tokens"):
             self.tool_disable_margin_tokens = DEFAULT_TOOL_DISABLE_MARGIN_TOKENS
         if not hasattr(self, "tool_call_cap"):
             self.tool_call_cap = DEFAULT_TOOL_CALL_CAP
-        if not hasattr(self, "tool_repeat_cap"):
-            self.tool_repeat_cap = DEFAULT_TOOL_REPEAT_CAP
         if not hasattr(self, "tool_message_token_ratio"):
             self.tool_message_token_ratio = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO
         if not hasattr(self, "output_reserve_tokens"):
@@ -418,142 +387,6 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
     def _looks_like_context_error(self, exc: Exception) -> bool:  #
         msg = str(exc).lower()
         return "maximum context length" in msg or "max context" in msg or "context length" in msg
-
-    def _parse_json_args_safe(  #
-        self, s: Optional[str], fn_name: Optional[str] = None
-    ) -> dict:
-        """Parse tool.function.arguments robustly, salvaging common model glitches.
-
-        Handles cases like very long strings with endless \\n and missing final braces.
-        Steps:
-        1) strip code fences
-        2) extract first top-level JSON value and drop trailing junk
-        3) close any missing braces/brackets and dangling quotes
-        4) remove trailing commas and fix trailing backslashes
-        """
-        if not s:
-            return {}
-        raw = s
-        # First, try plain JSON
-        try:
-            return json.loads(raw)
-        except Exception:
-            pass
-
-        cleaned = _strip_code_fence(raw)
-        candidate, stack, _ = _extract_top_level_json(cleaned)
-        candidate = _sanitize_json_candidate(candidate)
-        if stack:
-            candidate = _close_stack(candidate, stack)
-
-        # Try load again
-        try:
-            return json.loads(candidate)
-        except Exception:
-            # One last attempt: trim after the first valid-looking close
-            match = re.search(r"([\s\S]*?[\}\]])", candidate)
-            if match:
-                trimmed = match.group(1)
-                try:
-                    return json.loads(trimmed)
-                except Exception:
-                    pass
-            self._log(
-                f"JSON salvage failed for {fn_name or 'tool'}; falling back to empty args.",
-                "warn",
-            )
-            return {}
-
-    # --------------------------- protocol helpers ---------------------------
-    def _protocol_arg_cls_for(self, name: Optional[str]) -> ToolArgs:  #
-        """Return the protocol arg dataclass for a known tool name, if any."""
-        if not name:
-            return None
-        registry: Dict[str, Type] = {
-            "update_node": UpdateNodeArgs,
-            "retrieve_node": RetrieveNodeArgs,
-            "create_node": CreateNodeArgs,
-            "delete_node": DeleteNodeArgs,
-            "run_terminal_commands": RunTerminalCommandsArgs,
-            "invoke_ai_agent": InvokeAIAgentArgs,
-        }
-        return registry.get(name)
-
-    def _protocol_parse_args(  #
-        self, name: Optional[str], args: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        If the tool is protocol-aware, parse into its dataclass and return kwargs-ready dict.
-        Otherwise return the raw args dict.
-        """
-        cls = self._protocol_arg_cls_for(name)
-        if not cls:
-            return args
-        try:
-            parsed = cls.from_dict(args)
-            # Most tool fns will be kwargs-based; pass as dict.
-            # If your fn expects the dataclass instance, we fallback later.
-            return {k: getattr(parsed, k) for k in parsed.__dataclass_fields__.keys()}
-        except Exception as e:
-            # If parse fails, fall back gracefully to raw args
-            self._log(f"[{log_name_main}.args] Failed to parse args for '{name}': {e}", "warn")
-            return args
-
-    def _protocol_is_result(self, obj: Any) -> bool:  #
-        return isinstance(obj, ToolResultBase)
-
-    def _protocol_result_to_str(self, res: Any) -> str:  #
-        """
-        Serialize tool result for the model. Prefer protocol JSON if available,
-        otherwise JSON-encode dicts or str().
-        """
-        try:
-            if isinstance(res, ToolResultBase):
-                return res.to_json(indent=None)  # compact
-            if isinstance(res, dict):
-                return json.dumps(res, ensure_ascii=False, separators=(",", ":"))
-            return str(res)
-        except Exception as e:
-            return json.dumps(
-                {"ok": False, "error": f"serialize_error: {type(e).__name__}: {e}"},
-                ensure_ascii=False,
-            )
-
-    def _protocol_summarize_result(self, res: Any) -> str:  #
-        """
-        Human-short summary for logs/records. Uses deltas if protocol result.
-        """
-        if isinstance(res, ToolResultBase):
-            if res.error:
-                return f"error[{res.error.code}]: {res.error.message}"
-            # Summarize deltas like: created src/x.py, moved src/a -> src/b, updated ...
-            parts: List[str] = []
-            for d in res.changes or []:
-                kind = d.kind
-                before = d.before
-                after = d.after
-                if kind == ChangeKind.created and after:
-                    parts.append(f"created {after.path}")
-                elif kind == ChangeKind.updated and after:
-                    parts.append(f"updated {after.path}")
-                elif kind == ChangeKind.deleted and before:
-                    parts.append(f"deleted {before.path}")
-                elif kind == ChangeKind.moved and before and after:
-                    parts.append(f"moved {before.path} → {after.path}")
-                elif kind == ChangeKind.renamed and before and after:
-                    parts.append(f"renamed {before.path} → {after.path}")
-                elif kind == ChangeKind.noop:
-                    parts.append("noop")
-            if not parts:
-                # fallbacks: note or ok/empty
-                return res.note or ("ok" if res.ok else "ok")  # ok if no error was set
-            return "; ".join(parts)
-        # Non-protocol results
-        if isinstance(res, dict):
-            if "ok" in res and not res.get("ok"):
-                return f"error: {res.get('error')}"
-            return "ok"
-        return "ok"
 
     def _clamp_for_model(self, text: str, model_name: Optional[str]) -> str:  #
         if isinstance(text, str) and model_name:

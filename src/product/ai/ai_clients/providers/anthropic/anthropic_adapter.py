@@ -7,7 +7,6 @@ import logging
 from typing import List, Optional, Union, Any
 
 from anthropic import Anthropic
-from anthropic.types.message import Message  # must exist or import will fail loudly
 
 from product.ai.ai_clients.providers.base import LLMProviderAdapter, ProviderConfig
 from product.ai.ai_clients.protocols.protocol_role_spec import get_role_spec
@@ -169,9 +168,7 @@ class AnthropicAdapter(LLMProviderAdapter):
         # --- Build payload (adds tools + possibly forces tool_choice)
         payload = build_anthropic_payload(req)
         self._log("[adapters.anthropic] payload serialized.", "debug")
-        self._log(
-            f"[adapters.anthropic] Model from payload: {payload['model']}", "debug"
-        )
+        self._log(f"[adapters.anthropic] Model from payload: {payload['model']}", "debug")
 
         # --- Call Anthropic
         self._log("[adapters.anthropic] Invoking Anthropic provider.", "debug")
@@ -215,9 +212,7 @@ class AnthropicAdapter(LLMProviderAdapter):
 
     # -------- embeddings (optional) --------
     @traceable(name="anthropic_adapter.get_embeddings", run_type="embedding")
-    def get_embeddings(
-        self, content: Union[str, List[str]], dimensions: int = 1536
-    ) -> Any:
+    def get_embeddings(self, content: Union[str, List[str]], dimensions: int = 1536) -> Any:
         """
         Wire this only if you intend to use Anthropic embeddings.
         Keeping it loud to avoid silent mismatches with OpenAI's embeddings API.

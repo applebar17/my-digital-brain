@@ -3,6 +3,7 @@ import tiktoken
 import logging
 from typing import Protocol, Any, Optional, Dict, Union
 from dataclasses import dataclass
+from enum import Enum
 
 
 from openai import OpenAI, AzureOpenAI
@@ -10,8 +11,6 @@ from anthropic import Anthropic
 from tiktoken import Encoding
 
 from product.ai.ai_clients.protocols.protocol_chat import (
-    Msg,
-    ToolSpec,
     ChatRequest,
     ChatResponse,
 )
@@ -19,6 +18,13 @@ from product.ai.ai_clients.utils.logging import log_message
 
 
 AllClients = Union[OpenAI, AzureOpenAI, Anthropic]
+
+
+class Provider(str, Enum):
+    openai = "openai"
+    azure = "azure"
+    anthropic = "anthropic"
+    google = "gemini"
 
 
 @dataclass

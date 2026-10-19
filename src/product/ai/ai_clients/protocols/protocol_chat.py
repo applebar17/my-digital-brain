@@ -6,6 +6,11 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import json
 import datetime
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCallUnion,
+    Function,
+    ChatCompletionMessageFunctionToolCall,
+)
 
 # ----------------------------- OpenAI typed imports (with safe fallbacks) -----------------------------
 try:
@@ -34,12 +39,6 @@ from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 
 ToolSpec = ChatCompletionToolParam  # prefer exact OpenAI type
 
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCallUnion,
-    Function,
-    ChatCompletionMessageFunctionToolCall,
-)
-
 
 class BorisToolFunction(Function):
     arguments: Union[str, dict]
@@ -49,17 +48,13 @@ class BorisChatCompletionMessageFunctionToolCall(ChatCompletionMessageFunctionTo
     function: BorisToolFunction
 
 
-ToolCalled = Union[
-    ChatCompletionMessageToolCallUnion, BorisChatCompletionMessageFunctionToolCall
-]
+ToolCalled = Union[ChatCompletionMessageToolCallUnion, BorisChatCompletionMessageFunctionToolCall]
 
 # ----------------------------- API return envelopes -----------------------------
 
 
 class ApiCallReturnModel(BaseModel):
-    all: Optional[Union[str, Dict[str, Any], ParsedChatCompletion, ChatCompletion]] = (
-        None
-    )
+    all: Optional[Union[str, Dict[str, Any], ParsedChatCompletion, ChatCompletion]] = None
     message_content: Optional[str] = None
     tool_calls: Optional[Union[List[Any], dict, str]] = None
     usage: Optional[Union[str, Dict[str, Any], CompletionUsage]] = None
@@ -254,12 +249,8 @@ def coerce_toolspecs(
         if not name:
             raise ValueError(f"Invalid tool spec without a name: {d}")
         description = d.get("description")
-        parameters = (
-            d.get("parameters") or (d.get("function", {}) or {}).get("parameters") or {}
-        )
-        strict = (d.get("strict") is True) or (
-            (d.get("function", {}) or {}).get("strict") is True
-        )
+        parameters = d.get("parameters") or (d.get("function", {}) or {}).get("parameters") or {}
+        strict = (d.get("strict") is True) or ((d.get("function", {}) or {}).get("strict") is True)
         out.append(
             _normalized_function_tool(
                 name=name,

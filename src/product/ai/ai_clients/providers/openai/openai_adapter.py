@@ -41,7 +41,7 @@ class OpenAIAdapter(LLMProviderAdapter):
     OpenAI provider adapter with first-class support for:
       - Tool calling (function tools)
       - Parallel tool calls (if requested)
-      - Structured tool *results* via your protocol_tools (ToolResultBase)
+      - Normalized tool outputs returned by the client tool loop
       - response_format passthrough (incl. JSON schema)
     """
 
@@ -93,9 +93,7 @@ class OpenAIAdapter(LLMProviderAdapter):
         if OpenAI is None:
             raise RuntimeError("[adapters.openai] openai package not available.")
         if not cfg.openai_api_key:
-            raise ValueError(
-                "[adapters.openai] Missing OPENAI_API_KEY for OpenAI provider."
-            )
+            raise ValueError("[adapters.openai] Missing OPENAI_API_KEY for OpenAI provider.")
 
         raw_client = OpenAI(api_key=cfg.openai_api_key, base_url=cfg.openai_base_url)
         self.client = raw_client
@@ -129,9 +127,7 @@ class OpenAIAdapter(LLMProviderAdapter):
         self._log("[adapters.openai] payload serialized.", "debug")
 
         use_parse = _wants_structured_output(payload.get("response_format"))
-        self._log(
-            f"[adapters.openai] Invoking OpenAI provider (parse={use_parse}).", "debug"
-        )
+        self._log(f"[adapters.openai] Invoking OpenAI provider (parse={use_parse}).", "debug")
 
         self._log(f"[adapters.openai] Model from payload: {payload['model']}", "debug")
         parent_headers = get_trace_parent_headers()
@@ -150,7 +146,7 @@ class OpenAIAdapter(LLMProviderAdapter):
                 resp: ChatCompletion = self.client.chat.completions.create(**payload)
 
         protocol_resp = _from_openai_response(resp)
-        self._log(f"[adapters.openai] Response protocolized.", "debug")
+        self._log("[adapters.openai] Response protocolized.", "debug")
 
         return protocol_resp
 

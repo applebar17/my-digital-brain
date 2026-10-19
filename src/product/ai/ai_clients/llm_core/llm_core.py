@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
-import hashlib
 from pathlib import Path
-from collections import Counter
 from typing import Any, Callable, Dict, List, Optional, Union
 from collections.abc import Mapping
+from pydantic import BaseModel
 
 
-from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
+from product.ai.ai_clients.providers.base import Provider
 from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
@@ -23,8 +22,6 @@ from product.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
 
 from product.ai.ai_clients.protocols.protocol_tools import (
-    ToolResultBase,
-    ToolCallRecord,
     ToolErrorDTO,
     ToolOutputDTO,
 )
@@ -80,7 +77,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
     call(req, tools_mapping, ...) -> ChatResponse
         Route to the right provider and run the tool loop if requested.
     handle_tool_calling(req, tool_calls, tools_mapping, _state=...) -> ChatResponse
-        Execute tools with repeat/round guards and context budgeting.
+        Execute each unseen provider call once, return correlated outputs, and resume the provider.
 
     Notes
     -----
@@ -292,12 +289,8 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                 tool_call_cap=(
                     max_tool_calls if max_tool_calls is not None else self.tool_call_cap
                 ),
-                repeat_cap=self.tool_repeat_cap,
-                sig_counts=Counter(),
-                tool_call_records=[],
                 seen_call_ids=set(),
             )
-        self._tool_state = _state
 
         # Provider call using the routed adapter
         adapter = self._get_adapter_for_provider(provider_for_turn)
@@ -374,148 +367,85 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         # handler is invoked at most once; all handler failures become tool data.
         for tc in unique_tool_calls:
             name = tc.function.name
-            raw_args = tc.function.arguments
             call_id = tc.id
 
-            # Ensure dict args
-            if not isinstance(raw_args, dict):
-                raw_args = self._parse_json_args_safe(str(raw_args), fn_name=name)
-
-            # Repeat fingerprint: name + stable md5 of args
-            try:
-                args_str_stable = json.dumps(raw_args, sort_keys=True, ensure_ascii=False)
-            except Exception:
-                args_str_stable = str(raw_args)
-            sig = f"{name}:{hashlib.md5(args_str_stable.encode('utf-8')).hexdigest()[:12]}"
-
             if _state["tool_calls_processed"] >= _state["tool_call_cap"]:
-                out = {
-                    "ok": False,
-                    "error": (
-                        f"The configured tool-call limit ({_state['tool_call_cap']}) "
-                        f"was reached; '{name}' was not executed. Continue using the "
-                        "available results and provide a final response."
+                tool_output = self._tool_error_output(
+                    code="tool_call_cap_reached",
+                    message=(
+                        f"The configured tool-call limit ({_state['tool_call_cap']}) was reached; "
+                        f"'{name}' was not executed. Continue with the available results and answer."
                     ),
-                }
-                parsed_args_for_record = raw_args
-                result_ok = False
-                result_obj_for_summary = out
+                )
                 cap_reached = True
+            elif not req.tools:
+                _state["tool_calls_processed"] += 1
+                tool_output = self._tool_error_output(
+                    code="toolbox_unavailable",
+                    message=f"Tool '{name}' was not executed because no toolbox is available.",
+                )
             else:
                 _state["tool_calls_processed"] += 1
-                if not req.tools:
-                    out = {
-                        "ok": False,
-                        "error": f"Tool call '{name}' was not executed because no toolbox is available.",
-                    }
-                    parsed_args_for_record = raw_args
-                    result_ok = False
-                    result_obj_for_summary = out
-                elif _state["sig_counts"][sig] >= _state["repeat_cap"]:
-                    out = {
-                        "ok": False,
-                        "error": (
-                            f"The '{name}' request with identical arguments has "
-                            f"already been attempted {_state['sig_counts'][sig]} times. "
-                            "This repeat was skipped to avoid duplicating the operation."
-                        ),
-                    }
-                    self._log(f"[{log_name_main}.tools_handle] {out['error']}", "warning")
-                    parsed_args_for_record = raw_args
-                    result_ok = False
-                    result_obj_for_summary = out
-                else:
-                    _state["sig_counts"][sig] += 1
-
-                    # Protocol-aware arg parse → kwargs
-                    parsed_kwargs = self._protocol_parse_args(name, raw_args)
-                    parsed_args_for_record = (
-                        parsed_kwargs if parsed_kwargs is not raw_args else raw_args
+                try:
+                    raw_args = tc.function.arguments
+                    parsed_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    if not isinstance(parsed_args, dict):
+                        raise ValueError("Tool arguments must be a JSON object.")
+                except (json.JSONDecodeError, TypeError, ValueError) as error:
+                    tool_output = self._tool_error_output(
+                        code="invalid_tool_arguments",
+                        message=f"Tool '{name}' received invalid arguments: {error}",
+                        hint="Return the tool arguments as a valid JSON object and continue.",
                     )
-
-                    fn = tools_mapping.get(name)
-                    if not callable(fn):
-                        out = {
-                            "ok": False,
-                            "error": (
-                                f"No backend handler is registered for tool '{name}'. "
-                                "Do not retry this operation; continue with the "
-                                "available context or another configured tool."
-                            ),
-                        }
-                        self._log(f"[{log_name_main}.tools_handle] {out['error']}", "error")
-                        result_ok = False
-                        result_obj_for_summary = out
+                else:
+                    handler = tools_mapping.get(name)
+                    if not callable(handler):
+                        tool_output = self._tool_error_output(
+                            code="tool_handler_unavailable",
+                            message=f"No backend handler is registered for tool '{name}'.",
+                        )
                     else:
                         try:
                             with tracing_context(parent=get_trace_parent_headers()):
-                                out_obj = fn(**parsed_kwargs)
-                            callable_name = getattr(getattr(fn, "func", fn), "__name__", name)
+                                result = handler(**parsed_args)
+                            tool_output = self._normalize_tool_output(result)
+                            callable_name = getattr(
+                                getattr(handler, "func", handler), "__name__", name
+                            )
                             self._log(
                                 f"[{log_name_main}.tools_handle] Tool {callable_name} executed.",
                                 "debug",
                             )
-
-                            result_ok = (
-                                out_obj.ok
-                                if self._protocol_is_result(out_obj)
-                                else bool(getattr(out_obj, "ok", True))
-                            )
-                            result_obj_for_summary = out_obj
-                            out = out_obj
-                        except Exception as e:
-                            out = {
-                                "ok": False,
-                                "error": (
-                                    f"Tool '{name}' failed with {type(e).__name__}: {e}. "
-                                    "Review the error, adjust the input or approach, "
-                                    "and continue the interaction."
+                        except Exception as error:
+                            tool_output = self._tool_error_output(
+                                code="tool_execution_failed",
+                                message=(
+                                    f"Tool '{name}' failed with {type(error).__name__}: {error}. "
+                                    "Review the error, adjust the input or approach, and continue."
                                 ),
-                            }
-                            self._log(f"[{log_name_main}.tools_handle] {out['error']}", "error")
-                            result_ok = False
-                            result_obj_for_summary = out
+                                hint="Use this error to correct the tool call or choose another action.",
+                            )
 
-            # Return a stable DTO shape for both success and recoverable failure.
-            tool_output = self._tool_output_dto(
-                out,
-                result_ok=result_ok,
-                tool_name=name,
-            )
-
-            # Serialize tool result for the model, clamp to model budget
-            out_str = tool_output.model_dump_json(exclude_none=True)
-            out_str = self._clamp_for_model(out_str, model_name)
-
-            # Append normalized tool message
-            req.messages.append(Msg(role="tool", content=out_str, meta={"tool_call_id": call_id}))
-
-            # Record protocol call trace
-            try:
-                if isinstance(result_obj_for_summary, ToolResultBase):
-                    changes = result_obj_for_summary.changes or []
-                    error = result_obj_for_summary.error
-                else:
-                    changes, error = [], None
-
-                record = ToolCallRecord(
-                    name=name or "tool",
-                    raw_args=args_str_stable,
-                    parsed_args=(
-                        parsed_args_for_record if isinstance(parsed_args_for_record, dict) else {}
-                    ),
-                    result_ok=result_ok,
-                    result_summary=self._protocol_summarize_result(result_obj_for_summary),
-                    result_changes=changes,
-                    error=error,
-                    salvage=None,
-                )
-                _state["tool_call_records"].append(record)
-            except Exception as e:
+            if tool_output.status == "error":
                 self._log(
-                    f"[{log_name_main}.tools_handle.protocol] Failed to record ToolCallRecord: {e}",
+                    f"[{log_name_main}.tools_handle] "
+                    f"{tool_output.error.message if tool_output.error else 'Tool returned an error status.'}",
                     "warning",
                 )
+            try:
+                serialized_output = tool_output.model_dump_json(exclude_none=True)
+            except Exception as error:
+                tool_output = self._tool_error_output(
+                    code="tool_output_serialization_failed",
+                    message=(
+                        f"Tool '{name}' returned a result that could not be serialized: "
+                        f"{type(error).__name__}: {error}"
+                    ),
+                    hint="Return JSON-compatible tool result data and continue.",
+                )
+                serialized_output = tool_output.model_dump_json(exclude_none=True)
+            out_str = self._clamp_for_model(serialized_output, model_name)
+            req.messages.append(Msg(role="tool", content=out_str, meta={"tool_call_id": call_id}))
 
         if cap_reached or _state["tool_calls_processed"] >= _state["tool_call_cap"]:
             req.tools = None
@@ -540,39 +470,21 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         )
         return self.call(req, tools_mapping, max_tool_calls=_state["tool_call_cap"], _state=_state)
 
-    def _tool_output_dto(
-        self,
-        result: Any,
-        *,
-        result_ok: bool,
-        tool_name: str,
-    ) -> ToolOutputDTO:
-        """Normalize a handler result into the shared tool-output DTO."""
-        serialized_result = self._protocol_result_to_str(result)
-        try:
-            parsed_result = json.loads(serialized_result)
-        except (TypeError, ValueError):
-            parsed_result = {"result": serialized_result}
+    @staticmethod
+    def _tool_error_output(*, code: str, message: str, hint: Optional[str] = None) -> ToolOutputDTO:
+        """Build the single normalized tool-error shape returned to the provider."""
+        return ToolOutputDTO(
+            status="error",
+            error=ToolErrorDTO(code=code, message=message, hint=hint),
+        )
 
-        data = parsed_result if isinstance(parsed_result, dict) else {"result": parsed_result}
-        if result_ok:
-            return ToolOutputDTO(status="ok", data=data)
-
-        if isinstance(result, ToolResultBase) and result.error is not None:
-            error = result.error
-        else:
-            if isinstance(result, dict):
-                raw_error = result.get("error", result)
-                message = (
-                    raw_error.get("message", str(raw_error))
-                    if isinstance(raw_error, dict)
-                    else str(raw_error)
-                )
-            else:
-                message = self._protocol_summarize_result(result)
-            error = ToolErrorDTO(
-                code="tool_execution_failed",
-                message=f"{message} Review the input or approach and continue.",
-                hint=f"Review the result for '{tool_name}', adjust the input or approach, and continue.",
-            )
-        return ToolOutputDTO(status="error", error=error)
+    @staticmethod
+    def _normalize_tool_output(result: Any) -> ToolOutputDTO:
+        """Normalize a mapped handler's result without a serialize/parse round trip."""
+        if isinstance(result, ToolOutputDTO):
+            return result
+        if isinstance(result, BaseModel):
+            result = result.model_dump(mode="json")
+        if not isinstance(result, dict):
+            result = {"result": result}
+        return ToolOutputDTO(status="ok", data=result)
