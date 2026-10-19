@@ -6,14 +6,18 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13.3",
+    "anthropic>=0.44.0",
     "chromadb==0.5.23",
     "fastapi>=0.115.0",
     "neo4j>=5.25.0",
     "openai>=1.55.0",
+    "platformdirs>=4.3.6",
     "psycopg[binary]>=3.2.3",
+    "python-dotenv>=1.0.1",
     "pydantic>=2.9.2",
     "pydantic-settings>=2.6.0",
     "sqlalchemy>=2.0.36",
+    "tiktoken>=0.8.0",
     "uvicorn[standard]>=0.32.0",
 ]
 

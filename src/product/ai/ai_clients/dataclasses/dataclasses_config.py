@@ -9,14 +9,10 @@ from collections import Counter
 import json
 
 # If these defaults already exist in your codebase, import them instead.
-DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = globals().get(
-    "DEFAULT_TOOL_DISABLE_MARGIN_TOKENS", 3_500
-)
-DEFAULT_TOOL_ROUND_CAP = globals().get("DEFAULT_TOOL_ROUND_CAP", 20)
+DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = globals().get("DEFAULT_TOOL_DISABLE_MARGIN_TOKENS", 3_500)
+DEFAULT_TOOL_CALL_CAP = globals().get("DEFAULT_TOOL_CALL_CAP", 20)
 DEFAULT_TOOL_REPEAT_CAP = globals().get("DEFAULT_TOOL_REPEAT_CAP", 2)
-DEFAULT_TOOL_MESSAGE_TOKEN_RATIO = globals().get(
-    "DEFAULT_TOOL_MESSAGE_TOKEN_RATIO", 0.20
-)
+DEFAULT_TOOL_MESSAGE_TOKEN_RATIO = globals().get("DEFAULT_TOOL_MESSAGE_TOKEN_RATIO", 0.20)
 DEFAULT_OUTPUT_RESERVE = globals().get("DEFAULT_OUTPUT_RESERVE", 1_024)
 DEFAULT_TOOL_MESSAGE_CHAR_CAP = globals().get("DEFAULT_TOOL_MESSAGE_CHAR_CAP", 16_000)
 
@@ -84,7 +80,7 @@ class RuntimeKnobs:
     """Tunable runtime limits/ratios for tool use & outputs."""
 
     tool_disable_margin_tokens: int = DEFAULT_TOOL_DISABLE_MARGIN_TOKENS
-    tool_round_cap: int = DEFAULT_TOOL_ROUND_CAP
+    tool_call_cap: int = DEFAULT_TOOL_CALL_CAP
     tool_repeat_cap: int = DEFAULT_TOOL_REPEAT_CAP
     tool_message_token_ratio: float = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO
     output_reserve_tokens: int = DEFAULT_OUTPUT_RESERVE
@@ -111,12 +107,12 @@ class ToolState:
     We store Counter as a dict for portability.
     """
 
-    rounds: int = 0
+    tool_calls_processed: int = 0
     sig_counts: Dict[str, int] = field(default_factory=dict)
 
     @classmethod
-    def from_runtime(cls, rounds: int, sig_counter: Counter) -> "ToolState":
-        return cls(rounds=rounds, sig_counts=dict(sig_counter))
+    def from_runtime(cls, tool_calls_processed: int, sig_counter: Counter) -> "ToolState":
+        return cls(tool_calls_processed=tool_calls_processed, sig_counts=dict(sig_counter))
 
     def to_runtime(self) -> Counter:
         return Counter(self.sig_counts)

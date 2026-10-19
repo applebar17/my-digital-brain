@@ -12,20 +12,14 @@ try:  # pragma: no cover
 except Exception:  # pragma: no cover
     tiktoken = None  # we will fall back to a 4 chars ≈ 1 token heuristic
 from collections import Counter
-from typing import Union, List, Optional, Mapping, Dict, Any, Sequence, Type
+from typing import Union, List, Optional, Dict, Any, Sequence, Type
 
-from dotenv import load_dotenv
 from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
 from product.ai.ai_clients.protocols.protocol_chat import (
     Msg,
     ChatRequest,
     msg_text,
     msg_from_loose,
-)
-from product.ai.ai_clients.providers.base import LLMProviderAdapter
-from product.ai.ai_clients.providers.registry import (
-    get_adapter,
-    Adapters,
 )
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
 from product.ai.ai_clients.utils.utils import (
@@ -34,7 +28,6 @@ from product.ai.ai_clients.utils.utils import (
     _sanitize_json_candidate,
     _strip_code_fence,
     _env,
-    _TASK_KINDS,
 )
 from product.ai.ai_clients.protocols.protocol_tools import (
     UpdateNodeArgs,
@@ -68,12 +61,10 @@ DEFAULT_OUTPUT_RESERVE = 1_024  # tokens to leave for completion
 
 
 # Tooling guard knobs (can be tweaked per instance)
-DEFAULT_TOOL_ROUND_CAP = 20  # max assistant→tools cycles per turn
+DEFAULT_TOOL_CALL_CAP = 20  # max provider tool calls executed per turn
 DEFAULT_TOOL_REPEAT_CAP = 2  # same (fn+args) allowed this many times
 DEFAULT_TOOL_MESSAGE_TOKEN_RATIO = 0.20  # tool output cap as % of model context (20%)
-DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = (
-    3_500  # if remaining context < margin, disable tools
-)
+DEFAULT_TOOL_DISABLE_MARGIN_TOKENS = 3_500  # if remaining context < margin, disable tools
 
 log_name_main = "llm_interface_helpers"
 
@@ -126,11 +117,11 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
     tool_message_token_ratio : float
     output_reserve_tokens : int
     tool_disable_margin_tokens : int
-    tool_round_cap : int
+    tool_call_cap : int
     tool_repeat_cap : int
     azure_deployment_to_base : dict
     model_context_overrides : dict
-    _tool_state : dict  # { rounds: int, sig_counts: Counter }
+    _tool_state : dict  # { tool_calls_processed: int, sig_counts: Counter }
 
     Notes
     -----
@@ -142,9 +133,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
         self,
         logger: Optional[logging.Logger] = None,
         base_path: Path = Path("."),
-        max_tokens_per_message_ratio: Optional[
-            float
-        ] = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO,
+        max_tokens_per_message_ratio: Optional[float] = DEFAULT_TOOL_MESSAGE_TOKEN_RATIO,
         provider: Provider = None,
         *args,
         **kwargs,
@@ -181,15 +170,15 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
     def _ensure_runtime_caps(self) -> None:  #
         if not hasattr(self, "_tool_state") or self._tool_state is None:
             self._tool_state = {
-                "rounds": 0,
+                "tool_calls_processed": 0,
                 "sig_counts": Counter(),
             }
 
         # Instance-level knobs with sensible defaults
         if not hasattr(self, "tool_disable_margin_tokens"):
             self.tool_disable_margin_tokens = DEFAULT_TOOL_DISABLE_MARGIN_TOKENS
-        if not hasattr(self, "tool_round_cap"):
-            self.tool_round_cap = DEFAULT_TOOL_ROUND_CAP
+        if not hasattr(self, "tool_call_cap"):
+            self.tool_call_cap = DEFAULT_TOOL_CALL_CAP
         if not hasattr(self, "tool_repeat_cap"):
             self.tool_repeat_cap = DEFAULT_TOOL_REPEAT_CAP
         if not hasattr(self, "tool_message_token_ratio"):
@@ -198,23 +187,15 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
             self.output_reserve_tokens = DEFAULT_OUTPUT_RESERVE
 
         # Optional Azure deployment → base model mapping
-        if (
-            not hasattr(self, "azure_deployment_to_base")
-            or self.azure_deployment_to_base is None
-        ):
+        if not hasattr(self, "azure_deployment_to_base") or self.azure_deployment_to_base is None:
             mapping_env = _env("BORIS_AZURE_DEPLOY_MAP")
             try:
-                self.azure_deployment_to_base = (
-                    json.loads(mapping_env) if mapping_env else {}
-                )
+                self.azure_deployment_to_base = json.loads(mapping_env) if mapping_env else {}
             except Exception:
                 self.azure_deployment_to_base = {}
 
         # Allow external override of model contexts
-        if (
-            not hasattr(self, "model_context_overrides")
-            or self.model_context_overrides is None
-        ):
+        if not hasattr(self, "model_context_overrides") or self.model_context_overrides is None:
             self.model_context_overrides = {}
 
     def _context_limit_for_model(self, model: str) -> int:  #
@@ -261,12 +242,10 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
             return None
         try:
             return tiktoken.get_encoding(encoding_model)  # type: ignore[attr-defined]
-        except:
+        except Exception:
             return tiktoken.get_encoding("cl100k_base")
 
-    def _count_tokens_text(
-        self, text: str, encoding: Optional[Encoding] = None
-    ) -> int:  #
+    def _count_tokens_text(self, text: str, encoding: Optional[Encoding] = None) -> int:  #
         if not text:
             return 0
         # Prefer provided encoding; else try base encoder; else fallback heuristic (~4 chars/token)
@@ -304,9 +283,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
         except Exception:
             return overhead + self._count_tokens_text(str(obj), encoding)
 
-    def _count_tokens_messages(
-        self, messages: Sequence[Any], encoding_model: str = None
-    ) -> int:  #
+    def _count_tokens_messages(self, messages: Sequence[Any], encoding_model: str = None) -> int:  #
         enc = self._encoding_for_model(encoding_model=encoding_model)
         total = 0
         for m in messages:
@@ -347,9 +324,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
 
     def _tool_message_token_cap_for_model(self, model: str) -> int:  #
         ctx = self._context_limit_for_model(model)
-        ratio = getattr(
-            self, "tool_message_token_ratio", DEFAULT_TOOL_MESSAGE_TOKEN_RATIO
-        )
+        ratio = getattr(self, "tool_message_token_ratio", DEFAULT_TOOL_MESSAGE_TOKEN_RATIO)
         try:
             cap = max(1, int(ctx * float(ratio)))
         except Exception:
@@ -406,9 +381,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
     def _disable_tools_if_low_budget_norm(self, req: ChatRequest) -> bool:  #
         model = req.model
         max_context = self._context_limit_for_model(model)
-        margin = getattr(
-            self, "tool_disable_margin_tokens", DEFAULT_TOOL_DISABLE_MARGIN_TOKENS
-        )
+        margin = getattr(self, "tool_disable_margin_tokens", DEFAULT_TOOL_DISABLE_MARGIN_TOKENS)
         total = self._count_tokens_messages(req.messages)
         if total >= max_context - margin:
             # drop tools and add assistant notice
@@ -444,11 +417,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
 
     def _looks_like_context_error(self, exc: Exception) -> bool:  #
         msg = str(exc).lower()
-        return (
-            "maximum context length" in msg
-            or "max context" in msg
-            or "context length" in msg
-        )
+        return "maximum context length" in msg or "max context" in msg or "context length" in msg
 
     def _parse_json_args_safe(  #
         self, s: Optional[str], fn_name: Optional[str] = None
@@ -527,9 +496,7 @@ class LLMInterfaceHelpers(LLMInterfaceBase):
             return {k: getattr(parsed, k) for k in parsed.__dataclass_fields__.keys()}
         except Exception as e:
             # If parse fails, fall back gracefully to raw args
-            self._log(
-                f"[{log_name_main}.args] Failed to parse args for '{name}': {e}", "warn"
-            )
+            self._log(f"[{log_name_main}.args] Failed to parse args for '{name}': {e}", "warn")
             return args
 
     def _protocol_is_result(self, obj: Any) -> bool:  #

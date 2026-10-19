@@ -1,6 +1,6 @@
 # Task 1.2.2 — verify provider calls and tool continuation
 
-**Status: Not started**
+**Status: In progress**
 
 ## User story
 
@@ -18,6 +18,8 @@ do not send this behavior as prompt guidance.
 ## Where
 
 - `product.ai.ai_clients` core and provider adapter tests.
+- Direct runtime dependencies used by the selected client package in
+  `pyproject.toml` and `uv.lock`.
 - The typed mapping seam consumed later by `product.agentic`.
 
 ## Functional communication DTOs
@@ -31,7 +33,14 @@ business data.
 ## Dependencies and acceptance
 
 - Depends on Task 1.2.1.
-- Tests cover success, handler exception, multiple calls, call-cap recovery,
-  nested agent handler, and final assistant response.
+- Each provider-issued call receives one matching output; mapped handlers are
+  invoked at most once, including when they raise `TypeError`.
+- Handler failures produce an informative error result and the provider is
+  called again with the updated transcript.
+- Calls beyond the configured call cap receive correlated synthetic error
+  outputs; the next provider request has no toolbox and the client returns the
+  provider's final assistant response.
+- Scenario coverage combines success, handler exception, multiple calls,
+  callable child-agent handling, cap recovery, and final assistant response.
 - A tool result is never returned as the final assistant response.
 - No duplicate output is attached to one provider call ID.

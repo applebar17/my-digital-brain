@@ -5,12 +5,10 @@ import json
 import logging
 import hashlib
 from pathlib import Path
-from functools import partial
 from collections import Counter
-from typing import Union, List, Optional, Mapping, Dict, Any, Sequence, Type
-from collections.abc import Mapping  # at top of file if not present
+from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Mapping
 
-from dotenv import load_dotenv
 
 from product.ai.ai_clients.dataclasses.dataclasses_config import Provider
 from product.ai.ai_clients.protocols.protocol_chat import (
@@ -23,11 +21,6 @@ from product.ai.ai_clients.protocols.protocol_chat import (
 )
 from product.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
-from product.ai.ai_clients.providers.base import LLMProviderAdapter
-from product.ai.ai_clients.providers.registry import (
-    get_adapter,
-    Adapters,
-)
 
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolResultBase,
@@ -97,9 +90,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         self,
         logger: Optional[logging.Logger] = None,
         base_path: Path = Path("."),
-        max_tokens_per_message_ratio: Optional[
-            float
-        ] = None,
+        max_tokens_per_message_ratio: Optional[float] = None,
         provider: Provider = None,
         *args,
         **kwargs,
@@ -119,24 +110,6 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             f"[{log_name_main}.core.init] core ready (base_path={self.base_path}, provider={self.provider})",
             "debug",
         )
-
-    @staticmethod
-    def _is_retrieve_node_not_found_error(tool_name: Optional[str], result_obj: Any) -> bool:
-        if tool_name != "retrieve_node":
-            return False
-        if not isinstance(result_obj, dict):
-            return False
-        err = str(result_obj.get("error") or "").lower()
-        if not err:
-            return False
-        markers = (
-            "not found",
-            "doesn't exists",
-            "closest ids",
-            "normalization",
-            "exact node id",
-        )
-        return any(marker in err for marker in markers)
 
     @traceable(name="llm_core.handle_params", run_type="prompt")
     def handle_params(
@@ -187,9 +160,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         messages = self._normalize_messages(system_prompt, chat_messages)
 
         # Normalize tools → ToolSpec[]
-        norm_tools: Optional[List[ToolSpec]] = (
-            coerce_toolspecs(tools) if tools else None
-        )
+        norm_tools: Optional[List[ToolSpec]] = coerce_toolspecs(tools) if tools else None
 
         # Gather scalar params (trim Nones)
         params: Dict[str, Any] = {}
@@ -273,11 +244,17 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
     def call(
         self,
         req: ChatRequest,
-        tools_mapping: Optional[Mapping[str, partial]] = None,
+        tools_mapping: Optional[Mapping[str, Callable[..., Any]]] = None,
         *,
-        max_rounds: Optional[int] = None,
+        max_tool_calls: Optional[int] = None,
         _state: Optional[dict] = None,
     ) -> ChatResponse:
+        """Call the routed adapter and resume this method after mapped tool outputs.
+
+        Depends on provider/model routing and the adapter's `chat` method; tool
+        turns delegate to `handle_tool_calling` and return only after a provider
+        response without tool calls.
+        """
         kind = (req.params.get("model_kind") if req.params else None) or "chat"
         provider_for_turn = self._resolve_provider_for_kind(kind)
         model_for_turn = self._resolve_model_for_kind(kind)
@@ -308,32 +285,16 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
 
         # Initialize _state once
         if _state is None:
-            round_cap = max_rounds if max_rounds is not None else self.tool_round_cap
             _state = dict(
-                rounds=0,
-                round_cap=round_cap,
+                tool_calls_processed=0,
+                tool_call_cap=(
+                    max_tool_calls if max_tool_calls is not None else self.tool_call_cap
+                ),
                 repeat_cap=self.tool_repeat_cap,
                 sig_counts=Counter(),
                 tool_call_records=[],
-                retrieve_not_found_count=0,
-                retrieve_not_found_cap=2,
             )
-
-        # Tool round cap preflight
-        if req.tools and _state["rounds"] >= _state["round_cap"]:
-            self._log(
-                f"[{log_name_main}.call] Tool round cap reached – disabling tools for this turn.",
-                "warn",
-            )
-            req.tools = None
-            req.params.pop("parallel_tool_calls", None)
-            req.messages.append(
-                Msg(
-                    role="assistant",
-                    content="Tooling disabled after reaching safety cap. Please answer the user directly using the information available.",
-                )
-            )
-            self._ensure_context_budget_norm(req)
+        self._tool_state = _state
 
         # Provider call using the routed adapter
         adapter = self._get_adapter_for_provider(provider_for_turn)
@@ -341,51 +302,44 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         with tracing_context(parent=parent_headers):
             resp: ChatResponse = adapter.chat(req)
 
-        # No tool calls requested (or no mapping to satisfy them)
-        if not (tools_mapping and req.tools and getattr(resp, "tool_calls", None)):
+        if not getattr(resp, "tool_calls", None):
             self._log(f"[{log_name_main}.call] No tools requested.", "debug")
             return resp
 
         self._log(
-            f"[{log_name_main}.call] Model requested {len(resp.tool_calls)} tool call(s): {",".join([tool.function.name for tool in resp.tool_calls])}",
+            f"[{log_name_main}.call] Model requested {len(resp.tool_calls)} tool call(s): {','.join([tool.function.name for tool in resp.tool_calls])}",
             "info",
         )
-        return self.handle_tool_calling(
-            req, resp.tool_calls, tools_mapping, _state=_state
-        )
+        return self.handle_tool_calling(req, resp.tool_calls, tools_mapping or {}, _state=_state)
 
     @traceable(name="llm_core.handle_tool_calling", run_type="tool")
     def handle_tool_calling(
         self,
         req: ChatRequest,
         tool_calls: List[ToolCalled],
-        tools_mapping: Mapping[str, partial],
+        tools_mapping: Mapping[str, Callable[..., Any]],
         *,
         _state: dict,
     ) -> ChatResponse:
+        """Append one correlated output per provider call, then resume `call`.
+
+        Mapped handlers are invoked once at most. Handler failures and calls
+        declined by the configured cap become tool messages in this transcript.
+        """
         self._log(f"[{log_name_main}.tools_handle] Tooling...", "debug")
         model_name = req.model
 
-        # Hard stop if cap already hit
-        if req.tools and _state["rounds"] >= _state["round_cap"]:
-            self._log(
-                f"[{log_name_main}.tools_handle] Tool round cap reached – disabling tools for this turn.",
-                "warn",
-            )
-            req.tools = None
-            req.params.pop("parallel_tool_calls", None)
-            req.messages.append(
-                Msg(
-                    role="assistant",
-                    content="Tooling disabled after reaching safety cap. Please answer the user directly using the information available.",
+        unique_tool_calls: list[ToolCalled] = []
+        seen_call_ids: set[str] = set()
+        for tool_call in tool_calls:
+            if tool_call.id in seen_call_ids:
+                self._log(
+                    f"[{log_name_main}.tools_handle] Ignoring repeated provider call ID {tool_call.id}.",
+                    "warning",
                 )
-            )
-            self._ensure_context_budget_norm(req)
-            return self.call(
-                req, tools_mapping, max_rounds=_state["round_cap"], _state=_state
-            )
-
-        _state["rounds"] += 1
+                continue
+            seen_call_ids.add(tool_call.id)
+            unique_tool_calls.append(tool_call)
 
         # Echo assistant with tool_calls payload (provider-agnostic shape)
         tc_payload = [
@@ -395,15 +349,15 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                 "name": tc.function.name,
                 "arguments": tc.function.arguments,
             }
-            for tc in tool_calls
+            for tc in unique_tool_calls
         ]
-        req.messages.append(
-            Msg(role="assistant", content=None, meta={"tool_calls": tc_payload})
-        )
+        req.messages.append(Msg(role="assistant", content=None, meta={"tool_calls": tc_payload}))
 
-        # Execute tools sequentially with repeat guard
-        disable_due_to_missing_nodes = False
-        for tc in tool_calls:
+        cap_reached = False
+
+        # Return one correlated output for every provider-issued call. A mapped
+        # handler is invoked at most once; all handler failures become tool data.
+        for tc in unique_tool_calls:
             name = tc.function.name
             raw_args = tc.function.arguments
             call_id = tc.id
@@ -414,98 +368,105 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
 
             # Repeat fingerprint: name + stable md5 of args
             try:
-                args_str_stable = json.dumps(
-                    raw_args, sort_keys=True, ensure_ascii=False
-                )
+                args_str_stable = json.dumps(raw_args, sort_keys=True, ensure_ascii=False)
             except Exception:
                 args_str_stable = str(raw_args)
             sig = f"{name}:{hashlib.md5(args_str_stable.encode('utf-8')).hexdigest()[:12]}"
 
-            if _state["sig_counts"][sig] >= _state["repeat_cap"]:
+            if _state["tool_calls_processed"] >= _state["tool_call_cap"]:
                 out = {
                     "ok": False,
-                    "error": f"[loop-guard] Skipping repeat call to '{name}' after {_state['sig_counts'][sig]} repeats.",
+                    "error": (
+                        f"The configured tool-call limit ({_state['tool_call_cap']}) "
+                        f"was reached; '{name}' was not executed. Continue using the "
+                        "available results and provide a final response."
+                    ),
                 }
-                self._log(f"[{log_name_main}.tools_handle] {out['error']}", "warn")
                 parsed_args_for_record = raw_args
                 result_ok = False
                 result_obj_for_summary = out
+                cap_reached = True
             else:
-                _state["sig_counts"][sig] += 1
-
-                # Protocol-aware arg parse → kwargs
-                parsed_kwargs = self._protocol_parse_args(name, raw_args)
-                parsed_args_for_record = (
-                    parsed_kwargs if parsed_kwargs is not raw_args else raw_args
-                )
-
-                fn = tools_mapping.get(name)
-                if not callable(fn):
-                    out = {"ok": False, "error": f"Unknown tool: {name}"}
-                    self._log(f"[{log_name_main}.tools_handle] {out['error']}", "error")
+                _state["tool_calls_processed"] += 1
+                if not req.tools:
+                    out = {
+                        "ok": False,
+                        "error": f"Tool call '{name}' was not executed because no toolbox is available.",
+                    }
+                    parsed_args_for_record = raw_args
+                    result_ok = False
+                    result_obj_for_summary = out
+                elif _state["sig_counts"][sig] >= _state["repeat_cap"]:
+                    out = {
+                        "ok": False,
+                        "error": (
+                            f"The '{name}' request with identical arguments has "
+                            f"already been attempted {_state['sig_counts'][sig]} times. "
+                            "This repeat was skipped to avoid duplicating the operation."
+                        ),
+                    }
+                    self._log(f"[{log_name_main}.tools_handle] {out['error']}", "warning")
+                    parsed_args_for_record = raw_args
                     result_ok = False
                     result_obj_for_summary = out
                 else:
-                    try:
+                    _state["sig_counts"][sig] += 1
+
+                    # Protocol-aware arg parse → kwargs
+                    parsed_kwargs = self._protocol_parse_args(name, raw_args)
+                    parsed_args_for_record = (
+                        parsed_kwargs if parsed_kwargs is not raw_args else raw_args
+                    )
+
+                    fn = tools_mapping.get(name)
+                    if not callable(fn):
+                        out = {
+                            "ok": False,
+                            "error": (
+                                f"No backend handler is registered for tool '{name}'. "
+                                "Do not retry this operation; continue with the "
+                                "available context or another configured tool."
+                            ),
+                        }
+                        self._log(f"[{log_name_main}.tools_handle] {out['error']}", "error")
+                        result_ok = False
+                        result_obj_for_summary = out
+                    else:
                         try:
                             with tracing_context(parent=get_trace_parent_headers()):
                                 out_obj = fn(**parsed_kwargs)
+                            callable_name = getattr(getattr(fn, "func", fn), "__name__", name)
                             self._log(
-                                f"[{log_name_main}.tools_handle] Tool {fn.func.__name__} executed.",
+                                f"[{log_name_main}.tools_handle] Tool {callable_name} executed.",
                                 "debug",
                             )
-                        except TypeError as e:
-                            # Fallback: pass the protocol dataclass instance if available
-                            self._log(
-                                f"[{log_name_main}.tools_handle] Retrying tool {name} with dataclass instance: {e}",
-                                "debug",
+
+                            result_ok = (
+                                out_obj.ok
+                                if self._protocol_is_result(out_obj)
+                                else bool(getattr(out_obj, "ok", True))
                             )
-                            arg_cls = self._protocol_arg_cls_for(name)
-                            with tracing_context(parent=get_trace_parent_headers()):
-                                out_obj = (
-                                    fn(arg_cls.from_dict(raw_args))
-                                    if arg_cls
-                                    else fn(parsed_kwargs)
-                                )
-
-                        result_ok = (
-                            out_obj.ok
-                            if self._protocol_is_result(out_obj)
-                            else bool(getattr(out_obj, "ok", True))
-                        )
-                        result_obj_for_summary = out_obj
-                        out = out_obj
-                    except Exception as e:
-                        out = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-                        self._log(
-                            f"[{log_name_main}.tools_handle] {out['error']}", "error"
-                        )
-                        result_ok = False
-                        result_obj_for_summary = out
-
-            if self._is_retrieve_node_not_found_error(name, out):
-                _state["retrieve_not_found_count"] = (
-                    _state.get("retrieve_not_found_count", 0) + 1
-                )
-                if _state["retrieve_not_found_count"] >= _state.get(
-                    "retrieve_not_found_cap", 2
-                ):
-                    disable_due_to_missing_nodes = True
-                    self._log(
-                        f"[{log_name_main}.tools_handle] Repeated missing retrieve_node ids; disabling tools for this turn.",
-                        "warn",
-                    )
-            elif name == "retrieve_node" and result_ok:
-                _state["retrieve_not_found_count"] = 0
+                            result_obj_for_summary = out_obj
+                            out = out_obj
+                        except Exception as e:
+                            out = {
+                                "ok": False,
+                                "error": (
+                                    f"Tool '{name}' failed with {type(e).__name__}: {e}. "
+                                    "Review the error, adjust the input or approach, "
+                                    "and continue the interaction."
+                                ),
+                            }
+                            self._log(f"[{log_name_main}.tools_handle] {out['error']}", "error")
+                            result_ok = False
+                            result_obj_for_summary = out
 
             # Serialize tool result for the model, clamp to model budget
             out_str = self._protocol_result_to_str(out)
             out_str = self._clamp_for_model(out_str, model_name)
 
             # Append normalized tool message
-            req.messages.append(
-                Msg(role="tool", content=out_str, meta={"tool_call_id": call_id})
-            )
+            req.messages.append(Msg(role="tool", content=out_str, meta={"tool_call_id": call_id}))
 
             # Record protocol call trace
             try:
@@ -519,14 +480,10 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                     name=name or "tool",
                     raw_args=args_str_stable,
                     parsed_args=(
-                        parsed_args_for_record
-                        if isinstance(parsed_args_for_record, dict)
-                        else {}
+                        parsed_args_for_record if isinstance(parsed_args_for_record, dict) else {}
                     ),
                     result_ok=result_ok,
-                    result_summary=self._protocol_summarize_result(
-                        result_obj_for_summary
-                    ),
+                    result_summary=self._protocol_summarize_result(result_obj_for_summary),
                     result_changes=changes,
                     error=error,
                     salvage=None,
@@ -535,25 +492,12 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             except Exception as e:
                 self._log(
                     f"[{log_name_main}.tools_handle.protocol] Failed to record ToolCallRecord: {e}",
-                    "warn",
+                    "warning",
                 )
 
-            if disable_due_to_missing_nodes:
-                break
-
-        if disable_due_to_missing_nodes:
+        if cap_reached or _state["tool_calls_processed"] >= _state["tool_call_cap"]:
             req.tools = None
             req.params.pop("parallel_tool_calls", None)
-            req.messages.append(
-                Msg(
-                    role="assistant",
-                    content=(
-                        "Repeated retrieve_node misses detected. "
-                        "Stop guessing node ids and continue with available context "
-                        "or use exact ids from previous suggestions."
-                    ),
-                )
-            )
 
         # Post-tools: enforce budget; disable tools if tight
         self._ensure_context_budget_norm(req)
@@ -568,21 +512,8 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             )
             self._ensure_context_budget_norm(req)
 
-        # If we hit the round cap, cut tools for the next bounce
-        if req.tools and _state["rounds"] >= _state["round_cap"]:
-            req.tools = None
-            req.params.pop("parallel_tool_calls", None)
-            req.messages.append(
-                Msg(
-                    role="assistant",
-                    content="Tooling disabled after reaching safety cap. Please answer the user directly using the information available.",
-                )
-            )
-
         self._log(
-            f"[{log_name_main}.tools_handle] Re-calling provider after tools (round {_state['rounds']}).",
+            f"[{log_name_main}.tools_handle] Re-calling provider after tool outputs (processed {_state['tool_calls_processed']}).",
             "debug",
         )
-        return self.call(
-            req, tools_mapping, max_rounds=_state["round_cap"], _state=_state
-        )
+        return self.call(req, tools_mapping, max_tool_calls=_state["tool_call_cap"], _state=_state)

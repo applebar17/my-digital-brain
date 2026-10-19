@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional, List, Dict, Any, Tuple, Literal
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
-from collections import Counter
 import json
+import re
 
 from product.ai.ai_clients.llm_core.llm_core import (
     LLMInterfaceCore as LLMInterface,
@@ -83,12 +83,12 @@ class JsonSalvageAudit:
         return asdict(self)
 
 
-# Matches your step-2 ToolState, but focused on the loop reporting
+# Serializable summary of a client tool-calling turn.
 @dataclass
 class ToolLoopAudit:
-    rounds: int
+    tool_calls_processed: int
     repeat_cap: int
-    round_cap: int
+    tool_call_cap: int
     sig_counts: Dict[str, int] = field(default_factory=dict)
 
 
@@ -106,9 +106,7 @@ def _msg_content(m: Any) -> Any:
     return c
 
 
-def _count_tokens_messages(
-    client: "LLMInterface", messages: List[Any], model: str
-) -> int:
+def _count_tokens_messages(client: "LLMInterface", messages: List[Any], model: str) -> int:
     return client._count_tokens_messages(messages, model)
 
 
@@ -143,9 +141,7 @@ def ensure_context_budget_with_audit(
         )
 
     max_context = client._context_limit_for_model(model)
-    max_output = int(
-        params.get("max_tokens") or getattr(client, "output_reserve_tokens", 1500)
-    )
+    max_output = int(params.get("max_tokens") or getattr(client, "output_reserve_tokens", 1500))
     budget = max_context - max_output
 
     before_msgs = params.get("messages") or []
@@ -167,16 +163,10 @@ def ensure_context_budget_with_audit(
         # Diff tool message token counts by position (best-effort)
         for idx, (m_before, m_after) in enumerate(zip(before_msgs, clamped)):
             if _msg_role(m_before) == "tool":
-                tb = client._count_tokens(
-                    _msg_content(m_before), client._encoding_for_model()
-                )
-                ta = client._count_tokens(
-                    _msg_content(m_after), client._encoding_for_model()
-                )
+                tb = client._count_tokens(_msg_content(m_before), client._encoding_for_model())
+                ta = client._count_tokens(_msg_content(m_after), client._encoding_for_model())
                 if ta < tb:
-                    tool_clamps.append(
-                        ToolClampDelta(index=idx, before_tokens=tb, after_tokens=ta)
-                    )
+                    tool_clamps.append(ToolClampDelta(index=idx, before_tokens=tb, after_tokens=ta))
 
     # 2) Apply full truncation pass to respect budget
     tmp_msgs = _copy_messages(before_msgs)
@@ -231,9 +221,7 @@ def ensure_context_budget_with_audit(
         params["messages"] = after_msgs
 
     # Recompute final total (after optional tool disabling assistant note)
-    total_final = _count_tokens_messages(
-        client, params.get("messages") or after_msgs, model
-    )
+    total_final = _count_tokens_messages(client, params.get("messages") or after_msgs, model)
 
     return BudgetAudit(
         model=model,
@@ -257,9 +245,7 @@ def parse_json_args_with_audit(
     Wrap your `_parse_json_args_safe` to return both the parsed dict AND a salvage audit.
     """
     if not s:
-        return {}, JsonSalvageAudit(
-            fn_name=fn_name, outcome=SalvageOutcome.EMPTY, len_original=0
-        )
+        return {}, JsonSalvageAudit(fn_name=fn_name, outcome=SalvageOutcome.EMPTY, len_original=0)
 
     raw = s
     len_original = len(raw)
@@ -305,8 +291,6 @@ def parse_json_args_with_audit(
 
 # ---- local copies of your private helpers (so this module is standalone) ----
 # If you prefer, import the originals; these are minimal no-surprises versions.
-
-import re
 
 
 def _strip_code_fence_local(s: str) -> str:

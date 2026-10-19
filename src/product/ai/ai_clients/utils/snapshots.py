@@ -15,7 +15,7 @@ from product.ai.ai_clients.dataclasses.dataclasses_config import (
     OpenAIAuth,
     RuntimeKnobs,
     DEFAULT_TOOL_REPEAT_CAP,
-    DEFAULT_TOOL_ROUND_CAP,
+    DEFAULT_TOOL_CALL_CAP,
     DEFAULT_OUTPUT_RESERVE,
     DEFAULT_TOOL_DISABLE_MARGIN_TOKENS,
     DEFAULT_TOOL_MESSAGE_CHAR_CAP,
@@ -69,22 +69,14 @@ def snapshot_from_client(client: "LLMInterface") -> ClientConfigSnapshot:
     # Runtime knobs (respect instance overrides if present)
     runtime = RuntimeKnobs(
         tool_disable_margin_tokens=int(
-            getattr(
-                client, "tool_disable_margin_tokens", DEFAULT_TOOL_DISABLE_MARGIN_TOKENS
-            )
+            getattr(client, "tool_disable_margin_tokens", DEFAULT_TOOL_DISABLE_MARGIN_TOKENS)
         ),
-        tool_round_cap=int(getattr(client, "tool_round_cap", DEFAULT_TOOL_ROUND_CAP)),
-        tool_repeat_cap=int(
-            getattr(client, "tool_repeat_cap", DEFAULT_TOOL_REPEAT_CAP)
-        ),
+        tool_call_cap=int(getattr(client, "tool_call_cap", DEFAULT_TOOL_CALL_CAP)),
+        tool_repeat_cap=int(getattr(client, "tool_repeat_cap", DEFAULT_TOOL_REPEAT_CAP)),
         tool_message_token_ratio=float(
-            getattr(
-                client, "tool_message_token_ratio", DEFAULT_TOOL_MESSAGE_TOKEN_RATIO
-            )
+            getattr(client, "tool_message_token_ratio", DEFAULT_TOOL_MESSAGE_TOKEN_RATIO)
         ),
-        output_reserve_tokens=int(
-            getattr(client, "output_reserve_tokens", DEFAULT_OUTPUT_RESERVE)
-        ),
+        output_reserve_tokens=int(getattr(client, "output_reserve_tokens", DEFAULT_OUTPUT_RESERVE)),
         tool_message_char_cap=int(
             getattr(client, "tool_message_char_cap", DEFAULT_TOOL_MESSAGE_CHAR_CAP)
         ),
@@ -92,12 +84,8 @@ def snapshot_from_client(client: "LLMInterface") -> ClientConfigSnapshot:
 
     # Context overrides / Azure deployment mapping
     context = ModelContextOverrides(
-        azure_deployment_to_base=dict(
-            getattr(client, "azure_deployment_to_base", {}) or {}
-        ),
-        model_context_overrides=dict(
-            getattr(client, "model_context_overrides", {}) or {}
-        ),
+        azure_deployment_to_base=dict(getattr(client, "azure_deployment_to_base", {}) or {}),
+        model_context_overrides=dict(getattr(client, "model_context_overrides", {}) or {}),
     )
 
     return ClientConfigSnapshot(
@@ -114,11 +102,11 @@ def snapshot_tool_state_from_client(client: "LLMInterface") -> ToolState:
     Convert the client's internal tool state to a serializable ToolState.
     """
     state = getattr(client, "_tool_state", None) or {
-        "rounds": 0,
+        "tool_calls_processed": 0,
         "sig_counts": Counter(),
     }
-    rounds = int(state.get("rounds", 0))
+    tool_calls_processed = int(state.get("tool_calls_processed", 0))
     sig_counts = state.get("sig_counts", Counter())
     if not isinstance(sig_counts, Counter):
         sig_counts = Counter(sig_counts or {})
-    return ToolState.from_runtime(rounds=rounds, sig_counter=sig_counts)
+    return ToolState.from_runtime(tool_calls_processed=tool_calls_processed, sig_counter=sig_counts)
