@@ -1,6 +1,6 @@
 # Task 1.2.1 — locate `ai_clients` under `product`
 
-**Status: In progress**
+**Status: Done**
 
 ## User story
 

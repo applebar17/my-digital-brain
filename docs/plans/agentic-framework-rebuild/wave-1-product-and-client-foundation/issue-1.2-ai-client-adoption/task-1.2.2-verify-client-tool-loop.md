@@ -1,6 +1,6 @@
 # Task 1.2.2 — verify provider calls and tool continuation
 
-**Status: In progress**
+**Status: Done**
 
 ## User story
 
@@ -47,3 +47,4 @@ business data.
   it is neither executed again nor given another output.
 - Successful and failed results use one `ToolOutputDTO` with `status="ok"` or
   `status="error"`; the error payload is included only for failures.
+- Focused client and provider verification: 19 tests passed; Ruff checks passed.

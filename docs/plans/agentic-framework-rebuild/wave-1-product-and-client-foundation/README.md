@@ -1,6 +1,6 @@
 # Wave 1 — product namespace and client foundation
 
-**Status: Not started**
+**Status: Done**
 
 ## Outcome
 

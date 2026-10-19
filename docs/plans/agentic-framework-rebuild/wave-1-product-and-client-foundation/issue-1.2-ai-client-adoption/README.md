@@ -1,6 +1,6 @@
 # Issue 1.2 — adopt and verify the selected AI client layer
 
-**Status: In progress**
+**Status: Done**
 
 Place the already-selected `ai_clients` package under the target namespace and
 confirm its real provider/tool behavior against the accepted contracts. This
