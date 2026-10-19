@@ -1,9 +1,10 @@
 # protocol_tools.py
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, is_dataclass
 from enum import Enum
 from typing import Optional, List, Dict, Any, Literal, Union
 import json
+from pydantic import BaseModel, Field
 
 # ---------------------- core enums ----------------------
 
@@ -194,11 +195,21 @@ ToolArgs = Union[
 # ---------------------- tool result schemas ----------------------
 
 
-@dataclass
-class ToolError:
+class ToolErrorDTO(BaseModel):
+    """Single typed error payload shared by tool results and tool outputs."""
+
     code: str
     message: str
-    details: Optional[Dict[str, Any]] = None
+    hint: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolOutputDTO(BaseModel):
+    """Structured success or error result returned to the model."""
+
+    status: Literal["ok", "error"]
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[ToolErrorDTO] = None
 
 
 @dataclass
@@ -213,7 +224,7 @@ class OperationDelta:
 @dataclass
 class ToolResultBase:
     ok: bool
-    error: Optional[ToolError] = None
+    error: Optional[ToolErrorDTO] = None
     changes: List[OperationDelta] = field(default_factory=list)
     # Optional meta channel for consumers
     note: Optional[str] = None
@@ -222,7 +233,11 @@ class ToolResultBase:
         def _default(o):
             if isinstance(o, Enum):
                 return o.value
-            return asdict(o)
+            if isinstance(o, BaseModel):
+                return o.model_dump(mode="json")
+            if is_dataclass(o):
+                return asdict(o)
+            return str(o)
 
         return json.dumps(asdict(self), indent=indent, default=_default)
 
@@ -277,12 +292,14 @@ class ToolCallRecord:
     result_ok: bool
     result_summary: Optional[str] = None  # short human summary
     result_changes: List[OperationDelta] = field(default_factory=list)
-    error: Optional[ToolError] = None
+    error: Optional[ToolErrorDTO] = None
     # Optional: include salvage stats from step 3
     salvage: Optional[Dict[str, Any]] = None  # e.g. JsonSalvageAudit.to_dict()
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
+        if self.error is not None:
+            d["error"] = self.error.model_dump(mode="json")
         # Coerce Enums to values inside nested structures
         for ch in d.get("result_changes", []):
             if isinstance(ch.get("kind"), Enum):

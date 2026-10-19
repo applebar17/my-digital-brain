@@ -40,7 +40,7 @@ output. A model is never asked to "continue" through ordinary prose.
 ```text
 assistant tool call
   -> DTO/domain/handler failure
-  -> one ToolOutputDTO(status=error or recoverable_error)
+  -> one ToolOutputDTO(status="error", error=ToolErrorDTO)
   -> matching provider tool-output message
   -> next provider completion
   -> assistant response or a further tool call
@@ -49,6 +49,11 @@ assistant tool call
 A failure must not skip the matching output, emit a second output for the same
 call, terminate the outer session, or leak its serialized output to chat as the
 final answer.
+
+The client remembers provider call IDs for the full session. If a later
+provider turn repeats an ID already handled in that session, the client skips
+it rather than executing it or appending a second output for that ID. The
+existing call and result remain in the transcript.
 
 ## Pending human interaction
 
@@ -133,7 +138,8 @@ response is returned.
 - two calls in one assistant turn -> two independently matched outputs;
 - calls declined at the configured cap -> one synthetic output per original
   call ID, then a provider turn with no tools and an assistant response;
-- duplicate `provider_call_id` is rejected before execution;
+- a repeated `provider_call_id` later in the same session is skipped without
+  re-execution or a second output;
 - an inner agent tool produces exactly one outer output;
 - clarification pauses with no premature output and resumes with one output;
 - no serialized tool output can become a `completed.content` value.

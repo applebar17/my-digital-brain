@@ -25,11 +25,10 @@ class ToolErrorDTO(BaseModel):
     code: str
     message: str
     hint: str | None = None
-    retryable: bool
     details: dict[str, JsonValue] = Field(default_factory=dict)
 
 class ToolOutputDTO(BaseModel):
-    status: Literal["ok", "recoverable_error", "error", "awaiting_input"]
+    status: Literal["ok", "error"]
     data: BaseModel | None = None
     error: ToolErrorDTO | None = None
 
@@ -40,14 +39,22 @@ class ToolDefinition(BaseModel):
     output_model: type[BaseModel]
 ```
 
+Every invocation returns one `ToolOutputDTO`: successful results use
+`status="ok"` and `data`; failures use `status="error"` and `error`. The
+framework resumes the caller with either result; it does not encode a retry
+policy in the DTO. A clarification pause has no tool output until the original
+invocation resumes.
+
 `provider_call_id` is immutable and provider-issued. For Chat Completions it
 normalizes the assistant tool call's `id`; for Responses it normalizes the
 function call's `call_id`. The adapter owns this difference. All other layers
 refer only to `provider_call_id`.
 
-Every model-facing DTO has `extra="forbid"`, precise field descriptions, and
-the smallest required shape. Domain records, database UUIDs, provenance, and
-transport metadata are backend-owned and must not be requested from the model.
+Every DTO requested as structured model output has `extra="forbid"`, precise
+field descriptions, and the smallest required shape. Backend-constructed tool
+result DTOs do not need that input-validation setting. Domain records, database
+UUIDs, provenance, and transport metadata are backend-owned and must not be
+requested from the model.
 
 ## Proposal, command, and persisted-record boundary
 
@@ -90,7 +97,7 @@ A registered tool is a typed unit:
 ToolDefinition<InputDTO, OutputDTO>
   -> provider JSON schema generated from InputDTO
   -> raw provider arguments parsed once into InputDTO
-  -> handler(context, input_dto) -> OutputDTO | ToolOutputDTO
+  -> handler(context, input_dto) -> ToolOutputDTO
   -> one serialized ToolOutputDTO matched to provider_call_id
 ```
 
@@ -101,14 +108,14 @@ finishes or pauses.
 
 ## Validation and failure behavior
 
-1. Invalid JSON or invalid DTO input becomes one typed tool error output.
-2. Domain validation failure becomes one typed tool error output.
-3. Unexpected handler exception becomes one typed tool error output and is
+1. Invalid JSON or invalid DTO input becomes one `ToolOutputDTO(status="error")`.
+2. Domain validation failure becomes one `ToolOutputDTO(status="error")`.
+3. Unexpected handler exception becomes one `ToolOutputDTO(status="error")` and is
    logged with its technical traceback.
 4. The error output is appended to the same session using the original
    `provider_call_id`; it is never returned as the user-facing final response.
-5. A retryable error gives the model an actionable explanation and lets the
-   normal loop continue within its bounded budget.
+5. The error message and hint give the model useful context while the normal
+   tool loop continues within its configured call cap.
 
 `ToolErrorDTO.message` and `hint` are written for both a human reader and the
 model. They state the violated condition, valid alternatives when useful, and

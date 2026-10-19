@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
+from product.ai.ai_clients.protocols.protocol_tools import ToolErrorDTO, ToolResultBase
 
 
 class ScriptedProvider:
@@ -107,6 +109,13 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
         handler_calls.append("failing_handler")
         raise TypeError("handler input was not usable")
 
+    def domain_failure() -> ToolResultBase:
+        handler_calls.append("domain_failure")
+        return ToolResultBase(
+            ok=False,
+            error=ToolErrorDTO(code="not_found", message="The requested item was not found."),
+        )
+
     client, provider = _client(
         monkeypatch,
         [
@@ -115,6 +124,7 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
                 _tool_call("call-child", "child_agent"),
                 _tool_call("call-failure", "failing_handler"),
                 _tool_call("call-failure", "failing_handler"),
+                _tool_call("call-domain-failure", "domain_failure"),
             ),
             _assistant_final_response(
                 "The lookup and child agent completed; one tool reported an error."
@@ -128,6 +138,7 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
             "lookup": lookup,
             "child_agent": ChildAgent(),
             "failing_handler": failing_handler,
+            "domain_failure": domain_failure,
         },
     )
 
@@ -136,7 +147,7 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
         == "The lookup and child agent completed; one tool reported an error."
     )
     assert response.tool_calls == []
-    assert handler_calls == ["lookup", "child_agent", "failing_handler"]
+    assert handler_calls == ["lookup", "child_agent", "failing_handler", "domain_failure"]
 
     transcript = provider.requests[1]
     assistant_tool_turn = next(
@@ -144,18 +155,53 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
         for message in transcript
         if message.role == "assistant" and "tool_calls" in message.meta
     )
-    assert len(assistant_tool_turn.meta["tool_calls"]) == 3
+    assert len(assistant_tool_turn.meta["tool_calls"]) == 4
     tool_messages = [message for message in transcript if message.role == "tool"]
     assert [message.meta["tool_call_id"] for message in tool_messages] == [
         "call-lookup",
         "call-child",
         "call-failure",
+        "call-domain-failure",
     ]
     assert len({message.meta["tool_call_id"] for message in tool_messages}) == len(tool_messages)
     assert '"result":"found"' in str(tool_messages[0].content)
     assert '"result":"child completed"' in str(tool_messages[1].content)
-    assert "TypeError: handler input was not usable" in str(tool_messages[2].content)
+    failed_output = json.loads(str(tool_messages[2].content))
+    assert failed_output["status"] == "error"
+    assert "TypeError: handler input was not usable" in failed_output["error"]["message"]
     assert "adjust the input or approach" in str(tool_messages[2].content)
+    domain_failure_output = json.loads(str(tool_messages[3].content))
+    assert domain_failure_output["status"] == "error"
+    assert domain_failure_output["error"]["code"] == "not_found"
+    assert domain_failure_output["error"]["message"] == "The requested item was not found."
+
+
+def test_previously_seen_call_id_is_skipped_for_the_rest_of_the_session(
+    monkeypatch: Any,
+) -> None:
+    handler_calls: list[str] = []
+
+    def lookup() -> dict[str, str]:
+        handler_calls.append("lookup")
+        return {"result": "found"}
+
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(_tool_call("session-call", "lookup")),
+            _assistant_tool_response(_tool_call("session-call", "lookup")),
+            _assistant_final_response("The earlier tool result is sufficient."),
+        ],
+    )
+
+    response = client.call(_request(), {"lookup": lookup})
+
+    assert response.message.content == "The earlier tool result is sufficient."
+    assert handler_calls == ["lookup"]
+    assert len(provider.requests) == 3
+    assert [
+        message.meta["tool_call_id"] for message in provider.requests[2] if message.role == "tool"
+    ] == ["session-call"]
 
 
 def test_tool_call_cap_returns_correlated_errors_then_requests_a_final_answer(

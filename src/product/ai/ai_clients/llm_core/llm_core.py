@@ -25,6 +25,8 @@ from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolResultBase,
     ToolCallRecord,
+    ToolErrorDTO,
+    ToolOutputDTO,
 )
 from product.ai.tracing import (
     traceable,
@@ -293,6 +295,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                 repeat_cap=self.tool_repeat_cap,
                 sig_counts=Counter(),
                 tool_call_records=[],
+                seen_call_ids=set(),
             )
         self._tool_state = _state
 
@@ -330,16 +333,28 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         model_name = req.model
 
         unique_tool_calls: list[ToolCalled] = []
-        seen_call_ids: set[str] = set()
+        seen_call_ids: set[str] = _state.setdefault("seen_call_ids", set())
         for tool_call in tool_calls:
             if tool_call.id in seen_call_ids:
                 self._log(
-                    f"[{log_name_main}.tools_handle] Ignoring repeated provider call ID {tool_call.id}.",
+                    f"[{log_name_main}.tools_handle] Skipping provider call ID already seen in this session: {tool_call.id}.",
                     "warning",
                 )
                 continue
             seen_call_ids.add(tool_call.id)
             unique_tool_calls.append(tool_call)
+
+        if not unique_tool_calls:
+            self._log(
+                f"[{log_name_main}.tools_handle] No unseen tool calls; resuming provider with the existing transcript.",
+                "info",
+            )
+            return self.call(
+                req,
+                tools_mapping,
+                max_tool_calls=_state["tool_call_cap"],
+                _state=_state,
+            )
 
         # Echo assistant with tool_calls payload (provider-agnostic shape)
         tc_payload = [
@@ -461,8 +476,15 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
                             result_ok = False
                             result_obj_for_summary = out
 
+            # Return a stable DTO shape for both success and recoverable failure.
+            tool_output = self._tool_output_dto(
+                out,
+                result_ok=result_ok,
+                tool_name=name,
+            )
+
             # Serialize tool result for the model, clamp to model budget
-            out_str = self._protocol_result_to_str(out)
+            out_str = tool_output.model_dump_json(exclude_none=True)
             out_str = self._clamp_for_model(out_str, model_name)
 
             # Append normalized tool message
@@ -517,3 +539,40 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             "debug",
         )
         return self.call(req, tools_mapping, max_tool_calls=_state["tool_call_cap"], _state=_state)
+
+    def _tool_output_dto(
+        self,
+        result: Any,
+        *,
+        result_ok: bool,
+        tool_name: str,
+    ) -> ToolOutputDTO:
+        """Normalize a handler result into the shared tool-output DTO."""
+        serialized_result = self._protocol_result_to_str(result)
+        try:
+            parsed_result = json.loads(serialized_result)
+        except (TypeError, ValueError):
+            parsed_result = {"result": serialized_result}
+
+        data = parsed_result if isinstance(parsed_result, dict) else {"result": parsed_result}
+        if result_ok:
+            return ToolOutputDTO(status="ok", data=data)
+
+        if isinstance(result, ToolResultBase) and result.error is not None:
+            error = result.error
+        else:
+            if isinstance(result, dict):
+                raw_error = result.get("error", result)
+                message = (
+                    raw_error.get("message", str(raw_error))
+                    if isinstance(raw_error, dict)
+                    else str(raw_error)
+                )
+            else:
+                message = self._protocol_summarize_result(result)
+            error = ToolErrorDTO(
+                code="tool_execution_failed",
+                message=f"{message} Review the input or approach and continue.",
+                hint=f"Review the result for '{tool_name}', adjust the input or approach, and continue.",
+            )
+        return ToolOutputDTO(status="error", error=error)

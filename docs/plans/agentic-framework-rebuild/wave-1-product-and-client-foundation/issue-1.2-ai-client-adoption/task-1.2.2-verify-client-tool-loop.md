@@ -43,4 +43,7 @@ business data.
 - Scenario coverage combines success, handler exception, multiple calls,
   callable child-agent handling, cap recovery, and final assistant response.
 - A tool result is never returned as the final assistant response.
-- No duplicate output is attached to one provider call ID.
+- A provider call ID already handled in the session is skipped on later turns;
+  it is neither executed again nor given another output.
+- Successful and failed results use one `ToolOutputDTO` with `status="ok"` or
+  `status="error"`; the error payload is included only for failures.
