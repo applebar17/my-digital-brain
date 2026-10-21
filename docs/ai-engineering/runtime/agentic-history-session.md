@@ -51,7 +51,8 @@ One instance belongs to one orchestration. Its minimum responsibilities are:
 
 - hold the shared master history and its revision;
 - register active `StateHistory` records by `state_run_id`;
-- create a state-local history from a caller-selected master-history projection;
+- create a state-local history by copying the history projection selected by
+  the invoking caller;
 - link child state runs to their `parent_state_run_id` and, when applicable, the
   parent provider call ID;
 - accept explicit promotions to shared master history;
@@ -72,7 +73,9 @@ contains:
   by another state;
 - `parent_provider_call_id`: the parent’s provider-issued tool-call ID when
   this invocation is an agent tool;
-- the selected master-history revision/projection used to initialize the state;
+- the shared master-history revision at state start and the caller-selected
+  projection copied into this state; the revision does not claim that every
+  projected message came from master history;
 - the local provider transcript or its canonical session reference; and
 - lifecycle status sufficient to distinguish active, paused, and completed
   state runs.
@@ -121,8 +124,9 @@ provider call ID continues to govern transcript pairing.
 | --- | --- |
 | Orchestrator | Loads the durable history, creates the session, starts the root state, and persists explicit master-history changes or paused snapshots. |
 | `BaseAgenticState` | Requests a new `StateHistory`, receives its local transcript, appends the configured invocation request once as a user message, then delegates to the client. |
-| `LLMInterfaceCore` / canonical runtime | Uses and appends the state-local provider transcript. It owns assistant tool-call and tool-output ordering, provider-call IDs, and continuation. |
-| Toolbox / agent tool handler | Starts a child state run using the same history session, converts the child result into one typed parent tool output, and lets the client append that output to the parent transcript. |
+| Invoking caller / parent state | Selects which messages a child receives: shared master history, the parent's local transcript, or an explicitly filtered combination. It passes that projection when starting the child; the child does not fetch or infer its own history. |
+| `LLMInterfaceCore` / canonical runtime | Uses and appends the state-local provider transcript. It owns assistant tool-call and tool-output ordering and provider-call IDs. |
+| Toolbox / agent tool handler | Starts a child state run using the same history session and the history projection selected by the parent, converts the child result into one typed parent tool output, and lets the client append that output to the parent transcript. |
 | Durable chat store | Supplies master-history source material and stores accepted visible messages. It does not store arbitrary live runtime state as metadata. |
 | Paused-frame persistence | Stores only an interrupted state’s typed continuation and minimum state-history linkage, keyed by `state_run_id`. |
 
@@ -136,7 +140,7 @@ No collaborator receives authority to modify another state’s local transcript.
 orchestrator loads durable conversation
   -> creates AgenticHistorySession(master history)
   -> starts root StateHistory(state_run_id A)
-  -> root state selects required master-history view
+  -> orchestrator selects the root state's history projection
   -> root state appends its invocation request as one user message
   -> client runs the local provider transcript for A
 ```
@@ -152,7 +156,7 @@ state A provider transcript
 
 tool handler
   -> starts StateHistory B in the same AgenticHistorySession
-  -> B selects master history for its own purpose
+  -> parent A selects and passes B's history projection
   -> B starts a new local transcript; it does not inherit A's raw tool call
   -> B appends its own invocation request as a user message
   -> B runs its client/tool loop

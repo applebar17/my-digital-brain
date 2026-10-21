@@ -43,15 +43,18 @@ class AgenticHistorySession:
     def start_state(
         self,
         state_id: str,
-        master_projection: list[Msg],
+        selected_history: list[Msg],
         *,
         parent_state_run_id: str | None = None,
         parent_provider_call_id: str | None = None,
     ) -> StateHistory:
-        """Create an isolated transcript from the caller-selected master projection.
+        """Create an isolated transcript from the history projection selected by the caller.
 
-        Parent linkage is checked against this session. Transcript messages are
-        deep-copied because `Msg`, its metadata, and content parts are mutable.
+        The caller—not this session or the child state—decides whether the
+        projection comes from shared master history, a parent transcript, or a
+        filtered combination. Parent linkage is checked against this session.
+        Transcript messages are deep-copied because `Msg`, its metadata, and
+        content parts are mutable.
         """
         if parent_state_run_id is not None and parent_state_run_id not in self._state_histories:
             raise ValueError(
@@ -66,7 +69,7 @@ class AgenticHistorySession:
             parent_state_run_id=parent_state_run_id,
             parent_provider_call_id=parent_provider_call_id,
             master_history_revision=self._master_revision,
-            messages=deepcopy(master_projection),
+            messages=deepcopy(selected_history),
         )
         self._state_histories[state_history.state_run_id] = state_history
         return state_history

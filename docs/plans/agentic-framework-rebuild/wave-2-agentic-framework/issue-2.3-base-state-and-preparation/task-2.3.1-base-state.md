@@ -24,8 +24,10 @@ product-specific prompt construction here.
 
 ## Functional communication DTOs
 
-Input: state purpose/context, caller-selected history, request, optional
-structured-output model, and toolbox. Output: final assistant result, optional
+Input: state purpose/context, the caller-selected history projection, request,
+optional structured-output model, and toolbox. For a child invocation, its
+parent selects that projection explicitly; the child does not choose or fetch
+its starting history. Output: final assistant result, optional
 validated artifact, or a typed `awaiting_input` continuation / unrecoverable
 runtime outcome. A later answer resumes the same `StateHistory`; the client
 appends the single matched tool result and continues its existing loop. Nested

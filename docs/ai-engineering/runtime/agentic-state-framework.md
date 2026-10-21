@@ -50,10 +50,13 @@ needed for that internal conversation:
 
 - **System prompt**: caller-built text. The base state does not compose prompt
   templates or infer missing instructions.
-- **Internal conversation history**: the selected master or local history
-  supplied by the invoker through the shared
-  [`AgenticHistorySession`](agentic-history-session.md). The state creates a
-  local working transcript and does not mutate the caller's history object.
+- **Internal conversation history**: the message projection selected by the
+  invoker and supplied through the shared
+  [`AgenticHistorySession`](agentic-history-session.md). For child states, the
+  parent is responsible for choosing the projection (master history, its own
+  local transcript, or a filtered combination); the child never selects or
+  retrieves its own starting context. The session copies the selected messages
+  into an isolated local transcript, leaving the caller's history unchanged.
 - **Invocation request**: the externally configured purpose, user message, or
   agentic request. It is appended once as the final `user` request in the
   state-local history.
@@ -78,8 +81,8 @@ invoke(invocation: AgenticStateInvocationDTO) -> AgenticStateResultDTO
 Its sequential responsibility is:
 
 1. structurally validate the invocation DTO;
-2. create the state-local transcript from its system prompt and supplied
-   history;
+2. ask the shared history session to create a state-local transcript from the
+   supplied history projection (selected by the caller) and state prompt;
 3. append the invocation request as one user message;
 4. pass the prepared client request, toolbox, and optional structured-output
    request to `LLMInterfaceCore.call(...)`;
@@ -137,6 +140,10 @@ There is no separate agent-to-agent conversation protocol. When a state is
 registered as a tool, its handler translates the validated parent tool input
 into an `AgenticStateInvocationDTO`, invokes the child, and returns one compact
 typed output for the parent tool call.
+
+The parent selects and passes the child's history projection as part of the
+invocation. The child does not implicitly inherit all parent messages or read
+shared master history; context selection stays explicit at the call site.
 
 The parent and child have independent local transcripts. The child may call its
 own tools, including other states. The runtime pairs all child calls within the
