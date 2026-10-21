@@ -11,7 +11,10 @@ agent-as-tool calls, so all states share the same history/client lifecycle.
 
 Build the base state that validates invocation, creates its local transcript,
 appends the request once, calls `LLMInterfaceCore`, and maps the client outcome
-to a typed state result. Do not implement provider calls, tool loops, or
+to a typed state result. Include the minimal handoff for `awaiting_input`: yield
+the continuation to the caller without a fabricated tool output, then resume
+the same logical invocation after the answer arrives and return one result for
+the original provider call. Do not implement provider calls, tool loops, or
 product-specific prompt construction here.
 
 ## Where
@@ -23,13 +26,18 @@ product-specific prompt construction here.
 
 Input: state purpose/context, caller-selected history, request, optional
 structured-output model, and toolbox. Output: final assistant result, optional
-validated artifact, or the protocol's pause/unrecoverable runtime outcome.
-Nested invocation uses the same state input/output semantics.
+validated artifact, or a typed `awaiting_input` continuation / unrecoverable
+runtime outcome. A later answer resumes the same `StateHistory`; the client
+appends the single matched tool result and continues its existing loop. Nested
+invocation uses the same state input/output semantics.
 
 ## Dependencies and acceptance
 
 - Depends on Issues 2.1 and 2.2.
 - Client is invoked exactly once per configured main session; client owns its
   internal provider/tool loop.
+- The client/state boundary can return control while a mapped tool awaits UI
+  input, then resume with one externally completed result correlated to the
+  original provider call ID.
 - Direct and child-tool invocation use the same public state entrypoint.
 - Test outputs cannot confuse tool payloads with assistant final messages.

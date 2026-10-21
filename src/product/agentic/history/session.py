@@ -1,9 +1,16 @@
 """Own one orchestration's shared history and isolated state transcripts."""
 
 from copy import deepcopy
+from typing import cast
 from uuid import uuid4
 
-from product.agentic.contracts import MasterHistoryPromotion, StateHistory
+from pydantic import BaseModel
+
+from product.agentic.contracts import (
+    MasterHistoryPromotion,
+    PausedStateContinuationDTO,
+    StateHistory,
+)
 from product.ai.ai_clients.protocols.protocol_chat import Msg
 
 
@@ -16,6 +23,7 @@ class AgenticHistorySession:
         self._master_revision = 0
         self._state_histories: dict[str, StateHistory] = {}
         self._promotions: list[MasterHistoryPromotion] = []
+        self._paused_state_run_ids: set[str] = set()
 
     @property
     def master_revision(self) -> int:
@@ -70,6 +78,47 @@ class AgenticHistorySession:
         except KeyError as error:
             raise ValueError(f"State run '{state_run_id}' is not active.") from error
 
+    def pause_state[InteractionDTO: BaseModel](
+        self,
+        state_run_id: str,
+        open_provider_call_id: str,
+        interaction_packet: InteractionDTO,
+    ) -> PausedStateContinuationDTO[InteractionDTO]:
+        """Snapshot a state's exact transcript while retaining its active history.
+
+        The caller returns this continuation to the application/UI boundary. No
+        tool result is appended until the interaction is resumed with an answer.
+        """
+        state = self.get_state(state_run_id)
+        if state_run_id in self._paused_state_run_ids:
+            raise ValueError(f"State run '{state_run_id}' is already paused.")
+
+        continuation_type = PausedStateContinuationDTO[type(interaction_packet)]
+        continuation = continuation_type(
+            state_history=deepcopy(state),
+            open_provider_call_id=open_provider_call_id,
+            interaction_packet=deepcopy(interaction_packet),
+        )
+        self._paused_state_run_ids.add(state_run_id)
+        return cast(PausedStateContinuationDTO[InteractionDTO], continuation)
+
+    def resume_state[InteractionDTO: BaseModel](
+        self, continuation: PausedStateContinuationDTO[InteractionDTO]
+    ) -> StateHistory:
+        """Restore the paused transcript snapshot and make the state active again.
+
+        Client-side insertion of the answer's matched tool result happens after
+        this method, at the state/client boundary.
+        """
+        state_run_id = continuation.state_history.state_run_id
+        state = self.get_state(state_run_id)
+        if state_run_id not in self._paused_state_run_ids:
+            raise ValueError(f"State run '{state_run_id}' is not paused.")
+
+        state.messages = deepcopy(continuation.state_history.messages)
+        self._paused_state_run_ids.remove(state_run_id)
+        return state
+
     def promote_to_master(self, origin_state_run_id: str, messages: list[Msg]) -> int:
         """Append caller-selected messages and advance shared history once.
 
@@ -97,3 +146,4 @@ class AgenticHistorySession:
             del self._state_histories[state_run_id]
         except KeyError as error:
             raise ValueError(f"State run '{state_run_id}' is not active.") from error
+        self._paused_state_run_ids.discard(state_run_id)

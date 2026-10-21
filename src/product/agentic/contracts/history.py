@@ -33,3 +33,17 @@ class MasterHistoryPromotion(BaseModel):
     origin_state_run_id: str = Field(description="State run that selected the promoted messages.")
     revision: int = Field(description="New master-history revision after promotion.")
     message_count: int = Field(description="Number of messages added in this promotion.")
+
+
+class PausedStateContinuationDTO[InteractionDTO: BaseModel](BaseModel):
+    """Typed snapshot needed to resume one state after external input arrives."""
+
+    state_history: StateHistory = Field(
+        description="Copied state identity, parent linkage, revision, and local transcript."
+    )
+    open_provider_call_id: str = Field(
+        description="Provider-issued call ID that must receive the eventual tool result."
+    )
+    interaction_packet: InteractionDTO = Field(
+        description="Typed question or other user interaction requested by the state."
+    )

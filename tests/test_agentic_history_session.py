@@ -1,7 +1,9 @@
 from copy import deepcopy
 
 import pytest
+from pydantic import BaseModel
 
+from product.agentic.contracts import PausedStateContinuationDTO
 from product.agentic.history import AgenticHistorySession
 from product.ai.ai_clients.protocols.protocol_chat import Msg, TextPart
 
@@ -77,3 +79,69 @@ def test_child_run_requires_an_active_parent_and_parent_call_linkage() -> None:
         session.start_state("child", [], parent_state_run_id="missing-parent")
     with pytest.raises(ValueError, match="requires a parent state run ID"):
         session.start_state("root", [], parent_provider_call_id="call-without-parent")
+
+
+def test_pause_preserves_transcript_and_resume_restores_same_state_run() -> None:
+    class QuestionPacket(BaseModel):
+        question: str
+
+    open_tool_turn = Msg(
+        role="assistant",
+        content=None,
+        meta={
+            "tool_calls": [
+                {"id": "call-question", "name": "ask_user", "arguments": "{}"}
+            ]
+        },
+    )
+    session = AgenticHistorySession()
+    state = session.start_state("clarification_child", [open_tool_turn])
+
+    continuation = session.pause_state(
+        state.state_run_id,
+        "call-question",
+        QuestionPacket(question="Which person do you mean?"),
+    )
+
+    assert isinstance(continuation, PausedStateContinuationDTO[QuestionPacket])
+    assert continuation.interaction_packet.question == "Which person do you mean?"
+    assert continuation.state_history.state_run_id == state.state_run_id
+    assert continuation.state_history.messages == [open_tool_turn]
+    assert not any(message.role == "tool" for message in state.messages)
+
+    restored_continuation = PausedStateContinuationDTO[QuestionPacket].model_validate_json(
+        continuation.model_dump_json()
+    )
+    assert isinstance(restored_continuation.interaction_packet, QuestionPacket)
+    assert (
+        restored_continuation.state_history.messages[0].meta["tool_calls"][0]["id"]
+        == "call-question"
+    )
+
+    state.messages.append(Msg(role="assistant", content="must be discarded on restore"))
+    resumed = session.resume_state(restored_continuation)
+
+    assert resumed is state
+    assert resumed.state_run_id == continuation.state_history.state_run_id
+    assert resumed.messages == [open_tool_turn]
+    assert not any(message.role == "tool" for message in resumed.messages)
+
+
+def test_pause_and_resume_reject_invalid_lifecycle_transitions() -> None:
+    class QuestionPacket(BaseModel):
+        question: str
+
+    session = AgenticHistorySession()
+    state = session.start_state("clarification_child", [])
+    packet = QuestionPacket(question="Who?")
+
+    with pytest.raises(ValueError, match="is not active"):
+        session.pause_state("missing-run", "call-1", packet)
+
+    continuation = session.pause_state(state.state_run_id, "call-1", packet)
+    with pytest.raises(ValueError, match="already paused"):
+        session.pause_state(state.state_run_id, "call-2", packet)
+
+    session.resume_state(continuation)
+    with pytest.raises(ValueError, match="is not paused"):
+        session.resume_state(continuation)
