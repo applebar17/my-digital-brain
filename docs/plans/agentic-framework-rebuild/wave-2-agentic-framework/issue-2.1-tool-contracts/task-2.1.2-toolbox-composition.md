@@ -34,5 +34,8 @@ status is added.
 - Depends on Task 2.1.1.
 - Model-visible tools and mapped functions are derived from the same typed
   registrations.
+- Raw provider arguments are validated once as the registered input DTO and
+  passed to the typed handler; success or failure becomes one correlated
+  client `ToolOutputDTO`, then the invoking model call resumes.
 - Tests cover a deterministic function, an agentic child state, and an
   unavailable/misconfigured mapping returned as an explanatory tool error.

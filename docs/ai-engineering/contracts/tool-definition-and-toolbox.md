@@ -19,7 +19,7 @@ annotated return DTO for implementation and debugging.
 Input DTO field annotations + descriptions
   -> ToolDefinitionDTO
   -> RegisteredTool (definition + typed handler)
-  -> ToolBox (immutable named registrations)
+  -> ToolBox (named registrations)
   -> provider adapter emits OpenAI-compatible function declaration
   -> provider ToolCallDTO
   -> validated Input DTO -> handler -> domain OutputDTO

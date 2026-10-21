@@ -33,9 +33,11 @@ DTO. The client wraps that data, or a `ToolErrorDTO`, in the existing
 ## Dependencies and acceptance
 
 - Depends on Wave 1 client verification.
-- DTO schemas retain field descriptions and enum meanings.
+- Tool definitions bind the selected input DTO type to the registered handler's
+  input annotation; the input DTO remains the only provider-argument schema.
+- Input DTO JSON Schema retains field descriptions and enum meanings.
 - Handler signatures are annotated and receive the validated `input_dto`.
-- Invalid input and handler exceptions become one provider-matched error
-  output, after which the invoking model call resumes.
 - The handler's return DTO is the sole declaration of its successful output
   type; it is not duplicated as an `output_model` field in the definition.
+- No second tool-result or error DTO is introduced; execution/error mapping is
+  covered by Task 2.1.2 and the existing client `ToolOutputDTO`.
