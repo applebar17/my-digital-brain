@@ -24,8 +24,10 @@ function.
 
 The state supplies a `ToolBox` containing each tool's definition and bound
 executable. A parent tool input is translated to a child `StateInvocation`;
-the child returns its `StateResult`, which becomes the single functional
-payload of the parent's tool result.
+the child's completed result is mapped to the handler's typed success DTO, then
+the client wraps it in the one provider-matched tool output. If the child
+pauses for human input, the session pauses and resumes; no pending tool-result
+status is added.
 
 ## Dependencies and acceptance
 

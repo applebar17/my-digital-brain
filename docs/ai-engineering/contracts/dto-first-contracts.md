@@ -8,7 +8,7 @@ object as an application contract.
 
 The provider adapter is the only layer allowed to parse provider-native tool
 call objects. It converts them into `ToolCallDTO`; the runtime validates and
-dispatches them through a registered `ToolDefinition`.
+dispatches them through a registered `ToolDefinitionDTO`.
 
 ## Canonical DTOs
 
@@ -25,18 +25,17 @@ class ToolErrorDTO(BaseModel):
     code: str
     message: str
     hint: str | None = None
-    details: dict[str, JsonValue] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 class ToolOutputDTO(BaseModel):
     status: Literal["ok", "error"]
-    data: BaseModel | None = None
+    data: dict[str, Any] | None = None
     error: ToolErrorDTO | None = None
 
-class ToolDefinition(BaseModel):
+class ToolDefinitionDTO(BaseModel):
     name: str
     description: str
     input_model: type[BaseModel]
-    output_model: type[BaseModel]
 ```
 
 Every invocation returns one `ToolOutputDTO`: successful results use
@@ -94,17 +93,22 @@ in [tool definition and toolbox contracts](tool-definition-and-toolbox.md).
 A registered tool is a typed unit:
 
 ```text
-ToolDefinition<InputDTO, OutputDTO>
+ToolDefinitionDTO<InputDTO>
   -> provider JSON schema generated from InputDTO
   -> raw provider arguments parsed once into InputDTO
-  -> handler(context, input_dto) -> ToolOutputDTO
+  -> typed handler(input_dto) -> OutputDTO
+  -> client wraps success/error as ToolOutputDTO
   -> one serialized ToolOutputDTO matched to provider_call_id
 ```
 
-The handler accepts its validated DTO, not loose keyword arguments. A tool may
-be implemented by an LLM-backed child session, but its outer handler still has
-the same rule: it returns one `ToolOutputDTO` to the parent call after the child
-finishes or pauses.
+The handler accepts its validated DTO, not loose keyword arguments. Its
+annotated return type is the successful domain output; it is not repeated in
+the tool definition. Dependencies are bound during toolbox composition rather
+than carried in a generic per-call context DTO. The client owns the single
+provider-facing `ToolOutputDTO`: success contains the JSON-compatible output
+data, while invalid arguments and handler failures contain one error. The
+caller resumes after either result. A child state that pauses for human input
+pauses the session; it does not create a pending tool-result status.
 
 ## Validation and failure behavior
 

@@ -3,8 +3,11 @@
 **Status: Not started**
 
 Define the generic, provider-neutral boundary that pairs a model-visible tool
-description and typed input/output with one executable handler. The client
-adapter renders the provider declaration and owns provider call IDs.
+description and input DTO with one typed handler. Its annotated return type is
+the successful domain output. The client adapter renders the provider
+declaration, wraps success or failure in the existing `ToolOutputDTO`, and
+owns provider call IDs. Tool results have only success and error outcomes;
+human-input pauses belong to state/session flow.
 
 ## Tasks
 
@@ -18,7 +21,9 @@ adapter renders the provider declaration and owns provider call IDs.
 
 ## Functional communication DTOs
 
-Tool input DTO represents only the arguments the model is allowed to provide.
-Tool output DTO represents the useful domain result or an error/recoverable
-error. The registered handler receives an explicit execution context and input
-DTO; the client wraps the result in the one provider-matched tool output.
+The input DTO represents only arguments the model may provide. A tool-specific
+output DTO represents successful domain data and is the handler's annotated
+return type. The client uses one provider-facing `ToolOutputDTO` for success or
+error; no second generic result envelope or pending/retryable tool status is
+introduced. Dependencies are bound at toolbox composition rather than passed
+through a generic execution-context DTO.

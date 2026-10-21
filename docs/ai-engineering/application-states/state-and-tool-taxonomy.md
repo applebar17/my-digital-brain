@@ -34,10 +34,10 @@ A typed tool adapter stands in front of the capability:
 
 ```text
 model tool call
-  -> ToolDefinition: name, description, input DTO, output DTO
+  -> ToolDefinitionDTO: name, description, input DTO
   -> validated handler with bound service dependencies
   -> deterministic service call or child AgenticState invocation
-  -> one ToolOutputDTO matched to the original provider call ID
+  -> typed OutputDTO or error -> client ToolOutputDTO matched to provider call ID
   -> provider/model continues
 ```
 

@@ -50,7 +50,7 @@ present in the package.
 | --- | --- | --- |
 | Copied package namespace and undeclared optional dependencies | Import normalization alone does not establish a supported application module. | Keep the selected package; declare or remove each dependency deliberately before production integration. |
 | Dataclass and dictionary fallback parsing | It permits ambiguous handler input and hides contract drift. | Pydantic input/output DTOs; parse once at the runtime boundary. |
-| `partial` mapping and `fn(**parsed_kwargs)` | Tool signatures are not self-documenting or consistently typed. | Typed `ToolDefinition` plus `handler(context, input_dto)`. |
+| `partial` mapping and `fn(**parsed_kwargs)` | Tool signatures are not self-documenting or consistently typed. | Typed `ToolDefinitionDTO` plus `handler(input_dto) -> OutputDTO`; bind dependencies when composing the toolbox. |
 | Provider-native IDs handled outside the adapter boundary | The provider-specific field name/shape belongs to each adapter. | Preserve the original provider ID and normalize it once to `provider_call_id` for all upper layers. |
 | Tool-specific behavior in generic core (`retrieve_node`) | The core becomes coupled to one domain and cannot be reused. | Generic runtime only; domain retries and policy belong to tools/services. |
 | Mutation of request objects and recursive re-entry | It makes session ownership and terminal state difficult to inspect. | Iterative session runner with immutable/append-only transcript semantics. |

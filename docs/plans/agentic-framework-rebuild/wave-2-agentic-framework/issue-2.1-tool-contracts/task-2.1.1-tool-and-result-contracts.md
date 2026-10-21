@@ -5,14 +5,17 @@
 ## User story
 
 As a state author, I want a tool's semantic description, annotated input DTO,
-output DTO, and handler signature defined together, so the model contract and
+and typed handler signature defined together, so the model contract and
 backend function cannot silently drift apart.
 
 ## What and why
 
-Implement the documented generic tool descriptor, registration, typed
-execution context, and output/error envelope. Keep provider JSON generation in
-the client adapter and do not create another schema source.
+Implement the minimal generic tool definition and typed registration. The
+handler accepts its validated input DTO and returns its annotated success DTO;
+bind dependencies when composing the toolbox. Keep provider JSON generation
+and the single success/error `ToolOutputDTO` in the client boundary. Do not add
+a second result envelope, generic execution context, pending/retryable tool
+statuses, or another schema source.
 
 ## Where
 
@@ -22,15 +25,17 @@ the client adapter and do not create another schema source.
 
 ## Functional communication DTOs
 
-`ToolDefinition` communicates name, purpose, annotated input shape, and typed
-output meaning. `ToolExecutionContext` carries only explicit invocation
-resources. `ToolResult` communicates success data or an explanatory error to
-the invoking state; provider call ID stays in the client transcript layer.
+`ToolDefinitionDTO` communicates name, purpose, and annotated input shape. The
+registered handler's return annotation identifies its successful domain output
+DTO. The client wraps that data, or a `ToolErrorDTO`, in the existing
+`ToolOutputDTO`; provider call ID stays in the client transcript layer.
 
 ## Dependencies and acceptance
 
 - Depends on Wave 1 client verification.
 - DTO schemas retain field descriptions and enum meanings.
-- Handler signatures are annotated and receive `(context, input_dto)`.
-- An exception becomes one error result; no framework-level deterministic
-  process stop is added.
+- Handler signatures are annotated and receive the validated `input_dto`.
+- Invalid input and handler exceptions become one provider-matched error
+  output, after which the invoking model call resumes.
+- The handler's return DTO is the sole declaration of its successful output
+  type; it is not duplicated as an `output_model` field in the definition.

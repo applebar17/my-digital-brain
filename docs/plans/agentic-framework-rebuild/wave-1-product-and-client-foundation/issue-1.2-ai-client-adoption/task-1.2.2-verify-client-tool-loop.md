@@ -24,11 +24,10 @@ do not send this behavior as prompt guidance.
 
 ## Functional communication DTOs
 
-`ProviderToolCallDTO` identifies the requested operation and validated input;
-`ToolResultDTO` carries either the successful functional output or a
-human-readable tool error. The client pairs that result to the provider call ID
-and continues the same transcript. The ID is protocol metadata, not state
-business data.
+`ToolCallDTO` identifies the requested operation and its provider-issued ID;
+`ToolOutputDTO` carries either successful output data or a human-readable tool
+error. The client pairs that result to the provider call ID and continues the
+same transcript. The ID is protocol metadata, not state business data.
 
 ## Dependencies and acceptance
 

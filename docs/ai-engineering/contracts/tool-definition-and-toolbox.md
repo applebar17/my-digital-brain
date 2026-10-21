@@ -4,60 +4,55 @@
 
 A tool is defined once as a typed application capability. From that definition
 the provider adapter compiles the exact provider-facing JSON-like declaration,
-validates model arguments into an input DTO, invokes one bound backend handler,
-and serializes one typed output for the original provider call.
+validates model arguments into an input DTO, and invokes one bound backend
+handler. The handler returns its typed domain output; the client wraps that
+output in one provider-facing `ToolOutputDTO` matched to the original call.
 
 The provider declaration is an adapter output, not the source of truth. Tool
-names, descriptions, input-field descriptions, enum meanings, and output
-semantics stay available in the typed definition for model guidance, debugging,
-tests, and other provider adapters.
+names, descriptions, input-field descriptions, and enum meanings stay in the
+typed definition. Successful output semantics stay explicit in the handler's
+annotated return DTO for implementation and debugging.
 
 ## Tool layers
 
 ```text
 Input DTO field annotations + descriptions
-  -> ToolDescriptorDTO
-  -> RegisteredTool (descriptor + typed bound handler)
+  -> ToolDefinitionDTO
+  -> RegisteredTool (definition + typed handler)
   -> ToolBox (immutable named registrations)
   -> provider adapter emits OpenAI-compatible function declaration
   -> provider ToolCallDTO
-  -> validated Input DTO -> handler -> ToolOutputDTO
+  -> validated Input DTO -> handler -> domain OutputDTO
+  -> ToolOutputDTO(status="ok") or ToolOutputDTO(status="error")
 ```
 
-`ToolDescriptorDTO` is declarative and serializable. `RegisteredTool` is an
-executable application object. Keeping those roles distinct means no provider
-JSON dictionary, global string handler key, or untyped `**kwargs` is treated as
-the application contract.
+`ToolDefinitionDTO` is the model-facing declaration. `RegisteredTool` pairs it
+with the typed executable. Keeping those roles distinct means no provider JSON
+dictionary, global string handler key, or untyped `**kwargs` is treated as the
+application contract.
 
 ## Typed definitions
 
 The final field names may vary only if they preserve these responsibilities:
 
 ```python
-class ToolDescriptorDTO(BaseModel):
+class ToolDefinitionDTO(BaseModel):
     """Model-facing semantic definition of one callable capability."""
 
     name: str
     description: str
     input_model: type[BaseModel]
-    output_model: type[BaseModel]
-
-
-class ToolExecutionContextDTO(BaseModel):
-    """Invocation-scoped information deliberately exposed to a tool handler."""
-
-    # Only accepted execution fields belong here.
 
 
 class RegisteredTool[InputDTO: BaseModel, OutputDTO: BaseModel]:
-    """One descriptor paired with its bound, typed backend implementation."""
+    """One definition paired with its typed backend implementation."""
 
-    descriptor: ToolDescriptorDTO
-    handler: Callable[[ToolExecutionContextDTO, InputDTO], OutputDTO | ToolOutputDTO]
+    definition: ToolDefinitionDTO
+    handler: Callable[[InputDTO], OutputDTO]
 
 
 class ToolBox:
-    """Immutable, named set of registered tools for one state purpose."""
+    """Named set of registered tools for one state purpose."""
 
     name: str
     tools_by_name: Mapping[str, RegisteredTool]
@@ -70,13 +65,17 @@ fields. The generated JSON Schema must retain those descriptions. They are
 therefore inspectable in tool diagnostics without reverse-engineering raw
 provider payloads.
 
-`OutputDTO` describes the normal successful domain result. `ToolOutputDTO`
-wraps it with the existing success, recoverable-error, error, or
-awaiting-input outcome required by the canonical tool protocol.
+`OutputDTO` is the tool-specific successful domain result and is explicit in
+the handler's return annotation. It is not repeated as an `output_model` field
+in `ToolDefinitionDTO`. The client wraps successful data in
+`ToolOutputDTO(status="ok")`; invalid arguments or handler failures become
+`ToolOutputDTO(status="error", error=ToolErrorDTO(...))`. These are the only
+tool-output statuses. Human-input pauses belong to state/session flow and do
+not create a pending tool result.
 
 ## OpenAI function declaration adapter
 
-The OpenAI adapter compiles `ToolDescriptorDTO` and its `input_model` into the
+The OpenAI adapter compiles `ToolDefinitionDTO` and its `input_model` into the
 base function shape accepted by the selected API. The semantic content is the
 same in both forms:
 
@@ -153,16 +152,21 @@ such as `handler_key` to an executable.
 
 An agentic child state needs no special framework type. Its registered handler
 validates the parent input DTO, prepares the child invocation, calls
-`child_state.invoke(...)`, then maps the child result to one `ToolOutputDTO`
-for the original parent call. The nested-call identity rule remains owned by
-the [tool-calling protocol](../runtime/tool-calling-protocol.md#nested-agent-tools).
+`child_state.invoke(...)`, then maps the completed child result to its typed
+domain output. The client wraps that output once for the original parent call.
+If the child pauses for human input, the state/session pauses and resumes the
+same invocation; no pending tool-output status is introduced. The nested-call
+identity rule remains owned by the
+[tool-calling protocol](../runtime/tool-calling-protocol.md#nested-agent-tools).
 
 ## Invocation and diagnostics
 
 The runtime parses `ToolCallDTO.arguments_json` once through the registered
-input model. It calls the bound handler with the validated DTO and
-invocation-scoped execution context. It then serializes exactly one
-`ToolOutputDTO` against the immutable provider call ID.
+input model and calls the handler with that validated DTO. Dependencies are
+bound when the toolbox is composed; a generic execution-context object is not
+added unless a concrete per-invocation need is identified. The handler's
+annotated return type defines its successful output. The client serializes
+exactly one `ToolOutputDTO` against the immutable provider call ID.
 
 Tool diagnostics show both the semantic descriptor and the compiled provider
 declaration:
@@ -170,7 +174,7 @@ declaration:
 - tool name and concise capability description;
 - input DTO name, fields, annotations, descriptions, enum values, and required
   versus nullable semantics;
-- output DTO name and fields;
+- handler return DTO name and fields, from its return annotation;
 - selected provider adapter and emitted function declaration;
 - the provider call ID, validated arguments, and typed outcome.
 
@@ -184,11 +188,12 @@ The existing `ToolSpec` dictionaries, `AgenticToolRegistry`, `allowed_tools`,
 and string `handler_key` dispatch are migration material. The replacement is
 completed toolbox by toolbox:
 
-1. define input and output DTOs with descriptions;
-2. create one descriptor and bound typed handler;
-3. assemble the state-specific `ToolBox` at the composition boundary;
-4. compile it through the provider adapter and add contract fixtures;
-5. move the state caller, then delete the superseded declaration and dispatch
+1. define the input DTO and its field descriptions;
+2. define the successful output DTO and annotate the handler return type;
+3. create one tool definition and its typed handler;
+4. assemble the state-specific `ToolBox` at the composition boundary;
+5. compile it through the provider adapter and add contract fixtures;
+6. move the state caller, then delete the superseded declaration and dispatch
    path in that same wave.
 
 No duplicated registry or compatibility mapping remains after a toolbox has
@@ -196,8 +201,8 @@ migrated.
 
 ## Verification
 
-Each registered tool has tests for DTO schema semantics, the Responses and Chat
-Completions emitted shapes where those adapters are supported, valid argument
-parsing, invalid-input error output, handler failure output, and exact
+Each registered tool has tests for input DTO schema semantics, the Responses
+and Chat Completions emitted shapes where those adapters are supported, valid
+argument parsing, invalid-input error output, handler failure output, and exact
 provider-call-ID pairing. Each toolbox has a duplicate-name construction test
 and a fixture showing the complete model-visible declaration set.

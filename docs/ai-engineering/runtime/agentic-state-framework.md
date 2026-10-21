@@ -119,7 +119,7 @@ an explicit configuration decision of that state/invocation; it is not a reason
 to introduce a general service locator, mutable global registry, or automatic
 tool discovery.
 
-Every toolbox entry follows the canonical typed `ToolDefinition` and handler
+Every toolbox entry follows the canonical typed `ToolDefinitionDTO` and handler
 contract in [DTO-first contracts](../contracts/dto-first-contracts.md). An
 agentic state can therefore appear alongside ordinary functions in the same
 toolbox.
