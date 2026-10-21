@@ -1,6 +1,6 @@
 # Issue 2.1 — typed tool definitions and toolbox
 
-**Status: Not started**
+**Status: In progress**
 
 Define the generic, provider-neutral boundary that pairs a model-visible tool
 description and input DTO with one typed handler. Its annotated return type is

@@ -1,6 +1,6 @@
 # Task 2.1.1 — define typed tool and result contracts
 
-**Status: Not started**
+**Status: Done**
 
 ## User story
 

@@ -1,6 +1,6 @@
 # Wave 2 — generic agentic framework
 
-**Status: Not started**
+**Status: In progress**
 
 ## Outcome
 
