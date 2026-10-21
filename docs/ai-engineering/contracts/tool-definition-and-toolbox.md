@@ -8,10 +8,10 @@ validates model arguments into an input DTO, and invokes one bound backend
 handler. The handler returns its typed domain output; the client wraps that
 output in one provider-facing `ToolOutputDTO` matched to the original call.
 
-The provider declaration is an adapter output, not the source of truth. Tool
-names, descriptions, input-field descriptions, and enum meanings stay in the
-typed definition. Successful output semantics stay explicit in the handler's
-annotated return DTO for implementation and debugging.
+The provider declaration is a client-boundary output, not the source of truth.
+Tool names, descriptions, input-field descriptions, and enum meanings stay in
+the typed definition. Successful output semantics stay explicit in the
+handler's annotated return DTO for implementation and debugging.
 
 ## Tool layers
 
@@ -30,6 +30,15 @@ Input DTO field annotations + descriptions
 with the typed executable. Keeping those roles distinct means no provider JSON
 dictionary, global string handler key, or untyped `**kwargs` is treated as the
 application contract.
+
+The unique framework DTO is owned by
+`product.ai.ai_clients.protocols.protocol_tools`. Generic typed registrations
+and the state-specific `ToolBox` are owned by `product.agentic.tools`. A toolbox
+derives both its client definitions and callable mapping from the same
+registrations; the state passes those to the client request and call
+respectively. The client compiles the DTO into its canonical tool
+representation, and each provider adapter translates that representation for
+its API.
 
 ## Typed definitions
 
@@ -75,9 +84,10 @@ not create a pending tool result.
 
 ## OpenAI function declaration adapter
 
-The OpenAI adapter compiles `ToolDefinitionDTO` and its `input_model` into the
-base function shape accepted by the selected API. The semantic content is the
-same in both forms:
+The client compiles `ToolDefinitionDTO` and its `input_model` into the
+canonical OpenAI-style function shape used at the client boundary. The
+provider adapter translates that declaration to the selected API. Its semantic
+content is:
 
 ```json
 {
@@ -99,8 +109,7 @@ same in both forms:
 }
 ```
 
-For the **Responses API**, that object is one item in `tools` exactly as shown.
-For **Chat Completions**, the provider adapter emits the compatibility wrapper:
+For Chat Completions, the client boundary uses this wrapper:
 
 ```json
 {
@@ -114,8 +123,8 @@ For **Chat Completions**, the provider adapter emits the compatibility wrapper:
 }
 ```
 
-The active provider baseline will select the relevant adapter; agentic states,
-tool registrations, and domain handlers never branch on this provider shape.
+Agentic states, tool registrations, and domain handlers never branch on this
+provider shape.
 
 `strict` is an explicit adapter capability choice, never an accidental
 default. When enabled, the schema compiler must emit an OpenAI strict-compatible

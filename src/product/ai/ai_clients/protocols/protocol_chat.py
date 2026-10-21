@@ -37,6 +37,8 @@ from openai.types.completion_usage import CompletionUsage
 # Tool param & parsed tool call types (used only for typing – we still normalize to dicts)
 from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 
+from product.ai.ai_clients.protocols.protocol_tools import ToolDefinitionDTO
+
 ToolSpec = ChatCompletionToolParam  # prefer exact OpenAI type
 
 
@@ -221,7 +223,7 @@ def _normalized_function_tool(
 
 
 def coerce_toolspecs(
-    tools_loose: Optional[List[dict] | List[ToolSpec]],
+    tools_loose: Optional[List[dict] | List[ToolSpec] | List[ToolDefinitionDTO]],
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Accepts either normalized ToolSpec[] or OpenAI-style tools[] and returns **OpenAI-shaped dicts**.
@@ -233,6 +235,17 @@ def coerce_toolspecs(
     out: List[Dict[str, Any]] = []
 
     for t in tools_loose:  # type: ignore[assignment]
+        if isinstance(t, ToolDefinitionDTO):
+            out.append(
+                _normalized_function_tool(
+                    name=t.name,
+                    description=t.description,
+                    parameters=t.input_model.model_json_schema(),
+                    strict=True,
+                )
+            )
+            continue
+
         d = _as_dict(t)
 
         # Case 1: Already OpenAI-shaped

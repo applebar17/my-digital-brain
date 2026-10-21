@@ -1,13 +1,14 @@
 # Issue 2.1 — typed tool definitions and toolbox
 
-**Status: In progress**
+**Status: Done**
 
 Define the generic, provider-neutral boundary that pairs a model-visible tool
 description and input DTO with one typed handler. Its annotated return type is
-the successful domain output. The client adapter renders the provider
-declaration, wraps success or failure in the existing `ToolOutputDTO`, and
-owns provider call IDs. Tool results have only success and error outcomes;
-human-input pauses belong to state/session flow.
+the successful domain output. The client compiles the definition into its
+canonical tool request and the provider adapter translates it. The client
+wraps success or failure in the existing `ToolOutputDTO` and owns provider call
+IDs. Tool results have only success and error outcomes; human-input pauses
+belong to state/session flow.
 
 ## Tasks
 

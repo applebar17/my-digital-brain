@@ -19,9 +19,10 @@ statuses, or another schema source.
 
 ## Where
 
-- `src/product/agentic/tools/` generic contracts and tests.
-- `product.ai.ai_clients` adapter boundary only where required to consume the
-  descriptor.
+- `src/product/ai/ai_clients/protocols/protocol_tools.py` owns the unique
+  framework `ToolDefinitionDTO` contract.
+- `src/product/agentic/tools/` owns typed executable registrations and
+  agent-specific toolbox composition.
 
 ## Functional communication DTOs
 

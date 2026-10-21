@@ -22,6 +22,7 @@ from product.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
 
 from product.ai.ai_clients.protocols.protocol_tools import (
+    ToolDefinitionDTO,
     ToolErrorDTO,
     ToolOutputDTO,
 )
@@ -124,7 +125,7 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         response_format: Optional[Any] = None,
-        tools: Optional[List[dict]] = None,
+        tools: Optional[List[dict | ToolDefinitionDTO]] = None,
         user: Optional[str] = None,
         parallel_tool_calls: Optional[bool] = None,
         reasoning_effort: Optional[str] = None,

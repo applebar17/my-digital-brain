@@ -19,7 +19,8 @@ this layer; do not add a competing provider/tool loop above agentic states.
 - `llm_core/`: client parameter handling, provider calls, and the shared tool
   loop exposed to callers through `call(...)`.
 - `providers/`: OpenAI, Azure OpenAI, and Anthropic translations.
-- `protocols/`: copied message and tool protocol types.
+- `protocols/`: client message contracts and the canonical tool definition,
+  error, and output DTOs used by agentic toolboxes.
 - `dataclasses/`: copied configuration and runtime carriers.
 - `utils/`: local helpers used by this package.
 

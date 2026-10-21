@@ -6,9 +6,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+from product.agentic.tools import RegisteredTool, ToolBox
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
-from product.ai.ai_clients.protocols.protocol_tools import ToolErrorDTO, ToolOutputDTO
+from product.ai.ai_clients.protocols.protocol_tools import (
+    ToolDefinitionDTO,
+    ToolErrorDTO,
+    ToolOutputDTO,
+)
 
 
 class ScriptedProvider:
@@ -232,6 +239,65 @@ def test_invalid_tool_arguments_return_a_correlated_error_and_resume(
     output = json.loads(str(tool_message.content))
     assert output["status"] == "error"
     assert output["error"]["code"] == "invalid_tool_arguments"
+
+
+def test_typed_toolbox_handler_validation_error_returns_tool_result_and_resumes(
+    monkeypatch: Any,
+) -> None:
+    class SearchInputDTO(BaseModel):
+        query: str = Field(description="The phrase to search for.")
+
+    class SearchOutputDTO(BaseModel):
+        summary: str
+
+    handler_calls: list[str] = []
+
+    def search(input_dto: SearchInputDTO) -> SearchOutputDTO:
+        handler_calls.append(input_dto.query)
+        return SearchOutputDTO(summary=f"Found {input_dto.query}.")
+
+    definition = ToolDefinitionDTO[SearchInputDTO](
+        name="search",
+        description="Search relevant memory.",
+        input_model=SearchInputDTO,
+    )
+    toolbox = ToolBox("memory_query", [RegisteredTool(definition, search)])
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(_tool_call("typed-call", "search", "{}")),
+            _assistant_final_response("I could not search without a query."),
+        ],
+    )
+
+    response = client.call(_request(), toolbox.tools_mapping)
+
+    assert response.message.content == "I could not search without a query."
+    assert handler_calls == []
+    tool_message = next(message for message in provider.requests[1] if message.role == "tool")
+    assert tool_message.meta["tool_call_id"] == "typed-call"
+    output = json.loads(str(tool_message.content))
+    assert output["status"] == "error"
+    assert "ValidationError" in output["error"]["message"]
+
+
+def test_unavailable_tool_mapping_returns_error_and_resumes(monkeypatch: Any) -> None:
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(_tool_call("missing-handler-call", "missing_handler")),
+            _assistant_final_response("That operation was unavailable; no action was taken."),
+        ],
+    )
+
+    response = client.call(_request(), {})
+
+    assert response.message.content == "That operation was unavailable; no action was taken."
+    tool_message = next(message for message in provider.requests[1] if message.role == "tool")
+    assert tool_message.meta["tool_call_id"] == "missing-handler-call"
+    output = json.loads(str(tool_message.content))
+    assert output["status"] == "error"
+    assert output["error"]["code"] == "tool_handler_unavailable"
 
 
 def test_tool_call_cap_returns_correlated_errors_then_requests_a_final_answer(
