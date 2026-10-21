@@ -1,6 +1,6 @@
 # Issue 2.2 — shared agentic history session
 
-**Status: Not started**
+**Status: In progress**
 
 Implement one session object that shares selected master-history context while
 giving each state invocation its own provider-valid local transcript. It links

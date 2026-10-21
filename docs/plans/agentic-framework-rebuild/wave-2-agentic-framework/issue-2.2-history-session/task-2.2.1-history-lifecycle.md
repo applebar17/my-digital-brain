@@ -1,6 +1,6 @@
 # Task 2.2.1 — implement shared and state-local history
 
-**Status: Not started**
+**Status: Done**
 
 ## User story
 
@@ -19,6 +19,8 @@ should be promoted.
 
 - `src/product/agentic/history/` and typed contracts under
   `src/product/agentic/contracts/`.
+- Existing `product.ai.ai_clients.protocols.protocol_chat.Msg` for message
+  content and provider transcript entries; no duplicate history-message DTO.
 - Focused unit tests for root, child, selected projection, promotion, and
   cleanup.
 
