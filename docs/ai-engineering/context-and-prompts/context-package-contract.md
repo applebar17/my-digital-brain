@@ -2,10 +2,10 @@
 
 ## Purpose
 
-A context package is the typed, purpose-specific information prepared for one
-LLM state or preparation call. It carries only what that call needs to reason
-or act reliably; it is not a dump of database records, session metadata, or
-another state's transcript.
+A context package is the typed, purpose-specific information assembled for one
+LLM state or configured reasoning/planning stage. It carries only what that call
+needs to reason or act reliably; it is not a dump of database records, session
+metadata, or another state's transcript.
 
 This contract owns context construction and rendering boundaries. Prompt files
 own behavior, the history session owns history selection, toolboxes own

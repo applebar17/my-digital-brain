@@ -10,7 +10,7 @@ by one focused document; this page only indexes those owners.
   constraints and their canonical owners.
 - [Contracts](contracts/README.md): DTO-first boundaries, tool declarations,
   outputs, errors, and structured model results.
-- [Runtime](runtime/README.md): agentic states, history, preparation calls, and
+- [Runtime](runtime/README.md): agentic states, history, reasoning/planning stages, and
   provider tool-call continuation.
 - [Application states](application-states/README.md): application capabilities
   classified as deterministic tools, LLM-only states, or dynamic states.

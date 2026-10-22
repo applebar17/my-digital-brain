@@ -13,7 +13,7 @@ sequencing.
 
 - [Issue 2.1 — typed tool definitions and toolbox](issue-2.1-tool-contracts/README.md)
 - [Issue 2.2 — shared history session](issue-2.2-history-session/README.md)
-- [Issue 2.3 — base agentic state and preparation](issue-2.3-base-state-and-preparation/README.md)
+- [Issue 2.3 — base agentic state and reasoning/planning stages](issue-2.3-base-state-and-reasoning-planning-stages/README.md)
 
 ## Dependencies and boundaries
 
@@ -29,4 +29,4 @@ sequencing.
   entrypoint.
 - Child state output returns as one matched parent tool result through the
   client loop.
-- History and optional preparation behavior match their specifications.
+- History and optional reasoning/planning stage behavior match their specifications.

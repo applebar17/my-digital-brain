@@ -1,21 +1,21 @@
-# Issue 2.3 — base state and optional preparation
+# Issue 2.3 — base state and configurable reasoning/planning stages
 
 **Status: In progress — Task 2.3.1 complete; Task 2.3.2 not started**
 
-Implement the generic state entrypoint that prepares a local conversation and
-delegates exactly once to `LLMInterfaceCore.call(...)`. Optional reasoning and
-planning are configured state preparations, not a second runtime or a required
-pipeline for every state.
+Implement the generic state entrypoint that opens a local conversation and
+delegates to `LLMInterfaceCore.call(...)`. A concrete state may also configure
+purpose-specific reasoning and/or planning LLM stages as part of its execution;
+these are not generic preparation callbacks or mandatory for every state.
 
 ## Tasks
 
 - [Task 2.3.1 — implement invocation and result boundary](task-2.3.1-base-state.md)
-- [Task 2.3.2 — configure reasoning and planning preparation](task-2.3.2-state-preparation.md)
+- [Task 2.3.2 — configure reasoning and planning stages](task-2.3.2-reasoning-planning-stages.md)
 
 ## Dependencies
 
 - [Agentic state framework](../../../../ai-engineering/runtime/agentic-state-framework.md)
-- [Reasoning/planning preparation](../../../../ai-engineering/runtime/agentic-state-preparation.md)
+- [Configurable reasoning and planning stages](../../../../ai-engineering/runtime/agentic-state-reasoning-and-planning.md)
 
 ## Functional communication DTOs
 

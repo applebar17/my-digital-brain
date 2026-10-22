@@ -132,10 +132,9 @@ and a small number of targeted shots. Dynamic packets are injected in named,
 clearly headed slots near the end of the template. The detailed writing rules
 remain in [prompting guidelines](prompting-guidelines.md).
 
-Prompt references are chosen by concrete agentic states and their preparation
-configurations. Reasoning and planning preparation calls therefore have their
-own explicit prompt references; they do not mutate or reuse a main-state prompt
-implicitly.
+Prompt references are chosen by concrete agentic states and their configured
+reasoning/planning stages. Each such stage has its own explicit prompt
+reference; it does not mutate or implicitly reuse a main-state prompt.
 
 ## Migration rules
 

@@ -26,6 +26,10 @@ answer options required by the channel. The pending interaction packet returns
 to the application; after the user answers, the same tool receives the answer
 and returns it as a typed tool result to the waiting child state.
 
+The question uses the shared [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md):
+the backend owns its deadline and resolves either the user's answer or one
+timeout result to the waiting tool call.
+
 ## Dependencies and acceptance
 
 - Depends on Task 2.2.2 and Task 3.1.3.

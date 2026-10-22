@@ -11,9 +11,9 @@ reasoning/planning can continue with the answer in context.
 ## What and why
 
 Wire the clarification state's question tool to the application's existing
-interaction and continuation adapter. On answer, resume the child; on child
-completion, return one typed result to the parent call and let the parent LLM
-continue normally.
+interaction and continuation adapter. On answer or timeout, resolve the child
+tool call once; on child completion, return one typed result to the parent call
+and let the parent LLM continue normally.
 
 ## Where
 
@@ -22,10 +22,11 @@ continue normally.
 
 ## Functional communication DTOs
 
-The UI receives the question packet and interaction reference. User response
-returns to the paused clarification run. Child completion returns the answer
-and resolved uncertainty to the parent; the provider client alone pairs the
-result to the original tool call.
+The UI receives the question packet and interaction reference. The backend
+resolves the interaction from a timely user response or its configured timeout,
+then resumes the clarification run. Child completion returns the answer or
+timeout outcome and resolved uncertainty to the parent; the provider client
+alone pairs the result to the original tool call.
 
 ## Dependencies and acceptance
 

@@ -16,6 +16,8 @@ responsibilities.
   responsibility and its two agentic tools.
 - [Memory query state](memory-query-state.md): deterministic retrieval/hydration
   followed by a grounded LLM query state.
+- [Tools that request user input](user-interaction-tools.md): backend-owned
+  deadlines and answer/timeout completion for UI-waiting tools.
 - [Ingestion application states](ingestion/README.md): behavioral conventions,
   typed handoffs, and prompt boundaries for the phased ingestion workflow.
 

@@ -1,15 +1,17 @@
-# Agentic-state reasoning and planning preparation
+# Configurable reasoning and planning stages in agentic states
 
 ## Purpose and status
 
-**Binding framework specification.** An `AgenticState` may optionally prepare
-its main session through a structured reasoning step, a structured planning
-step, or both. These are internal LLM subcalls that improve the context or
-organize intended work before the state begins its main agent/tool session.
+**Binding framework specification.** A concrete `AgenticState` may configure
+an internal reasoning stage, planning stage, or both as part of its execution.
+Each stage is a purpose-specific structured LLM call with its own instructions
+and typed output. The state owns how its stage artifacts inform later stages,
+the main session, or its returned result.
 
-Preparation is configurable per invocation. It is not a mandatory pipeline, a
-hidden chain-of-thought recorder, a generic workflow language, or automatic
-plan execution.
+These are configurable state capabilities, not generic preparation callbacks,
+a mandatory pipeline for every state, a hidden chain-of-thought recorder, a
+workflow language, or automatic plan execution. Deterministic input/context
+assembly remains an ordinary state or workflow responsibility.
 
 This specification extends the [agentic state framework](agentic-state-framework.md)
 and uses shared context through [AgenticHistorySession](agentic-history-session.md).
@@ -19,25 +21,27 @@ and uses shared context through [AgenticHistorySession](agentic-history-session.
 ```text
 state invocation
   -> state-local history is opened through AgenticHistorySession
-  -> optional reasoning preparation call
-  -> optional planning preparation call, with reasoning artifact when present
-  -> main state context is assembled from the configured artifacts
+  -> optional reasoning stage
+  -> optional planning stage, with reasoning artifact when configured
+  -> state assembles context for its main session
   -> main LLM session and normal tool loop run
 ```
 
-The presence of a reasoning or planning configuration is the flag that enables
-the relevant step. Do not add a separate boolean flag alongside a missing or
-present configuration.
+Reasoning and planning are independently configurable: a state may enable
+neither, either one, or both. Presence of a stage configuration enables it;
+do not add a duplicate boolean flag. Planning may run without reasoning, and
+receives a reasoning artifact only when the reasoning stage ran and produced
+one.
 
-The invoker resolves the preparation configuration before calling the base
-state. It may do so through deterministic application logic or because another
-agent selected an already registered state/configuration profile. The base state
-does not infer whether preparation is needed, construct arbitrary prompts, or
-allow a model to create arbitrary executable toolboxes.
+The invoker or concrete state resolves the stage configuration before the base
+state runs. It may do so through deterministic application logic or because
+another agent selected an already registered state/configuration profile. The
+base state does not infer whether a stage is needed, construct arbitrary
+prompts, or allow a model to create arbitrary executable toolboxes.
 
-## Context supplied to preparation
+## Context supplied to each stage
 
-Every enabled preparation step receives:
+Every enabled stage receives:
 
 - the contextual history projection selected for that state from
   `AgenticHistorySession`;
@@ -54,11 +58,13 @@ into another provider transcript.
 purpose. It never means raw global storage records, another state’s full
 provider transcript, raw tool traces, or backend-only metadata.
 
-## Preparation calls are separate local sessions
+## Stage calls are separate local sessions
 
 Reasoning, planning, and the main state session have separate local provider
-transcripts. A preparation call is a subcall of the same state run, not a child
-`AgenticState` and not an alternative agent-to-agent protocol.
+transcripts. A reasoning/planning stage is a purpose-specific LLM subcall in
+the same state execution, not a child `AgenticState` or a generic LLM call
+wrapper. It is distinct from a workflow that invokes separately addressable
+states and passes DTOs between them.
 
 ```text
 State run A
@@ -67,32 +73,33 @@ State run A
   main transcript A:M       -> assistant/tool-loop result
 ```
 
-The preparation transcripts are ephemeral and are released after their
-validated artifacts are passed to the main context. They are not promoted to
-master history and do not appear in the main provider transcript. If an enabled
-preparation toolbox uses a normal pausing tool, its continuation follows the
-canonical runtime protocol; this specification does not create a special pause
-path for preparation.
+Stage transcripts are local to the stage and are released after its validated
+artifact has been consumed by the owning state. They are not promoted to master
+history or copied into the main provider transcript. If an enabled stage
+toolbox invokes a UI-interaction tool, that interaction follows the same
+application-owned continuation and timeout contract as any other such tool;
+this specification adds no separate pause behavior.
 
-## Reasoning preparation
+## Reasoning stage
 
-Reasoning preparation is an optional structured context-analysis call. It may
+The reasoning stage is an optional structured context-analysis call. It may
 identify relevant impacts, inconsistencies, missing information, constraints,
 gates, or considerations that improve later state behavior.
 
 It is not tied to a provider “reasoning model.” The configured provider/model
 and prompt determine the call; the result is a state-specific structured
 artifact. Do not require the model to reveal hidden reasoning. Its DTO captures
-only the decision-support information that the following state is allowed to
-use.
+only the decision-support information that later stages or the main session of
+the owning state are allowed to use.
 
-The main state receives the validated artifact as internal context. A concrete
-state determines its reasoning DTO because useful reasoning fields depend on
+The owning state decides whether and how the validated artifact informs a
+later stage, its main session, or its returned result. A concrete state
+determines its reasoning DTO because useful reasoning fields depend on
 the state’s purpose.
 
-## Planning preparation
+## Planning stage
 
-Planning preparation is an optional structured call that organizes proposed
+The planning stage is an optional structured call that organizes proposed
 semantic actions toward the invocation goal. It receives the same allowed
 history and request as reasoning, plus the reasoning artifact when present.
 
@@ -109,11 +116,11 @@ frame-specific contract. There is no generic plan executor in this framework.
 
 ## Default one-shot behavior and optional toolboxes
 
-By default, reasoning and planning are one-shot structured-output calls with no
-toolbox: one request produces one validated artifact.
+By default, reasoning and planning stages are one-shot structured-output calls
+with no toolbox: one request produces one validated artifact.
 
 Either configuration may explicitly supply a typed toolbox. In that case the
-preparation call uses the normal canonical client tool loop within its own local
+stage uses the normal canonical client tool loop within its own local
 transcript, and must still end with its configured structured artifact. Tool
 definitions and outputs follow the [DTO-first contract](../contracts/dto-first-contracts.md)
 and [tool-calling protocol](tool-calling-protocol.md); they never leak into the
@@ -121,16 +128,16 @@ main state transcript.
 
 ## Configuration boundary
 
-The target configuration has only the information needed to run the optional
-step:
+Each stage configuration has only the information needed to run that optional
+stage:
 
 ```text
-ReasoningPreparationConfiguration
+ReasoningStageConfiguration
   - system prompt
   - structured output DTO
   - optional typed toolbox
 
-PlanningPreparationConfiguration
+PlanningStageConfiguration
   - system prompt
   - structured output DTO
   - optional typed toolbox
@@ -184,22 +191,23 @@ The conceptual method order in `BaseAgenticState` is:
 ```python
 invoke(invocation)
 _open_state_history(invocation)
-_run_reasoning_preparation(state_history, invocation)
-_run_planning_preparation(state_history, invocation, reasoning_artifact)
+_run_reasoning_stage(state_history, invocation)
+_run_planning_stage(state_history, invocation, reasoning_artifact)
 _build_main_state_context(invocation, reasoning_artifact, plan_artifact)
 _run_main_session(state_history, main_context)
 ```
 
 Each important method documents its immediate dependencies: the history session,
-configured preparation definition, canonical client, and any artifact renderer.
+configured stage definition, canonical client, and any artifact renderer.
 The implementation must keep this sequence visible rather than hiding it in
 generic callback chains.
 
 ## Provider alignment
 
 The framework remains provider-neutral. For a Responses-based adapter, each
-preparation or main session has its own response lineage; the adapter preserves
-the provider items required for continuation. For manual replay, this includes
+reasoning/planning stage or main session has its own response lineage; the
+adapter preserves the provider items required for continuation. For manual
+replay, this includes
 the original assistant/reasoning items and their provider metadata where the
 provider requires them. This is adapter/client responsibility, not
 `AgenticHistorySession` responsibility.
@@ -217,9 +225,10 @@ and [model guidance](https://developers.openai.com/api/docs/guides/latest-model?
 - Reasoning and planning remain optional per invocation.
 - Both receive the state-appropriate contextual history and explicit request.
 - Planning receives a validated reasoning artifact only when reasoning ran.
-- Default preparation is one-shot and tool-free; toolbox use is explicit.
-- Preparation artifacts are typed internal context, not main-transcript chat
+- Default reasoning/planning stages are one-shot and tool-free; toolbox use is
+  explicit.
+- Stage artifacts are typed state-owned context, not main-transcript chat
   messages or final user responses.
 - A plan has no direct execution authority.
-- Each preparation transcript is independent from the main transcript and from
+- Each stage transcript is independent from the main transcript and from
   other state runs.

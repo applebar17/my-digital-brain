@@ -175,10 +175,11 @@ extension point only after at least one accepted concrete state needs it and the
 shared behavior is explicit. Prefer passing a prepared invocation DTO over
 making a base class guess caller intent.
 
-When a concrete state configures optional structured reasoning or planning
-preparation, the base invocation lifecycle runs those subcalls before the main
-session. Their contract and limits are defined in
-[agentic-state reasoning and planning preparation](agentic-state-preparation.md).
+When a concrete state configures a reasoning or planning stage, that
+purpose-specific structured LLM call is part of the state's execution. It is
+not deterministic context assembly or a separately addressable child state.
+The stage contract and limits are defined in
+[configurable reasoning and planning stages](agentic-state-reasoning-and-planning.md).
 
 Important `invoke` methods and purpose-specific configuration methods follow
 the contextual method-documentation rule: state their purpose, immediate

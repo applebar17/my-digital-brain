@@ -15,6 +15,12 @@ interaction. Adapt the minimal boundary to the documented continuation DTO;
 do not build a new clarification subsystem or place frontend persistence inside
 the generic framework.
 
+For tools that directly request user input, the backend interaction boundary
+also owns a per-interaction response deadline. An answer before the deadline or
+the timeout must resolve the same pending interaction into exactly one result
+for the waiting tool call. The timeout is specific to UI-waiting tools; ordinary
+mapped tools gain no pause or timeout behavior.
+
 ## Where
 
 - Product API/chat interaction adapter and existing clarification persistence
@@ -23,10 +29,11 @@ the generic framework.
 
 ## Functional communication DTOs
 
-The application stores a channel-readable question/choice packet linked to the
-paused state run and pending interaction. User response DTO returns the selected
-or free-text answer to the waiting state/tool. The provider call ID is retained
-as runtime correlation, not exposed to the user.
+The application stores a channel-readable question/choice packet and the
+minimum continuation needed to resolve the waiting state/tool call, including
+its backend-enforced deadline. A user response DTO returns the selected or
+free-text answer; expiration returns a deterministic timeout result. The
+provider call ID is retained as runtime correlation, not exposed to the user.
 
 ## Dependencies and acceptance
 
@@ -34,4 +41,9 @@ as runtime correlation, not exposed to the user.
   integration census.
 - Existing user-visible question/answer semantics remain available.
 - Only the minimum state linkage needed to resume is persisted.
+- The backend decides answer-versus-timeout resolution; the frontend timer is
+  presentation only, and only one result is accepted for the interaction.
 - No dedicated clarification runtime or duplicate frontend flow is introduced.
+
+See the [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md)
+for the single source of truth on deadline ownership and timeout semantics.

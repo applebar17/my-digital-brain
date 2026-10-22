@@ -12,6 +12,9 @@ states. Keep service behavior independent of model prompts and agentic runtime.
 - [Task 3.1.2 — migrate retrieval and context preparation services](task-3.1.2-retrieval-services.md)
 - [Task 3.1.3 — preserve the existing human-interaction persistence boundary](task-3.1.3-interaction-persistence.md)
 
+The backend-owned deadline and answer/timeout behavior for tools that request
+user input is specified once in the [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md).
+
 ## Dependencies
 
 - [System architecture](../../../../architecture/system-architecture.md)

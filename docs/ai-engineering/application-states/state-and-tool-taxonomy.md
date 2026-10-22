@@ -78,15 +78,15 @@ the `MEMORY_QUERY` child frame. Its future class owns that sequence explicitly.
 | Graph read/write operations | Backend handlers exposed to current states | Deterministic typed tools over graph services. |
 | Hybrid/vector retrieval | Backend service and context prework | Deterministic retrieval service/tool. |
 | `query_memory` | Retrieval prework plus `MEMORY_QUERY` child frame | Composite dynamic `MemoryQueryState`; retrieval first, read-only toolbox available for enlargement. |
-| `ingest_memory` | Child agentic frame | Dynamic `MemoryIngestionState`; may configure reasoning/planning preparation. |
+| `ingest_memory` | Child agentic frame | Dynamic `MemoryIngestionState`; may configure reasoning/planning stages. |
 | `memory_creation` | Tool-heavy child state | Dynamic `MemoryCreationState`. |
 | `graph_update` | Tool-heavy child state | Dynamic `GraphUpdateState`. |
 | `clarification_agent` | Tool-using child state that can pause | Dynamic `ClarificationAgentState`, continuation-capable. |
 | `contradiction_review` | Structured LLM state with read/clarification tools | Dynamic `ContradictionReviewState`. |
 | `memory_log_extraction` | Structured LLM state with read/clarification tools | Dynamic `MemoryLogExtractionState` under current behavior. |
-| `reasoning_checkpoint` | Generic structured LLM state | Optional reasoning-preparation capability of a concrete state. |
-| `planning_checkpoint` | Generic structured LLM state | Optional planning-preparation capability of a concrete state. |
-| Node/log/edge planning prompts | Focused structured planning calls | State-specific planning-preparation configurations. |
+| `reasoning_checkpoint` | Generic structured LLM state | Optional reasoning-stage capability of a concrete state. |
+| `planning_checkpoint` | Generic structured LLM state | Optional planning-stage capability of a concrete state. |
+| Node/log/edge planning prompts | Focused structured planning calls | State-specific planning-stage configurations. |
 | `profile_duplication` | LLM-only structured state | LLM-only `ProfileDuplicationState` if retained as an MVP capability. |
 
 Prompt-level planners, extractors, and reasoning transforms are not automatically
@@ -105,7 +105,7 @@ Each state integration document must state, briefly:
 3. **Deterministic preparation**: required service calls and the functional
    context packet they build.
 4. **History and context engineering**: selected `AgenticHistorySession` view,
-   system-prompt inputs, deterministic context, and optional preparation
+   system-prompt inputs, deterministic context, and optional reasoning/planning
    artifacts.
 5. **Agent behavior**: purpose, toolbox availability, and whether the state is
    LLM-only or dynamic.

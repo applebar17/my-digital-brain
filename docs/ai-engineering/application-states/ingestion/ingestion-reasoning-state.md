@@ -63,6 +63,6 @@ and that it must not create refs or write actions.
 
 ## Related documentation
 
-- [Agentic state preparation](../../runtime/agentic-state-preparation.md)
+- [Configurable reasoning and planning stages](../../runtime/agentic-state-reasoning-and-planning.md)
 - [MemoryLog model](../../../network/memory-log-model.md)
 - [Clarification agent and UX](../../../requirements/functional/clarification-agent-and-ux.md)

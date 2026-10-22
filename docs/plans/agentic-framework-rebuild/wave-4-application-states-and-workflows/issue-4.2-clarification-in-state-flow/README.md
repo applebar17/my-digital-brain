@@ -28,3 +28,6 @@ separate protocol metadata.
 
 Clarification is plugged into ingestion/query/etc. through the ordinary typed
 toolbox. It is not an independent frontend wave.
+
+The question tool follows the shared [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md)
+for backend-owned deadline and answer/timeout resolution.

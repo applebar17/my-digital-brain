@@ -67,10 +67,10 @@ existing call and result remain in the transcript.
 Clarification is a pausing tool, not an alternative response protocol.
 
 ```text
-assistant calls request_clarification
+assistant calls a UI-interaction tool
   -> retain the whole provider batch, including completed sibling outputs
   -> return outstanding UI interaction packet(s), without outputs for those calls
-user submits the outstanding answer(s)
+user submits the outstanding answer(s), or the backend deadline expires
   -> match each answer to its provider_call_id
   -> wait until every interaction in the batch has an output
   -> append all outputs together in original call order
@@ -80,7 +80,11 @@ user submits the outstanding answer(s)
 An `awaiting_input` continuation is the only suspended batch state: it is not
 sent to the provider. A handler failure is immediately represented by an error
 output, never as an unanswered interaction. The client does not send partial
-batches to the provider.
+batches to the provider. For UI-interaction tools, the backend interaction
+boundary also enforces the configured response deadline and resolves the
+waiting call with either the user's answer or one timeout result. See the
+[user-interaction tool contract](../application-states/user-interaction-tools.md);
+ordinary tools do not inherit this timeout behavior.
 
 ## Nested agent tools
 
