@@ -1,6 +1,6 @@
 # Task 2.3.2 — configure reasoning and planning stages
 
-**Status: In review**
+**Status: Complete**
 
 ## User story
 

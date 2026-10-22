@@ -1,6 +1,6 @@
 # Issue 2.3 — base state and configurable reasoning/planning stages
 
-**Status: In review — Task 2.3.1 complete; Task 2.3.2 implemented**
+**Status: Complete**
 
 Implement the generic state entrypoint that opens a local conversation and
 delegates to `LLMInterfaceCore.call(...)`. A concrete state may also configure

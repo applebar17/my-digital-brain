@@ -1,6 +1,6 @@
 # Issue 2.2 — shared agentic history session
 
-**Status: In review — Task 2.2.1 complete; Task 2.2.2 implemented**
+**Status: Complete**
 
 Implement one session object that shares selected master-history context while
 giving each state invocation its own provider-valid local transcript. It links

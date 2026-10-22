@@ -1,6 +1,6 @@
 # Task 2.2.2 — support paused state continuation
 
-**Status: In review**
+**Status: Complete**
 
 ## User story
 

@@ -43,3 +43,6 @@ no pending tool-result status is added.
   client `ToolOutputDTO`, then the invoking model call resumes.
 - Tests cover a deterministic function, an agentic child state, and an
   unavailable/misconfigured mapping returned as an explanatory tool error.
+- `tests/test_ai_client_tool_continuation.py` verifies a parent
+  `BaseAgenticState` invokes a mapped child state, then receives its typed result
+  under the original provider call ID before producing its assistant response.

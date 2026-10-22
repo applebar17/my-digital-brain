@@ -9,6 +9,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from product.agentic.contracts import AgenticStateInvocationDTO
+from product.agentic.history import AgenticHistorySession
+from product.agentic.state import BaseAgenticState
 from product.agentic.tools import RegisteredTool, ToolBox
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
@@ -505,3 +508,71 @@ def test_output_preparation_failure_still_sends_one_error_for_every_batch_call(
         "tool_output_preparation_failed",
         "tool_output_preparation_failed",
     ]
+
+
+def test_parent_state_invokes_child_state_as_tool_and_receives_matched_output(
+    monkeypatch: Any,
+) -> None:
+    class ChildInputDTO(BaseModel):
+        query: str = Field(description="The focused question for the child state.")
+
+    class ChildOutputDTO(BaseModel):
+        answer: str = Field(description="The child state's answer.")
+
+    llm_client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(
+                _tool_call("call-memory-query-1", "query_memory", '{"query":"What about Marco?"}')
+            ),
+            _assistant_final_response('{"answer":"Marco was your university friend."}'),
+            _assistant_final_response("Marco was your university friend."),
+        ],
+    )
+    history_session = AgenticHistorySession()
+    child_state = BaseAgenticState("memory_query", llm_client, history_session)
+
+    def invoke_child(input_dto: ChildInputDTO) -> ChildOutputDTO:
+        child_result = child_state.invoke(
+            AgenticStateInvocationDTO(
+                system_prompt="Answer the focused memory query.",
+                request=input_dto.query,
+                response_model=ChildOutputDTO,
+            )
+        )
+        assert child_result.outcome == "completed"
+        assert isinstance(child_result.structured_output, ChildOutputDTO)
+        return child_result.structured_output
+
+    query_tool = RegisteredTool[ChildInputDTO, ChildOutputDTO](
+        definition=ToolDefinitionDTO[ChildInputDTO](
+            name="query_memory",
+            description="Ask the memory-query child state a focused question.",
+            input_model=ChildInputDTO,
+        ),
+        handler=invoke_child,
+    )
+    parent_state = BaseAgenticState("conversation_entry", llm_client, history_session)
+
+    parent_result = parent_state.invoke(
+        AgenticStateInvocationDTO(
+            system_prompt="Use query_memory when the user asks about a remembered fact.",
+            request="What do I remember about Marco?",
+            toolbox=ToolBox("conversation_entry", [query_tool]),
+        )
+    )
+
+    assert parent_result.outcome == "completed"
+    assert parent_result.assistant_message.content == "Marco was your university friend."
+    assert [messages[-1].content for messages in provider.requests[:2]] == [
+        "What do I remember about Marco?",
+        "What about Marco?",
+    ]
+
+    parent_resume_messages = provider.requests[2]
+    child_tool_output = next(message for message in parent_resume_messages if message.role == "tool")
+    assert child_tool_output.meta["tool_call_id"] == "call-memory-query-1"
+    assert json.loads(child_tool_output.content) == {
+        "status": "ok",
+        "data": {"answer": "Marco was your university friend."},
+    }
