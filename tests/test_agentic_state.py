@@ -266,10 +266,15 @@ def test_planning_pause_resumes_planning_before_starting_main_call() -> None:
     assert continuation.execution_stage == "planning"
     assert continuation.main_state_history.messages[0].as_text() == "Main instructions."
     assert len(client.requests) == 1  # No main-model call while the question is unanswered.
+    restored_continuation = PausedStateContinuationDTO[QuestionDTO].model_validate_json(
+        continuation.model_dump_json()
+    )
+    assert restored_continuation.execution_stage == "planning"
+    assert restored_continuation.main_state_history.messages[0].as_text() == "Main instructions."
 
     completed = state.resume(
         AgenticStateResumeDTO[QuestionDTO](
-            continuation=continuation,
+            continuation=restored_continuation,
             tool_results=[
                 ToolCallResultDTO(
                     provider_call_id="call-plan-question",
