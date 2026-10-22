@@ -3,7 +3,12 @@ from copy import deepcopy
 import pytest
 from pydantic import BaseModel
 
-from product.agentic.contracts import PausedStateContinuationDTO
+from product.agentic.contracts import (
+    PausedStateContinuationDTO,
+    ToolCallBatchItemDTO,
+    ToolCallBatchPauseDTO,
+    ToolInteractionRequestDTO,
+)
 from product.agentic.history import AgenticHistorySession
 from product.ai.ai_clients.protocols.protocol_chat import Msg, TextPart
 
@@ -97,14 +102,28 @@ def test_pause_preserves_transcript_and_resume_restores_same_state_run() -> None
     session = AgenticHistorySession()
     state = session.start_state("clarification_child", [open_tool_turn])
 
-    continuation = session.pause_state(
-        state.state_run_id,
-        "call-question",
-        QuestionPacket(question="Which person do you mean?"),
+    batch = ToolCallBatchPauseDTO[QuestionPacket](
+        calls=[
+            ToolCallBatchItemDTO[QuestionPacket](
+                provider_call_id="call-question",
+                tool_name="ask_user",
+                interaction_request=ToolInteractionRequestDTO[QuestionPacket](
+                    interaction_packet=QuestionPacket(question="Which person do you mean?")
+                ),
+            )
+        ],
+        tool_calls_processed=1,
+        tool_call_cap=12,
+        seen_call_ids=["call-question"],
     )
+    continuation = session.pause_state(state.state_run_id, batch)
 
     assert isinstance(continuation, PausedStateContinuationDTO[QuestionPacket])
-    assert continuation.interaction_packet.question == "Which person do you mean?"
+    assert (
+        continuation.tool_batch.calls[0]
+        .interaction_request.interaction_packet.question
+        == "Which person do you mean?"
+    )
     assert continuation.state_history.state_run_id == state.state_run_id
     assert continuation.state_history.messages == [open_tool_turn]
     assert not any(message.role == "tool" for message in state.messages)
@@ -112,10 +131,10 @@ def test_pause_preserves_transcript_and_resume_restores_same_state_run() -> None
     restored_continuation = PausedStateContinuationDTO[QuestionPacket].model_validate_json(
         continuation.model_dump_json()
     )
-    assert isinstance(restored_continuation.interaction_packet, QuestionPacket)
+    restored_request = restored_continuation.tool_batch.calls[0].interaction_request
+    assert isinstance(restored_request.interaction_packet, QuestionPacket)
     assert (
-        restored_continuation.state_history.messages[0].meta["tool_calls"][0]["id"]
-        == "call-question"
+        restored_continuation.tool_batch.calls[0].provider_call_id == "call-question"
     )
 
     state.messages.append(Msg(role="assistant", content="must be discarded on restore"))
@@ -133,14 +152,27 @@ def test_pause_and_resume_reject_invalid_lifecycle_transitions() -> None:
 
     session = AgenticHistorySession()
     state = session.start_state("clarification_child", [])
-    packet = QuestionPacket(question="Who?")
+    batch = ToolCallBatchPauseDTO[QuestionPacket](
+        calls=[
+            ToolCallBatchItemDTO[QuestionPacket](
+                provider_call_id="call-1",
+                tool_name="ask_user",
+                interaction_request=ToolInteractionRequestDTO[QuestionPacket](
+                    interaction_packet=QuestionPacket(question="Who?")
+                ),
+            )
+        ],
+        tool_calls_processed=1,
+        tool_call_cap=12,
+        seen_call_ids=["call-1"],
+    )
 
     with pytest.raises(ValueError, match="is not active"):
-        session.pause_state("missing-run", "call-1", packet)
+        session.pause_state("missing-run", batch)
 
-    continuation = session.pause_state(state.state_run_id, "call-1", packet)
+    continuation = session.pause_state(state.state_run_id, batch)
     with pytest.raises(ValueError, match="already paused"):
-        session.pause_state(state.state_run_id, "call-2", packet)
+        session.pause_state(state.state_run_id, batch)
 
     session.resume_state(continuation)
     with pytest.raises(ValueError, match="is not paused"):

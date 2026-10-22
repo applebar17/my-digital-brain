@@ -10,6 +10,7 @@ from product.agentic.contracts import (
     MasterHistoryPromotion,
     PausedStateContinuationDTO,
     StateHistory,
+    ToolCallBatchPauseDTO,
 )
 from product.ai.ai_clients.protocols.protocol_chat import Msg
 
@@ -84,23 +85,24 @@ class AgenticHistorySession:
     def pause_state[InteractionDTO: BaseModel](
         self,
         state_run_id: str,
-        open_provider_call_id: str,
-        interaction_packet: InteractionDTO,
+        tool_batch: ToolCallBatchPauseDTO[InteractionDTO],
     ) -> PausedStateContinuationDTO[InteractionDTO]:
-        """Snapshot a state's exact transcript while retaining its active history.
+        """Snapshot a state's transcript and all unresolved calls in one tool batch.
 
         The caller returns this continuation to the application/UI boundary. No
-        tool result is appended until the interaction is resumed with an answer.
+        provider call resumes until every interaction in the batch has a result.
         """
         state = self.get_state(state_run_id)
         if state_run_id in self._paused_state_run_ids:
             raise ValueError(f"State run '{state_run_id}' is already paused.")
-
-        continuation_type = PausedStateContinuationDTO[type(interaction_packet)]
+        first_pending = next(
+            call for call in tool_batch.calls if call.interaction_request is not None
+        )
+        interaction_type = type(first_pending.interaction_request.interaction_packet)
+        continuation_type = PausedStateContinuationDTO[interaction_type]
         continuation = continuation_type(
             state_history=deepcopy(state),
-            open_provider_call_id=open_provider_call_id,
-            interaction_packet=deepcopy(interaction_packet),
+            tool_batch=deepcopy(tool_batch),
         )
         self._paused_state_run_ids.add(state_run_id)
         return cast(PausedStateContinuationDTO[InteractionDTO], continuation)
@@ -110,8 +112,8 @@ class AgenticHistorySession:
     ) -> StateHistory:
         """Restore the paused transcript snapshot and make the state active again.
 
-        Client-side insertion of the answer's matched tool result happens after
-        this method, at the state/client boundary.
+        The state/client boundary restores the local transcript; the client
+        retains the continuation until every pending call has an output.
         """
         state_run_id = continuation.state_history.state_run_id
         state = self.get_state(state_run_id)

@@ -1,6 +1,6 @@
 # Issue 2.3 — base state and optional preparation
 
-**Status: Not started**
+**Status: In progress — Task 2.3.1 ready for review**
 
 Implement the generic state entrypoint that prepares a local conversation and
 delegates exactly once to `LLMInterfaceCore.call(...)`. Optional reasoning and

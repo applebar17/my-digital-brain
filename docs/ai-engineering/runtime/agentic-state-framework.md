@@ -91,6 +91,13 @@ Its sequential responsibility is:
 6. map the canonical client outcome to an `AgenticStateResultDTO` for the
    invoker.
 
+If one provider turn returns multiple mapped calls, the client owns the batch:
+it may execute handlers concurrently, converts each failure into that call's
+error output, and submits no follow-up provider request until it can send one
+output for every call. If calls request external input, the state returns one
+continuation containing the whole batch and resumes only after all outstanding
+answers are matched by provider call ID.
+
 The base state never manually appends provider tool messages, allocates tool
 call IDs, invokes a second tool loop, invents an assistant completion, or turns
 a tool result into a user-facing final message. Those responsibilities remain

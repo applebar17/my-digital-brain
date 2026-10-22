@@ -1,7 +1,6 @@
 # boris/boriscore/ai_clients/llm_core/llm_core.py
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -20,11 +19,12 @@ from product.ai.ai_clients.protocols.protocol_chat import (
 )
 from product.ai.ai_clients.llm_core.llm_helpers import LLMInterfaceHelpers
 from product.ai.ai_clients.llm_core.llm_base import LLMInterfaceBase
+from product.ai.ai_clients.llm_core.tool_call_batch import ToolCallBatchRuntime
 
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolDefinitionDTO,
-    ToolErrorDTO,
-    ToolOutputDTO,
+    ToolCallBatchPauseDTO,
+    ToolCallResultDTO,
 )
 from product.ai.tracing import (
     traceable,
@@ -75,10 +75,10 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
     ---------------
     handle_params(...) -> ChatRequest
         Normalize messages/tools/params and enforce budget pre-flight.
-    call(req, tools_mapping, ...) -> ChatResponse
-        Route to the right provider and run the tool loop if requested.
-    handle_tool_calling(req, tool_calls, tools_mapping, _state=...) -> ChatResponse
-        Execute each unseen provider call once, return correlated outputs, and resume the provider.
+    call(req, tools_mapping, ...) -> ChatResponse | ToolCallBatchPauseDTO
+        Route to the provider, run the tool loop, or return a whole batch awaiting external input.
+    handle_tool_calling(req, tool_calls, tools_mapping, _state=...) -> ChatResponse | ToolCallBatchPauseDTO
+        Complete a full provider batch or return it paused for external input, then resume the provider.
 
     Notes
     -----
@@ -105,6 +105,10 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
             max_tokens_per_message_ratio=max_tokens_per_message_ratio,
             *args,
             **kwargs,
+        )
+        self._tool_call_batch_runtime = ToolCallBatchRuntime(
+            log=self._log,
+            clamp_for_model=self._clamp_for_model,
         )
         self._log(
             f"[{log_name_main}.core.init] core ready (base_path={self.base_path}, provider={self.provider})",
@@ -248,12 +252,12 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         *,
         max_tool_calls: Optional[int] = None,
         _state: Optional[dict] = None,
-    ) -> ChatResponse:
+    ) -> ChatResponse | ToolCallBatchPauseDTO[BaseModel]:
         """Call the routed adapter and resume this method after mapped tool outputs.
 
         Depends on provider/model routing and the adapter's `chat` method; tool
-        turns delegate to `handle_tool_calling` and return only after a provider
-        response without tool calls.
+        turns delegate to `handle_tool_calling`. It returns a final provider
+        response or a complete batch continuation when external input is needed.
         """
         kind = (req.params.get("model_kind") if req.params else None) or "chat"
         provider_for_turn = self._resolve_provider_for_kind(kind)
@@ -317,11 +321,14 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         tools_mapping: Mapping[str, Callable[..., Any]],
         *,
         _state: dict,
-    ) -> ChatResponse:
-        """Append one correlated output per provider call, then resume `call`.
+    ) -> ChatResponse | ToolCallBatchPauseDTO[BaseModel]:
+        """Execute one provider tool batch, then resume only when it is complete.
 
-        Mapped handlers are invoked once at most. Handler failures and calls
-        declined by the configured cap become tool messages in this transcript.
+        Depends on `ToolCallBatchRuntime` for mapped execution, per-call error
+        outputs, and call-ID correlation. This method owns the assistant tool
+        turn, transcript append, budget check, and next provider call. A batch
+        requesting external input returns to the state without a partial
+        provider request.
         """
         self._log(f"[{log_name_main}.tools_handle] Tooling...", "debug")
         model_name = req.model
@@ -362,93 +369,20 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         ]
         req.messages.append(Msg(role="assistant", content=None, meta={"tool_calls": tc_payload}))
 
-        cap_reached = False
+        batch_result = self._tool_call_batch_runtime.execute_batch(
+            unique_tool_calls,
+            tools_mapping,
+            tools_enabled=bool(req.tools),
+            state=_state,
+        )
+        if isinstance(batch_result, ToolCallBatchPauseDTO):
+            return batch_result
 
-        # Return one correlated output for every provider-issued call. A mapped
-        # handler is invoked at most once; all handler failures become tool data.
-        for tc in unique_tool_calls:
-            name = tc.function.name
-            call_id = tc.id
+        req.messages.extend(
+            self._tool_call_batch_runtime.build_tool_messages(batch_result, model_name)
+        )
 
-            if _state["tool_calls_processed"] >= _state["tool_call_cap"]:
-                tool_output = self._tool_error_output(
-                    code="tool_call_cap_reached",
-                    message=(
-                        f"The configured tool-call limit ({_state['tool_call_cap']}) was reached; "
-                        f"'{name}' was not executed. Continue with the available results and answer."
-                    ),
-                )
-                cap_reached = True
-            elif not req.tools:
-                _state["tool_calls_processed"] += 1
-                tool_output = self._tool_error_output(
-                    code="toolbox_unavailable",
-                    message=f"Tool '{name}' was not executed because no toolbox is available.",
-                )
-            else:
-                _state["tool_calls_processed"] += 1
-                try:
-                    raw_args = tc.function.arguments
-                    parsed_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    if not isinstance(parsed_args, dict):
-                        raise ValueError("Tool arguments must be a JSON object.")
-                except (json.JSONDecodeError, TypeError, ValueError) as error:
-                    tool_output = self._tool_error_output(
-                        code="invalid_tool_arguments",
-                        message=f"Tool '{name}' received invalid arguments: {error}",
-                        hint="Return the tool arguments as a valid JSON object and continue.",
-                    )
-                else:
-                    handler = tools_mapping.get(name)
-                    if not callable(handler):
-                        tool_output = self._tool_error_output(
-                            code="tool_handler_unavailable",
-                            message=f"No backend handler is registered for tool '{name}'.",
-                        )
-                    else:
-                        try:
-                            with tracing_context(parent=get_trace_parent_headers()):
-                                result = handler(**parsed_args)
-                            tool_output = self._normalize_tool_output(result)
-                            callable_name = getattr(
-                                getattr(handler, "func", handler), "__name__", name
-                            )
-                            self._log(
-                                f"[{log_name_main}.tools_handle] Tool {callable_name} executed.",
-                                "debug",
-                            )
-                        except Exception as error:
-                            tool_output = self._tool_error_output(
-                                code="tool_execution_failed",
-                                message=(
-                                    f"Tool '{name}' failed with {type(error).__name__}: {error}. "
-                                    "Review the error, adjust the input or approach, and continue."
-                                ),
-                                hint="Use this error to correct the tool call or choose another action.",
-                            )
-
-            if tool_output.status == "error":
-                self._log(
-                    f"[{log_name_main}.tools_handle] "
-                    f"{tool_output.error.message if tool_output.error else 'Tool returned an error status.'}",
-                    "warning",
-                )
-            try:
-                serialized_output = tool_output.model_dump_json(exclude_none=True)
-            except Exception as error:
-                tool_output = self._tool_error_output(
-                    code="tool_output_serialization_failed",
-                    message=(
-                        f"Tool '{name}' returned a result that could not be serialized: "
-                        f"{type(error).__name__}: {error}"
-                    ),
-                    hint="Return JSON-compatible tool result data and continue.",
-                )
-                serialized_output = tool_output.model_dump_json(exclude_none=True)
-            out_str = self._clamp_for_model(serialized_output, model_name)
-            req.messages.append(Msg(role="tool", content=out_str, meta={"tool_call_id": call_id}))
-
-        if cap_reached or _state["tool_calls_processed"] >= _state["tool_call_cap"]:
+        if _state["tool_calls_processed"] >= _state["tool_call_cap"]:
             req.tools = None
             req.params.pop("parallel_tool_calls", None)
 
@@ -471,21 +405,43 @@ class LLMInterfaceCore(LLMInterfaceHelpers, LLMInterfaceBase):
         )
         return self.call(req, tools_mapping, max_tool_calls=_state["tool_call_cap"], _state=_state)
 
-    @staticmethod
-    def _tool_error_output(*, code: str, message: str, hint: Optional[str] = None) -> ToolOutputDTO:
-        """Build the single normalized tool-error shape returned to the provider."""
-        return ToolOutputDTO(
-            status="error",
-            error=ToolErrorDTO(code=code, message=message, hint=hint),
+    @traceable(name="llm_core.resume_tool_batch", run_type="chain")
+    def resume_tool_batch(
+        self,
+        req: ChatRequest,
+        paused_batch: ToolCallBatchPauseDTO[BaseModel],
+        tool_results: list[ToolCallResultDTO],
+        tools_mapping: Mapping[str, Callable[..., Any]],
+    ) -> ChatResponse | ToolCallBatchPauseDTO[BaseModel]:
+        """Complete an interrupted provider batch and make one next call when whole.
+
+        Depends on `ToolCallBatchRuntime.complete_paused_batch` to correlate
+        external outputs and preserve unanswered calls. This method appends
+        outputs only when the full batch is complete, then resumes the provider
+        loop once.
+        """
+        batch_result = self._tool_call_batch_runtime.complete_paused_batch(
+            paused_batch,
+            tool_results,
+        )
+        if isinstance(batch_result, ToolCallBatchPauseDTO):
+            return batch_result
+
+        req.messages.extend(
+            self._tool_call_batch_runtime.build_tool_messages(batch_result, req.model)
         )
 
-    @staticmethod
-    def _normalize_tool_output(result: Any) -> ToolOutputDTO:
-        """Normalize a mapped handler's result without a serialize/parse round trip."""
-        if isinstance(result, ToolOutputDTO):
-            return result
-        if isinstance(result, BaseModel):
-            result = result.model_dump(mode="json")
-        if not isinstance(result, dict):
-            result = {"result": result}
-        return ToolOutputDTO(status="ok", data=result)
+        resumed_state = {
+            "tool_calls_processed": paused_batch.tool_calls_processed,
+            "tool_call_cap": paused_batch.tool_call_cap,
+            "seen_call_ids": set(paused_batch.seen_call_ids),
+        }
+        if resumed_state["tool_calls_processed"] >= resumed_state["tool_call_cap"]:
+            req.tools = None
+            req.params.pop("parallel_tool_calls", None)
+        return self.call(
+            req,
+            tools_mapping,
+            max_tool_calls=resumed_state["tool_call_cap"],
+            _state=resumed_state,
+        )

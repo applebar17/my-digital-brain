@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from product.ai.ai_clients.protocols.protocol_chat import Msg
+from product.ai.ai_clients.protocols.protocol_tools import ToolCallBatchPauseDTO
 
 
 class StateHistory(BaseModel):
@@ -41,9 +42,6 @@ class PausedStateContinuationDTO[InteractionDTO: BaseModel](BaseModel):
     state_history: StateHistory = Field(
         description="Copied state identity, parent linkage, revision, and local transcript."
     )
-    open_provider_call_id: str = Field(
-        description="Provider-issued call ID that must receive the eventual tool result."
-    )
-    interaction_packet: InteractionDTO = Field(
-        description="Typed question or other user interaction requested by the state."
+    tool_batch: ToolCallBatchPauseDTO[InteractionDTO] = Field(
+        description="Full provider batch, including completed outputs and unanswered interactions."
     )

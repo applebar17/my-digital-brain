@@ -1,6 +1,6 @@
 # Task 2.3.1 — implement the base state invocation boundary
 
-**Status: Not started**
+**Status: In progress — implementation ready for review**
 
 ## User story
 
@@ -29,17 +29,24 @@ optional structured-output model, and toolbox. For a child invocation, its
 parent selects that projection explicitly; the child does not choose or fetch
 its starting history. Output: final assistant result, optional
 validated artifact, or a typed `awaiting_input` continuation / unrecoverable
-runtime outcome. A later answer resumes the same `StateHistory`; the client
-appends the single matched tool result and continues its existing loop. Nested
-invocation uses the same state input/output semantics.
+runtime outcome. A later answer resumes the same `StateHistory`. The client
+owns batch execution: all mapped calls finish before the next provider request,
+normal tool failures become per-call error outputs, and an external-input pause
+retains the whole batch until all answers are available. It then sends all
+matched outputs together in provider call order. Nested invocation uses the
+same state input/output semantics.
 
 ## Dependencies and acceptance
 
 - Depends on Issues 2.1 and 2.2.
-- Client is invoked exactly once per configured main session; client owns its
-  internal provider/tool loop.
+- Each state start or resume delegates once to the client entrypoint; the
+  client owns all provider turns and tool-loop iterations for that call.
 - The client/state boundary can return control while a mapped tool awaits UI
-  input, then resume with one externally completed result correlated to the
-  original provider call ID.
+  input, retain every call in that provider batch, then resume only when all
+  pending inputs have outputs correlated to their original provider call IDs.
+- A function or per-call output-preparation failure produces an error tool
+  output; it cannot strand sibling calls or result in a partial provider batch.
+- Multiple mapped calls can execute concurrently, but the next provider
+  request contains exactly one output per call in the original call order.
 - Direct and child-tool invocation use the same public state entrypoint.
 - Test outputs cannot confuse tool payloads with assistant final messages.

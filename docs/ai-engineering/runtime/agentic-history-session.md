@@ -106,12 +106,12 @@ tool outputs, traces, status messages, or a child’s full local transcript.
 provider transcript awaiting external input. It is not a second agentic-frame
 framework and it does not own domain workflow.
 
-It contains a copied `StateHistory` snapshot, the `open_provider_call_id` for
-the pausing tool call that must receive one eventual matched output, and the
-typed interaction packet needed by the channel, including a `clarification_ref`
-when the pause is a clarification. The nested `StateHistory` is the single
-source for the run ID, parent linkage, selected revision, and exact local
-transcript; those fields are not duplicated on the continuation DTO.
+It contains a copied `StateHistory` snapshot and the complete provider-call
+batch: each call has either its completed success/error output or a typed
+interaction request awaiting external input. Provider call IDs correlate
+answers. The nested `StateHistory` is the single source for the run ID, parent
+linkage, selected revision, and exact local transcript; those fields are not
+duplicated on the continuation DTO.
 
 The persistence boundary may map this continuation to a backend UUID, but it
 does not expose that UUID to models or users. A clarification's
@@ -194,10 +194,12 @@ tool's logical invocation remains open, but the current Python request returns
 an `awaiting_input` continuation; it does not block waiting for a later UI
 request. The orchestrator persists the canonical continuation plus the
 state-run linkage. When input arrives, it reloads the same history session/state
-run, validates the answer, lets the client append exactly one matching tool
-output, and resumes that local provider transcript. The tool result is returned
-only after the answer; no pending tool-result status is introduced. This is
-continuation of the same logical invocation, not a second history flow.
+run, validates the answers, and resumes only after every interaction in that
+provider batch has an output. All outputs are appended together in provider
+call order before one next provider request. A tool-handler failure does not
+pause the batch: it is represented immediately by a matching error output. No
+pending tool-result status is introduced. This is continuation of the same
+logical invocation, not a second history flow.
 
 For a paused child agent, only the deepest paused child owns the interaction
 packet rendered to the user. Ancestor state runs retain their open parent tool

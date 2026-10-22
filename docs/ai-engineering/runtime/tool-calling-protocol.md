@@ -34,6 +34,10 @@ provider completion
 
 The runtime, not a prompt, guarantees the return to the provider after a tool
 output. A model is never asked to "continue" through ordinary prose.
+When one provider turn returns multiple calls, the client may execute mapped
+handlers concurrently, but waits for all handlers before building and
+submitting the batch response. Outputs are appended together in provider call
+order.
 
 ## Failure path
 
@@ -48,7 +52,10 @@ assistant tool call
 
 A failure must not skip the matching output, emit a second output for the same
 call, terminate the outer session, or leak its serialized output to chat as the
-final answer.
+final answer. Argument validation, missing handlers, handler exceptions, and
+per-call output-preparation failures each become that call's own
+`ToolOutputDTO(status="error")`. One failed call cannot strand its siblings or
+prevent submission of a complete batch.
 
 The client remembers provider call IDs for the full session. If a later
 provider turn repeats an ID already handled in that session, the client skips
@@ -61,13 +68,19 @@ Clarification is a pausing tool, not an alternative response protocol.
 
 ```text
 assistant calls request_clarification
-  -> persist the open assistant tool call and paused frame
-  -> return a UI interaction packet, without a tool output yet
-user submits answer
-  -> validate answer deterministically
-  -> append exactly one output for the original provider_call_id
-  -> resume the same state-local transcript
+  -> retain the whole provider batch, including completed sibling outputs
+  -> return outstanding UI interaction packet(s), without outputs for those calls
+user submits the outstanding answer(s)
+  -> match each answer to its provider_call_id
+  -> wait until every interaction in the batch has an output
+  -> append all outputs together in original call order
+  -> resume the same transcript with one provider request
 ```
+
+An `awaiting_input` continuation is the only suspended batch state: it is not
+sent to the provider. A handler failure is immediately represented by an error
+output, never as an unanswered interaction. The client does not send partial
+batches to the provider.
 
 ## Nested agent tools
 

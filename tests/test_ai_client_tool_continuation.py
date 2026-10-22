@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import json
+from threading import Barrier
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,6 +15,9 @@ from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatRespo
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolDefinitionDTO,
     ToolErrorDTO,
+    ToolCallBatchPauseDTO,
+    ToolCallResultDTO,
+    ToolInteractionRequestDTO,
     ToolOutputDTO,
 )
 
@@ -154,7 +158,7 @@ def test_tool_results_resume_the_provider_once_per_call_and_return_assistant_tex
         == "The lookup and child agent completed; one tool reported an error."
     )
     assert response.tool_calls == []
-    assert handler_calls == ["lookup", "child_agent", "failing_handler", "domain_failure"]
+    assert sorted(handler_calls) == ["child_agent", "domain_failure", "failing_handler", "lookup"]
 
     transcript = provider.requests[1]
     assistant_tool_turn = next(
@@ -347,3 +351,157 @@ def test_tool_call_cap_returns_correlated_errors_then_requests_a_final_answer(
     assert provider.toolboxes[2] is None
     assert "parallel_tool_calls" not in provider.request_params[1]
     assert final_request[0].role == "user"
+
+
+def test_returned_tool_batch_executes_concurrently_and_preserves_call_pairing(
+    monkeypatch: Any,
+) -> None:
+    barrier = Barrier(3, timeout=2)
+
+    def handler(value: str) -> dict[str, str]:
+        barrier.wait()
+        return {"value": value}
+
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(
+                _tool_call("call-a", "work", '{"value":"a"}'),
+                _tool_call("call-b", "work", '{"value":"b"}'),
+                _tool_call("call-c", "work", '{"value":"c"}'),
+            ),
+            _assistant_final_response("All three calls completed."),
+        ],
+    )
+
+    response = client.call(_request(), {"work": handler})
+
+    assert response.message.content == "All three calls completed."
+    tool_messages = [message for message in provider.requests[1] if message.role == "tool"]
+    assert [message.meta["tool_call_id"] for message in tool_messages] == [
+        "call-a",
+        "call-b",
+        "call-c",
+    ]
+    assert [json.loads(str(message.content))["data"]["value"] for message in tool_messages] == [
+        "a",
+        "b",
+        "c",
+    ]
+
+
+def test_parallel_batch_waits_for_every_external_answer_before_one_next_call(
+    monkeypatch: Any,
+) -> None:
+    class QuestionPacket(BaseModel):
+        question: str
+
+    def ask_first() -> ToolInteractionRequestDTO[QuestionPacket]:
+        return ToolInteractionRequestDTO[QuestionPacket](
+            interaction_packet=QuestionPacket(question="Which first item?")
+        )
+
+    def lookup() -> dict[str, str]:
+        return {"item": "second item found"}
+
+    def ask_second() -> ToolInteractionRequestDTO[QuestionPacket]:
+        return ToolInteractionRequestDTO[QuestionPacket](
+            interaction_packet=QuestionPacket(question="Which second item?")
+        )
+
+    toolbox = {"ask_first": ask_first, "lookup": lookup, "ask_second": ask_second}
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(
+                _tool_call("call-first", "ask_first"),
+                _tool_call("call-lookup", "lookup"),
+                _tool_call("call-second", "ask_second"),
+            ),
+            _assistant_final_response("The full batch is now available."),
+        ],
+    )
+    request = _request()
+
+    paused = client.call(request, toolbox)
+
+    assert isinstance(paused, ToolCallBatchPauseDTO)
+    assert len(provider.requests) == 1
+    assert [call.provider_call_id for call in paused.calls] == [
+        "call-first",
+        "call-lookup",
+        "call-second",
+    ]
+    assert paused.calls[0].interaction_request.interaction_packet.question == "Which first item?"
+    assert paused.calls[1].tool_output.data == {"item": "second item found"}
+    assert paused.calls[2].interaction_request.interaction_packet.question == "Which second item?"
+
+    partially_resumed = client.resume_tool_batch(
+        request,
+        paused,
+        [
+            ToolCallResultDTO(
+                provider_call_id="call-first",
+                tool_output=ToolOutputDTO(status="ok", data={"answer": "first answer"}),
+            )
+        ],
+        toolbox,
+    )
+    assert isinstance(partially_resumed, ToolCallBatchPauseDTO)
+    assert len(provider.requests) == 1
+
+    completed = client.resume_tool_batch(
+        request,
+        partially_resumed,
+        [
+            ToolCallResultDTO(
+                provider_call_id="call-second",
+                tool_output=ToolOutputDTO(status="ok", data={"answer": "second answer"}),
+            )
+        ],
+        toolbox,
+    )
+
+    assert isinstance(completed, ChatResponse)
+    assert completed.message.content == "The full batch is now available."
+    assert len(provider.requests) == 2
+    tool_messages = [message for message in provider.requests[1] if message.role == "tool"]
+    assert [message.meta["tool_call_id"] for message in tool_messages] == [
+        "call-first",
+        "call-lookup",
+        "call-second",
+    ]
+    assert [json.loads(str(message.content))["status"] for message in tool_messages] == [
+        "ok",
+        "ok",
+        "ok",
+    ]
+
+
+def test_output_preparation_failure_still_sends_one_error_for_every_batch_call(
+    monkeypatch: Any,
+) -> None:
+    client, provider = _client(
+        monkeypatch,
+        [
+            _assistant_tool_response(
+                _tool_call("call-a", "work"),
+                _tool_call("call-b", "work"),
+            ),
+            _assistant_final_response("Both calls have results."),
+        ],
+    )
+    def fail_clamp(*_args: Any) -> str:
+        raise RuntimeError("clamp failed")
+
+    client._tool_call_batch_runtime._clamp_for_model = fail_clamp
+
+    response = client.call(_request(), {"work": lambda: {"done": True}})
+
+    assert response.message.content == "Both calls have results."
+    tool_messages = [message for message in provider.requests[1] if message.role == "tool"]
+    assert [message.meta["tool_call_id"] for message in tool_messages] == ["call-a", "call-b"]
+    assert [json.loads(str(message.content))["error"]["code"] for message in tool_messages] == [
+        "tool_output_preparation_failed",
+        "tool_output_preparation_failed",
+    ]

@@ -5,5 +5,27 @@ from product.agentic.contracts.history import (
     PausedStateContinuationDTO,
     StateHistory,
 )
+from product.agentic.contracts.state import (
+    AgenticStateInvocationDTO,
+    AgenticStateResumeDTO,
+    AgenticStateResultDTO,
+)
+from product.ai.ai_clients.protocols.protocol_tools import (
+    ToolCallBatchPauseDTO,
+    ToolCallBatchItemDTO,
+    ToolCallResultDTO,
+    ToolInteractionRequestDTO,
+)
 
-__all__ = ["MasterHistoryPromotion", "PausedStateContinuationDTO", "StateHistory"]
+__all__ = [
+    "MasterHistoryPromotion",
+    "AgenticStateInvocationDTO",
+    "AgenticStateResumeDTO",
+    "AgenticStateResultDTO",
+    "PausedStateContinuationDTO",
+    "StateHistory",
+    "ToolCallBatchPauseDTO",
+    "ToolCallBatchItemDTO",
+    "ToolCallResultDTO",
+    "ToolInteractionRequestDTO",
+]
