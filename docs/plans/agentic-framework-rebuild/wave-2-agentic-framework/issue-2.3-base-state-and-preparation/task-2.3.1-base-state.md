@@ -1,6 +1,6 @@
 # Task 2.3.1 — implement the base state invocation boundary
 
-**Status: In progress — implementation ready for review**
+**Status: Complete**
 
 ## User story
 
