@@ -82,6 +82,100 @@ in `ToolDefinitionDTO`. The client wraps successful data in
 tool-output statuses. Human-input pauses belong to state/session flow and do
 not create a pending tool result.
 
+## Typed graph-action tool pattern
+
+Product graph writes use a small operation surface rather than one provider
+function for every node subtype. A single registered graph-action function is
+bound to one dispatcher; its input is a typed union of concrete action DTOs.
+Each variant fixes its `operation`, `kind`, and `type` and declares only the
+fields that operation/type accepts. For example, a Person-create variant and
+a Place-create variant share the action identity, but keep person and place
+properties in their own annotated DTOs.
+
+```python
+from typing import Literal
+
+
+class GraphActionBase(BaseModel):
+    """Fields genuinely shared by concrete graph actions."""
+
+    ref: str  # model-local ref; never a backend UUID
+
+
+class CreatePersonActionDTO(GraphActionBase):
+    operation: Literal["create"]
+    kind: Literal["node"]
+    type: Literal["PERSON"]
+    person: PersonCreateFieldsDTO
+
+
+class CreatePlaceActionDTO(GraphActionBase):
+    operation: Literal["create"]
+    kind: Literal["node"]
+    type: Literal["PLACE"]
+    place: PlaceCreateFieldsDTO
+```
+
+The model-facing tool has an object root containing an `action` union. The
+toolbox composer builds that union only from predeclared action DTO variants
+allowed for the current state and, when applicable, narrowed by its validated
+plan. The plan may select among supported capabilities; it cannot add a type,
+field, operation, or handler. Concrete variants map to the same registered
+graph-action dispatcher, which routes the validated DTO to the owning typed
+deterministic service. This keeps the provider tool count small without
+replacing field-level contracts with a generic `properties` or `metadata`
+dictionary.
+
+`operation`, `kind`, and `type` are fixed literals on each executable variant,
+not independent free combinations. This prevents combinations such as a
+Place-memory update when no such action exists. The base DTO contains only
+fields genuinely shared across variants; fields such as a person's display
+name do not belong in a universal node base. A `MemoryLog` has its own typed
+memory-action variants and lifecycle rather than being treated as an ordinary
+entity node. Relationship variants use local endpoint refs and only expose
+relationship types approved for that state; structural links owned by a
+create operation are written by that operation, not exposed as arbitrary
+edges. Backend owner identity and graph UUIDs are injected/resolved by the
+handler and never appear in the model-facing schema.
+
+Create and update are separate concrete variants with different required
+fields. Delete is not exposed until its type-specific lifecycle and behavior
+are explicitly specified. An update targets an existing local ref and carries
+an explicit typed patch. A new observation normally creates a new MemoryLog;
+editing an existing log requires a separately specified correction operation.
+
+The plan and tool call should reuse the same concrete action DTO variants when
+they represent the same action. The plan may wrap them in an ordered action
+list with dependencies; the tool call carries one action. Do not define a
+second untyped action payload that must later be translated by field-name
+guessing.
+
+Runtime composition is selection over the canonical registrations:
+
+1. The concrete state defines its maximum allowed action variants.
+2. A validated plan may narrow that set to the relevant operation/kind/type
+   variants, but cannot widen it.
+3. The toolbox compiles the selected variants into the single graph-action
+   function schema and maps that function to the dispatcher.
+4. The dispatcher calls the typed service for the matched variant and returns
+   one annotated result DTO; failures follow the normal recoverable tool-error
+   path.
+
+No runtime-generated fields, arbitrary metadata, global mutable registry, or
+duplicate handler-name mapping is introduced. If a selected schema cannot be
+represented by the chosen provider's strict profile, that is a toolbox
+configuration error to report before the provider call, not a reason to loosen
+the domain DTO.
+
+OpenAI function parameters support JSON Schema descriptions, enums, and nested
+objects; strict mode requires closed objects and all properties to be
+required, with nullable types for semantically optional values. The supported
+schema subset also constrains union composition: keep the function parameter
+root as an object, use only supported nested union forms, and verify the
+compiled schema rather than assuming a Pydantic discriminator is provider
+compatible. See [official function-calling guidance](https://developers.openai.com/api/docs/guides/function-calling)
+and [Structured Outputs schema constraints](https://developers.openai.com/api/docs/guides/structured-outputs).
+
 ## OpenAI function declaration adapter
 
 The client compiles `ToolDefinitionDTO` and its `input_model` into the
@@ -146,7 +240,9 @@ defines this provider surface.
 Tools are assembled at an explicit application composition boundary, where
 their dependencies are available. A graph tool binds a graph service; a vector
 tool binds a retrieval service; an agentic tool binds a concrete child state.
-The resulting toolboxes are stable purpose-specific values, for example:
+Named toolboxes are purpose-specific. For graph actions, a toolbox may be
+composed for a state invocation from the bounded predeclared variants and
+narrowed by that invocation's validated plan:
 
 ```text
 conversation_entry_toolbox
@@ -154,10 +250,11 @@ memory_query_toolbox
 memory_creation_toolbox
 ```
 
-A state receives the toolbox it is configured to use. The runtime dispatches a
-provider call by tool name within that supplied toolbox. It does not consult a
-global mutable registry, dynamically discover tools, or map a second string
-such as `handler_key` to an executable.
+A state receives the toolbox composed for its purpose and invocation. The
+runtime dispatches a provider call using the registered tool definition and
+handler in that toolbox. It does not dynamically discover arbitrary tools or
+map a second string such as `handler_key` to an executable. Filtering selects
+existing typed registrations; it does not create new action semantics.
 
 An agentic child state needs no special framework type. Its registered handler
 validates the parent input DTO, prepares the child invocation, calls
