@@ -1,6 +1,6 @@
 # Issue 2.3 — base state and configurable reasoning/planning stages
 
-**Status: In progress — Task 2.3.1 complete; Task 2.3.2 not started**
+**Status: In review — Task 2.3.1 complete; Task 2.3.2 implemented**
 
 Implement the generic state entrypoint that opens a local conversation and
 delegates to `LLMInterfaceCore.call(...)`. A concrete state may also configure
@@ -19,8 +19,9 @@ these are not generic preparation callbacks or mandatory for every state.
 
 ## Functional communication DTOs
 
-`StateInvocation` carries the caller-selected prompt, history view, one request,
-optional structured-output expectation, and toolbox. `StateResult` returns the
-provider assistant result and any requested structured artifact or existing
-pause/failure outcome. These are state communication contracts, not UI
-processing-status DTOs.
+`AgenticStateInvocationDTO` carries the caller-selected prompt, history view,
+request, optional main response model and toolbox, and optional stage
+configurations. `AgenticStateResultDTO` returns the provider assistant result
+and any requested structured artifact or existing pause/failure outcome. A
+stage pause uses the existing continuation DTO with its internal stage cursor;
+this is not a UI processing-status contract.

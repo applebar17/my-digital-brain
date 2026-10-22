@@ -93,9 +93,9 @@ only the decision-support information that later stages or the main session of
 the owning state are allowed to use.
 
 The owning state decides whether and how the validated artifact informs a
-later stage, its main session, or its returned result. A concrete state
-determines its reasoning DTO because useful reasoning fields depend on
-the state’s purpose.
+later stage, its main session, or its returned result. `ReasoningArtifact` is a
+reusable baseline; a concrete state may configure a purpose-specific DTO when
+those fields do not express its required output.
 
 ## Planning stage
 
@@ -126,6 +126,19 @@ definitions and outputs follow the [DTO-first contract](../contracts/dto-first-c
 and [tool-calling protocol](tool-calling-protocol.md); they never leak into the
 main state transcript.
 
+If a stage's tool batch needs user input, the state returns an internal
+continuation cursor (`reasoning` or `planning`) together with that stage's
+transcript and the canonical state transcript. Resume continues the same stage
+and batch. It cannot start the next stage or main call until the batch is
+complete and the stage artifact validates. Stage configuration is supplied
+again by the configured state; runtime toolbox handlers are not serialized.
+The cursor is not a user-facing status and does not add history messages.
+
+When the configured sequence reaches the main call, the state passes the plan
+artifact as context when planning ran; otherwise it passes the reasoning
+artifact when reasoning ran. The selected artifact is added to the main system
+prompt as internal context, not appended as a history message or assistant turn.
+
 ## Configuration boundary
 
 Each stage configuration has only the information needed to run that optional
@@ -145,8 +158,15 @@ PlanningStageConfiguration
 
 The invocation supplies the history projection and request. Concrete states
 choose configuration profiles; they do not duplicate the generic subcall logic.
-The exact DTO and module names are implementation work and must follow the
-repository’s DTO-first standard.
+The shared runtime contract is `AgenticStageConfigurationDTO` containing the
+stage system prompt, required response model, and optional toolbox and parallel
+tool-call setting. `AgenticStateInvocationDTO` accepts optional reasoning and
+planning configurations; `AgenticStateResumeDTO` receives the same
+configuration again when a stage is resumed. Planning's shared result is
+`PlanArtifact` with ordered `PlannedAction` values. `ReasoningArtifact` is the
+shared baseline for a concise summary, impacts, inconsistencies, information
+gaps, and constraints or gates. A concrete state may provide a more specific
+DTO when its reasoning purpose needs a different contract.
 
 ## Initial shared planning artifact
 
@@ -154,17 +174,10 @@ The shared planning output is intentionally semantic and small. It describes
 what should be achieved, not how backend functions, database writes, or tool
 arguments must be invoked.
 
-```python
-class PlannedAction(BaseModel):
-    action: str
-    expected_outcome: str
-    risks: list[str] = []
-    implications: list[str] = []
-
-class PlanArtifact(BaseModel):
-    goal: str
-    planned_actions: list[PlannedAction]
-```
+The DTOs are `PlanArtifact` and `PlannedAction` in
+[`contracts/artifacts.py`](../../../src/product/agentic/contracts/artifacts.py).
+Their Pydantic fields and descriptions are the exact structured-output
+contract; the semantics below explain their intended use.
 
 Field semantics:
 

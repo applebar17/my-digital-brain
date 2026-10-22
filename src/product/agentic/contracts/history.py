@@ -1,5 +1,7 @@
 """DTOs for shared master history and one state invocation."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from product.ai.ai_clients.protocols.protocol_chat import Msg
@@ -44,4 +46,12 @@ class PausedStateContinuationDTO[InteractionDTO: BaseModel](BaseModel):
     )
     tool_batch: ToolCallBatchPauseDTO[InteractionDTO] = Field(
         description="Full provider batch, including completed outputs and unanswered interactions."
+    )
+    execution_stage: Literal["reasoning", "planning", "main"] = Field(
+        default="main",
+        description="Internal cursor identifying which configured state call to resume.",
+    )
+    main_state_history: StateHistory | None = Field(
+        default=None,
+        description="Canonical state transcript to restore after a reasoning/planning pause.",
     )

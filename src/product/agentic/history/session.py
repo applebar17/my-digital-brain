@@ -1,7 +1,7 @@
 """Own one orchestration's shared history and isolated state transcripts."""
 
 from copy import deepcopy
-from typing import cast
+from typing import Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -86,6 +86,9 @@ class AgenticHistorySession:
         self,
         state_run_id: str,
         tool_batch: ToolCallBatchPauseDTO[InteractionDTO],
+        *,
+        execution_stage: Literal["reasoning", "planning", "main"] = "main",
+        main_state_history: StateHistory | None = None,
     ) -> PausedStateContinuationDTO[InteractionDTO]:
         """Snapshot a state's transcript and all unresolved calls in one tool batch.
 
@@ -103,6 +106,8 @@ class AgenticHistorySession:
         continuation = continuation_type(
             state_history=deepcopy(state),
             tool_batch=deepcopy(tool_batch),
+            execution_stage=execution_stage,
+            main_state_history=deepcopy(main_state_history),
         )
         self._paused_state_run_ids.add(state_run_id)
         return cast(PausedStateContinuationDTO[InteractionDTO], continuation)

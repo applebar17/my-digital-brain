@@ -10,6 +10,25 @@ from product.ai.ai_clients.protocols.protocol_chat import Msg
 from product.ai.ai_clients.protocols.protocol_tools import ToolCallResultDTO, ToolErrorDTO
 
 
+class AgenticStageConfigurationDTO(BaseModel):
+    """Purpose-specific typed LLM call optionally enabled within one agentic state."""
+
+    system_prompt: str = Field(description="System instructions specific to this stage.")
+    response_model: type[BaseModel] = Field(
+        description="Pydantic DTO required as the stage's terminal structured output."
+    )
+    toolbox: ToolBox | None = Field(
+        default=None,
+        description="Optional toolbox explicitly configured for this stage.",
+    )
+    parallel_tool_calls: bool | None = Field(
+        default=None,
+        description="Whether this stage's provider calls may return parallel tool calls.",
+    )
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
 class AgenticStateInvocationDTO(BaseModel):
     """Caller-selected context and runtime options for one new state invocation."""
 
@@ -30,6 +49,14 @@ class AgenticStateInvocationDTO(BaseModel):
     parallel_tool_calls: bool | None = Field(
         default=None,
         description="Whether the provider may return multiple tool calls in one batch.",
+    )
+    reasoning_stage: AgenticStageConfigurationDTO | None = Field(
+        default=None,
+        description="Optional typed reasoning call run before planning and the main session.",
+    )
+    planning_stage: AgenticStageConfigurationDTO | None = Field(
+        default=None,
+        description="Optional typed planning call run after reasoning and before the main session.",
     )
     parent_state_run_id: str | None = Field(
         default=None,
@@ -64,6 +91,14 @@ class AgenticStateResumeDTO[InteractionDTO: BaseModel](BaseModel):
     parallel_tool_calls: bool | None = Field(
         default=None,
         description="Provider setting to retain for subsequent tool-call batches.",
+    )
+    reasoning_stage: AgenticStageConfigurationDTO | None = Field(
+        default=None,
+        description="Same reasoning-stage configuration used for the original state invocation.",
+    )
+    planning_stage: AgenticStageConfigurationDTO | None = Field(
+        default=None,
+        description="Same planning-stage configuration used for the original state invocation.",
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

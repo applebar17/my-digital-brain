@@ -1,6 +1,6 @@
 # Task 2.3.2 — configure reasoning and planning stages
 
-**Status: Not started**
+**Status: In review**
 
 ## User story
 
@@ -36,3 +36,6 @@ internal unless the state contract explicitly returns them.
 - Planning consumes reasoning only when configured and available.
 - The main call receives artifacts as explicit context, not as forged assistant
   transcript turns.
+- A stage pause resumes the same configured stage through an internal cursor;
+  no following stage or main call runs before that stage's complete tool batch
+  and validated artifact are available.
