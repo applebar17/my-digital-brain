@@ -4,8 +4,9 @@
 
 ## Outcome and execution method
 
-Deliver a selected application workflow incrementally. First census its
-agentic states and deterministic steps in execution order. Then complete one
+Deliver a selected application workflow incrementally. Prepare the local
+inspector, then census the workflow's agentic states and deterministic steps in
+execution order. Complete one
 state at a time: agree its functional behavior and inputs/outputs; define its
 internal DTOs/artifacts and deterministic dependencies; define model-visible
 tool contracts and map them to functions or child states where needed; wire its
@@ -15,8 +16,13 @@ DTO and tool choices are made when the state requires them. Do not treat the
 Wave 3 capability candidates or current application-state drafts as finalized
 contracts.
 
+Step 0 prepares a local developer inspector so each subsequent state slice can
+be seen in the assembled workflow and in an actual run. Its requirements live
+in the [local workflow inspector](../../../ai-engineering/observability-and-evaluation/workflow-inspector.md).
+
 ## Issues
 
+- [Step 0 / Issue 4.P — local workflow inspector](issue-4-prep-workflow-inspector/README.md)
 - [Issue 4.0 — first workflow and state census](issue-4.0-first-workflow-and-state-census/README.md)
 - [Issue 4.1 — conversation entry and memory query](issue-4.1-chat-and-memory-query/README.md)
 - [Issue 4.2 — clarification as a state/tool interaction](issue-4.2-clarification-in-state-flow/README.md)
@@ -25,12 +31,14 @@ contracts.
 
 ## First workflow
 
-Start with memory ingestion, whose deterministic handoff sequence is already
-documented. Issue 4.0 validates that sequence and identifies which steps are
-agentic states versus deterministic functions. Issue 4.3 then delivers the
-confirmed states in order, pulling in only the Wave 3 capabilities each state
-actually needs. The current issue/task breakdown is an initial map and may be
-refined by the census before implementation.
+Start with memory ingestion, whose deterministic handoff sequence is in the
+[workflow architecture map](../../../architecture/memory-ingestion-workflow-map.md).
+Issue 4.P prepares the local inspector. Issue 4.0 validates the sequence and
+identifies which steps are agentic states versus deterministic functions.
+Issue 4.3 then delivers the confirmed states in order, pulling in only the
+Wave 3 capabilities each state actually needs. The current issue/task
+breakdown is an initial map and may be refined by the census before
+implementation.
 
 ## Dependencies and boundaries
 
@@ -41,11 +49,14 @@ refined by the census before implementation.
 - Ingestion conventions and per-state prompt boundaries remain owned by the
   [ingestion specifications](../../../ai-engineering/application-states/ingestion/README.md)
   and [flow documentation](../../../flows/README.md).
-- No fixed generic pipeline engine is introduced; the selected workflow uses
-  explicit deterministic sequencing and state handoffs.
+- The minimal `BaseWorkflow` executes explicit step dependencies and exposes
+  the same composition to the local inspector; no separate workflow DSL is
+  introduced.
 
 ## Exit evidence
 
+- The local developer inspector shows assembled configuration and a selected
+  runtime path through the implemented workflow.
 - Chat/query and ingestion can run through concrete states with typed handoffs.
 - When one state invokes another, its input and returned functional result are
   explicit; provider IDs remain inside the client protocol.

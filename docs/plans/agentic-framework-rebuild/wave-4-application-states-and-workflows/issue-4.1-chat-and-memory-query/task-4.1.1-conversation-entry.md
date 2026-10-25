@@ -5,8 +5,8 @@
 ## User story
 
 As a chat user, I want my request answered by the conversation-entry agent,
-which can use explicitly configured application states as tools, so child
-results are interpreted into one appropriate final response.
+which can use explicitly configured child states or workflows as tools, so
+their results are interpreted into one appropriate final response.
 
 ## What and why
 
@@ -24,16 +24,20 @@ domain service implementation.
 ## Functional communication DTOs
 
 Input: user request, owner context, chosen conversation history, and channel
-context. A child tool receives its own typed purpose/context; its result returns
-to the entry state as functional data. Output: final assistant text or the
-framework's existing awaiting-input continuation, never raw tool JSON.
+context. `query_memory` invokes a child state; `ingest_memory` invokes the bound
+`MemoryIngestionWorkflow.ingest_memory` method. Each receives its typed request
+and returns functional data as its matched tool output. Output: final assistant
+text or the framework's existing awaiting-input continuation, never raw tool
+JSON.
 
 ## Dependencies and acceptance
 
 - Depends on Wave 2 base state/history. Define child tools and registrations
   from this state's reviewed behavior rather than assuming the current draft
   toolbox.
+- Bind `query_memory` when its child state exists. Bind `ingest_memory` to the
+  concrete workflow method in Task 4.3.5; do not add a placeholder handler.
 - Root invocation uses the shared session and its own local transcript.
-- Child-agent output is returned to the invoking state, not rendered directly
-  as the chat answer.
+- Child-state and workflow results return to the invoking state as matched tool
+  outputs; neither is rendered directly as the chat answer.
 - Prompts use the documented versioned prompt lifecycle.

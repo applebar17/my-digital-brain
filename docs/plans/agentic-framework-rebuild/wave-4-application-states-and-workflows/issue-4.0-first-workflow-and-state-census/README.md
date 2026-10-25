@@ -9,6 +9,11 @@ prebuilt inventory of graph services or LLM tools. The first workflow is
 memory ingestion, using the existing deterministic ingestion sequence as a
 working reference.
 
+The reusable [workflow architecture map](../../../../architecture/memory-ingestion-workflow-map.md)
+owns the visual sequence and step descriptions. The preceding
+[local inspector issue](../issue-4-prep-workflow-inspector/README.md) prepares
+the developer view used while validating the states.
+
 ## Tasks
 
 - [Task 4.0.1 — census memory-ingestion states and handoffs](task-4.0.1-memory-ingestion-state-census.md)

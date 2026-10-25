@@ -5,6 +5,8 @@
 Implement the root chat agent and the composite memory-query capability. The
 query state performs deterministic retrieval/context assembly, then uses its
 own agentic conversation; it can be invoked directly or as a child tool.
+The root state's `ingest_memory` tool is bound when the concrete ingestion
+workflow is delivered in Issue 4.3; no placeholder workflow handler is needed.
 
 ## Tasks
 

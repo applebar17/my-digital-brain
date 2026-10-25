@@ -1,6 +1,6 @@
 # Task 4.0.1 — census memory-ingestion states and handoffs
 
-**Status: Not started**
+**Status: In progress — architecture map drafted for review**
 
 ## User story
 
@@ -20,6 +20,28 @@ Review the existing target ingestion sequence and identify, in order:
 
 This task is a census and agreement step, not implementation. Do not define
 final Pydantic schemas, provider tool JSON, or graph service methods here.
+
+## Reusable workflow reference
+
+The [memory-ingestion workflow map](../../../../architecture/memory-ingestion-workflow-map.md)
+is the reusable source for the diagram, agentic-versus-deterministic
+classification, functional inputs and outputs, and each AI state's current
+reasoning/planning call profile. Keep that map in architecture documentation;
+this task records the review and decisions needed before state implementation.
+
+## Decisions to confirm in this census
+
+- Confirm the state boundaries and the execution order against the functional
+  ingestion requirements; combine or split steps only for a concrete reason.
+- Confirm which state, if any, needs a separate configured reasoning or planning
+  call. The framework's capability alone does not enable such a call.
+- Confirm which states can invoke `ClarificationAgentState` as an agentic tool,
+  and how its typed result returns to the requesting state after the child uses
+  its deterministic UI interaction tool.
+- Confirm the meaning of each state-to-state handoff and the references required
+  before memory, context, or relationship writes.
+- Record any unresolved decision here; update the reusable workflow map once a
+  decision changes the architecture.
 
 ## Where
 
