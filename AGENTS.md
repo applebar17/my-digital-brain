@@ -15,6 +15,9 @@ behavior and update the owning document when that behavior changes.
 - [Documentation conventions](docs/documentation-conventions.md): owns
   documentation structure, indexing, maintenance, and DTO/annotation-first
   boundaries.
+- [Dependency-oriented module design](docs/requirements/technical/dependency-oriented-module-design.md):
+  owns code directory and file organization, module layering, and method
+  documentation.
 - [AI engineering index](docs/ai-engineering/README.md): indexes the canonical
   AI contracts, runtime, states, providers, prompts, and evaluation guidance.
 - [System architecture](docs/architecture/system-architecture.md): owns system
