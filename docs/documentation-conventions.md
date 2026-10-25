@@ -32,13 +32,25 @@ Each substantive document starts with a clear purpose. It distinguishes:
 Avoid duplicated authoritative rules. Link to the canonical document instead.
 Use relative Markdown links and update inbound links when relocating a file.
 
+## Human-first writing
+
+Write for a reader who may not know the codebase, its names, or the history
+behind a decision. Give enough context for each page or section to make sense
+on its own, and explain code references when they matter to the reader. Prefer
+clear prose; use concise bullets when they make information easier to scan.
+Each bullet should carry enough context to be understood without relying on
+unstated knowledge. Keep explanations concise when that does not remove useful
+context.
+
 ## Engineering documentation baseline
 
-The DTO-first and annotation-first rule is a repository-wide development
-standard. Any new interface across model, provider, runtime, API, domain, or
-persistence boundaries requires an explicit typed contract. Untyped dictionaries
-may exist only at an external parsing boundary and must be converted immediately
-to the relevant DTO.
+The annotation-first rule is a repository-wide development standard: every
+function and method has parameter and return type annotations, and class
+attributes have explicit types where their types are not otherwise clear. Any
+new interface across model, provider, runtime, API, domain, or persistence
+boundaries requires an explicit typed contract. Untyped dictionaries may exist
+only at an external parsing boundary and must be converted immediately to the
+relevant DTO.
 
 Module layout, inheritance, acyclic imports, and contextual documentation for
 important methods are governed by the binding

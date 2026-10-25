@@ -37,6 +37,11 @@ The usual order is:
    startup, and configuration. These are the only places that choose concrete
    implementations.
 
+Keep source files cohesive and slim. Aim for fewer than 500 lines per file as
+a rule of thumb, not a binding limit. Split a file when responsibilities or
+contracts form a natural boundary; do not split code mechanically just to meet
+the line count.
+
 For example, an AI runtime should read as:
 
 `DTOs and protocols -> tool/provider helpers -> abstract adapter/runtime base -> OpenAI or Azure adapter -> session orchestration -> application composition`.
@@ -75,11 +80,12 @@ for annotations, never to hide runtime coupling. Local imports are not a
 general workaround; use them only for a documented, unavoidable external
 dependency and leave the application dependency graph acyclic.
 
-## Contextual documentation for important methods
+## Docstrings for entry points and important methods
 
-Important methods require a compact contextual docstring. It documents the
-method's role in the system, not its implementation line by line and never an
-agent's chain-of-thought.
+Main functions and classes require brief docstrings stating their role. Important
+methods require a compact contextual docstring. It documents the method's role
+in the system, not its implementation line by line and never an agent's
+chain-of-thought.
 
 Use it for public entry points, state transitions, tool dispatch, provider
 translation, persistence operations, external I/O, and non-obvious validation

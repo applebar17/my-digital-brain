@@ -18,10 +18,12 @@ propose additional behavior before adding it.
 ## One owner per behavior
 
 Each functional or technical behavior has one canonical specification and one
-active implementation. Link to that owner rather than copying its rules into
-another document or module. Remove superseded implementations when they have no
-remaining supported caller. Compatibility code is retained only to protect a
-current external contract, with a named owner and explicit removal condition.
+active implementation. Do not add duplicate coding logic, parallel
+implementations, or legacy code unless the user explicitly requests it. Link to
+the canonical owner rather than copying its rules into another document or
+module. Remove superseded implementations when they have no remaining supported
+caller. If the user requests compatibility code, record its owner and removal
+condition.
 
 Cross-boundary DTO and annotation requirements are owned by [Documentation
 Conventions](../../documentation-conventions.md). Module layering, inheritance,
