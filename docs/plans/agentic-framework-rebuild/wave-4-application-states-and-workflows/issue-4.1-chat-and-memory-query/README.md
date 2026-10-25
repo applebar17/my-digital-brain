@@ -1,6 +1,6 @@
 # Issue 4.1 — conversation entry and memory query
 
-**Status: Not started**
+**Status: In progress — conversation/history boundary implemented for review**
 
 Prepare the durable conversation/history boundary, then implement the root chat
 agent and the composite memory-query capability. The query state performs

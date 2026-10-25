@@ -1,6 +1,6 @@
 # Task 4.1.0 — prepare durable conversation and history projections
 
-**Status: Not started**
+**Status: Implemented for review — relational/API adapters intentionally deferred**
 
 ## User story
 
@@ -63,9 +63,9 @@ authenticated application user + conversation id + new message
   -> load bounded prior durable entries, excluding the new current message
   -> build the frontend projection and model-history projection
   -> AgenticHistorySession(model-history projection)
-  -> ConversationEntryState(current message)
-  -> append the completed assistant entry
-  -> return the typed turn result
+  -> Task 4.1.1 invokes ConversationEntryState(current message)
+  -> conversation service appends the completed assistant entry
+  -> API adapter returns the typed turn result
 ```
 
 The frontend sends the conversation identifier, a client-generated message
@@ -83,8 +83,8 @@ Define the smallest explicit DTOs needed for these boundaries:
 - a frontend-history result containing ordered renderable items and pagination
   information;
 - a model-history projection containing ordered canonical `Msg` objects;
-- a turn result containing the persisted user entry, completed assistant entry
-  or awaiting-input interaction, and the canonical state outcome.
+- a prepared-turn runtime object containing the persisted user entry, selected
+  model projection, and initialized `AgenticHistorySession` for Task 4.1.1.
 
 DTO fields must be justified by an active consumer. Do not add arbitrary
 metadata bags, provider identifiers, graph identifiers, raw state transcripts,
@@ -142,6 +142,12 @@ Existing integration points to adapt only after the target boundary is ready:
 - `src/my_digital_brain/chat/runtime.py` and
   `src/my_digital_brain/agentic/history.py`, whose mixed legacy runtime/history
   responsibilities are not migrated into the new application service.
+
+The target contracts, projector, repository protocol, and application service
+are now implemented. A focused in-memory test adapter verifies their functional
+behavior without introducing a second production store. PostgreSQL and HTTP
+adaptation remain deferred until their current callers move after the AI
+migration, as agreed.
 
 ## Dependencies and acceptance
 

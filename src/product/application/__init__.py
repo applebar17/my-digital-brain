@@ -1,1 +1,1 @@
-"""Product application workflows and their composition."""
+"""Product application services, states, and workflows."""
