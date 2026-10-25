@@ -59,11 +59,6 @@ folders and atomic files over a few large files that collect unrelated logic.
 Add structure where it makes ownership and navigation clearer, and split at
 real responsibility or contract boundaries rather than mechanically.
 
-Keep base models and contract classes separate from operating or functional
-classes. Put scope-owned models and contracts in a dedicated `models.py` within
-their functional scope, and place services, states, workflows, handlers, and
-other behavior in separate purpose-named modules.
-
 Keep a module understandable top-to-bottom. Its declarations should normally
 appear in dependency order:
 
