@@ -20,11 +20,12 @@ configuration layer is not needed at this stage.
 The target application package layout is:
 
 ```text
-src/my_digital_brain/prompts/
+src/product/prompts/
   README.md
-  contracts.py
-  registry.py
+  models.py
+  sources.py
   renderer.py
+  service.py
   templates/
     conversation-entry/
       v1.system.md
@@ -38,6 +39,11 @@ src/my_digital_brain/prompts/
 production system-prompt body. The existing Python prompt constants are
 migration material only: once a template is migrated, production code must not
 also load a duplicate constant for that prompt.
+
+`PromptTemplateSource` is the injected storage boundary. The file-backed source
+implements it for local templates; a future database-backed implementation can
+load the same `PromptTemplateDTO` without changing concrete states or the
+renderer. `PromptService` composes one source with the literal renderer.
 
 The `README.md` in the application package indexes the contracts, rendering
 syntax, template directory, and active prompt references. This follows the
