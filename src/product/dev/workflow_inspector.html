@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workflow inspector</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #111418; color: #e8edf3; }
+    body { margin: 0; padding: 28px; max-width: 1280px; margin-inline: auto; }
+    h1, h2, h3 { line-height: 1.2; }
+    p, small { color: #aeb9c6; }
+    .layout { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 24px; }
+    .step, .panel { border: 1px solid #39434e; border-radius: 12px; padding: 16px; background: #1b2027; }
+    .step { width: 100%; color: inherit; text-align: left; cursor: pointer; margin-bottom: 12px; font: inherit; }
+    .step:hover, .step[aria-selected="true"] { border-color: #88abff; }
+    .step.agentic { border-left: 4px solid #a5d6a7; }
+    .step.deterministic { border-left: 4px solid #88abff; }
+    .step strong, .step small { display: block; }
+    .step small { margin-top: 4px; }
+    .edge { color: #9ba7b5; margin: -5px 0 7px 16px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; background: #303b49; font-size: 12px; }
+    .section { border-top: 1px solid #39434e; margin-top: 18px; padding-top: 12px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #111418; padding: 12px; border-radius: 8px; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border-bottom: 1px solid #39434e; padding: 7px; text-align: left; vertical-align: top; }
+    @media (max-width: 780px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Workflow inspector</h1>
+  <p>Local, read-only view of an assembled workflow. No application frontend or provider call is involved.</p>
+  <h2 id="workflow-title">Loading…</h2>
+  <p id="workflow-description"></p>
+  <div class="layout"><nav id="steps" aria-label="Workflow steps"></nav><main id="details" class="panel"></main></div>
+  <script>
+    const element = (tag, text, parent, className) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      if (parent) parent.appendChild(node);
+      return node;
+    };
+    const details = document.getElementById('details');
+    const steps = document.getElementById('steps');
+    function model(title, contract, parent) {
+      if (!contract) return;
+      element('h3', `${title} · ${contract.name}`, parent);
+      const table = element('table', undefined, parent);
+      const head = element('tr', undefined, table);
+      for (const label of ['Field', 'Type', 'Description']) element('th', label, head);
+      for (const field of contract.fields) {
+        const row = element('tr', undefined, table);
+        element('td', field.name + (field.required ? ' *' : ''), row);
+        element('td', field.type_name, row);
+        element('td', field.description || '—', row);
+      }
+    }
+    function stage(title, config, parent) {
+      if (!config) return;
+      const area = element('section', undefined, parent, 'section');
+      element('h3', title, area);
+      element('p', `Parallel tool calls: ${config.parallel_tool_calls ?? 'not specified'}`, area);
+      element('h3', 'System prompt', area);
+      element('pre', config.system_prompt, area);
+      model('Structured output', config.response_model, area);
+      element('h3', `Toolbox: ${config.toolbox_name || 'none'}`, area);
+      for (const tool of config.tools) {
+        const toolArea = element('div', undefined, area, 'section');
+        element('strong', tool.name, toolArea);
+        element('p', tool.description, toolArea);
+        model('Tool input', tool.input_model, toolArea);
+        model('Tool output', tool.output_model, toolArea);
+      }
+    }
+    function select(step) {
+      for (const button of steps.querySelectorAll('button'))
+        button.setAttribute('aria-selected', String(button.dataset.stepId === step.step_id));
+      details.replaceChildren();
+      element('span', step.kind === 'agentic' ? 'AI state' : 'Deterministic', details, 'badge');
+      element('h2', step.title, details);
+      element('p', step.description, details);
+      element('p', `Depends on: ${step.depends_on.join(', ') || 'workflow input'}`, details);
+      model('Input DTO', step.input_model, details);
+      model('Output DTO', step.output_model, details);
+      if (step.agentic) {
+        element('p', `State: ${step.agentic.state_id}`, details);
+        element('p', `Invocation request: ${step.agentic.invocation_request}`, details);
+        stage('Main call', step.agentic.main, details);
+        if (step.agentic.reasoning) stage('Reasoning call', step.agentic.reasoning, details);
+        else element('p', 'Reasoning call: not configured', details);
+        if (step.agentic.planning) stage('Planning call', step.agentic.planning, details);
+        else element('p', 'Planning call: not configured', details);
+      }
+    }
+    fetch('/api/workflow').then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }).then(workflow => {
+      document.getElementById('workflow-title').textContent = workflow.workflow_id;
+      document.getElementById('workflow-description').textContent = workflow.description;
+      for (const step of workflow.steps) {
+        if (step.depends_on.length) element('div', `↓ from ${step.depends_on.join(', ')}`, steps, 'edge');
+        const button = element('button', undefined, steps, `step ${step.kind}`);
+        button.type = 'button';
+        button.dataset.stepId = step.step_id;
+        element('strong', step.title, button);
+        element('small', step.kind === 'agentic' ? 'AI state' : 'Deterministic step', button);
+        button.addEventListener('click', () => select(step));
+      }
+      if (workflow.steps.length) select(workflow.steps[0]);
+    }).catch(error => { details.textContent = `Cannot load workflow: ${error.message}`; });
+  </script>
+</body>
+</html>

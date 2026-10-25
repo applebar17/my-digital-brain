@@ -45,10 +45,10 @@ The workflow owns:
 - waiting for a state's completed result before advancing its dependent steps,
   including when the agentic runtime resumes that state after clarification.
 
-Independent sibling steps can appear side by side in the inspector. They run
-in parallel only when the concrete workflow declares them independent; a
-dependent step waits for all required results. The base does not decide
-independence from a drawing or from LLM output.
+Independent sibling steps can appear side by side in the inspector. The first
+base executes declared steps in order; actual parallel execution would need an
+explicit later decision and still wait for all required results. The base does
+not decide independence from a drawing or from LLM output.
 
 It does not interpret LLM output, perform graph writes, infer missing graph
 objects, parse prose into DTO fields, hide tool failures, or carry raw provider

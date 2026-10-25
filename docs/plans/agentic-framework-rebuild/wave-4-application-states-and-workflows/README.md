@@ -16,8 +16,9 @@ DTO and tool choices are made when the state requires them. Do not treat the
 Wave 3 capability candidates or current application-state drafts as finalized
 contracts.
 
-Step 0 prepares a local developer inspector so each subsequent state slice can
-be seen in the assembled workflow and in an actual run. Its requirements live
+Step 0 prepares a standalone local inspector so each subsequent state slice can
+be seen in the assembled workflow. Selected-run inspection can follow later.
+Its requirements live
 in the [local workflow inspector](../../../ai-engineering/observability-and-evaluation/workflow-inspector.md).
 
 ## Issues
@@ -55,8 +56,8 @@ implementation.
 
 ## Exit evidence
 
-- The local developer inspector shows assembled configuration and a selected
-  runtime path through the implemented workflow.
+- The local inspector shows the assembled configuration without requiring the
+  application frontend or a provider call.
 - Chat/query and ingestion can run through concrete states with typed handoffs.
 - When one state invokes another, its input and returned functional result are
   explicit; provider IDs remain inside the client protocol.
