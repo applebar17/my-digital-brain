@@ -84,16 +84,18 @@ not create a pending tool result.
 
 ## Typed graph-action tool pattern
 
-Product graph writes use a small operation surface rather than one provider
-function for every node subtype. A single registered graph-action function is
-bound to one dispatcher; its input is a typed union of concrete action DTOs.
-Each variant fixes its `operation`, `kind`, and `type` and declares only the
-fields that operation/type accepts. For example, a Person-create variant and
-a Place-create variant share the action identity, but keep person and place
-properties in their own annotated DTOs.
+The current working pattern for product graph writes is a small operation
+surface rather than one provider function for every node subtype. If selected
+for a state, one registered graph-action function would map to one dispatcher;
+its input would be typed action variants fixing valid `operation`, `kind`, and
+`type` combinations, with explicit fields for each object/operation. This is a
+design direction, not a finalized list of graph DTOs, operations, or types;
+those are confirmed state by state in the rebuild plan. A Person-create and a
+Place-create variant illustrate how type-specific fields can stay explicit.
 
 ```python
 from typing import Literal
+from pydantic import BaseModel, Field
 
 
 class GraphActionBase(BaseModel):
@@ -116,41 +118,53 @@ class CreatePlaceActionDTO(GraphActionBase):
     place: PlaceCreateFieldsDTO
 ```
 
-The model-facing tool has an object root containing an `action` union. The
-toolbox composer builds that union only from predeclared action DTO variants
-allowed for the current state and, when applicable, narrowed by its validated
-plan. The plan may select among supported capabilities; it cannot add a type,
-field, operation, or handler. Concrete variants map to the same registered
-graph-action dispatcher, which routes the validated DTO to the owning typed
-deterministic service. This keeps the provider tool count small without
-replacing field-level contracts with a generic `properties` or `metadata`
-dictionary.
+Whenever a tool argument expects a model-local reference, its field description
+must explain that it accepts a reference supplied in the active state/workflow
+context, and what kind of object it must identify. A placeholder such as
+`node_NNNN` may illustrate the general idea, but is non-binding: it does not
+define the actual prefix, counter width, allocator, or validation pattern. The
+active [ReferenceContext contract](../context-and-prompts/reference-context-and-owner-projection.md#reference-allocation-conventions)
+owns the current session's actual reference convention. Do not put an example
+literal such as `node_0001` in a generic field description as if the model
+should always submit that value.
 
-`operation`, `kind`, and `type` are fixed literals on each executable variant,
-not independent free combinations. This prevents combinations such as a
-Place-memory update when no such action exists. The base DTO contains only
-fields genuinely shared across variants; fields such as a person's display
-name do not belong in a universal node base. A `MemoryLog` has its own typed
-memory-action variants and lifecycle rather than being treated as an ordinary
-entity node. Relationship variants use local endpoint refs and only expose
-relationship types approved for that state; structural links owned by a
-create operation are written by that operation, not exposed as arbitrary
-edges. Backend owner identity and graph UUIDs are injected/resolved by the
-handler and never appear in the model-facing schema.
+Under this working pattern, the model-facing tool would have an object root
+containing an `action` union. The toolbox composer builds that union only from
+predeclared action DTO variants allowed for the current state and, when
+applicable, narrowed by its validated plan. The plan may select among supported
+capabilities; it cannot add a type, field, operation, or handler. Concrete
+variants map to the same registered graph-action dispatcher, which routes the
+validated DTO to the owning typed deterministic service. This keeps the
+provider tool count small without replacing field-level contracts with a
+generic `properties` or `metadata` dictionary.
 
-Create and update are separate concrete variants with different required
-fields. Delete is not exposed until its type-specific lifecycle and behavior
-are explicitly specified. An update targets an existing local ref and carries
-an explicit typed patch. A new observation normally creates a new MemoryLog;
-editing an existing log requires a separately specified correction operation.
+In this pattern, `operation`, `kind`, and `type` are fixed literals on each
+executable variant, not independent free combinations. This prevents invalid
+combinations, such as a Place-memory update when no such action exists. The
+base DTO contains only fields genuinely shared across variants; fields such as
+a person's display name do not belong in a universal node base. A `MemoryLog`
+has its own typed memory-action variants and lifecycle rather than being
+treated as an ordinary entity node. Relationship variants use local endpoint
+refs and expose only relationship types approved for that state; structural
+links owned by a create operation are written by that operation, not exposed
+as arbitrary edges. Backend owner identity and graph UUIDs are injected or
+resolved by the handler and never appear in the model-facing schema.
 
-The plan and tool call should reuse the same concrete action DTO variants when
-they represent the same action. The plan may wrap them in an ordered action
-list with dependencies; the tool call carries one action. Do not define a
-second untyped action payload that must later be translated by field-name
-guessing.
+The current proposal uses separate create and update variants with different
+required fields; delete remains out of scope until its type-specific lifecycle
+and behavior are specified. An update targets an existing local ref and carries
+an explicit typed patch. Whether a new observation creates a MemoryLog or an
+existing one may be corrected is confirmed by the owning state specification.
 
-Runtime composition is selection over the canonical registrations:
+If an owning state uses both a plan and graph-action tools for the same
+operations, the working direction is to reuse their concrete action DTO
+variants. The plan may wrap them in an ordered action list with dependencies;
+the tool call carries one action. Do not introduce a second untyped payload
+that requires field-name guessing; confirm the exact shared DTO boundary during
+that state's design.
+
+If this pattern is selected, runtime composition is selection over the
+predeclared registrations:
 
 1. The concrete state defines its maximum allowed action variants.
 2. A validated plan may narrow that set to the relevant operation/kind/type
