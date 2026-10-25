@@ -10,26 +10,32 @@ interpret what the user meant without stale or hard-coded identity data.
 
 ## What and why
 
-Define the high-level ingestion input/output DTOs and the initial reasoning
-state context. Include model-facing owner projection and relevant history;
-reasoning/planning remains optional according to the state specification.
+Use the agreed state-slice sequence: first confirm this state's functional
+purpose, caller, inputs, output, and whether it is in fact an agentic state.
+Then define only the DTOs/artifacts, prompt/context/history, deterministic
+functions, and tools needed for that agreed behavior. Include model-facing
+owner projection and relevant history if required; reasoning/planning remains
+optional rather than assumed.
 
 ## Where
 
 - `src/product/application/states/ingestion/` request and reasoning state.
 - Owner and reference rendering per the canonical context specification.
 
-## Functional communication DTOs
+## Functional communication boundary
 
-Input: source/user content, owner identity, conversation/channel context, and
-optional media/evidence references. Output from reasoning: salient entities,
-relationships, context gaps, evidence, and whether a clarification is useful.
-The owner shown to the model is a functional identity projection, not the
-backend owner UUID.
+Candidate input: source/user content, owner identity, conversation/channel
+context, and optional media/evidence references. Candidate result: the
+functional outcome this state's caller needs. The exact result fields are
+defined only after the state purpose is agreed. The owner shown to the model is
+a functional identity projection, not the backend owner UUID.
 
 ## Dependencies and acceptance
 
-- Depends on Tasks 2.3.2 and 3.1.1.
+- Follows the approved state inventory in Task 4.0.1 and uses the generic
+  framework from Wave 2.
+- Add a Wave 3 service/tool dependency only when the agreed state behavior
+  requires it.
 - Owner context is derived per invocation, never hard-coded or stale.
 - Reasoning receives relevant history and source context, not only an isolated
   goal string.

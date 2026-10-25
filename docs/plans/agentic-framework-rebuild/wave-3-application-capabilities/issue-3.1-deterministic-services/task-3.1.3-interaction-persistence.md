@@ -1,6 +1,6 @@
 # Task 3.1.3 — preserve the human-interaction persistence boundary
 
-**Status: Not started**
+**Status: Candidate capability — activate only when a reviewed state requires it**
 
 ## User story
 
@@ -10,10 +10,10 @@ after the user responds.
 
 ## What and why
 
-Identify the existing API/storage mechanisms that persist and resolve a pending
-interaction. Adapt the minimal boundary to the documented continuation DTO;
-do not build a new clarification subsystem or place frontend persistence inside
-the generic framework.
+If a reviewed state requires a user-input interaction, identify the existing
+API/storage mechanisms and define the needed persistence boundary in that state
+slice. Adapt only what is required; do not build a new clarification subsystem
+or place frontend persistence inside the generic framework.
 
 For tools that directly request user input, the backend interaction boundary
 also owns a per-interaction response deadline. An answer before the deadline or

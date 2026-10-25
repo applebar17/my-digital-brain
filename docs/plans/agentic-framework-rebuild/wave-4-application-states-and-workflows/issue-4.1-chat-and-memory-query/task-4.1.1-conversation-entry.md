@@ -30,7 +30,9 @@ framework's existing awaiting-input continuation, never raw tool JSON.
 
 ## Dependencies and acceptance
 
-- Depends on Wave 2 base state/history and Wave 3 tool registrations.
+- Depends on Wave 2 base state/history. Define child tools and registrations
+  from this state's reviewed behavior rather than assuming the current draft
+  toolbox.
 - Root invocation uses the shared session and its own local transcript.
 - Child-agent output is returned to the invoking state, not rendered directly
   as the chat answer.

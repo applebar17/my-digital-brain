@@ -10,28 +10,30 @@ relationships are represented without inventing participants.
 
 ## What and why
 
-Define relationship kinds and fields from the graph contract, ensure the model
-has examples of broad relationship categories, and execute writes against
+Confirm from the state census whether relationship writing is a distinct state
+or part of another state. If needed, agree its functional purpose and
+input/output first, then define the allowed relationship data, prompt examples,
+deterministic function, and model-visible tool mapping. Execute writes against
 resolved local endpoint refs. Preserve failed writes as recoverable tool
-outputs; future reconciliation of missing edges is outside this task unless
-separately prioritized.
+outputs; reconciliation of missing edges remains outside scope unless separately
+prioritized.
 
 ## Where
 
 - Relationship-write state/prompt under `product.application.states.ingestion`.
 - Typed graph relationship DTO and write tool under `product.application`.
 
-## Functional communication DTOs
+## Functional communication boundary
 
-Input: source evidence, allowed relationship categories, endpoint local refs,
-and any relevant temporal/status context. Output: written relationship local
-ref, endpoints, readable type/summary, and explicit error information if the
-write fails.
+Candidate input includes source evidence and resolved endpoint local refs.
+Agree the exact input/output DTO only if the census confirms this state is
+needed. A completed write returns the functional relationship result and
+readable summary; backend IDs remain internal.
 
 ## Dependencies and acceptance
 
-- Depends on Task 4.3.2 for endpoints and Task 4.3.3 when relationship context
-  must be attached.
+- Depends on whichever earlier state resolves the required endpoints and
+  creates any required relationship context, as confirmed by Issue 4.0.
 - Allowed relationship schema matches the graph's supported kinds.
 - Each endpoint resolves to an existing/created object before the write call.
 - No relationship omission is silently reported as successful creation.

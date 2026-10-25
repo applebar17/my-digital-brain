@@ -10,9 +10,11 @@ references and the root caller receives one useful outcome.
 
 ## What and why
 
-Compose only the accepted ingestion sequence and its explicit dependencies.
+Wire each accepted state into the deterministic workflow as its vertical slice
+is completed. This final task checks the full accepted sequence, handoff data,
+and dependencies end to end; it is not the first time the states are connected.
 Reasoning/planning may guide state behavior, but workflow handoffs determine
-which outputs become inputs to subsequent writes. Do not introduce a generic
+which outputs become inputs to subsequent steps. Do not introduce a generic
 workflow DSL or an autonomous replacement for this sequence.
 
 ## Where
@@ -30,7 +32,8 @@ useful local refs; provider transcripts stay inside each state history.
 
 ## Dependencies and acceptance
 
-- Depends on Tasks 4.3.1–4.3.4.
+- Depends on the state inventory and all state slices confirmed by Issue 4.0;
+  the current Tasks 4.3.1–4.3.4 may be revised to match that inventory.
 - A context or relationship is not written before required target refs resolve.
 - A tool failure is returned to the invoking state and the workflow does not
   silently fabricate success or apply a deterministic global break.

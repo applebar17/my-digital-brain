@@ -1,6 +1,6 @@
 # Task 3.1.1 — migrate graph and owner services used by states
 
-**Status: Not started**
+**Status: Candidate capability — activate only when a reviewed state requires it**
 
 ## User story
 
@@ -10,9 +10,11 @@ deterministic service boundary.
 
 ## What and why
 
-Move or adapt only graph and owner services used by selected application
-states. Preserve backend UUID ownership and current graph DTOs where supported;
-do not copy the old agentic tool handler layer.
+When a reviewed state requires graph/owner behavior, define its functional
+service contract within that state slice and adapt only the necessary service.
+Preserve backend UUID ownership; do not copy the old agentic tool handler layer.
+The examples below are candidates, not a commitment to a standalone graph
+service migration.
 
 ## Where
 
@@ -22,11 +24,13 @@ do not copy the old agentic tool handler layer.
 
 ## Functional communication DTOs
 
-Input carries an owner context plus explicit create/read/update data. State
-references remain model-facing handles; the application reference context maps
-them to graph IDs before the service call. Output identifies the created or
-updated domain result and any useful validation/error information, without
-exposing database IDs to the model as reference identity.
+The tool/application boundary carries model-local references and trusted owner
+context. Its active-workflow/session-scoped mapper resolves references to
+persisted UUIDs before calling deterministic services; those services receive
+trusted owner identity and typed domain data, not model-local reference syntax.
+After a successful create, the mapper associates the new local ref with the
+returned UUID. Results returned to the model use the local ref and readable
+domain information, never the database UUID as reference identity.
 
 ## Dependencies and acceptance
 

@@ -39,9 +39,25 @@ This plan is the work breakdown; design sources remain in
   runtime behavior. **Complete.**
 - [Wave 1 — neutral package and client foundation](wave-1-product-and-client-foundation/README.md): establish the target namespace and ensure the selected client layer supports the framework contracts.
 - [Wave 2 — generic agentic framework](wave-2-agentic-framework/README.md): implement reusable history, state invocation, typed tools, and configured reasoning/planning stages without product workflow policy.
-- [Wave 3 — application capabilities](wave-3-application-capabilities/README.md): place required deterministic services and product tool adapters under `product`.
-- [Wave 4 — application states and workflows](wave-4-application-states-and-workflows/README.md): define functional state contracts and deterministic handoffs, with state-to-state data made explicit.
+- [Wave 3 — application capabilities](wave-3-application-capabilities/README.md): demand-driven support work discovered while defining and implementing a state; this is not a blanket service/tool migration gate.
+- [Wave 4 — application states and workflows](wave-4-application-states-and-workflows/README.md): deliver one selected workflow as ordered state-by-state vertical slices, deriving DTOs, deterministic functions, tools, and handoffs as each state requires them.
 - [Wave 5 — application integration and retirement](wave-5-integration-and-retirement/README.md): connect API/chat boundaries, verify user-visible flows, and retire the old source namespace.
+
+## Application delivery order
+
+Application work is workflow-first, not service-first. Begin with the existing
+memory-ingestion workflow, census the states and deterministic steps it needs,
+then take each state in execution order. For each state, agree its functional
+purpose and input/output before defining its internal DTOs, deterministic
+dependencies, model-visible tools, function mappings, and handoffs. Integrate
+the state into the workflow and verify its functional behavior before moving to
+the next state.
+
+The generic tool contracts and toolbox composition from Wave 2 are established
+framework capabilities. Application-specific DTOs, tool schemas, and service
+operations remain working proposals until required by an agreed state. Existing
+application-state documents are starting references for this review, not an
+automatic commitment to every listed tool or field.
 
 ## Rebuild constraints
 
@@ -50,8 +66,9 @@ This plan is the work breakdown; design sources remain in
 - The current implementation is not presumed to be the target architecture.
 - Reuse behavior and stable external contracts only after explicit review;
   do not copy old internal structure by default.
-- DTOs and annotated function boundaries are identified before their
-  implementation tasks.
+- DTOs and annotated function boundaries are identified for each state before
+  implementing that state's slice; do not predefine application contracts for
+  unreviewed states.
 - Keep only stable non-agentic application boundaries that remain needed; do
   not retain parallel or compatibility agentic runtimes after cutover.
 - Wave 0 is complete. The implementation waves are planning proposals; before

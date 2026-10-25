@@ -1,10 +1,12 @@
 # Issue 3.2 — define product tool DTOs and bindings
 
-**Status: Not started**
+**Status: Deferred until an agreed state requires a model-visible tool**
 
-Build the explicit product-level tool contracts that place deterministic
-services or child states in a model's toolbox. Tool DTOs describe functional
-intent and outputs, not storage internals or provider protocol.
+This issue is a just-in-time backlog, not a prerequisite tool inventory. Define
+each product-level tool only after its consuming state has an agreed functional
+need. Its DTO describes that intent and output, not storage internals or
+provider protocol. The generic tool framework itself is already established in
+Wave 2.
 
 ## Tasks
 
@@ -17,9 +19,11 @@ intent and outputs, not storage internals or provider protocol.
 - Issue 3.1 deterministic services.
 - [State and tool taxonomy](../../../../ai-engineering/application-states/state-and-tool-taxonomy.md)
 
-## Functional communication DTOs
+## Candidate communication contracts (non-binding)
 
-Tool inputs carry user/model intent and local references; outputs carry a
+When a state requires a tool, its inputs may carry user/model intent and local references; outputs may carry a
 functional result, readable summary, relevant local refs, or an explanatory
 error. For a child agent, the registered function translates its typed tool
 input to a child state invocation and child result to one parent result.
+These are design constraints, not a declaration that every candidate tool or
+field is needed.

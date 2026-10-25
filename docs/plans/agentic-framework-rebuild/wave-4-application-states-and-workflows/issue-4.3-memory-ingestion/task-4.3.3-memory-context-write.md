@@ -10,27 +10,31 @@ readable and its target objects already exist.
 
 ## What and why
 
-Implement the typed memory-log and context write state/tool contracts, including
-human-readable titles/summaries and source evidence where required. Enforce
-creation ordering through the workflow dependency, not by asking the model to
-invent backend IDs.
+Treat memory-log and context writing as candidate responsibilities until the
+state census confirms their boundaries and order. For each resulting state,
+agree its functional purpose and input/output before defining its typed DTOs,
+deterministic write functions, or model-visible tool. Enforce creation ordering
+through workflow handoffs, not by asking the model to invent backend IDs.
 
 ## Where
 
 - `product.application.states.ingestion` memory/context states.
 - `product.application.tools` and graph persistence DTOs.
 
-## Functional communication DTOs
+## Functional communication boundary
 
-Memory input includes content/title, happened-at context when known, source
-evidence, and references to resolved entities. Context/perception input
-includes type, description/evidence, and its already-created target refs.
-Outputs return local refs and readable summaries for later steps and the
-invoking agent.
+Candidate memory input includes content, source evidence, and references to
+resolved entities; candidate context input includes its target references.
+These examples do not predefine DTO fields. The approved state task defines
+exact inputs/outputs; completed writes return local refs and readable summaries
+for the caller or next step.
 
 ## Dependencies and acceptance
 
-- Depends on Task 4.3.2 and graph/log DTOs from Wave 3.
+- Depends on the prior state handoffs agreed in Issue 4.0 and captured in the
+  workflow as slices are delivered.
+- Define any graph/log DTO or service dependency only for this state's accepted
+  functional need.
 - Required target object is created/resolved before a linked context is written.
 - Memory-log title is a concise generated field, not the full log body by
   default.

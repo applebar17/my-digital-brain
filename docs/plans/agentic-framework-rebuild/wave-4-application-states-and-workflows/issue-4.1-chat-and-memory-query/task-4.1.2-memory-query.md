@@ -28,7 +28,8 @@ packet the caller contract requests. Backend IDs are not answer content.
 
 ## Dependencies and acceptance
 
-- Depends on Task 3.1.2 and the typed read toolbox.
+- Depends on Wave 2 generic framework. Define retrieval services, DTOs, and any
+  read toolbox from this state's reviewed functional contract.
 - No-match and weak-evidence cases are explicit to the model.
 - Direct invocation and `query_memory` child-tool invocation share the same
   state semantics; the parent receives one compact result.

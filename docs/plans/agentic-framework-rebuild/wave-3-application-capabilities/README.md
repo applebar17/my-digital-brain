@@ -1,12 +1,15 @@
-# Wave 3 — application capabilities
+# Wave 3 — application capabilities (demand-driven)
 
 **Status: Not started**
 
-## Outcome
+## Role in the workflow-first plan
 
-Expose the deterministic capabilities needed by application states as explicit
-services and typed tools under `product.application`. Models choose tools;
-backend services perform graph, retrieval, and clarification operations.
+This wave is no longer a prerequisite inventory or a horizontal migration of
+graph, retrieval, and interaction services. Its issues are capability
+candidates to be activated only when an agreed state in Wave 4 requires them.
+The state task defines the functional operation and DTO boundary first; the
+smallest deterministic function and, when needed, model-facing tool are then
+implemented as part of that state's vertical slice.
 
 ## Issues
 
@@ -15,14 +18,17 @@ backend services perform graph, retrieval, and clarification operations.
 
 ## Dependencies and boundaries
 
-- Depends on the typed generic contracts in Wave 2.
+- Uses the typed generic contracts and toolbox composition established in Wave
+  2.
 - Existing graph, vector, chat, and clarification service contracts are
   inventoried in [Wave 0](../wave-0-census/README.md).
-- Do not move a service just to match a desired folder; move the minimal
-  dependencies required by the agreed application states.
+- A Wave 3 issue is not started merely because it appears here. Link its scope
+  to the specific accepted state task that needs it.
+- Do not move a service just to match a desired folder; adapt only the minimal
+  deterministic capability required by that state.
 
 ## Exit evidence
 
-- Every tool exposed to a model has an explicit typed input and functional
-  output DTO and maps to one deterministic service or child state.
+- Every capability pulled into a state slice has explicit typed inputs and
+  outputs and a clear deterministic function or child-state mapping.
 - No application agentic policy is placed inside graph/vector storage classes.

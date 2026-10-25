@@ -1,6 +1,6 @@
 # Task 3.2.2 — define clarification interaction tool binding
 
-**Status: Not started**
+**Status: Candidate capability — activate only when a reviewed state requires a tool**
 
 ## User story
 
@@ -32,7 +32,9 @@ timeout result to the waiting tool call.
 
 ## Dependencies and acceptance
 
-- Depends on Task 2.2.2 and Task 3.1.3.
+- Uses the Wave 2 generic tool/continuation contracts. Activate only if a
+  reviewed state requires this interaction and define its application
+  persistence boundary in that state slice.
 - One question invocation maps to one user-visible interaction and one eventual
   matched result.
 - Presentation-specific payload remains owned by the API/frontend contract.

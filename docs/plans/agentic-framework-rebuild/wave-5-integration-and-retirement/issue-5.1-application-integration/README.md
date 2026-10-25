@@ -22,5 +22,6 @@ response. Ingestion result returns to its invoker before the root agent answers.
 
 ## Dependencies
 
-- Wave 4 states/workflows and Wave 3 interaction persistence boundary.
+- Completed workflow/state slices and any interaction persistence boundary
+  those states actually require.
 - Existing API/chat response contract from the Wave 0 integration census.

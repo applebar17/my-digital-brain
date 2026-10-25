@@ -1,6 +1,6 @@
 # Task 3.1.2 — migrate retrieval and context preparation services
 
-**Status: Not started**
+**Status: Candidate capability — activate only when a reviewed state requires it**
 
 ## User story
 
@@ -10,9 +10,10 @@ application data instead of inventing identifiers or hidden database state.
 
 ## What and why
 
-Move/adapt the retrieval and hydration functions needed for the selected states.
-Separate retrieval plans and backend queries from the LLM state that interprets
-the resulting context.
+When a reviewed state requires retrieval/hydration, define its functional
+service contract within that state slice and adapt only the needed functions.
+Keep deterministic retrieval separate from the LLM state interpreting its
+result. This is not an independent migration of all retrieval code.
 
 ## Where
 

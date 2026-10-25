@@ -15,7 +15,8 @@ own agentic conversation; it can be invoked directly or as a child tool.
 
 - [Conversation-entry specification](../../../../ai-engineering/application-states/conversation-entry-state.md)
 - [Memory-query specification](../../../../ai-engineering/application-states/memory-query-state.md)
-- Wave 3 read/retrieval tools.
+- Wave 2 generic framework. Read/retrieval capabilities and tools are defined
+  only if the reviewed state contracts require them.
 
 ## Functional communication DTOs
 
