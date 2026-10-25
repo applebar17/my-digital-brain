@@ -1,6 +1,6 @@
 # Task 4.0.1 — census memory-ingestion states and handoffs
 
-**Status: In progress — architecture map drafted for review**
+**Status: Complete**
 
 ## User story
 
@@ -29,19 +29,26 @@ classification, functional inputs and outputs, and each AI state's current
 reasoning/planning call profile. Keep that map in architecture documentation;
 this task records the review and decisions needed before state implementation.
 
-## Decisions to confirm in this census
+## Confirmed decisions
 
-- Confirm the state boundaries and the execution order against the functional
-  ingestion requirements; combine or split steps only for a concrete reason.
-- Confirm which state, if any, needs a separate configured reasoning or planning
-  call. The framework's capability alone does not enable such a call.
-- Confirm which states can invoke `ClarificationAgentState` as an agentic tool,
-  and how its typed result returns to the requesting state after the child uses
-  its deterministic UI interaction tool.
-- Confirm the meaning of each state-to-state handoff and the references required
-  before memory, context, or relationship writes.
-- Record any unresolved decision here; update the reusable workflow map once a
-  decision changes the architecture.
+- The state boundaries and deterministic execution order are accepted as shown
+  in the reusable workflow map. A later state may be split or combined only for
+  a concrete functional reason discovered during its vertical slice.
+- No ingestion state currently adds a separate framework reasoning or planning
+  call. Each documented main LLM call performs its stated responsibility.
+- Node resolution, memory/context writing, and relationship writing may invoke
+  `ClarificationAgentState` as an agentic tool. Its typed result returns as the
+  matched tool output to the requesting state, which resumes before the
+  workflow advances.
+- `ConversationEntryState` is the agentic chat state. It invokes the bound
+  `MemoryIngestionWorkflow.ingest_memory` method through a tool and resumes with
+  the matched workflow result to generate the final chat response.
+- At framework level, tools may bind either an agentic state or a workflow. The
+  parent continuation contract is the same; only the internal handler differs.
+- The MVP carries normalized input text or a transcript as transient workflow
+  context. It does not require a persisted source record or original-message ID.
+- Linked objects are written only after their required model-facing references
+  have been resolved by earlier handoffs.
 
 ## Where
 
@@ -51,8 +58,8 @@ this task records the review and decisions needed before state implementation.
 
 ## Functional communication overview
 
-At this level, record only the meaning of each handoff (for example, source
-evidence, resolved local references, or a completed write outcome). Concrete
+At this level, record only the meaning of each handoff (for example, normalized
+input, resolved local references, or a completed write outcome). Concrete
 input/output DTOs and internal artifacts are defined during the corresponding
 state task.
 

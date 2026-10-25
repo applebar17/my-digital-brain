@@ -1,6 +1,6 @@
 # Issue 4.0 — select the first workflow and census its states
 
-**Status: Not started**
+**Status: Complete**
 
 ## Purpose
 

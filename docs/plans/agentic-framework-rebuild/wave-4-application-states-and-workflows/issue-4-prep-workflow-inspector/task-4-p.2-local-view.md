@@ -1,6 +1,6 @@
 # Task 4.P.2 — show the workflow and selected run locally
 
-**Status: Implemented for review**
+**Status: Complete**
 
 ## User story
 

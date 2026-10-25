@@ -32,7 +32,7 @@ workflow DSL or an autonomous replacement for this sequence.
 
 ## Functional communication DTOs
 
-The workflow carries source/owner context, reasoning/planning artifacts,
+The workflow carries input/owner context, reasoning/planning artifacts,
 reference-context updates, node resolution/write results, memory/context
 results, and relationship results. It returns a concise aggregate outcome with
 successful writes, recoverable failures, clarification outcome if any, and

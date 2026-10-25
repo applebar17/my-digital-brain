@@ -1,6 +1,6 @@
 # Issue 4.P — local workflow inspector (Wave 4 step 0)
 
-**Status: Implemented for review — configuration-only local slice**
+**Status: Complete — configuration-only local slice**
 
 ## User story
 

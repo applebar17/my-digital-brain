@@ -4,8 +4,8 @@
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
-agreed execution order. Each state receives only the source, owner, evidence,
-and functional reference context it needs. Its DTOs, deterministic dependencies,
+agreed execution order. Each state receives only the input, owner, and
+functional reference context it needs. Its DTOs, deterministic dependencies,
 toolbox, and function mappings are defined as part of that state slice, not
 preselected in a separate capability phase.
 
@@ -42,7 +42,7 @@ composition until the end.
 ## Functional communication DTOs
 
 The chatbot's `ingest_memory` tool validates a typed request and invokes the
-bound workflow method with source content, owner identity/context, and
+bound workflow method with input content, owner identity/context, and
 relevant conversation/channel context. The precise handoffs are confirmed in
 Issue 4.0.
 The application binds owner, history, and service dependencies when composing

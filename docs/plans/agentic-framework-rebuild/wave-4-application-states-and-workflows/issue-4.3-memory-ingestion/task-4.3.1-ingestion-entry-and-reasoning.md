@@ -5,7 +5,7 @@
 ## User story
 
 As the conversation-entry state or API, I want to start ingestion with the
-source and correct owner/conversation context, so the ingestion states can
+user input and correct owner/conversation context, so the ingestion states can
 interpret what the user meant without stale or hard-coded identity data.
 
 ## What and why
@@ -24,8 +24,8 @@ optional rather than assumed.
 
 ## Functional communication boundary
 
-Candidate input: source/user content, owner identity, conversation/channel
-context, and optional media/evidence references. Candidate result: the
+Candidate input: user content, owner identity, and relevant
+conversation/channel context. Candidate result: the
 functional outcome this state's caller needs. The exact result fields are
 defined only after the state purpose is agreed. The owner shown to the model is
 a functional identity projection, not the backend owner UUID.
@@ -37,6 +37,6 @@ a functional identity projection, not the backend owner UUID.
 - Add a Wave 3 service/tool dependency only when the agreed state behavior
   requires it.
 - Owner context is derived per invocation, never hard-coded or stale.
-- Reasoning receives relevant history and source context, not only an isolated
+- Reasoning receives relevant history and input context, not only an isolated
   goal string.
 - No proposed action or reasoning artifact is mistaken for a completed write.

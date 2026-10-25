@@ -2,20 +2,20 @@
 
 ## Purpose
 
-Interpret a source and its bounded graph context before any object is proposed
+Interpret the normalized input and its bounded graph context before any object is proposed
 or written. This state creates useful semantic guidance for downstream states;
 it does not decide persistence operations.
 
 ## Why it exists
 
-A dense source can contain people, aliases, episodes, weak co-presence, durable
+A dense input can contain people, aliases, episodes, weak co-presence, durable
 relationships, perceptions, and gaps in context. Separating this interpretation
 from object creation prevents downstream states from treating every mention as a
 node or every co-occurrence as a relationship.
 
 ## Required context
 
-- normalized source or derived transcript;
+- normalized input text or transcript;
 - selected conversation history when it materially affects interpretation;
 - bounded hydrated graph context;
 - `ReferenceContext` at level 1 for known objects, plus level 2 only when
@@ -57,7 +57,7 @@ does not receive the reasoning provider transcript.
 
 ## Prompt contract
 
-The state prompt must label source, graph context, known references, and owner
+The state prompt must label input, graph context, known references, and owner
 projection distinctly. It must say that the result is guidance for later states
 and that it must not create refs or write actions.
 

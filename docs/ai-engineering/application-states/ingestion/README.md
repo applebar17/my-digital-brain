@@ -50,7 +50,8 @@ the semantic resolution decision.
   provider transcript, internal reasoning, or backend identifiers.
 - Each state owns a small proposal/result DTO for its specific handoff. The
   next deterministic write receives an explicit command DTO; persisted records
-  receive backend-owned identifiers and provenance only after that boundary.
+  receive backend-owned identifiers and required persistence metadata only
+  after that boundary.
 
 ## Related documentation
 

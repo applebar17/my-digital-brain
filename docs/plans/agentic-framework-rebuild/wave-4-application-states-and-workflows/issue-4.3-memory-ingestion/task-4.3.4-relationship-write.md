@@ -4,8 +4,8 @@
 
 ## User story
 
-As the ingestion workflow, I want relationship proposals grounded in source
-evidence and written only after their endpoints resolve, so meaningful
+As the ingestion workflow, I want relationship proposals grounded in the
+provided input and written only after their endpoints resolve, so meaningful
 relationships are represented without inventing participants.
 
 ## What and why
@@ -25,7 +25,7 @@ prioritized.
 
 ## Functional communication boundary
 
-Candidate input includes source evidence and resolved endpoint local refs.
+Candidate input includes the relevant input context and resolved endpoint local refs.
 Agree the exact input/output DTO only if the census confirms this state is
 needed. A completed write returns the functional relationship result and
 readable summary; backend IDs remain internal.

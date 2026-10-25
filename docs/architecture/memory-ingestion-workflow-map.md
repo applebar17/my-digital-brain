@@ -3,8 +3,8 @@
 This is the single documentation home for the memory-ingestion flow diagram,
 the functional input/output map, and each state’s reasoning/planning profile.
 The [workflow base and handoff rules](deterministic-agentic-workflows.md) own
-generic execution behavior. The local inspector renders its graph from the
-assembled workflow configuration, so it can show the actual runtime path.
+generic execution behavior. The local inspector reads the assembled workflow
+configuration; a selected-run overlay can be added later.
 
 ## Sequence and handoffs
 
@@ -20,17 +20,17 @@ solid path advances.
 
 ```mermaid
 flowchart TB
-    A["CHAT AGENT · AI<br/>Does: call ingest_memory<br/>Out: validated tool request"]
+    A["CONVERSATION ENTRY STATE · AI + TOOLS<br/>In: user message + chat history<br/>Main call: answer or select a capability<br/>Tool: ingest_memory invokes the workflow<br/>Out: final chat reply after matched tool output"]
     subgraph MW["MemoryIngestionWorkflow · BaseWorkflow"]
     direction TB
     W["01 · ENTER WORKFLOW · CODE<br/>In: request + bound owner/history<br/>Does: MemoryIngestionWorkflow.ingest_memory<br/>Out: workflow input"]
-    B["02 · PREPARE INPUT · CODE<br/>In: source + owner<br/>Does: normalize; retrieve bounded graph context<br/>Out: source evidence + ReferenceContext"]
-    C["03 · UNDERSTAND MEMORY · AI<br/>In: evidence + graph context<br/>Main call: reason about facts, gaps, links<br/>Out: structured interpretation<br/>Extra reasoning/planning: none"]
-    D["04 · PROPOSE OBJECTS · AI<br/>In: evidence + interpretation<br/>Main call: identify people, places, events, etc.<br/>Out: typed object candidates; no writes<br/>Extra reasoning/planning: none"]
+    B["02 · PREPARE INPUT · CODE<br/>In: user input + owner<br/>Does: normalize; retrieve bounded graph context<br/>Out: text/transcript + ReferenceContext"]
+    C["03 · UNDERSTAND MEMORY · AI<br/>In: text/transcript + graph context<br/>Main call: reason about facts, gaps, links<br/>Out: structured interpretation<br/>Extra reasoning/planning: none"]
+    D["04 · PROPOSE OBJECTS · AI<br/>In: input + interpretation<br/>Main call: identify people, places, events, etc.<br/>Out: typed object candidates; no writes<br/>Extra reasoning/planning: none"]
     E["05 · LOOK UP IDENTITIES · CODE<br/>In: candidates + owner scope<br/>Does: search for possible existing objects<br/>Out: bounded match evidence + supplied refs<br/>No identity decision"]
     F["06 · RESOLVE OBJECTS · AI + TOOLS<br/>In: candidates + matches + supplied refs<br/>Main call: choose reuse, creation, or clarification<br/>Tools: write selected nodes<br/>Out: resolved refs + node-write outcomes<br/>Extra reasoning/planning: none"]
-    G["07 · SAVE MEMORY / CONTEXT · AI + TOOLS<br/>In: source + resolved refs<br/>Main call: choose what to preserve<br/>Tools: write memory and context<br/>Out: memory/context refs + outcomes<br/>Extra reasoning/planning: none"]
-    H["08 · SAVE RELATIONSHIPS · AI + TOOLS<br/>In: source + resolved endpoints + context<br/>Main call: decide which links are supported<br/>Tools: write supported relationships<br/>Out: link outcomes or deferred links<br/>Extra reasoning/planning: none"]
+    G["07 · SAVE MEMORY / CONTEXT · AI + TOOLS<br/>In: input + resolved refs<br/>Main call: choose what to preserve<br/>Tools: write memory and context<br/>Out: memory/context refs + outcomes<br/>Extra reasoning/planning: none"]
+    H["08 · SAVE RELATIONSHIPS · AI + TOOLS<br/>In: input + resolved endpoints + context<br/>Main call: decide which links are supported<br/>Tools: write supported relationships<br/>Out: link outcomes or deferred links<br/>Extra reasoning/planning: none"]
     I["09 · GATHER RESULT · CODE<br/>In: completed state outcomes<br/>Does: assemble typed ingestion result<br/>Out: matched ingest_memory tool output"]
     W --> B --> C --> D --> E --> F --> G --> H --> I
     end
@@ -66,24 +66,34 @@ for the complete batch of matched outputs. This tool-level concurrency is not
 another workflow state or a shortcut around the solid handoffs.
 The table describes the functional handoff, not final DTO schemas.
 
+`ConversationEntryState` is the agentic chat state. Its `ingest_memory` tool
+invokes `MemoryIngestionWorkflow`; after that workflow returns one matched tool
+output, the same chat state resumes and produces the user-facing response. At
+framework level, an agentic state may invoke either another agentic state or a
+workflow behind a registered tool. This internal handler type does not change
+the parent tool-call protocol or make the child/workflow result a final chat
+message.
+
 | Step | Kind | Receives | Does | Produces | Reasoning/planning call profile |
 | --- | --- | --- | --- | --- | --- |
-| 1. Enter workflow | `ingest_memory` bound workflow method | Validated source request, owner, selected conversation/history context | Starts `MemoryIngestionWorkflow` from the chat-facing tool call | Source and owner context | No additional LLM call |
-| 2. Prepare input | Deterministic code | Source and owner context | Normalizes text or obtains transcript; retrieves bounded existing context; builds owner projection and `ReferenceContext` | Source evidence and relevant context | No LLM call |
-| 3. Understand memory | `IngestionReasoningState` | Source evidence and context | Interprets facts, ambiguities, likely connections, and what should remain episodic | Structured interpretation | Its main call is the ingestion reasoning; no separate reasoning or planning call is specified |
-| 4. Propose objects | `NodeCandidateState` | Source, interpretation, supplied references | Generates typed, source-backed object candidates | Candidate objects; no writes | Main call generates candidates; no separate reasoning or planning call is specified |
+| 1. Enter workflow | `ingest_memory` bound workflow method | Validated user input, owner, selected conversation/history context | Starts `MemoryIngestionWorkflow` from the chat-facing tool call | Input and owner context | No additional LLM call |
+| 2. Prepare input | Deterministic code | User input and owner context | Normalizes text or obtains transcript; retrieves bounded existing context; builds owner projection and `ReferenceContext` | Text/transcript and relevant context | No LLM call |
+| 3. Understand memory | `IngestionReasoningState` | Text/transcript and context | Interprets facts, ambiguities, likely connections, and what should remain episodic | Structured interpretation | Its main call is the ingestion reasoning; no separate reasoning or planning call is specified |
+| 4. Propose objects | `NodeCandidateState` | Input, interpretation, supplied references | Generates typed object candidates | Candidate objects; no writes | Main call generates candidates; no separate reasoning or planning call is specified |
 | 5. Look up identities | Deterministic service | Candidate identity details and owner scope | Searches for possible existing matches without deciding identity | Bounded match evidence and supplied existing-object references | No LLM call |
-| 6. Resolve objects | `NodeResolutionWriteState` with deterministic tools | Candidates, match evidence, source, supplied references | Decides reuse versus creation; calls typed graph tools; may invoke the clarification child state if configured and needed | Resolved references and node-write outcomes | Main call resolves identities and uses tools; no separate reasoning or planning call is specified |
-| 7. Save memory/context | `MemoryContextWriteState` with deterministic tools | Source and resolved target references | Decides what memory/context to preserve and calls typed write tools | Memory/context outcomes and references | Main call determines and requests writes; no separate reasoning or planning call is specified |
-| 8. Save relationships | `RelationshipWriteState` with deterministic tools | Source, resolved endpoints, relevant memory/context outcomes | Decides which durable links are supported and calls typed write tools | Relationship outcomes or explicitly deferred links | Main call evaluates and requests links; no separate reasoning or planning call is specified |
+| 6. Resolve objects | `NodeResolutionWriteState` with deterministic tools | Candidates, match evidence, input, supplied references | Decides reuse versus creation; calls typed graph tools; may invoke the clarification child state if configured and needed | Resolved references and node-write outcomes | Main call resolves identities and uses tools; no separate reasoning or planning call is specified |
+| 7. Save memory/context | `MemoryContextWriteState` with deterministic tools | Input and resolved target references | Decides what memory/context to preserve and calls typed write tools | Memory/context outcomes and references | Main call determines and requests writes; no separate reasoning or planning call is specified |
+| 8. Save relationships | `RelationshipWriteState` with deterministic tools | Input, resolved endpoints, relevant memory/context outcomes | Decides which durable links are supported and calls typed write tools | Relationship outcomes or explicitly deferred links | Main call evaluates and requests links; no separate reasoning or planning call is specified |
 | 9. Gather result | Deterministic workflow | Compact results from prior steps | Assembles one outcome for the caller | Typed ingestion result, returned as the matched `ingest_memory` tool output | No LLM call |
-| 10. Respond | Invoking chat agent | Matched tool output and its own conversation context | Resumes its provider session and generates the user-facing reply | Final chat message | Determined by that agent's configuration, outside this workflow |
+| 10. Respond | `ConversationEntryState` | Matched tool output and its own conversation context | Resumes its provider session and generates the user-facing reply | Final chat message | Determined by that state's configuration, outside this workflow |
 
 ## Functional behavior at each handoff
 
-Input preparation is deterministic: it normalizes the source, retrieves and
+Input preparation is deterministic: it normalizes the input, retrieves and
 hydrates bounded graph context, builds `ReferenceContext`, and adds the active
-owner projection when relevant. It does not decide what the source means.
+owner projection when relevant. It does not decide what the input means.
+This flow does not require persisting the original chat message or a separate
+source record; input text or a transcript is sufficient context for these steps.
 
 `IngestionReasoningState` produces a structured, non-executable interpretation.
 It may identify salient entities, aliases, ambiguities, likely durable
@@ -137,7 +147,7 @@ sequenceDiagram
     participant UI as Deterministic UI interaction tool
     participant User
     Parent->>Child: Agentic tool call with doubt and context
-    Note over Child: Main LLM session formulates question and interprets answer; no extra reasoning/planning call
+    Note over Child: Main LLM session formulates the question and interprets the answer without an extra reasoning or planning call
     Child->>UI: Ask a focused question
     UI->>User: Present question and await response
     Note over UI,User: User answers, or backend deadline expires
@@ -164,7 +174,7 @@ construction. The LLM receives the resulting packet as evidence only; it never
 produces Cypher, persisted IDs, or an executable graph search.
 
 When a supplied existing reference is selected, the normal default is additive:
-the workflow may create a source-backed memory, supported relationship, claim,
+the workflow may create a memory, supported relationship, claim,
 perception, or context record against that reference. It must not silently
 overwrite identity properties merely because a lookup found a plausible match.
 An explicit, typed property-update contract is required for any direct update.

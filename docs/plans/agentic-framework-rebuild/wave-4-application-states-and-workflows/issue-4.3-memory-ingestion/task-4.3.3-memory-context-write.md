@@ -23,7 +23,7 @@ through workflow handoffs, not by asking the model to invent backend IDs.
 
 ## Functional communication boundary
 
-Candidate memory input includes content, source evidence, and references to
+Candidate memory input includes content and references to
 resolved entities; candidate context input includes its target references.
 These examples do not predefine DTO fields. The approved state task defines
 exact inputs/outputs; completed writes return local refs and readable summaries

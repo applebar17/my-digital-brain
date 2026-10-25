@@ -52,37 +52,38 @@ refer only to `provider_call_id`.
 Every DTO requested as structured model output has `extra="forbid"`, precise
 field descriptions, and the smallest required shape. Backend-constructed tool
 result DTOs do not need that input-validation setting. Domain records, database
-UUIDs, provenance, and transport metadata are backend-owned and must not be
-requested from the model.
+UUIDs, and transport metadata are backend-owned and must not be requested from
+the model.
 
 ## Proposal, command, and persisted-record boundary
 
-An LLM returns a semantic proposal DTO: source-grounded content, model-facing
+An LLM returns a semantic proposal DTO: input-grounded content, model-facing
 references, and only the explicit fields required for the receiving state. It
-does not return storage identifiers, provenance records, timestamps, lifecycle
+does not return storage identifiers, timestamps, lifecycle
 state, or arbitrary metadata.
 
 The receiving backend state validates that proposal and creates an explicit,
 purpose-specific command DTO for a deterministic write. The command contains
 only the fields the target service needs. The service enriches the persisted
-record with backend-owned identifiers, source and evidence links, actor or run
-information, and storage metadata.
+record with backend-owned identifiers and storage metadata required by that
+domain object.
 
 ```text
 model proposal DTO
   -> state validation and reference resolution
   -> typed deterministic command DTO
-  -> persisted record with backend-owned provenance
+  -> persisted domain record
 ```
 
 Do not introduce a generic graph-write plan, an untyped action list, or a
 catch-all candidate object to bridge these responsibilities. A new semantic
 need receives a small state-local proposal and an explicit target command.
 
-The source record remains the evidence anchor for every derived write. A
-derived transcript is linked to its original artifact; it does not replace it.
-See [graph model](../../network/graph-model.md#source) and
-[media ingestion](../../external-integrations/media-ingestion.md).
+The MVP ingestion contract does not require a persisted source record or the
+identifier of the original chat message. Normalized text or a transcript may
+be passed through the workflow as transient model context. A specific
+integration may later define its own artifact-retention contract, but that is
+not a baseline DTO or graph-write requirement.
 
 The provider-neutral definition, semantic field-schema requirements,
 OpenAI-compatible declaration compilation, and toolbox composition are defined

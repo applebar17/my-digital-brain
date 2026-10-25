@@ -1,6 +1,6 @@
 # Wave 4 — workflow-first state slices
 
-**Status: Not started**
+**Status: In progress — inspector and first workflow census complete**
 
 ## Outcome and execution method
 

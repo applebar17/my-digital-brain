@@ -2,33 +2,33 @@
 
 ## Purpose
 
-Create source-backed `MemoryLog` records and any supported context objects that
+Create `MemoryLog` records and any supported context objects that
 describe the memory itself, such as a perception or relationship context.
 
 ## Why it exists
 
 Once node references are available, the workflow can record the episode without
 forcing all information into durable node properties or relationships. This
-preserves provenance and lets the graph remain useful when details are partial.
+lets the graph remain useful when details are partial.
 
 ## Required context
 
-- normalized source or transcript;
+- normalized input text or transcript;
 - reasoning guidance;
 - compact results from node resolution/write;
 - `ReferenceContext` at level 1 for available node refs and level 2 only for a
   context-specific ambiguity;
-- source/evidence projection and relevant temporal information.
+- relevant temporal information available in the input.
 
 ## LLM convention
 
 Identify coherent memory atoms with a concise user-facing title, short summary,
 primary host, involved targets, and supported time/context links. Use multiple
-logs only when the source contains distinct meaningful episodes.
+logs only when the input contains distinct meaningful episodes.
 
 Keep weak co-presence as involvement. Do not invent hosts, involved targets,
 evidence, temporal facts, media, or context objects outside the supplied refs
-and source. Do not silently patch an existing domain node in place of recording
+and input. Do not silently patch an existing domain node in place of recording
 a new observation.
 
 ## Tools and clarification
@@ -50,7 +50,7 @@ payloads and backend identities do not propagate.
 
 The prompt distinguishes durable relationships from log involvement and asks
 for fields that the DTO explicitly defines. It does not request arbitrary
-metadata or backend-owned provenance fields.
+metadata or backend-owned persistence fields.
 
 ## Related documentation
 

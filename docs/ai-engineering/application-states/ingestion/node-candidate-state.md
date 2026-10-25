@@ -2,26 +2,26 @@
 
 ## Purpose
 
-Turn the source and reasoning guidance into explicit, typed node candidates
+Turn the input and reasoning guidance into explicit, typed node candidates
 that can be examined against existing graph identity evidence.
 
 ## Why it exists
 
 Candidate creation must be distinct from identity lookup and graph writes. The
-state can identify what the source appears to mention without controlling graph
+state can identify what the input appears to mention without controlling graph
 search policy, backend identifiers, or persistence behavior.
 
 ## Required context
 
-- normalized source or transcript;
+- normalized input text or transcript;
 - `IngestionReasoningResultDTO`;
 - `ReferenceContext` at level 1, including the owner projection when relevant;
 - bounded existing-object context useful for aliases and identity cues.
 
 ## LLM convention
 
-Produce only the node candidates supported by the source and useful for memory
-retrieval. Prefer a known reference when the source unambiguously identifies it;
+Produce only the node candidates supported by the input and useful for memory
+retrieval. Prefer a known reference when the input unambiguously identifies it;
 otherwise describe a new candidate without inventing a backend ID.
 
 Treat nicknames and role phrases as possible aliases or identity evidence, not
@@ -43,7 +43,7 @@ where bounded lookup evidence is available.
 ## Expected result and handoff
 
 The typed result is a `NodeCandidateSetDTO`. Each candidate has explicit
-semantic node fields, source grounding, relevant aliases, and any missing
+semantic node fields, input grounding, relevant aliases, and any missing
 identity detail. It contains no raw UUID, persisted identifier, graph query,
 or generic execution action.
 

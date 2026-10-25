@@ -1,6 +1,6 @@
 # Task 4.P.1 — expose assembled workflow and run inspection data
 
-**Status: Implemented for review**
+**Status: Complete**
 
 ## User story
 

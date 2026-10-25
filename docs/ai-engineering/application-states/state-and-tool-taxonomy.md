@@ -28,6 +28,13 @@ invoke. See [tool-calling protocol](../runtime/tool-calling-protocol.md),
 [agentic state framework](../runtime/agentic-state-framework.md), and
 [agentic history session](../runtime/agentic-history-session.md).
 
+A parent agentic state can expose either a child agentic state or a workflow as
+a tool. Both use the same registered-tool boundary: validated input reaches the
+bound handler, one typed result returns as the matched parent tool output, and
+the parent state resumes. The distinction affects only the bound executable:
+an agentic tool invokes one child state, while a workflow-backed tool invokes a
+workflow that may coordinate several states and deterministic steps.
+
 ## Tool protocol around backend classes
 
 The LLM never calls graph, vector, or other backend service classes directly.
