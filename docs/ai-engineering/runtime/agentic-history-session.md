@@ -32,7 +32,7 @@ paused-state snapshot through the appropriate storage boundary.
 
 | Layer | Typed object | Owner | Lifetime | Contents |
 | --- | --- | --- | --- | --- |
-| Durable conversation | chat/conversation records | chat storage | durable | User-visible user and assistant messages, plus explicitly accepted durable records. |
+| Durable conversation | typed conversation entries | chat storage | durable | User/assistant messages, question/answer interactions, and explicitly promoted compact model-only entries. |
 | Shared master history | `AgenticHistorySession` | orchestrator-created runtime session | one logical orchestration | The selected chat-wide history available for projection to agentic states. |
 | State-local history | `StateHistory` | one state run in `AgenticHistorySession` | one state invocation | The local LLM conversation assembled for that state. |
 | Provider transcript | canonical session transcript owned through `LLMInterfaceCore` | LLM client/runtime | one state invocation or pause/resume | Exact role, assistant tool-call, and matching tool-output messages required by the provider. |
@@ -42,6 +42,22 @@ The state-local history and provider transcript may be represented by the same
 typed transcript object when their semantics align. They must still have one
 clear owner: the canonical client/runtime is the only component that appends
 provider-protocol turns.
+
+### Durable conversation projections
+
+Durable conversation entries support two deterministic consumers without
+becoming two stored histories. The frontend projection returns user-facing
+messages and readable question/answer interaction items. The model-history
+projection renders those same completed interactions as ordered assistant
+question and user answer messages, and may additionally include an explicitly
+promoted compact model-only entry. Raw tool calls, tool outputs, traces, and
+reasoning artifacts belong to state-local runtime history and neither durable
+projection.
+
+The orchestrator loads a bounded model-history projection before constructing
+`AgenticHistorySession`. The current user request is excluded from that
+projection because `BaseAgenticState` appends it once. Question/answer pairs are
+selected atomically so an answer is never detached from its question.
 
 ## Core objects
 
@@ -127,7 +143,7 @@ provider call ID continues to govern transcript pairing.
 | Invoking caller / parent state | Selects which messages a child receives: shared master history, the parent's local transcript, or an explicitly filtered combination. It passes that projection when starting the child; the child does not fetch or infer its own history. |
 | `LLMInterfaceCore` / canonical runtime | Uses and appends the state-local provider transcript. It owns assistant tool-call and tool-output ordering and provider-call IDs. |
 | Toolbox / agent tool handler | Starts a child state run using the same history session and the history projection selected by the parent, converts the child result into one typed parent tool output, and lets the client append that output to the parent transcript. |
-| Durable chat store | Supplies master-history source material and stores accepted visible messages. It does not store arbitrary live runtime state as metadata. |
+| Durable chat store | Stores typed conversation entries and supplies the frontend and model-history source material. It does not store arbitrary live runtime state as metadata. |
 | Paused-frame persistence | Stores only an interrupted state’s typed continuation and minimum state-history linkage, keyed by `state_run_id`. |
 
 No collaborator receives authority to modify another state’s local transcript.

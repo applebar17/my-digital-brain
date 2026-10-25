@@ -18,6 +18,15 @@ selects the chat-wide history projection, and invokes this state with the
 normalized current user message. The state uses a versioned conversation-entry
 system prompt and the context-package contract for its prompt sections.
 
+The selected history is built from durable conversation entries, not supplied
+as authoritative content by the frontend. It includes bounded ordinary chat
+messages, completed user-facing question/answer interactions rendered as
+ordered assistant/user turns, and only explicitly promoted compact model-only
+context. It excludes the current request, which this state appends once, and it
+excludes prior raw tool calls, tool outputs, traces, and reasoning artifacts.
+Frontend history uses its own projection of the same durable entries and never
+renders model-only context or provider transcripts.
+
 The minimal request contract is conceptually:
 
 ```python

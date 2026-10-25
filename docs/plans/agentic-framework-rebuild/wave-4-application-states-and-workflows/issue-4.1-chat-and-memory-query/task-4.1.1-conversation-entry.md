@@ -11,8 +11,8 @@ their results are interpreted into one appropriate final response.
 ## What and why
 
 Implement the root state using the generic framework, selected prompt version,
-owner/context projection, and approved toolbox. It owns no provider loop or
-domain service implementation.
+the model-history projection prepared by Task 4.1.0, and its approved toolbox.
+It owns no persistence, provider loop, or domain service implementation.
 
 ## Where
 
@@ -23,18 +23,22 @@ domain service implementation.
 
 ## Functional communication DTOs
 
-Input: user request, owner context, chosen conversation history, and channel
-context. `query_memory` invokes a child state; `ingest_memory` invokes the bound
-`MemoryIngestionWorkflow.ingest_memory` method. Each receives its typed request
-and returns functional data as its matched tool output. Output: final assistant
-text or the framework's existing awaiting-input continuation, never raw tool
-JSON.
+Input: the current user request plus the caller-selected model-history
+projection. Owner identity, conversation ownership, channel transport, and
+durable records remain application-service/runtime dependencies rather than
+model arguments. `query_memory` invokes a child state; `ingest_memory` invokes
+the bound `MemoryIngestionWorkflow.ingest_memory` method. Each receives its
+typed request and returns functional data as its matched tool output. Output:
+final assistant text or the framework's existing awaiting-input continuation,
+never raw tool JSON.
 
 ## Dependencies and acceptance
 
-- Depends on Wave 2 base state/history. Define child tools and registrations
+- Depends on Task 4.1.0 and the Wave 2 base state/history. Define child tools and registrations
   from this state's reviewed behavior rather than assuming the current draft
   toolbox.
+- The current user request is appended once; it is not already present in the
+  selected prior-history projection.
 - Bind `query_memory` when its child state exists. Bind `ingest_memory` to the
   concrete workflow method in Task 4.3.5; do not add a placeholder handler.
 - Root invocation uses the shared session and its own local transcript.
