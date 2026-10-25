@@ -59,6 +59,14 @@ folders and atomic files over a few large files that collect unrelated logic.
 Add structure where it makes ownership and navigation clearer, and split at
 real responsibility or contract boundaries rather than mechanically.
 
+Within each functional scope, keep Pydantic models, DTOs, enums, protocols, and
+other contract declarations in a dedicated `models.py`. Do not mix those
+declarations with operating classes. Services, states, workflows, handlers,
+repositories, renderers, and toolbox composition belong in separate,
+purpose-named modules. When one feature needs several such modules, make it a
+package with its own `models.py` rather than growing a shared cross-feature
+model collection.
+
 Keep a module understandable top-to-bottom. Its declarations should normally
 appear in dependency order:
 
@@ -145,6 +153,7 @@ Before accepting a substantial module or method change, verify:
 
 - imports flow toward lower, stable layers only;
 - application payloads cross boundaries as annotated DTOs;
+- scope-specific models and contracts are separated from operating classes;
 - inheritance represents substitution and stable shared behavior;
 - a reader can follow the main method path in declaration order;
 - important methods identify their immediate collaborators and side effects;

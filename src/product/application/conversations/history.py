@@ -3,7 +3,7 @@
 from collections.abc import Iterable, Set
 
 from product.ai.ai_clients.protocols.protocol_chat import Msg
-from product.application.conversations.contracts import (
+from product.application.conversations.models import (
     ConversationEntryDTO,
     ConversationMessageEntryDTO,
     FrontendConversationHistoryDTO,

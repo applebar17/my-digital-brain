@@ -122,10 +122,8 @@ conversation/process boundary without adding a second agentic status model.
 
 Target code introduced or completed by this task:
 
-- `src/product/application/conversations/contracts.py` for durable entry,
-  projection, submission, and turn DTOs;
-- `src/product/application/conversations/repository.py` for the typed storage
-  protocol and owner-scoped operations;
+- `src/product/application/conversations/models.py` for durable entry,
+  projection, submission, turn DTOs, and the owner-scoped storage protocol;
 - `src/product/application/conversations/history.py` for deterministic frontend
   and model projections;
 - `src/product/application/conversations/service.py` for the entrypoint sequence

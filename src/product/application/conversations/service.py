@@ -1,34 +1,22 @@
 """Application service joining durable conversations to runtime history initialization."""
 
-from dataclasses import dataclass
-
 from product.agentic.history import AgenticHistorySession
-from product.application.conversations.contracts import (
+from product.application.conversations.history import ConversationHistoryProjector
+from product.application.conversations.models import (
     AppendConversationMessageCommandDTO,
     AppendModelContextCommandDTO,
     ConversationDTO,
     ConversationMessageEntryDTO,
     ConversationMessageRole,
+    ConversationRepository,
     CreateConversationCommandDTO,
     FrontendConversationHistoryDTO,
     ModelContextEntryDTO,
-    ModelHistoryProjectionDTO,
+    PreparedConversationTurn,
     QuestionAnswerEntryDTO,
     SubmitConversationMessageDTO,
     UpsertQuestionAnswerCommandDTO,
 )
-from product.application.conversations.history import ConversationHistoryProjector
-from product.application.conversations.repository import ConversationRepository
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedConversationTurn:
-    """Persisted current message and runtime history prepared for the root state."""
-
-    conversation: ConversationDTO
-    user_entry: ConversationMessageEntryDTO
-    model_history: ModelHistoryProjectionDTO
-    history_session: AgenticHistorySession
 
 
 class ConversationApplicationService:
