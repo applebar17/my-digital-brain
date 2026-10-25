@@ -26,6 +26,14 @@ behavior and update the owning document when that behavior changes.
 
 ## Working principles
 
+- When the user provides requirements or references, implement the requested
+  work, then summarize what changed and name the main affected files so the user
+  can review it. Make requested revisions as needed. For future work, commit
+  only after the user confirms the reviewed result, unless the user explicitly
+  asks to commit earlier or in the same request.
+- If a material requirement, reference, or implementation choice is unclear,
+  unspecified, or ambiguous, stop the dependent work and ask the user to decide
+  before proceeding. Continue only work that does not depend on that decision.
 - Follow the user's accepted requirements and priorities. Do not add
   unrequested behavior or requirements. If an improvement seems useful, explain
   its rationale and benefits as a proposal; let the user define whether to add
