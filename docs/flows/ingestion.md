@@ -21,7 +21,7 @@ message or media-derived transcript
 
 The internal phased workflow is intentionally ordered because relationships and
 memory context depend on known object references. Its technical state sequence
-is defined in [deterministic agentic workflows](../architecture/deterministic-agentic-workflows.md).
+is defined in the [memory-ingestion workflow map](../architecture/memory-ingestion-workflow-map.md).
 
 ## User-visible expectations
 

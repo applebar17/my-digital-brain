@@ -33,10 +33,11 @@ a new observation.
 
 ## Tools and clarification
 
-The toolbox exposes only configured deterministic creation capabilities and the
-shared clarification tool. A tool may return a recoverable field/reference
-error; the state either corrects its typed arguments, asks clarification, or
-returns an honest partial result through its normal caller chain.
+The toolbox exposes only configured deterministic creation capabilities and,
+when needed, an agentic tool that invokes `ClarificationAgentState`. A tool may
+return a recoverable field/reference error; the state either corrects its typed
+arguments, asks clarification, or returns an honest partial result through its
+normal caller chain.
 
 ## Expected result and handoff
 

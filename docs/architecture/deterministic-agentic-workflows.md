@@ -13,9 +13,28 @@ DTO contracts, tool protocol, history behavior, and reference-context boundary.
 
 ## Workflow responsibility
 
-A `Workflow` class has one narrow responsibility: invoke explicitly configured
-states in dependency order and pass their typed compact outputs to the next
-state. It owns:
+`BaseWorkflow` is the small shared base for workflow composition and execution.
+`MemoryIngestionWorkflow(BaseWorkflow)` supplies the concrete ingestion steps
+and an annotated `ingest_memory` entrypoint. The chatbot's `ingest_memory` tool
+is registered against that bound method. Its validated request enters the
+workflow; the workflow's compact typed result returns as the matched tool
+output to the chat-facing agent, which resumes and writes the final reply.
+The application binds the active owner, selected history, and service
+dependencies when assembling the workflow/toolbox; the model-visible tool
+request carries only the fields the chatbot needs to provide.
+
+The base invokes the concrete workflow's configured steps in dependency order,
+passes typed compact outputs to dependent steps, and exposes that same assembled
+composition for the local inspector. One step declaration supplies its
+functional name, kind, callable state/function, and dependency links. The
+inspector derives input/output DTO fields from the callable's annotations and
+reads the actual state/toolbox configurations; it does not keep another
+diagram definition.
+Conceptually, the chatbot's registered `ingest_memory` handler is the bound
+`MemoryIngestionWorkflow.ingest_memory` method, which delegates to the base's
+execution of those configured steps. The exact request/result DTO names are
+confirmed with the concrete ingestion workflow task.
+The workflow owns:
 
 - the workflow input and final-result DTOs;
 - declared state order and input/output dependencies;
@@ -23,8 +42,13 @@ state. It owns:
   dependency;
 - the selected history projection, evolving `ReferenceContext`, and compact
   prior-state results provided to each state;
-- a pause/resume boundary when a state asks a clarification through the normal
-  provider tool protocol.
+- waiting for a state's completed result before advancing its dependent steps,
+  including when the agentic runtime resumes that state after clarification.
+
+Independent sibling steps can appear side by side in the inspector. They run
+in parallel only when the concrete workflow declares them independent; a
+dependent step waits for all required results. The base does not decide
+independence from a drawing or from LLM output.
 
 It does not interpret LLM output, perform graph writes, infer missing graph
 objects, parse prose into DTO fields, hide tool failures, or carry raw provider
@@ -49,80 +73,21 @@ workflow input + selected history + ReferenceContext
 The workflow merges a valid reference delta before preparing the next state.
 It does not create a second alias convention or expose private mappings.
 
-## Initial memory-ingestion workflow
+## Memory-ingestion workflow map
 
-The current ingestion design is intentionally phased because later objects
-depend on earlier resolved objects. The workflow is:
-
-```text
-source normalization, retrieval, and context preparation
-  -> ingestion reasoning state
-  -> node candidate state
-  -> deterministic identity lookup and candidate-context preparation
-  -> node resolution/write state
-  -> memory/context ingestion state
-  -> relationship ingestion state
-  -> compact ingestion workflow result
-```
-
-The preparation step is deterministic: it normalizes the source, retrieves and
-hydrates bounded graph context, builds `ReferenceContext`, and adds the active
-owner projection when relevant. It does not decide what the source means.
-
-The reasoning state produces a structured, non-executable interpretation that
-may identify salient entities, aliases, ambiguities, likely durable
-relationships, and details that should not become durable graph objects. It
-does not allocate persisted IDs or make graph writes.
-
-The node candidate state identifies structured candidate objects from the
-reasoning artifact. It does not form a graph query, choose matching policy, or
-write to the graph. The workflow then invokes a deterministic lookup service
-for every candidate whose object kind has configured identity lookup. That
-service derives its own lookup request, returns bounded candidate evidence, and
-adds supplied existing-object references to the `ReferenceContext`.
-
-The node resolution/write state receives the candidate and its lookup evidence.
-It may choose an explicitly supplied existing reference, create a new object,
-or ask clarification. Lookup evidence is not an automatic binding, merge,
-rejection, or clarification decision. Valid node results make their newly
-created or resolved references available to later dependent states.
-
-The memory/context state runs before relationship work when a relationship must
-be linked to a context or perception object. The relationship state uses
-references made available by the previous successful state results; it does not
-use unresolved natural-language names as endpoints.
-
-This order is a dependency contract, not an instruction to suppress a valid
-clarification, fabricate a missing object, or make a semantic decision without
-the LLM. A state may use its configured tools, including clarification, within
-the provider continuation protocol.
-
-## Identity lookup and additive updates
-
-Identity lookup is a deterministic backend capability within the workflow. It
-owns normalization, allowed object kinds, bounded search, candidate
-classification, graph access, redaction, and model-safe candidate packet
-construction. The LLM receives the resulting packet as evidence only; it never
-produces Cypher, persisted IDs, or an executable graph search.
-
-When a supplied existing reference is selected, the normal default is additive:
-the workflow may create a source-backed memory, supported relationship, claim,
-perception, or context record against that reference. It must not silently
-overwrite identity properties merely because a lookup found a plausible match.
-An explicit, typed property-update contract is required for any direct update.
-
-The same principle applies after clarification. A user answer enriches the
-resumed state context; the agent must return the corrected value in its typed
-result or tool arguments. Backend code never extracts a graph field from the
-answer prose or explanation field.
+The [canonical diagram and step descriptions](memory-ingestion-workflow-map.md)
+show the concrete ingestion sequence and its clarification branch. The generic
+workflow contract above governs that composition.
 
 ## Clarification and errors
 
-If a state invokes clarification, its open provider call is paused. The user
-answer becomes the single matched tool output for that call, and the same state
-resumes with its preserved state history, typed context, and reference context.
-The workflow does not create a parallel clarification stage or reroute the
-request to a different state.
+When a parent state invokes clarification, its provider tool call awaits the
+child `ClarificationAgentState`. The child waits on its deterministic UI tool;
+the user answer or timeout becomes that child tool call's matched output. After
+the child completes, its typed result becomes the single matched output for
+the parent's original agentic tool call. The parent resumes with its preserved
+history, typed context, and reference context. The workflow continues after
+the parent completes; it does not reroute the request to another workflow step.
 
 If a deterministic tool or child state fails, the caller receives one compact,
 actionable tool output and may respond, retry with corrected DTO arguments, ask
@@ -148,9 +113,12 @@ and error-continuity contracts.
 
 ## Related documentation
 
+- [Memory-ingestion workflow map](memory-ingestion-workflow-map.md)
 - [System architecture](system-architecture.md)
 - [Agentic state framework](../ai-engineering/runtime/agentic-state-framework.md)
 - [Agentic history session](../ai-engineering/runtime/agentic-history-session.md)
 - [Tool-calling protocol](../ai-engineering/runtime/tool-calling-protocol.md)
 - [Reference context and owner projection](../ai-engineering/context-and-prompts/reference-context-and-owner-projection.md)
 - [State and tool taxonomy](../ai-engineering/application-states/state-and-tool-taxonomy.md)
+- [Clarification agent and UX](../requirements/functional/clarification-agent-and-ux.md)
+- [Local workflow inspector](../ai-engineering/observability-and-evaluation/workflow-inspector.md)

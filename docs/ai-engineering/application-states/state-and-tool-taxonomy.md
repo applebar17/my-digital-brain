@@ -18,6 +18,7 @@ retaining parallel runtime paths.
 | LLM-only agentic state | `BaseAgenticState` with no toolbox. | One structured/final LLM session by default. |
 | Dynamic agentic state | `BaseAgenticState` with an explicit toolbox. | The LLM may use normal tool rounds. |
 | Agentic tool | Typed tool handler that starts a child agentic state and returns one compact parent tool output. | Child state owns its local LLM session. |
+| Workflow-backed tool | Typed tool handler bound to a concrete `BaseWorkflow` subclass method; its compact workflow result becomes one matched caller tool output. | The workflow invokes its configured agentic states. |
 | Composite agentic state/tool | Deterministic preparation followed by an agentic state. | Only the agentic portion uses an LLM. |
 | Orchestrator | Initializes session/history, invokes root states, and persists accepted outcomes. | None unless intentionally implemented as a state. |
 
@@ -36,7 +37,7 @@ A typed tool adapter stands in front of the capability:
 model tool call
   -> ToolDefinitionDTO: name, description, input DTO
   -> validated handler with bound service dependencies
-  -> deterministic service call or child AgenticState invocation
+  -> deterministic service call, child AgenticState invocation, or workflow method
   -> typed OutputDTO or error -> client ToolOutputDTO matched to provider call ID
   -> provider/model continues
 ```
@@ -44,8 +45,10 @@ model tool call
 For example, a graph creation tool validates `CreateMemoryLogInputDTO`, invokes
 the deterministic graph service, and returns `CreateMemoryLogOutputDTO`. A
 vector-search tool validates a search request, invokes hybrid/semantic search,
-and returns a typed context packet. The model chooses whether to call the tool;
-the backend service owns its deterministic operation.
+and returns a typed context packet. The chatbot's `ingest_memory` tool invokes
+the bound `MemoryIngestionWorkflow.ingest_memory` method and returns its typed
+workflow result. The model chooses whether to call each tool; the bound handler
+owns its execution.
 
 ## `MemoryQueryState` example
 
@@ -78,7 +81,7 @@ the `MEMORY_QUERY` child frame. Its future class owns that sequence explicitly.
 | Graph read/write operations | Backend handlers exposed to current states | Deterministic typed tools over graph services. |
 | Hybrid/vector retrieval | Backend service and context prework | Deterministic retrieval service/tool. |
 | `query_memory` | Retrieval prework plus `MEMORY_QUERY` child frame | Composite dynamic `MemoryQueryState`; retrieval first, read-only toolbox available for enlargement. |
-| `ingest_memory` | Child agentic frame | Dynamic `MemoryIngestionState`; may configure reasoning/planning stages. |
+| `ingest_memory` | Child agentic frame in the current code | Workflow-backed tool bound to `MemoryIngestionWorkflow(BaseWorkflow).ingest_memory`; configured ingestion states own any reasoning/planning calls. |
 | `memory_creation` | Tool-heavy child state | Dynamic `MemoryCreationState`. |
 | `graph_update` | Tool-heavy child state | Dynamic `GraphUpdateState`. |
 | `clarification_agent` | Tool-using child state that can pause | Dynamic `ClarificationAgentState`, continuation-capable. |

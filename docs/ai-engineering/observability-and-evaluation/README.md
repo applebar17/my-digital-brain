@@ -3,8 +3,10 @@
 This folder defines what must be observable and testable for AI behavior to be
 debuggable by both product owners and engineers.
 
-## Planned contents
+## Contents and planned work
 
+- [Local workflow inspector](workflow-inspector.md): developer view of the
+  assembled workflow and a selected runtime path through it.
 - Human-readable execution trace contract.
 - Provider and runtime diagnostic fields.
 - Tool-call correlation and replay policy.

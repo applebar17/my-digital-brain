@@ -13,5 +13,7 @@ separate scopes. AI runtime mechanics are indexed in
   component responsibilities, external services, storage, and deployment
   posture; canonical owner of component boundaries.
 - [Deterministic agentic workflows](deterministic-agentic-workflows.md): MVP
-  workflow scheduling, typed handoffs, phase dependencies, and future
-  coordinator replacement boundary.
+  workflow base, typed handoffs, dependency execution, and future coordinator
+  replacement boundary.
+- [Memory-ingestion workflow map](memory-ingestion-workflow-map.md): canonical
+  flow diagrams, functional handoffs, and per-state call profiles.

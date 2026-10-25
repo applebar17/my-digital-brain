@@ -35,9 +35,10 @@ semantic outcome; do not create an unrelated endpoint just to complete an edge.
 ## Tools and clarification
 
 The toolbox exposes only deterministic relationship/context write capabilities
-configured for this state, plus clarification where needed. Validation or write
-errors return to this state as one actionable tool output. The state may retry
-with corrected typed arguments, ask clarification, or preserve the memory while
+configured for this state, plus an agentic tool invoking
+`ClarificationAgentState` where needed. Validation or write errors return to
+this state as one actionable tool output. The state may retry with corrected
+typed arguments, ask clarification, or preserve the memory while
 reporting the relationship as deferred.
 
 ## Expected result and handoff

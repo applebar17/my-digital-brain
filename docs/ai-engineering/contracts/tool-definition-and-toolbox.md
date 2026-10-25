@@ -253,7 +253,8 @@ defines this provider surface.
 
 Tools are assembled at an explicit application composition boundary, where
 their dependencies are available. A graph tool binds a graph service; a vector
-tool binds a retrieval service; an agentic tool binds a concrete child state.
+tool binds a retrieval service; an agentic tool binds a concrete child state;
+a workflow-backed tool binds a concrete workflow method.
 Named toolboxes are purpose-specific. For graph actions, a toolbox may be
 composed for a state invocation from the bounded predeclared variants and
 narrowed by that invocation's validated plan:
@@ -274,9 +275,13 @@ An agentic child state needs no special framework type. Its registered handler
 validates the parent input DTO, prepares the child invocation, calls
 `child_state.invoke(...)`, then maps the completed child result to its typed
 domain output. The client wraps that output once for the original parent call.
-If the child pauses for human input, the state/session pauses and resumes the
-same invocation; no pending tool-output status is introduced. The nested-call
-identity rule remains owned by the
+Similarly, `ingest_memory` can bind a registered typed handler to the
+`MemoryIngestionWorkflow.ingest_memory` method. The workflow executes its
+configured states and returns one compact typed result to the same client tool
+protocol. This does not require another tool declaration or dispatch mechanism.
+If an invoked child state, including one inside the workflow, pauses for human
+input, that invocation resumes after the answer; no pending tool-output status
+is introduced. The nested-call identity rule remains owned by the
 [tool-calling protocol](../runtime/tool-calling-protocol.md#nested-agent-tools).
 
 ## Invocation and diagnostics

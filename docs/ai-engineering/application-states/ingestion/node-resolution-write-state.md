@@ -36,13 +36,14 @@ identity binding.
 ## Tools and clarification
 
 The toolbox contains only the deterministic, typed node resolution/write
-capabilities configured for this state and the shared clarification tool when
-needed. A tool error remains a detailed tool output for this state to address;
-it does not end the workflow.
+capabilities configured for this state and, when needed, an agentic tool that
+invokes `ClarificationAgentState`. A tool error remains a detailed tool output
+for this state to address; it does not end the workflow.
 
-If clarification is required, the state asks one user-oriented question using
-the existing clarification protocol. The state pauses and later resumes with
-the answer as the matching tool output.
+If clarification is required, this state delegates the doubt to
+`ClarificationAgentState`. The child asks the user through its deterministic UI
+interaction tool; after the child completes, this state receives the child's
+typed result as the matched output of its original agentic tool call.
 
 ## Expected result and handoff
 

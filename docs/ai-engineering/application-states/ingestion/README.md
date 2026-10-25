@@ -42,8 +42,10 @@ the semantic resolution decision.
   decision requires level 2.
 - A deterministic tool or child-state error returns as one actionable tool
   output to its invoker; it never terminates the provider conversation.
-- A clarification pauses the requesting state and resumes that same state by
-  appending the matching provider tool output.
+- A state invokes `ClarificationAgentState` through an agentic tool when
+  configured. The child uses a deterministic UI interaction tool, then returns
+  its typed result as the parent's matching provider tool output; the same
+  requesting state resumes.
 - A state returns a compact typed result and reference delta, never its raw
   provider transcript, internal reasoning, or backend identifiers.
 - Each state owns a small proposal/result DTO for its specific handoff. The

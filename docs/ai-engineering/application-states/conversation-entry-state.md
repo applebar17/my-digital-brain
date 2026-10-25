@@ -8,7 +8,8 @@ query existing memory, or ingest new/corrected memory information.
 
 It does not expose graph CRUD, extraction internals, clarification tooling, or
 a separate correction route. A correction is handled through `ingest_memory`,
-whose child state decides the appropriate work from its context.
+whose bound ingestion workflow coordinates the required states from its
+context.
 
 ## Invocation and context
 
@@ -38,7 +39,8 @@ configuration rather than copied request fields.
 The state is dynamic and receives exactly these model-visible capabilities:
 
 - `query_memory`: an agentic tool that starts `MemoryQueryState`;
-- `ingest_memory`: an agentic tool that starts `MemoryIngestionState`.
+- `ingest_memory`: a typed workflow-backed tool bound to
+  `MemoryIngestionWorkflow.ingest_memory`.
 
 For greetings, ordinary discussion, and other non-memory requests, the state
 answers directly. For a memory-dependent question it calls `query_memory`. For
@@ -51,18 +53,17 @@ decides its next assistant response or further tool call.
 
 ## Completion
 
-A direct answer is a normal completed assistant message. A child-state result
-is visible only as the matched output to the original `query_memory` or
-`ingest_memory` provider call; it cannot become a serialized final chat
-message. The resumed conversation-entry session owns any final user-facing
-reply.
+A direct answer is a normal completed assistant message. The `query_memory`
+child-state result or the `ingest_memory` workflow result becomes the matched
+output of its original provider tool call; neither becomes the final chat
+message. The resumed conversation-entry session owns the user-facing reply.
 
-Clarification initiated deeper in a child state follows that child's paused
-continuation. Conversation entry does not create a duplicate clarification
-packet or a second user-facing question.
+Clarification initiated deeper in the ingestion workflow follows its requesting
+state's child invocation. Conversation entry does not create a duplicate
+clarification packet or a second user-facing question.
 
 ## Verification
 
-Tests cover direct-answer behavior, the two-tool surface, correct child-state
-binding, matched child result handling, and the absence of graph-write,
+Tests cover direct-answer behavior, the two-tool surface, child-state and
+workflow-method binding, matched result handling, and the absence of graph-write,
 clarification, correction-routing, or legacy handoff tools.
