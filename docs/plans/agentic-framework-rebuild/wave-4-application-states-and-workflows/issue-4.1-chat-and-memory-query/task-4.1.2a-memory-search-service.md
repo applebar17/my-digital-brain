@@ -1,6 +1,6 @@
 # Task 4.1.2a — assess and upgrade deterministic memory search
 
-**Status: Not started**
+**Status: Implemented for review**
 
 ## User story
 
@@ -47,3 +47,23 @@ content needed by the tool adapter to produce a model-safe packet.
   owner scope, empty results, and reuse of the existing retrieval behavior.
 - No LLM call, toolbox, agentic state, or user-facing answer is implemented in
   this task.
+
+## Implementation checkpoint
+
+`product.application.memory_search` now owns the target request, filters,
+internal hydrated-result models, owner-aware backend protocol, and deterministic
+`MemorySearchService`. The service combines ranked semantic and deterministic
+seeds once, removes duplicate backend objects, and delegates hydration without
+reimplementing vector ranking or graph traversal.
+
+`ExistingMemorySearchBackend` is the integration adapter over the current
+`SemanticMemorySearchService` and `GraphService`. It validates canonical graph
+labels/types through the graph registry, enforces its bound owner, supports
+zero-to-three-degree hydration, applies temporal and relationship refinements,
+and returns coherent bounded internal records. Relationship/time filters refine
+selected neighborhoods; they cannot identify a graph seed without a semantic
+query, property query, node label, or resolved seed ID.
+
+Shared reference allocation is delivered by Task 4.1.2b; model-facing search
+projection then uses it in Task 4.1.2c. This service intentionally retains
+backend identities only inside its typed application result.
