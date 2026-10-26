@@ -6,8 +6,8 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class MemorySearchFiltersDTO(BaseModel):
-    """Deterministic selectors and refinements for one memory search."""
+class MemorySearchFilterCriteriaDTO(BaseModel):
+    """Storage-agnostic deterministic refinements shared by memory-search callers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -22,13 +22,6 @@ class MemorySearchFiltersDTO(BaseModel):
     relationship_types: list[str] = Field(
         default_factory=list,
         description="Canonical relationship types retained in hydrated neighborhoods.",
-    )
-    seed_backend_ids: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Backend graph IDs already resolved by trusted application code. "
-            "Model-facing tools must resolve local references before constructing this request."
-        ),
     )
     from_time: str | None = Field(
         default=None,
@@ -47,7 +40,7 @@ class MemorySearchFiltersDTO(BaseModel):
         normalized = value.strip()
         return normalized or None
 
-    @field_validator("node_labels", "relationship_types", "seed_backend_ids")
+    @field_validator("node_labels", "relationship_types")
     @classmethod
     def _normalize_unique_values(cls, values: list[str]) -> list[str]:
         normalized: list[str] = []
@@ -60,7 +53,7 @@ class MemorySearchFiltersDTO(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def _validate_time_range(self) -> "MemorySearchFiltersDTO":
+    def _validate_time_range(self) -> "MemorySearchFilterCriteriaDTO":
         parsed_from = self._parse_time(self.from_time, "from_time")
         parsed_to = self._parse_time(self.to_time, "to_time")
         if parsed_from is not None and parsed_to is not None and parsed_from > parsed_to:
@@ -79,13 +72,34 @@ class MemorySearchFiltersDTO(BaseModel):
             return parsed.astimezone(UTC).replace(tzinfo=None)
         return parsed
 
+    def has_non_reference_seed_selector(self) -> bool:
+        """Return whether these fields can identify seeds without an existing reference."""
+        return bool(self.property_query or self.node_labels)
+
+
+class MemorySearchFiltersDTO(MemorySearchFilterCriteriaDTO):
+    """Internal search refinements containing only trusted backend identifiers."""
+
+    seed_backend_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Backend graph IDs already resolved by trusted application code. "
+            "Model-facing tools must resolve local references before constructing this request."
+        ),
+    )
+
+    @field_validator("seed_backend_ids")
+    @classmethod
+    def _normalize_unique_backend_ids(cls, values: list[str]) -> list[str]:
+        return cls._normalize_unique_values(values)
+
     def has_seed_selector(self) -> bool:
         """Return whether deterministic fields can identify initial graph seeds."""
-        return bool(self.property_query or self.node_labels or self.seed_backend_ids)
+        return bool(self.seed_backend_ids) or self.has_non_reference_seed_selector()
 
 
-class MemorySearchRequestDTO(BaseModel):
-    """Internal request combining semantic retrieval and deterministic graph selection."""
+class MemorySearchRequestBaseDTO(BaseModel):
+    """Bounded semantic and neighborhood parameters shared across search boundaries."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -93,7 +107,6 @@ class MemorySearchRequestDTO(BaseModel):
         default=None,
         description="Optional natural-language query used for vector similarity retrieval.",
     )
-    filters: MemorySearchFiltersDTO = Field(default_factory=MemorySearchFiltersDTO)
     neighborhood_depth: int = Field(
         default=1,
         ge=0,
@@ -114,6 +127,12 @@ class MemorySearchRequestDTO(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+
+class MemorySearchRequestDTO(MemorySearchRequestBaseDTO):
+    """Internal request combining semantic retrieval and deterministic graph selection."""
+
+    filters: MemorySearchFiltersDTO = Field(default_factory=MemorySearchFiltersDTO)
 
     @model_validator(mode="after")
     def _require_seed_selector(self) -> "MemorySearchRequestDTO":

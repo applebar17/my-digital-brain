@@ -1,6 +1,6 @@
 # Task 4.1.2c — expose reusable `search_memory` tool
 
-**Status: Not started**
+**Status: Ready for review**
 
 ## User story
 

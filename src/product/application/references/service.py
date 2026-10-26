@@ -55,7 +55,7 @@ class ReferenceContext:
             existing = self._entries[existing_ref]
             if existing.object_kind != object_kind:
                 raise ValueError(
-                    f"Backend object '{normalized_backend_id}' is already registered as "
+                    "The backend object is already registered as "
                     f"{existing.object_kind.value}, not {object_kind.value}."
                 )
             enriched = self._enrich_entry(
@@ -116,8 +116,7 @@ class ReferenceContext:
         existing_ref = self._ref_by_backend.get(normalized_backend_id)
         if existing_ref not in {None, ref}:
             raise ValueError(
-                f"Backend object '{normalized_backend_id}' is already mapped to "
-                f"reference '{existing_ref}'."
+                f"The backend object is already mapped to reference '{existing_ref}'."
             )
         current_backend_id = self._backend_by_ref.get(ref)
         if current_backend_id not in {None, normalized_backend_id}:
@@ -257,8 +256,8 @@ class ReferenceContext:
                 mapped_ref = self._ref_by_backend.get(backend_id)
                 if mapped_ref not in {None, entry.ref}:
                     raise ValueError(
-                        f"Backend object '{backend_id}' is already mapped to reference "
-                        f"'{mapped_ref}', not '{entry.ref}'."
+                        f"The backend object is already mapped to reference '{mapped_ref}', "
+                        f"not '{entry.ref}'."
                     )
             if current is not None:
                 self._entries.pop(entry.ref)
@@ -272,7 +271,7 @@ class ReferenceContext:
             mapped_ref = self._ref_by_backend.get(backend_id)
             if mapped_ref not in {None, entry.ref}:
                 raise ValueError(
-                    f"Backend object '{backend_id}' is already mapped to reference '{mapped_ref}'."
+                    f"The backend object is already mapped to reference '{mapped_ref}'."
                 )
         self._entries[entry.ref] = entry
         if backend_id is not None:
