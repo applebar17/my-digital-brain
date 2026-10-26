@@ -46,6 +46,8 @@ behavior and update the owning document when that behavior changes.
 - Do not add duplicate coding logic, parallel implementations, or legacy code
   unless the user explicitly requests it. Keep source files cohesive and slim;
   fewer than 500 lines is a rule of thumb, not a hard limit.
+- Use `git mv` when renaming tracked files so Git can recognize the rename and
+  preserve continuity of the file's history.
 - Treat documentation as the navigational entry point and maintain one source
   of truth per behavior. Index the canonical owner instead of copying its
   rules. Keep documentation current when implementation or decisions change.
