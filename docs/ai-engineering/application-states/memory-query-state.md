@@ -4,7 +4,8 @@
 
 `MemoryQueryState` answers a memory-dependent question from grounded graph
 context. It is a composite state: deterministic retrieval and hydration happen
-first, then an LLM session interprets the resulting context.
+first, then a tool-enabled LLM session may refine that context before producing
+its grounded result.
 
 The state does not mutate graph data and does not ask the user for
 clarification. When evidence is weak or ambiguous, it returns a bounded,
@@ -21,8 +22,8 @@ class MemoryQueryRequestDTO(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    question: str = Field(
-        description="The user memory question that retrieval and the state must investigate."
+    goal: str = Field(
+        description="The memory question, doubt, or need that the state must resolve."
     )
 
 
@@ -48,17 +49,23 @@ query DTO.
 
 ```text
 MemoryQueryState.invoke(request)
-  -> deterministic hybrid/vector retrieval
-  -> hydrate retrieved graph targets
-  -> build MemoryQueryContextPacket
-  -> render selected context sections and invoke main LLM session
+  -> deterministic semantic search from the supplied goal
+  -> hydrate a bounded first-degree graph context
+  -> build and render the initial MemoryQueryContextPacket
+  -> invoke the main LLM session with search_memory
+  -> optionally refine search/filter/hydration through matched tool outputs
   -> validate MemoryQueryResultPacket
 ```
 
-The default main session has no toolbox. A concrete configuration may supply a
-small read-only toolbox when it needs to enlarge the initial packet, such as
-timeline, map, neighborhood, or evidence inspection. This is an explicit state
-configuration, not automatic context expansion.
+The default toolbox contains the reusable read-only `search_memory` tool. Its
+deterministic service accepts a semantic query, deterministic filters, or both,
+plus a bounded graph-neighborhood depth. The tool adapter owns conversion from
+backend UUIDs to stable invocation-local references and never exposes storage
+identifiers to the model.
+
+The main tool loop is sufficient for iterative query reasoning. The default
+state has no separate reasoning or planning stage. Additional read tools may be
+configured later only for a reviewed need.
 
 ## Parent-tool behavior
 
@@ -73,6 +80,6 @@ separate chat response protocol.
 
 ## Verification
 
-Tests cover retrieval-before-LLM preparation, hydration, bounded no-evidence
-results, no write/clarification tools, optional read-tool expansion, and exact
-parent tool-call correlation.
+Tests cover retrieval-before-LLM preparation, bounded iterative search and
+hydration, coherent local references, no-evidence results, absence of
+write/clarification tools, and exact parent tool-call correlation.
