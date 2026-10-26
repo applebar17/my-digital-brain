@@ -10,6 +10,11 @@ without exposing backend UUIDs, storage records, or provider identifiers.
 The context is part of a state-specific context package. It is not history, a
 graph query API, or a global identity registry.
 
+Application composition creates one instance for the active run and passes it
+to the workflows, agentic states, and deterministic tool handlers that must
+share the same reference mapping. These consumers compose the context as a
+dependency; they do not inherit from it or create independent registries.
+
 ## Reference entry boundary
 
 Each reference entry has a model-facing identifier and a private backend
@@ -88,6 +93,11 @@ References are unique for the active workflow run. A child state receives the
 relevant reference context from its caller and returns only a compact reference
 delta when it creates or resolves objects. The parent merges that typed delta
 before invoking the next dependent state.
+
+The backend may serialize the complete typed context to persist or pause the
+run and restore it before continuation. This snapshot remains an internal
+application contract: its private identifier bindings are never rendered or
+sent to an LLM.
 
 ## Reference allocation conventions
 
