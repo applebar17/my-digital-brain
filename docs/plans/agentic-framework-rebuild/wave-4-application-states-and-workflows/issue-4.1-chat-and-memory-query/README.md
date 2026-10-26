@@ -17,9 +17,10 @@ workflow is delivered in Issue 4.3; no placeholder workflow handler is needed.
 
 ## Dependencies
 
-Task 4.1.2 is delivered through the four indexed subtasks in
+Task 4.1.2 is delivered through the five indexed subtasks in
 [its task overview](task-4.1.2-memory-query.md): deterministic service upgrade,
-reusable search tool, agentic query state, and application composition.
+shared reference context, reusable search tool, agentic query state, and
+application composition.
 
 - [Conversation-entry specification](../../../../ai-engineering/application-states/conversation-entry-state.md)
 - [Memory-query specification](../../../../ai-engineering/application-states/memory-query-state.md)

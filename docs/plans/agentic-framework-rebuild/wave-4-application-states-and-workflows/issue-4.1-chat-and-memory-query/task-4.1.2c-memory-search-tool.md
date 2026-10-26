@@ -1,4 +1,4 @@
-# Task 4.1.2b — expose reusable `search_memory` tool
+# Task 4.1.2c — expose reusable `search_memory` tool
 
 **Status: Not started**
 
@@ -14,6 +14,9 @@ Register the deterministic search capability as one reusable tool. The handler
 binds the authenticated owner scope, search service, and invocation-scoped
 reference mapper. It validates the model request, executes deterministic
 search/hydration, and projects one bounded model-facing result packet.
+
+The reference mapper is the shared implementation delivered by Task 4.1.2b;
+this tool does not create another registry, counter, or UUID-redaction path.
 
 The model-visible request exposes only the accepted semantic query, filters,
 neighborhood depth, and limit. Existing local references may be supplied as

@@ -1,4 +1,4 @@
-# Task 4.1.2c — implement `MemoryQueryState`
+# Task 4.1.2d — implement `MemoryQueryState`
 
 **Status: Not started**
 

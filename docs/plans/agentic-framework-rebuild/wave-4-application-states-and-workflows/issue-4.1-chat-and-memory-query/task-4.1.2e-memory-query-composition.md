@@ -1,4 +1,4 @@
-# Task 4.1.2d — compose memory query with conversation entry
+# Task 4.1.2e — compose memory query with conversation entry
 
 **Status: Not started**
 
