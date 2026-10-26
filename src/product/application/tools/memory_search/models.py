@@ -1,5 +1,7 @@
 """Model-facing contracts for the reusable read-only memory-search tool."""
 
+from enum import IntEnum
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from product.application.memory_search.models import (
@@ -7,6 +9,14 @@ from product.application.memory_search.models import (
     MemorySearchRequestBaseDTO,
 )
 from product.application.references.models import ReferenceEntryDTO
+
+
+class MemorySearchRenderLevel(IntEnum):
+    """Amount of typed search detail rendered into a caller's prompt context."""
+
+    COMPACT = 0
+    STANDARD = 1
+    DETAILED = 2
 
 
 class MemorySearchToolFiltersDTO(MemorySearchFilterCriteriaDTO):

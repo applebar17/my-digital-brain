@@ -63,9 +63,17 @@ plus a bounded graph-neighborhood depth. The tool adapter owns conversion from
 backend UUIDs to stable invocation-local references and never exposes storage
 identifiers to the model.
 
-The main tool loop is sufficient for iterative query reasoning. The default
-state has no separate reasoning or planning stage. Additional read tools may be
-configured later only for a reviewed need.
+The search capability owns rendering of its typed model-safe result at levels
+zero through two. Level zero is compact structured context, level one is the
+default readable result, and level two adds available lifecycle, alias, and
+temporal detail. The caller selects the level when composing the state; prompts
+and states do not implement their own search-result formatting.
+
+The main tool loop is sufficient for iterative query reasoning. Searches are
+sequential because a later query may depend on the prior result and every call
+updates the shared invocation-local reference map. The default state has no
+separate reasoning or planning stage. Additional read tools may be configured
+later only for a reviewed need.
 
 ## Parent-tool behavior
 

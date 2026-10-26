@@ -1,6 +1,6 @@
 # Task 4.1.2d — implement `MemoryQueryState`
 
-**Status: Not started**
+**Status: Ready for review**
 
 ## User story
 
