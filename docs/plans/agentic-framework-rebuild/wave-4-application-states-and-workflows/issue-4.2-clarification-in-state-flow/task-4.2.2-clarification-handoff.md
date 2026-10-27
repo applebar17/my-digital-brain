@@ -22,16 +22,23 @@ and let the parent LLM continue normally.
 
 ## Functional communication DTOs
 
-The UI receives the question packet and interaction reference. The backend
-resolves the interaction from a timely user response or its configured timeout,
-then resumes the clarification run. Child completion returns the answer or
-timeout outcome and resolved uncertainty to the parent; the provider client
-alone pairs the result to the original tool call.
+The UI receives the question packet and backend-generated `interaction_ref`.
+The backend resolves the interaction from a timely user response or its
+configured timeout, then resumes the clarification run. A retry of the same
+logical doubt retains its LLM-generated `clarification_ref` but creates a new
+`interaction_ref`.
+
+Child completion returns the original `clarification_ref`, interpreted answer
+or timeout outcome, and resolved uncertainty to the parent. The provider client
+alone owns the provider call ID and pairs that child result to the original
+tool call. These three references must not substitute for one another.
 
 ## Dependencies and acceptance
 
 - Depends on Tasks 2.2.2, 3.1.3, and 4.2.1.
 - One user answer resumes the correct child run and parent invocation.
 - Parent receives one output and produces its own next response/tool call.
+- The backend-owned deadline is configurable at composition; timeout becomes a
+  normal typed result and does not terminate the child or parent pipeline.
 - No standalone clarification runtime, second transcript manager, or duplicate
   frontend workflow is introduced.

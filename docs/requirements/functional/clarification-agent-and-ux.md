@@ -19,6 +19,10 @@ documents](../../ai-engineering/README.md).
 - The clarification agent uses the supplied doubt and available context to
   decide whether a question is needed, what to ask, and what interaction is
   appropriate. It must not invent unrelated questions.
+- The interaction has three supported presentation configurations: free
+  response, confirmation, and multiple choice. These configurations help the
+  client render the question; they do not introduce separate semantic
+  pipelines or data-type-specific question contracts.
 - Questions are concise, natural, written in the user's language, and phrased
   so a person can answer without understanding graph or application internals.
 - The user can answer in free text even when choices or buttons are offered.
@@ -63,8 +67,13 @@ several are active. Preserve that reference from handoff through question,
 answer, result, and return to the invoker. It is internal context and must
 never be shown as ordinary chat text.
 
-`clarification_ref` is not a provider tool-call ID or a persisted database ID.
-The runtime owns provider call correlation; see the [tool-calling
+Every concrete user interaction has a backend-generated `interaction_ref`. A
+retry for the same doubt keeps its `clarification_ref` and receives a new
+`interaction_ref`. The interaction reference is used by the API and storage
+boundary and is not shown as question content.
+
+Neither reference is the provider-generated tool-call ID. The AI client/runtime
+owns provider call correlation; see the [tool-calling
 protocol](../../ai-engineering/runtime/tool-calling-protocol.md). Backend IDs
 must not appear in model-facing or user-facing clarification content.
 
@@ -74,6 +83,9 @@ must not appear in model-facing or user-facing clarification content.
   tool output, state names, database references, or provider diagnostics.
 - Choices use understandable labels and, when needed, short distinguishing
   descriptions. Free-text correction remains available by default.
+- A configurable backend deadline applies to the pending interaction. A timely
+  answer or timeout resolves it exactly once; timeout is returned to the agent
+  as an ordinary interaction outcome rather than terminating the pipeline.
 - Web, Telegram, and terminal clients may render the same interaction using
   controls appropriate to the channel, but must preserve its meaning and the
   user's ability to answer or correct it.

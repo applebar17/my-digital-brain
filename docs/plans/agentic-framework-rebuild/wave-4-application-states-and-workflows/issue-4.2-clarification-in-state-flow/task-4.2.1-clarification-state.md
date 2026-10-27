@@ -22,10 +22,19 @@ parent.
 
 ## Functional communication DTOs
 
-Request: goal, context/evidence, and the specific uncertainty to resolve.
-Interaction: human-readable question and supported answer mode/options.
-Result to caller: clarification reference plus the user's answer and the
-resolved point in functional language.
+Request: a descriptive LLM-generated `clarification_ref`, goal,
+context/evidence, and the specific uncertainty to resolve.
+
+Interaction: a human-readable question configured as one of `free_response`,
+`confirmation`, or `multiple_choice`, with options only where useful. The
+interaction model stays generic: it does not define separate date, number,
+entity, location, file, or other domain-specific question types. The LLM
+phrases the question and interprets the natural-language answer.
+
+Result to caller: the same `clarification_ref`, the user's answer or timeout
+outcome, and the resolved point or remaining uncertainty in functional
+language. The child state, rather than the deterministic UI tool, interprets
+the raw interaction result.
 
 ## Dependencies and acceptance
 
@@ -33,3 +42,5 @@ resolved point in functional language.
 - The child does not return its question as a completed answer to the parent.
 - The parent receives the resolved answer only after the user responds.
 - Internal clarification identity is not confused with provider call IDs.
+- The new implementation does not migrate the previous broad response-mode
+  taxonomy or its per-mode validation rules.

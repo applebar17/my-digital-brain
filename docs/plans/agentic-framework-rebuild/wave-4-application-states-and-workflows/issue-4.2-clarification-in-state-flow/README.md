@@ -26,6 +26,21 @@ after the answer, a resolved answer packet to its caller. Any internal
 `clarification_ref` correlates that business question; provider call IDs are
 separate protocol metadata.
 
+The clarification state may configure the question as a free response,
+confirmation, or multiple choice. These are the complete MVP presentation
+categories, not separate reasoning paths. Ordinary variations such as dates,
+places, people, corrected choices, or natural-language details are handled by
+the LLM using the question and answer content.
+
+Correlation has three distinct owners:
+
+- the invoking LLM creates a descriptive `clarification_ref` for the logical
+  doubt and keeps it stable if that doubt is asked again;
+- the backend creates a new `interaction_ref` for each concrete pending UI
+  interaction;
+- the provider creates the tool-call ID, which remains owned by the AI client
+  and is used to pair the tool output with its call.
+
 Clarification is plugged into ingestion/query/etc. through the ordinary typed
 toolbox. It is not an independent frontend wave.
 
