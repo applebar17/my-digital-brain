@@ -5,7 +5,10 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from product.ai.ai_clients.protocols.protocol_tools import ToolDefinitionDTO
+from product.ai.ai_clients.protocols.protocol_tools import (
+    ToolDefinitionDTO,
+    ToolInteractionRequestDTO,
+)
 
 
 @dataclass(frozen=True)
@@ -13,9 +16,9 @@ class RegisteredTool[InputDTO: BaseModel, OutputDTO: BaseModel]:
     """Pair one tool definition with the typed handler that implements it."""
 
     definition: ToolDefinitionDTO[InputDTO]
-    handler: Callable[[InputDTO], OutputDTO]
+    handler: Callable[[InputDTO], OutputDTO | ToolInteractionRequestDTO]
 
-    def invoke(self, **raw_arguments: object) -> OutputDTO:
-        """Validate raw client arguments once, then call the typed implementation."""
+    def invoke(self, **raw_arguments: object) -> OutputDTO | ToolInteractionRequestDTO:
+        """Validate arguments, then return a typed output or external-input request."""
         input_dto = self.definition.input_model.model_validate(raw_arguments)
         return self.handler(input_dto)

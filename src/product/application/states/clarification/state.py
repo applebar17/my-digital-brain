@@ -13,8 +13,11 @@ from product.agentic.history import AgenticHistorySession
 from product.agentic.state import BaseAgenticState
 from product.agentic.tools import RegisteredTool, ToolBox
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
-from product.ai.ai_clients.protocols.protocol_tools import ToolInteractionRequestDTO
-from product.application.interactions import PendingUserQuestionDTO, UserQuestionRequestDTO
+from product.application.interactions import (
+    PendingUserQuestionDTO,
+    UserQuestionRequestDTO,
+    UserQuestionResolutionDTO,
+)
 from product.application.states.clarification.models import (
     ClarificationRequestDTO,
     ClarificationResultDTO,
@@ -36,7 +39,7 @@ class ClarificationState(BaseAgenticState):
         prompt_service: PromptService,
         ask_user_tool: RegisteredTool[
             UserQuestionRequestDTO,
-            ToolInteractionRequestDTO[PendingUserQuestionDTO],
+            UserQuestionResolutionDTO,
         ],
         prompt_reference: PromptReferenceDTO = CLARIFICATION_PROMPT,
     ) -> None:

@@ -82,6 +82,35 @@ class AgenticHistorySession:
         except KeyError as error:
             raise ValueError(f"State run '{state_run_id}' is not active.") from error
 
+    def link_child(
+        self,
+        child_state_run_id: str,
+        *,
+        parent_state_run_id: str,
+        parent_provider_call_id: str,
+    ) -> None:
+        """Attach runtime-discovered parent linkage to an active child state.
+
+        Agent tools start while the parent provider call is being executed, so
+        its provider call ID is attached once the parent pause is materialized.
+        This updates linkage only; neither transcript is modified.
+        """
+        parent = self.get_state(parent_state_run_id)
+        child = self.get_state(child_state_run_id)
+        if child.state_run_id == parent.state_run_id:
+            raise ValueError("A state run cannot be linked as its own child.")
+        if child.parent_state_run_id not in {None, parent_state_run_id}:
+            raise ValueError(
+                f"Child state run '{child_state_run_id}' is already linked to another parent."
+            )
+        if child.parent_provider_call_id not in {None, parent_provider_call_id}:
+            raise ValueError(
+                f"Child state run '{child_state_run_id}' is already linked to another "
+                "provider call."
+            )
+        child.parent_state_run_id = parent_state_run_id
+        child.parent_provider_call_id = parent_provider_call_id
+
     def pause_state[InteractionDTO: BaseModel](
         self,
         state_run_id: str,

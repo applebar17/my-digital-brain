@@ -57,7 +57,7 @@ class RegisteredTool[InputDTO: BaseModel, OutputDTO: BaseModel]:
     """One definition paired with its typed backend implementation."""
 
     definition: ToolDefinitionDTO
-    handler: Callable[[InputDTO], OutputDTO]
+    handler: Callable[[InputDTO], OutputDTO | ToolInteractionRequestDTO]
 
 
 class ToolBox:
@@ -80,7 +80,9 @@ in `ToolDefinitionDTO`. The client wraps successful data in
 `ToolOutputDTO(status="ok")`; invalid arguments or handler failures become
 `ToolOutputDTO(status="error", error=ToolErrorDTO(...))`. These are the only
 tool-output statuses. Human-input pauses belong to state/session flow and do
-not create a pending tool result.
+not create a pending tool result. A pausing handler may temporarily return the
+framework `ToolInteractionRequestDTO`; after external resolution, its original
+call still receives the registered `OutputDTO` or an error output.
 
 ## Typed graph-action tool pattern
 
@@ -271,7 +273,7 @@ handler in that toolbox. It does not dynamically discover arbitrary tools or
 map a second string such as `handler_key` to an executable. Filtering selects
 existing typed registrations; it does not create new action semantics.
 
-An agentic child state needs no special framework type. Its registered handler
+An agentic child state needs no separate provider protocol. Its registered handler
 validates the parent input DTO, prepares the child invocation, calls
 `child_state.invoke(...)`, then maps the completed child result to its typed
 domain output. The client wraps that output once for the original parent call.
@@ -280,8 +282,10 @@ Similarly, `ingest_memory` can bind a registered typed handler to the
 configured states and returns one compact typed result to the same client tool
 protocol. This does not require another tool declaration or dispatch mechanism.
 If an invoked child state, including one inside the workflow, pauses for human
-input, that invocation resumes after the answer; no pending tool-output status
-is introduced. The nested-call identity rule remains owned by the
+input, its handler propagates the interaction request without completing the
+parent call. The child resumes first; its completed typed result then becomes
+the original parent call's output. No pending tool-output status is introduced.
+The nested-call identity rule remains owned by the
 [tool-calling protocol](../runtime/tool-calling-protocol.md#nested-agent-tools).
 
 ## Invocation and diagnostics

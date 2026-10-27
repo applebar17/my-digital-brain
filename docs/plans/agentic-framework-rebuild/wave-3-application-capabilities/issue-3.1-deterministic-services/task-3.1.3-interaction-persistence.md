@@ -1,6 +1,6 @@
 # Task 3.1.3 — preserve the human-interaction persistence boundary
 
-**Status: Candidate capability — activate only when a reviewed state requires it**
+**Status: In-process boundary implemented by Task 4.2.2; durable adapter deferred to Wave 5**
 
 ## User story
 
@@ -44,6 +44,11 @@ provider call ID is retained as runtime correlation, not exposed to the user.
 - The backend decides answer-versus-timeout resolution; the frontend timer is
   presentation only, and only one result is accepted for the interaction.
 - No dedicated clarification runtime or duplicate frontend flow is introduced.
+
+Task 4.2.2 implements the typed in-process continuation boundary and nested
+child-to-parent resumption. Task 5.1.1 remains the owner of PostgreSQL/API
+persistence and application composition; Wave 4 does not import the old
+agentic-frame runtime.
 
 See the [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md)
 for the single source of truth on deadline ownership and timeout semantics.

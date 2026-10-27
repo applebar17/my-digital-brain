@@ -1,6 +1,6 @@
 # Task 4.2.2 — connect question and answer to the invoking state
 
-**Status: Not started**
+**Status: Completed**
 
 ## User story
 
@@ -10,15 +10,18 @@ reasoning/planning can continue with the answer in context.
 
 ## What and why
 
-Wire the clarification state's question tool to the application's existing
-interaction and continuation adapter. On answer or timeout, resolve the child
-tool call once; on child completion, return one typed result to the parent call
-and let the parent LLM continue normally.
+Wire the clarification state's question tool to the product interaction and
+continuation boundary. On answer or timeout, resolve the child tool call once;
+on child completion, return one typed result to the parent call and let the
+parent LLM continue normally. Durable SQL/API composition remains Task 5.1.1.
 
 ## Where
 
-- Clarification state/tool registration and application workflow composition.
-- Existing API/frontend interaction contract, adapted only as needed.
+- `src/product/application/tools/clarification/` agent-as-tool handoff.
+- `src/product/application/interactions/` typed answer, timeout, and in-process
+  continuation boundary.
+- `src/product/agentic/history/` parent/child run linkage.
+- Task 5.1.1 for durable API/frontend adaptation.
 
 ## Functional communication DTOs
 
@@ -42,3 +45,5 @@ tool call. These three references must not substitute for one another.
   normal typed result and does not terminate the child or parent pipeline.
 - No standalone clarification runtime, second transcript manager, or duplicate
   frontend workflow is introduced.
+- Functional tests prove both timely-answer and timeout paths resume the child
+  before producing the original parent tool output.

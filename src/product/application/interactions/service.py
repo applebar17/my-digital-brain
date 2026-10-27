@@ -42,7 +42,13 @@ class UserInteractionService:
             clarification_ref=request.clarification_ref,
             question=request.question,
             mode=request.mode,
-            options=request.options,
+            options=[
+                {
+                    **option.model_dump(),
+                    "option_ref": str(uuid4()),
+                }
+                for option in request.options
+            ],
             allow_other=request.mode != QuestionMode.FREE_RESPONSE,
             deadline=datetime.now(UTC) + self.response_timeout,
         )

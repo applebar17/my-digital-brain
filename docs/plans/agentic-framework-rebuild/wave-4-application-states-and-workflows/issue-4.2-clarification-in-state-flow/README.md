@@ -1,6 +1,6 @@
 # Issue 4.2 — clarification as a state/tool interaction
 
-**Status: In progress — clarification state ready for review**
+**Status: Completed**
 
 Implement the clarification agent and its interaction with the existing
 human-answer channel as part of the states that need it. This issue exists to

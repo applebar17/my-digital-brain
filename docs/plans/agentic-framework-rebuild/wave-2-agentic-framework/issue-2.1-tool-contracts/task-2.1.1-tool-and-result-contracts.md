@@ -11,8 +11,9 @@ backend function cannot silently drift apart.
 ## What and why
 
 Implement the minimal generic tool definition and typed registration. The
-handler accepts its validated input DTO and returns its annotated success DTO;
-bind dependencies when composing the toolbox. Keep provider JSON generation
+handler accepts its validated input DTO and returns its annotated success DTO
+or the framework interaction request while external input is pending; bind
+dependencies when composing the toolbox. Keep provider JSON generation
 and the single success/error `ToolOutputDTO` in the client boundary. Do not add
 a second result envelope, generic execution context, pending/retryable tool
 statuses, or another schema source.
@@ -30,6 +31,8 @@ statuses, or another schema source.
 registered handler's return annotation identifies its successful domain output
 DTO. The client wraps that data, or a `ToolErrorDTO`, in the existing
 `ToolOutputDTO`; provider call ID stays in the client transcript layer.
+A `ToolInteractionRequestDTO` is temporary control flow and does not replace or
+duplicate the registered successful output DTO.
 
 ## Dependencies and acceptance
 

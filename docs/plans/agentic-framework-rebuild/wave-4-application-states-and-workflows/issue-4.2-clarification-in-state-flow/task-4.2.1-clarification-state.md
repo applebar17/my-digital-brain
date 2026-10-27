@@ -1,6 +1,6 @@
 # Task 4.2.1 — define clarification request/result and implement the child state
 
-**Status: Ready for review**
+**Status: Completed**
 
 ## User story
 
