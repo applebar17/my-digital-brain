@@ -82,6 +82,32 @@ class AgenticHistorySession:
         except KeyError as error:
             raise ValueError(f"State run '{state_run_id}' is not active.") from error
 
+    def history_for_child(self, parent_state_run_id: str) -> list[Msg]:
+        """Project model-relevant conversation from an active parent state.
+
+        The child receives conversational user/assistant content, including the
+        current user request, but owns a new system prompt and provider
+        transcript. Parent tool-call turns, tool outputs, and provider metadata
+        therefore stay local to the parent.
+        """
+        parent = self.get_state(parent_state_run_id)
+        projected: list[Msg] = []
+        for message in parent.messages:
+            if message.role not in {"user", "assistant"}:
+                continue
+            if message.role == "assistant" and message.meta.get("tool_calls"):
+                continue
+            if message.content is None:
+                continue
+            projected.append(
+                Msg(
+                    role=message.role,
+                    content=deepcopy(message.content),
+                    meta={},
+                )
+            )
+        return projected
+
     def link_child(
         self,
         child_state_run_id: str,

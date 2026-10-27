@@ -148,9 +148,12 @@ registered as a tool, its handler translates the validated parent tool input
 into an `AgenticStateInvocationDTO`, invokes the child, and returns one compact
 typed output for the parent tool call.
 
-The parent selects and passes the child's history projection as part of the
-invocation. The child does not implicitly inherit all parent messages or read
-shared master history; context selection stays explicit at the call site.
+For a registered tool invocation, the framework supplies a backend-only
+context containing the shared history session, active parent run, and provider
+call ID. Its default child projection carries conversational user/assistant
+content from the parent while excluding system prompts, tool-call turns, tool
+outputs, and provider metadata. The handler may deliberately narrow that
+projection for a specialized child, but model tool arguments never copy it.
 
 The parent and child have independent local transcripts. The child may call its
 own tools, including other states. The runtime pairs all child calls within the

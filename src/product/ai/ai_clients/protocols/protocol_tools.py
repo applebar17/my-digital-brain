@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolDefinitionDTO[InputDTO: BaseModel](BaseModel):
@@ -13,6 +13,15 @@ class ToolDefinitionDTO[InputDTO: BaseModel](BaseModel):
     input_model: type[InputDTO] = Field(
         description="Pydantic DTO defining and validating the function arguments."
     )
+
+
+class ToolCallContextDTO(BaseModel):
+    """Immutable provider identity for one mapped tool execution."""
+
+    provider_call_id: str = Field(description="Provider-issued ID for this tool call.")
+    tool_name: str = Field(description="Mapped function name returned by the provider.")
+
+    model_config = ConfigDict(frozen=True)
 
 
 class ToolErrorDTO(BaseModel):

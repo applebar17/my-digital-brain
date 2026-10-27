@@ -1,12 +1,19 @@
 """Agent-specific composition of framework tool definitions and handlers."""
 
+from __future__ import annotations
+
 from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from product.agentic.tools.binding import BoundRegisteredTool
 from product.agentic.tools.contracts import RegisteredTool
 from product.ai.ai_clients.protocols.protocol_tools import ToolDefinitionDTO
+
+if TYPE_CHECKING:
+    from product.agentic.history import AgenticHistorySession
 
 
 class ToolBox:
@@ -31,3 +38,14 @@ class ToolBox:
     def tools_mapping(self) -> Mapping[str, Callable[..., BaseModel]]:
         """Return handlers validating provider arguments against their registered input DTO."""
         return {name: tool.invoke for name, tool in self.tools_by_name.items()}
+
+    def bind_to_state(
+        self,
+        history_session: AgenticHistorySession,
+        parent_state_run_id: str,
+    ) -> Mapping[str, BoundRegisteredTool]:
+        """Bind every registered tool to one active parent state without mutating the toolbox."""
+        return {
+            name: BoundRegisteredTool(tool, history_session, parent_state_run_id)
+            for name, tool in self.tools_by_name.items()
+        }

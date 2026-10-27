@@ -14,6 +14,7 @@ from product.ai.ai_clients.protocols.protocol_chat import Msg, ToolCalled
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolCallBatchItemDTO,
     ToolCallBatchPauseDTO,
+    ToolCallContextDTO,
     ToolCallResultDTO,
     ToolErrorDTO,
     ToolInteractionRequestDTO,
@@ -227,7 +228,12 @@ class ToolCallBatchRuntime:
         if len(executable_calls) == 1:
             tool_call, handler, arguments = executable_calls[0]
             completed_results[tool_call.id] = self._execute_mapped_tool(
-                tool_call.function.name, handler, arguments
+                ToolCallContextDTO(
+                    provider_call_id=tool_call.id,
+                    tool_name=tool_call.function.name,
+                ),
+                handler,
+                arguments,
             )
             return
         if not executable_calls:
@@ -241,7 +247,10 @@ class ToolCallBatchRuntime:
                     future = executor.submit(
                         context.run,
                         self._execute_mapped_tool,
-                        tool_call.function.name,
+                        ToolCallContextDTO(
+                            provider_call_id=tool_call.id,
+                            tool_name=tool_call.function.name,
+                        ),
                         handler,
                         arguments,
                     )
@@ -276,14 +285,20 @@ class ToolCallBatchRuntime:
 
     def _execute_mapped_tool(
         self,
-        tool_name: str,
+        call_context: ToolCallContextDTO,
         handler: Callable[..., Any],
         arguments: dict[str, Any],
     ) -> ToolOutputDTO | ToolInteractionRequestDTO:
-        """Run one mapped handler and normalize its success, pause, or failure."""
+        """Run one mapped handler with provider identity when the handler accepts it."""
+        tool_name = call_context.tool_name
         try:
             with tracing_context(parent=get_trace_parent_headers()):
-                result = handler(**arguments)
+                contextual_invoke = getattr(handler, "invoke_for_tool_call", None)
+                result = (
+                    contextual_invoke(call_context, **arguments)
+                    if callable(contextual_invoke)
+                    else handler(**arguments)
+                )
             if isinstance(result, ToolInteractionRequestDTO):
                 return result
             output = self._normalize_tool_output(result)

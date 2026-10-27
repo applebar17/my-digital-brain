@@ -1,5 +1,6 @@
 """Base agentic state invocation and optional reasoning/planning stages."""
 
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Literal
 
@@ -8,9 +9,8 @@ from pydantic import BaseModel
 from product.agentic.contracts import (
     AgenticStageConfigurationDTO,
     AgenticStateInvocationDTO,
-    AgenticStateResumeDTO,
     AgenticStateResultDTO,
-    PausedStateContinuationDTO,
+    AgenticStateResumeDTO,
     StateHistory,
     ToolCallBatchPauseDTO,
 )
@@ -90,7 +90,7 @@ class BaseAgenticState:
                     request,
                     continuation.tool_batch,
                     invocation.tool_results,
-                    invocation.toolbox.tools_mapping if invocation.toolbox else {},
+                    self._tools_mapping(state_history, invocation.toolbox),
                 )
                 return self._map_client_outcome(
                     state_history, request, outcome, invocation.response_model
@@ -107,7 +107,7 @@ class BaseAgenticState:
                 request,
                 continuation.tool_batch,
                 invocation.tool_results,
-                stage.toolbox.tools_mapping if stage.toolbox else {},
+                self._tools_mapping(state_history, stage.toolbox),
             )
             if isinstance(outcome, ToolCallBatchPauseDTO):
                 return self._paused_stage_result(
@@ -184,7 +184,7 @@ class BaseAgenticState:
         )
         outcome = self.llm_client.call(
             request,
-            invocation.toolbox.tools_mapping if invocation.toolbox else {},
+            self._tools_mapping(state_history, invocation.toolbox),
         )
         return self._map_client_outcome(state_history, request, outcome, invocation.response_model)
 
@@ -212,7 +212,7 @@ class BaseAgenticState:
         )
         outcome = self.llm_client.call(
             request,
-            stage.toolbox.tools_mapping if stage.toolbox else {},
+            self._tools_mapping(state_history, stage.toolbox),
         )
         if isinstance(outcome, ToolCallBatchPauseDTO):
             return self._paused_stage_result(
@@ -305,6 +305,21 @@ class BaseAgenticState:
             response_format=response_model,
             tools=toolbox.definitions if toolbox else None,
             parallel_tool_calls=parallel_tool_calls,
+        )
+
+    def _tools_mapping(
+        self,
+        state_history: StateHistory,
+        toolbox: ToolBox | None,
+    ) -> Mapping[str, Callable[..., object]]:
+        """Bind configured tools to the active state run for this provider loop."""
+        if toolbox is None:
+            return {}
+        return dict(
+            toolbox.bind_to_state(
+                history_session=self.history_session,
+                parent_state_run_id=state_history.state_run_id,
+            )
         )
 
     def _map_client_outcome(

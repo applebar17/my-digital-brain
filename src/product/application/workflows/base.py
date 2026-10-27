@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from product.agentic.contracts.state import AgenticStateInvocationDTO
+from product.agentic.tools.models import AgenticToolInvocationContext
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class WorkflowContext:
 
     request: BaseModel
     results: Mapping[str, BaseModel]
+    invocation_context: AgenticToolInvocationContext | None = None
 
 
 @dataclass(frozen=True)
@@ -51,13 +53,19 @@ class BaseWorkflow:
                 )
             seen.add(step.step_id)
 
-    def run(self, request: BaseModel) -> dict[str, BaseModel]:
-        """Build each typed input from the request and completed declared dependencies."""
+    def run(
+        self,
+        request: BaseModel,
+        *,
+        invocation_context: AgenticToolInvocationContext | None = None,
+    ) -> dict[str, BaseModel]:
+        """Build typed step inputs, retaining inherited context for agentic steps."""
         results: dict[str, BaseModel] = {}
         for step in self.steps:
             context = WorkflowContext(
                 request=request,
                 results={dependency: results[dependency] for dependency in step.depends_on},
+                invocation_context=invocation_context,
             )
             step_input = step.make_input(context)
             results[step.step_id] = step.handler(step_input)

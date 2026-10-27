@@ -140,9 +140,9 @@ provider call ID continues to govern transcript pairing.
 | --- | --- |
 | Orchestrator | Loads the durable history, creates the session, starts the root state, and persists explicit master-history changes or paused snapshots. |
 | `BaseAgenticState` | Requests a new `StateHistory`, receives its local transcript, appends the configured invocation request once as a user message, then delegates to the client. |
-| Invoking caller / parent state | Selects which messages a child receives: shared master history, the parent's local transcript, or an explicitly filtered combination. It passes that projection when starting the child; the child does not fetch or infer its own history. |
+| Invoking caller / parent state | Exposes a registered child state or workflow through its toolbox. The framework binds the active parent run and provider call; model-facing arguments contain only the tool's functional input. |
 | `LLMInterfaceCore` / canonical runtime | Uses and appends the state-local provider transcript. It owns assistant tool-call and tool-output ordering and provider-call IDs. |
-| Toolbox / agent tool handler | Starts a child state run using the same history session and the history projection selected by the parent, converts the child result into one typed parent tool output, and lets the client append that output to the parent transcript. |
+| Toolbox / agent tool handler | Receives the backend invocation context, obtains the default child projection from the shared history session, starts the linked child, and converts its result into one typed parent tool output. |
 | Durable chat store | Stores typed conversation entries and supplies the frontend and model-history source material. It does not store arbitrary live runtime state as metadata. |
 | Paused-frame persistence | Stores only an interrupted state’s typed continuation and minimum state-history linkage, keyed by `state_run_id`. |
 
@@ -172,7 +172,7 @@ state A provider transcript
 
 tool handler
   -> starts StateHistory B in the same AgenticHistorySession
-  -> parent A selects and passes B's history projection
+  -> framework projects B's conversational history from parent A
   -> B starts a new local transcript; it does not inherit A's raw tool call
   -> B appends its own invocation request as a user message
   -> B runs its client/tool loop

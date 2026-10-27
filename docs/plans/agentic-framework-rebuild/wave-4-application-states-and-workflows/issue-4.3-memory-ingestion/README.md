@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: Not started — framework preparation defined**
+**Status: In progress — Task 4.3.0a ready for review**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
