@@ -53,7 +53,7 @@ class InteractionContinuationStore:
         continuation: PausedStateContinuationDTO[PendingUserQuestionDTO],
         provider_call_id: str,
     ) -> PendingNestedInteractionDTO:
-        """Attach the original parent pause and provider call to a child record."""
+        """Attach the parent pause after verifying the child's existing linkage."""
         with self._lock:
             record = self._required_record(interaction_ref)
             if record.parent_continuation is not None:
@@ -63,14 +63,17 @@ class InteractionContinuationStore:
                         "parent tool call."
                     )
                 return record.model_copy(deep=True)
-            child_continuation = record.child_continuation.model_copy(deep=True)
-            child_continuation.state_history.parent_state_run_id = (
-                continuation.state_history.state_run_id
-            )
-            child_continuation.state_history.parent_provider_call_id = provider_call_id
+            child_history = record.child_continuation.state_history
+            if child_history.parent_state_run_id != continuation.state_history.state_run_id:
+                raise ValueError(
+                    f"Interaction '{interaction_ref}' child is not linked to this parent state."
+                )
+            if child_history.parent_provider_call_id != provider_call_id:
+                raise ValueError(
+                    f"Interaction '{interaction_ref}' child is not linked to this parent tool call."
+                )
             updated = record.model_copy(
                 update={
-                    "child_continuation": child_continuation,
                     "parent_continuation": continuation.model_copy(deep=True),
                     "parent_provider_call_id": provider_call_id,
                 },

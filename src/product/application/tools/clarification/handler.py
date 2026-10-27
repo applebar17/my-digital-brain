@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 from product.agentic.contracts import PausedStateContinuationDTO, ToolCallResultDTO
+from product.agentic.tools import AgenticToolInvocationContext
 from product.ai.ai_clients.protocols.protocol_tools import (
     ToolErrorDTO,
     ToolInteractionRequestDTO,
@@ -36,12 +37,13 @@ class ClarificationAgentToolHandler:
         self.state = state
         self.continuation_store = continuation_store
 
-    def __call__(
+    def invoke_with_context(
         self,
         request: ClarificationRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
     ) -> ClarificationResultDTO | ToolInteractionRequestDTO[PendingUserQuestionDTO]:
         """Return a completed child result or propagate its user interaction pause."""
-        outcome = self.state.clarify(request)
+        outcome = self.state.clarify(request, invocation_context)
         if outcome.outcome == "failed":
             message = outcome.error.message if outcome.error else "Unknown clarification failure."
             raise ValueError(f"Clarification state failed: {message}")
@@ -58,8 +60,7 @@ class ClarificationAgentToolHandler:
         self,
         continuation: PausedStateContinuationDTO[PendingUserQuestionDTO],
     ) -> None:
-        """Link propagated child interactions to their original parent tool calls."""
-        parent_state_run_id = continuation.state_history.state_run_id
+        """Store the materialized parent pause for children linked when they started."""
         for call in continuation.tool_batch.calls:
             if call.interaction_request is None:
                 continue
@@ -69,16 +70,10 @@ class ClarificationAgentToolHandler:
                 interaction_ref
             ):
                 continue
-            record = self.continuation_store.attach_parent(
+            self.continuation_store.attach_parent(
                 interaction_ref,
                 continuation,
                 call.provider_call_id,
-            )
-            child_state_run_id = record.child_continuation.state_history.state_run_id
-            self.state.history_session.link_child(
-                child_state_run_id,
-                parent_state_run_id=parent_state_run_id,
-                parent_provider_call_id=call.provider_call_id,
             )
 
     def resolve_answer(

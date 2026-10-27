@@ -186,13 +186,23 @@ def test_answer_or_timeout_resumes_child_before_original_parent_tool_call(
 
     assert paused_parent.outcome == "awaiting_input"
     assert paused_parent.continuation is not None
-    clarification_handler.bind_parent_continuation(paused_parent.continuation)
     parent_call = paused_parent.continuation.tool_batch.calls[0]
     assert parent_call.provider_call_id == "parent-clarification-call"
     assert parent_call.interaction_request is not None
     packet = parent_call.interaction_request.interaction_packet
     assert packet.mode == QuestionMode.SINGLE_CHOICE
     assert packet.allow_other is True
+    child_record = continuation_store.get(packet.interaction_ref)
+    assert (
+        child_record.child_continuation.state_history.parent_state_run_id
+        == paused_parent.continuation.state_history.state_run_id
+    )
+    assert (
+        child_record.child_continuation.state_history.parent_provider_call_id
+        == "parent-clarification-call"
+    )
+    assert child_record.parent_continuation is None
+    clarification_handler.bind_parent_continuation(paused_parent.continuation)
 
     if interaction_outcome == "answer":
         parent_resume = clarification_handler.resolve_answer(

@@ -6,8 +6,9 @@ from pydantic import BaseModel
 
 from product.agentic.contracts import AgenticStateResultDTO
 from product.agentic.history import AgenticHistorySession
-from product.agentic.tools import ToolBox
+from product.agentic.tools import AgenticToolInvocationContext, ToolBox
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
+from product.ai.ai_clients.protocols.protocol_tools import ToolCallContextDTO
 from product.application.states.conversation_entry import (
     ConversationEntryRequestDTO,
     ConversationEntryState,
@@ -59,8 +60,13 @@ class FakeMemoryQueryState:
     def __init__(self) -> None:
         self.requests: list[MemoryQueryRequestDTO] = []
 
-    def query(self, request: MemoryQueryRequestDTO) -> AgenticStateResultDTO[BaseModel]:
+    def query(
+        self,
+        request: MemoryQueryRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
+    ) -> AgenticStateResultDTO[BaseModel]:
         self.requests.append(request)
+        invocation_context.inherited_history()
         return AgenticStateResultDTO[BaseModel](
             outcome="completed",
             structured_output=MemoryQueryResultDTO(
@@ -131,8 +137,20 @@ def test_conversation_entry_toolbox_validates_and_dispatches_injected_handlers()
         ingest_memory=handler,
     )
 
-    query_output = toolbox.tools_mapping["query_memory"](goal="What do you remember?")
-    ingestion_output = toolbox.tools_mapping["ingest_memory"](request="Remember this.")
+    history_session = AgenticHistorySession()
+    parent = history_session.start_state(
+        "conversation_parent",
+        [Msg(role="user", content="What do you remember?")],
+    )
+    mapping = toolbox.bind_to_state(history_session, parent.state_run_id)
+    query_output = mapping["query_memory"].invoke_for_tool_call(
+        ToolCallContextDTO(provider_call_id="query-call", tool_name="query_memory"),
+        goal="What do you remember?",
+    )
+    ingestion_output = mapping["ingest_memory"].invoke_for_tool_call(
+        ToolCallContextDTO(provider_call_id="ingest-call", tool_name="ingest_memory"),
+        request="Remember this.",
+    )
 
     assert query_output == MemoryQueryResultDTO(
         answer="Query complete.",

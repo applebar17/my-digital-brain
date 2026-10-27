@@ -13,8 +13,10 @@ grounded outcome describing what is known and what is missing.
 
 ## Invocation and contracts
 
-The state supports both direct backend invocation and use as the `query_memory`
-agentic tool of `ConversationEntryState`.
+The configured application capability is exposed as the `query_memory`
+agentic tool of `ConversationEntryState`. Its typed state entrypoint remains
+separate from provider dispatch, so another reviewed composition can invoke it
+without introducing a second LLM protocol.
 
 ```python
 class MemoryQueryRequestDTO(BaseModel):
@@ -41,9 +43,10 @@ class MemoryQueryResultPacket(BaseModel):
     ...  # Concrete answer/evidence fields are defined with the retrieval contract.
 ```
 
-The current request is appended once as the state-local user message. Selected
-master history comes from `AgenticHistorySession`; it is not copied into the
-query DTO.
+The framework projects relevant conversation history from the invoking parent
+through `AgenticToolInvocationContext`. The state appends its query goal once
+as its purpose-specific local user request. Neither conversation content nor
+backend invocation metadata is copied into `MemoryQueryRequestDTO`.
 
 ## Execution
 
@@ -80,11 +83,11 @@ later only for a reviewed need.
 When called by an LLM parent, the `query_memory` handler starts a child state
 run and maps its `MemoryQueryResultPacket` to one `ToolOutputDTO` using the
 parent's original provider call ID. The parent then resumes its normal provider
-loop and owns any final user-facing prose.
-
-When invoked directly by deterministic application code, the caller consumes
-the result packet as context or an application result. Neither mode creates a
-separate chat response protocol.
+loop and owns any final user-facing prose. The child starts with the framework's
+inherited conversational projection and parent linkage; it does not read global
+master history independently. A deterministic composition may consume the same
+typed result, but must provide its state context explicitly rather than create a
+second history path.
 
 ## Verification
 

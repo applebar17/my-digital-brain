@@ -53,10 +53,11 @@ needed for that internal conversation:
 - **Internal conversation history**: the message projection selected by the
   invoker and supplied through the shared
   [`AgenticHistorySession`](agentic-history-session.md). For child states, the
-  parent is responsible for choosing the projection (master history, its own
-  local transcript, or a filtered combination); the child never selects or
-  retrieves its own starting context. The session copies the selected messages
-  into an isolated local transcript, leaving the caller's history unchanged.
+  registered-tool runtime projects conversational content from the active
+  parent by default. A specialized handler may deliberately restrict that
+  projection. The child never independently reads global master history. The
+  session copies the selected messages into an isolated local transcript,
+  leaving the caller's history unchanged.
 - **Invocation request**: the externally configured purpose, user message, or
   agentic request. It is appended once as the final `user` request in the
   state-local history.
@@ -82,7 +83,8 @@ Its sequential responsibility is:
 
 1. structurally validate the invocation DTO;
 2. ask the shared history session to create a state-local transcript from the
-   supplied history projection (selected by the caller) and state prompt;
+   supplied root projection or framework-inherited child projection and state
+   prompt;
 3. append the invocation request as one user message;
 4. pass the prepared client request, toolbox, and optional structured-output
    request to `LLMInterfaceCore.call(...)`;

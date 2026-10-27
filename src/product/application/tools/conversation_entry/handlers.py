@@ -1,5 +1,6 @@
 """Agent-as-tool adaptation for concrete conversation-entry child states."""
 
+from product.agentic.tools import AgenticToolInvocationContext
 from product.application.states.memory_query import (
     MemoryQueryRequestDTO,
     MemoryQueryResultDTO,
@@ -13,7 +14,11 @@ class MemoryQueryAgentToolHandler:
     def __init__(self, state: MemoryQueryState) -> None:
         self.state = state
 
-    def __call__(self, request: MemoryQueryRequestDTO) -> MemoryQueryResultDTO:
+    def invoke_with_context(
+        self,
+        request: MemoryQueryRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
+    ) -> MemoryQueryResultDTO:
         """Map one parent tool invocation to one completed child-state artifact.
 
         Dependencies:
@@ -21,7 +26,7 @@ class MemoryQueryAgentToolHandler:
             iterative tool loop, and structured validation. The parent AI client
             owns provider-call correlation and resumes after this method returns.
         """
-        outcome = self.state.query(request)
+        outcome = self.state.query(request, invocation_context)
         if outcome.outcome == "failed":
             message = outcome.error.message if outcome.error is not None else "Unknown state error."
             raise ValueError(f"Memory query state failed: {message}")

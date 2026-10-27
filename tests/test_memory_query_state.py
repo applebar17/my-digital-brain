@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from product.agentic.history import AgenticHistorySession
-from product.agentic.tools import RegisteredTool
+from product.agentic.tools import AgenticToolInvocationContext, RegisteredTool
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
 from product.ai.ai_clients.protocols.protocol_tools import ToolDefinitionDTO
 from product.application.references import ReferenceObjectKind, ReferenceResolutionStatus
@@ -112,6 +112,21 @@ def _search_tool(
     )
 
 
+def _child_context(
+    history: AgenticHistorySession,
+    current_message: str,
+) -> AgenticToolInvocationContext:
+    parent = history.start_state(
+        "conversation_parent",
+        [*history.master_history, Msg(role="user", content=current_message)],
+    )
+    return AgenticToolInvocationContext(
+        history_session=history,
+        parent_state_run_id=parent.state_run_id,
+        parent_provider_call_id="parent-query-call",
+    )
+
+
 def test_memory_query_prepares_context_then_supports_iterative_searches() -> None:
     search_calls: list[MemorySearchToolInputDTO] = []
     client = IterativeMemoryQueryClient(["Alice relationships", "Alice university"])
@@ -123,7 +138,10 @@ def test_memory_query_prepares_context_then_supports_iterative_searches() -> Non
         _search_tool(search_calls),
     )
 
-    result = state.query(MemoryQueryRequestDTO(goal="Who is Alice?"))
+    result = state.query(
+        MemoryQueryRequestDTO(goal="Who is Alice?"),
+        _child_context(history, "Current question about Alice."),
+    )
 
     assert result.outcome == "completed"
     assert isinstance(result.structured_output, MemoryQueryResultDTO)
@@ -160,14 +178,18 @@ def test_search_renderer_levels_are_caller_selected() -> None:
 def test_initial_search_failure_still_reaches_the_agentic_session() -> None:
     search_calls: list[MemorySearchToolInputDTO] = []
     client = IterativeMemoryQueryClient()
+    history = AgenticHistorySession()
     state = MemoryQueryState(
         client,  # type: ignore[arg-type]
-        AgenticHistorySession(),
+        history,
         _prompt_service(),
         _search_tool(search_calls, fail=True),
     )
 
-    result = state.query(MemoryQueryRequestDTO(goal="What do you remember?"))
+    result = state.query(
+        MemoryQueryRequestDTO(goal="What do you remember?"),
+        _child_context(history, "Please check my retained memories."),
+    )
 
     assert result.outcome == "completed"
     assert len(search_calls) == 1

@@ -17,10 +17,6 @@ from product.ai.ai_clients.protocols.protocol_tools import (
 class ContextualToolHandler[InputDTO: BaseModel, OutputDTO: BaseModel](Protocol):
     """Handler that consumes backend invocation context as well as model arguments."""
 
-    def __call__(self, input_dto: InputDTO) -> OutputDTO | ToolInteractionRequestDTO:
-        """Support direct invocation where no parent provider context exists."""
-        ...
-
     def invoke_with_context(
         self,
         input_dto: InputDTO,
@@ -35,11 +31,18 @@ class RegisteredTool[InputDTO: BaseModel, OutputDTO: BaseModel]:
     """Pair one tool definition with the typed handler that implements it."""
 
     definition: ToolDefinitionDTO[InputDTO]
-    handler: Callable[[InputDTO], OutputDTO | ToolInteractionRequestDTO]
+    handler: (
+        Callable[[InputDTO], OutputDTO | ToolInteractionRequestDTO]
+        | ContextualToolHandler[InputDTO, OutputDTO]
+    )
 
     def invoke(self, **raw_arguments: object) -> OutputDTO | ToolInteractionRequestDTO:
         """Validate arguments, then return a typed output or external-input request."""
         input_dto = self.definition.input_model.model_validate(raw_arguments)
+        if not callable(self.handler):
+            raise ValueError(
+                f"Tool '{self.definition.name}' requires an active agentic invocation context."
+            )
         return self.handler(input_dto)
 
     def invoke_with_context(

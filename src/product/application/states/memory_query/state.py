@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from product.agentic.contracts import AgenticStateInvocationDTO, AgenticStateResultDTO
 from product.agentic.history import AgenticHistorySession
 from product.agentic.state import BaseAgenticState
-from product.agentic.tools import RegisteredTool, ToolBox
+from product.agentic.tools import AgenticToolInvocationContext, RegisteredTool, ToolBox
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.application.states.memory_query.models import (
     MemoryQueryContextPacket,
@@ -47,10 +47,16 @@ class MemoryQueryState(BaseAgenticState):
         self.prompt_reference = prompt_reference
         self.toolbox = ToolBox("memory_query", [search_tool])
 
-    def query(self, request: MemoryQueryRequestDTO) -> AgenticStateResultDTO[BaseModel]:
+    def query(
+        self,
+        request: MemoryQueryRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
+    ) -> AgenticStateResultDTO[BaseModel]:
         """Prepare bounded context, then run the canonical structured state lifecycle.
 
         Dependencies:
+            `AgenticToolInvocationContext` supplies inherited conversation and
+            parent linkage without adding either to the model-facing query DTO.
             The injected `search_tool` owns both initial deterministic retrieval and
             iterative model calls. `MemorySearchResultRenderer` owns prompt detail;
             `PromptService` resolves the exact template; `BaseAgenticState` owns
@@ -73,11 +79,13 @@ class MemoryQueryState(BaseAgenticState):
         return self.invoke(
             AgenticStateInvocationDTO(
                 system_prompt=rendered_prompt.text,
-                selected_history=self.history_session.master_history,
+                selected_history=invocation_context.inherited_history(),
                 request=request.goal,
                 response_model=MemoryQueryResultDTO,
                 toolbox=self.toolbox,
                 parallel_tool_calls=False,
+                parent_state_run_id=invocation_context.parent_state_run_id,
+                parent_provider_call_id=invocation_context.parent_provider_call_id,
             )
         )
 

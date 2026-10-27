@@ -8,6 +8,7 @@ from typing import Any
 
 from product.agentic.contracts import ToolCallResultDTO
 from product.agentic.history import AgenticHistorySession
+from product.agentic.tools import AgenticToolInvocationContext
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
 from product.ai.ai_clients.protocols.protocol_tools import ToolOutputDTO
@@ -89,9 +90,14 @@ def test_clarification_pauses_for_user_then_returns_interpreted_result(
     )
     templates_root = Path(__file__).parents[1] / "src" / "product" / "prompts" / "templates"
     prompt_service = PromptService(FilePromptTemplateSource(templates_root), PromptRenderer())
+    history_session = AgenticHistorySession()
+    parent = history_session.start_state(
+        "parent_state",
+        [Msg(role="user", content="Remember that Gabriele attended the barbecue.")],
+    )
     state = ClarificationState(
         client,
-        AgenticHistorySession(),
+        history_session,
         prompt_service,
         build_ask_user_tool(
             UserInteractionService(response_timeout=timedelta(minutes=5))
@@ -105,12 +111,19 @@ def test_clarification_pauses_for_user_then_returns_interpreted_result(
             uncertainty="The memory identifies a person only as Gabriele.",
             relevant_context="Two plausible people are known in the supplied context.",
             relevant_refs=["node_0001", "node_0002"],
-        )
+        ),
+        AgenticToolInvocationContext(
+            history_session=history_session,
+            parent_state_run_id=parent.state_run_id,
+            parent_provider_call_id="parent-clarification-call",
+        ),
     )
 
     assert paused.outcome == "awaiting_input"
     continuation = paused.continuation
     assert continuation is not None
+    assert continuation.state_history.parent_state_run_id == parent.state_run_id
+    assert continuation.state_history.parent_provider_call_id == "parent-clarification-call"
     pending_call = continuation.tool_batch.calls[0]
     assert pending_call.provider_call_id == "provider-question-call"
     assert pending_call.interaction_request is not None

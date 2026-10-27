@@ -11,7 +11,7 @@ from product.agentic.contracts import (
 )
 from product.agentic.history import AgenticHistorySession
 from product.agentic.state import BaseAgenticState
-from product.agentic.tools import RegisteredTool, ToolBox
+from product.agentic.tools import AgenticToolInvocationContext, RegisteredTool, ToolBox
 from product.ai.ai_clients.llm_core.llm_core import LLMInterfaceCore
 from product.application.interactions import (
     PendingUserQuestionDTO,
@@ -51,10 +51,13 @@ class ClarificationState(BaseAgenticState):
     def clarify(
         self,
         request: ClarificationRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
     ) -> AgenticStateResultDTO[BaseModel]:
         """Run one focused clarification in an isolated child transcript.
 
         Dependencies:
+            `AgenticToolInvocationContext` supplies inherited conversation and
+            parent linkage from the invoking state.
             `PromptService` resolves the configured behavior; the injected
             `ask_user` tool creates a backend-owned interaction when needed;
             `BaseAgenticState` owns provider calls, pause, and structured output.
@@ -66,11 +69,13 @@ class ClarificationState(BaseAgenticState):
         return self.invoke(
             AgenticStateInvocationDTO(
                 system_prompt=rendered_prompt.text,
-                selected_history=self.history_session.master_history,
+                selected_history=invocation_context.inherited_history(),
                 request=request.model_dump_json(indent=2),
                 response_model=ClarificationResultDTO,
                 toolbox=self.toolbox,
                 parallel_tool_calls=False,
+                parent_state_run_id=invocation_context.parent_state_run_id,
+                parent_provider_call_id=invocation_context.parent_provider_call_id,
             )
         )
 
