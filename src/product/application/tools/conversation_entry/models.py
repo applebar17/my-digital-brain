@@ -1,12 +1,12 @@
-"""Typed models and handler contract for conversation-entry capabilities."""
+"""Temporary ingestion-tool contracts retained by conversation entry."""
 
 from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ConversationCapabilityRequestDTO(BaseModel):
-    """Minimal request forwarded from conversation entry to a child capability."""
+class IngestMemoryRequestDTO(BaseModel):
+    """Temporary request retained until the concrete ingestion workflow exists."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -16,8 +16,8 @@ class ConversationCapabilityRequestDTO(BaseModel):
     )
 
 
-class ConversationCapabilityResultDTO(BaseModel):
-    """Minimal child result returned for interpretation by conversation entry."""
+class IngestMemoryResultDTO(BaseModel):
+    """Temporary ingestion result interpreted by the conversation-entry state."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -27,6 +27,4 @@ class ConversationCapabilityResultDTO(BaseModel):
     )
 
 
-ConversationCapabilityHandler = Callable[
-    [ConversationCapabilityRequestDTO], ConversationCapabilityResultDTO
-]
+IngestMemoryHandler = Callable[[IngestMemoryRequestDTO], IngestMemoryResultDTO]

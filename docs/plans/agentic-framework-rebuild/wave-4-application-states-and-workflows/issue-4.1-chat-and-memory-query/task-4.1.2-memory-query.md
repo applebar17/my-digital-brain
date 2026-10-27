@@ -1,6 +1,6 @@
 # Task 4.1.2 — implement memory-query state
 
-**Status: Planned — split into four reviewed delivery tasks**
+**Status: Completed**
 
 ## Delivery sequence
 

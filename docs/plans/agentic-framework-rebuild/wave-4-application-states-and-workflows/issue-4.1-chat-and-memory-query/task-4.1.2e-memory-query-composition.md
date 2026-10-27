@@ -1,6 +1,6 @@
 # Task 4.1.2e — compose memory query with conversation entry
 
-**Status: Not started**
+**Status: Completed**
 
 ## User story
 

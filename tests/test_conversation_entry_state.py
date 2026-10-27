@@ -2,12 +2,23 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
+from product.agentic.contracts import AgenticStateResultDTO
 from product.agentic.history import AgenticHistorySession
+from product.agentic.tools import ToolBox
 from product.ai.ai_clients.protocols.protocol_chat import ChatRequest, ChatResponse, Msg
-from product.application.states import ConversationEntryRequestDTO, ConversationEntryState
-from product.application.tools import (
-    ConversationCapabilityRequestDTO,
-    ConversationCapabilityResultDTO,
+from product.application.states.conversation_entry import (
+    ConversationEntryRequestDTO,
+    ConversationEntryState,
+)
+from product.application.states.memory_query import (
+    MemoryQueryRequestDTO,
+    MemoryQueryResultDTO,
+)
+from product.application.tools.conversation_entry import (
+    IngestMemoryRequestDTO,
+    IngestMemoryResultDTO,
     build_conversation_entry_toolbox,
 )
 from product.prompts import FilePromptTemplateSource, PromptRenderer, PromptService
@@ -41,29 +52,42 @@ class RecordingLLMClient:
         return ChatResponse(message=Msg(role="assistant", content=self.response))
 
 
+class FakeMemoryQueryState:
+    state_id = "memory_query"
+    toolbox = ToolBox("memory_query", [])
+
+    def __init__(self) -> None:
+        self.requests: list[MemoryQueryRequestDTO] = []
+
+    def query(self, request: MemoryQueryRequestDTO) -> AgenticStateResultDTO[BaseModel]:
+        self.requests.append(request)
+        return AgenticStateResultDTO[BaseModel](
+            outcome="completed",
+            structured_output=MemoryQueryResultDTO(
+                answer="Query complete.",
+                supporting_facts=[],
+                uncertainties=[],
+            ),
+        )
+
+
 def _prompt_service() -> PromptService:
     templates_root = Path(__file__).parents[1] / "src" / "product" / "prompts" / "templates"
     return PromptService(FilePromptTemplateSource(templates_root), PromptRenderer())
 
 
 def test_conversation_entry_uses_selected_history_request_and_two_capabilities() -> None:
-    query_calls: list[str] = []
     ingestion_calls: list[str] = []
-
-    def query_memory(
-        request: ConversationCapabilityRequestDTO,
-    ) -> ConversationCapabilityResultDTO:
-        query_calls.append(request.request)
-        return ConversationCapabilityResultDTO(result="Query complete.")
+    memory_query = FakeMemoryQueryState()
 
     def ingest_memory(
-        request: ConversationCapabilityRequestDTO,
-    ) -> ConversationCapabilityResultDTO:
+        request: IngestMemoryRequestDTO,
+    ) -> IngestMemoryResultDTO:
         ingestion_calls.append(request.request)
-        return ConversationCapabilityResultDTO(result="Ingestion complete.")
+        return IngestMemoryResultDTO(result="Ingestion complete.")
 
     toolbox = build_conversation_entry_toolbox(
-        query_memory=query_memory,
+        memory_query_state=memory_query,  # type: ignore[arg-type]
         ingest_memory=ingest_memory,
     )
     client = RecordingLLMClient("I can help with that.")
@@ -88,22 +112,32 @@ def test_conversation_entry_uses_selected_history_request_and_two_capabilities()
     assert client.requests[0].messages[-1].as_text() == "Current message."
     assert client.requests[0].params["parallel_tool_calls"] is True
     assert "user-facing conversation agent" in client.requests[0].messages[0].as_text()
-    assert query_calls == []
+    assert memory_query.requests == []
     assert ingestion_calls == []
 
 
 def test_conversation_entry_toolbox_validates_and_dispatches_injected_handlers() -> None:
-    received: list[ConversationCapabilityRequestDTO] = []
+    received: list[IngestMemoryRequestDTO] = []
+    memory_query = FakeMemoryQueryState()
 
     def handler(
-        request: ConversationCapabilityRequestDTO,
-    ) -> ConversationCapabilityResultDTO:
+        request: IngestMemoryRequestDTO,
+    ) -> IngestMemoryResultDTO:
         received.append(request)
-        return ConversationCapabilityResultDTO(result="Handled.")
+        return IngestMemoryResultDTO(result="Handled.")
 
-    toolbox = build_conversation_entry_toolbox(query_memory=handler, ingest_memory=handler)
+    toolbox = build_conversation_entry_toolbox(
+        memory_query_state=memory_query,  # type: ignore[arg-type]
+        ingest_memory=handler,
+    )
 
-    output = toolbox.tools_mapping["query_memory"](request="What do you remember?")
+    query_output = toolbox.tools_mapping["query_memory"](goal="What do you remember?")
+    ingestion_output = toolbox.tools_mapping["ingest_memory"](request="Remember this.")
 
-    assert output == ConversationCapabilityResultDTO(result="Handled.")
-    assert received == [ConversationCapabilityRequestDTO(request="What do you remember?")]
+    assert query_output == MemoryQueryResultDTO(
+        answer="Query complete.",
+        supporting_facts=[],
+        uncertainties=[],
+    )
+    assert ingestion_output == IngestMemoryResultDTO(result="Handled.")
+    assert received == [IngestMemoryRequestDTO(request="Remember this.")]

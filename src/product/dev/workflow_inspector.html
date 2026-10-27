@@ -64,12 +64,18 @@
       element('pre', config.system_prompt, area);
       model('Structured output', config.response_model, area);
       element('h3', `Toolbox: ${config.toolbox_name || 'none'}`, area);
-      for (const tool of config.tools) {
-        const toolArea = element('div', undefined, area, 'section');
-        element('strong', tool.name, toolArea);
-        element('p', tool.description, toolArea);
-        model('Tool input', tool.input_model, toolArea);
-        model('Tool output', tool.output_model, toolArea);
+      for (const tool of config.tools) toolDetails(tool, area);
+    }
+    function toolDetails(tool, parent) {
+      const toolArea = element('div', undefined, parent, 'section');
+      element('strong', tool.name, toolArea);
+      element('p', tool.description, toolArea);
+      model('Tool input', tool.input_model, toolArea);
+      model('Tool output', tool.output_model, toolArea);
+      if (tool.child_state) {
+        element('h3', `Child AI state: ${tool.child_state.state_id}`, toolArea);
+        element('p', `Child toolbox: ${tool.child_state.toolbox_name || 'none'}`, toolArea);
+        for (const childTool of tool.child_state.tools) toolDetails(childTool, toolArea);
       }
     }
     function select(step) {

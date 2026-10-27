@@ -24,11 +24,20 @@ class ModelInspectionDTO(BaseModel):
     fields: list[FieldInspectionDTO]
 
 
+class ChildStateInspectionDTO(BaseModel):
+    """Configured child state exposed by one agent-as-tool registration."""
+
+    state_id: str
+    toolbox_name: str | None
+    tools: list["ToolInspectionDTO"] = Field(default_factory=list)
+
+
 class ToolInspectionDTO(BaseModel):
     name: str
     description: str
     input_model: ModelInspectionDTO
     output_model: ModelInspectionDTO | None
+    child_state: ChildStateInspectionDTO | None = None
 
 
 class StageInspectionDTO(BaseModel):
@@ -132,21 +141,43 @@ def _toolbox_contract(toolbox: ToolBox | None) -> tuple[str | None, list[ToolIns
         return None, []
     tools = []
     for registered in toolbox.tools_by_name.values():
-        target = (
-            registered.handler.func
-            if isinstance(registered.handler, partial)
-            else registered.handler
-        )
+        target = _callable_target(registered.handler)
         output_type = get_type_hints(target).get("return")
+        handler_owner = getattr(registered.handler, "__self__", registered.handler)
+        child_state = getattr(handler_owner, "state", None)
+        child_inspection = None
+        if child_state is not None:
+            child_toolbox_name, child_tools = _toolbox_contract(
+                getattr(child_state, "toolbox", None)
+            )
+            child_inspection = ChildStateInspectionDTO(
+                state_id=child_state.state_id,
+                toolbox_name=child_toolbox_name,
+                tools=child_tools,
+            )
         tools.append(
             ToolInspectionDTO(
                 name=registered.definition.name,
                 description=registered.definition.description,
                 input_model=_model_contract(registered.definition.input_model),
                 output_model=_model_contract(output_type) if _is_model_type(output_type) else None,
+                child_state=child_inspection,
             )
         )
     return toolbox.name, tools
+
+
+def inspect_toolbox(toolbox: ToolBox) -> list[ToolInspectionDTO]:
+    """Expose actual registered tools and nested agent-as-tool composition."""
+    return _toolbox_contract(toolbox)[1]
+
+
+def _callable_target(handler: Callable[..., Any]) -> Callable[..., Any]:
+    if isinstance(handler, partial):
+        return handler.func
+    if not hasattr(handler, "__name__") and callable(handler):
+        return handler.__call__
+    return handler
 
 
 def _stage_configuration(stage: AgenticStageConfigurationDTO) -> StageInspectionDTO:

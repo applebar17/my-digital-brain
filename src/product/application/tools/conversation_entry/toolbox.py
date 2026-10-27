@@ -2,25 +2,27 @@
 
 from product.agentic.tools import RegisteredTool, ToolBox
 from product.ai.ai_clients.protocols.protocol_tools import ToolDefinitionDTO
+from product.application.states.memory_query import MemoryQueryRequestDTO, MemoryQueryState
+from product.application.tools.conversation_entry.handlers import MemoryQueryAgentToolHandler
 from product.application.tools.conversation_entry.models import (
-    ConversationCapabilityHandler,
-    ConversationCapabilityRequestDTO,
+    IngestMemoryHandler,
+    IngestMemoryRequestDTO,
 )
 
 
 def build_conversation_entry_toolbox(
     *,
-    query_memory: ConversationCapabilityHandler,
-    ingest_memory: ConversationCapabilityHandler,
+    memory_query_state: MemoryQueryState,
+    ingest_memory: IngestMemoryHandler,
 ) -> ToolBox:
-    """Bind temporary typed contracts to the two accepted root capabilities.
+    """Bind the concrete query state and temporary ingestion capability.
 
     Dependencies:
-        Application composition supplies both executable functions. The
-        temporary request/result DTOs are replaced by each capability's real
-        contract when `MemoryQueryState` and `MemoryIngestionWorkflow` exist;
-        no fake production implementation or fallback behavior is provided.
+        `MemoryQueryAgentToolHandler` adapts the child state's validated result
+        without creating another LLM loop. Application composition supplies the
+        temporary ingestion handler until `MemoryIngestionWorkflow` replaces it.
     """
+    query_memory = MemoryQueryAgentToolHandler(memory_query_state)
     return ToolBox(
         "conversation_entry",
         [
@@ -31,7 +33,7 @@ def build_conversation_entry_toolbox(
                         "Query retained memory when the user's request depends on previously "
                         "stored personal context."
                     ),
-                    input_model=ConversationCapabilityRequestDTO,
+                    input_model=MemoryQueryRequestDTO,
                 ),
                 handler=query_memory,
             ),
@@ -42,7 +44,7 @@ def build_conversation_entry_toolbox(
                         "Process new, corrected, updated, or otherwise memory-worthy information "
                         "provided by the user."
                     ),
-                    input_model=ConversationCapabilityRequestDTO,
+                    input_model=IngestMemoryRequestDTO,
                 ),
                 handler=ingest_memory,
             ),
