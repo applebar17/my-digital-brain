@@ -19,10 +19,10 @@ documents](../../ai-engineering/README.md).
 - The clarification agent uses the supplied doubt and available context to
   decide whether a question is needed, what to ask, and what interaction is
   appropriate. It must not invent unrelated questions.
-- The interaction has three supported presentation configurations: free
-  response, confirmation, and multiple choice. These configurations help the
-  client render the question; they do not introduce separate semantic
-  pipelines or data-type-specific question contracts.
+- The interaction has four supported presentation configurations: free
+  response, confirmation, single choice, and multiple choice. These
+  configurations help the client render the question; they do not introduce
+  separate semantic pipelines or data-type-specific question contracts.
 - Questions are concise, natural, written in the user's language, and phrased
   so a person can answer without understanding graph or application internals.
 - The user can answer in free text even when choices or buttons are offered.
@@ -83,6 +83,10 @@ must not appear in model-facing or user-facing clarification content.
   tool output, state names, database references, or provider diagnostics.
 - Choices use understandable labels and, when needed, short distinguishing
   descriptions. Free-text correction remains available by default.
+- Confirmation, single-choice, and multiple-choice interactions expose a
+  backend-owned `allow_other` capability. The client renders an
+  Other/correction input without requiring the LLM to configure or fabricate
+  an Other option.
 - A configurable backend deadline applies to the pending interaction. A timely
   answer or timeout resolves it exactly once; timeout is returned to the agent
   as an ordinary interaction outcome rather than terminating the pipeline.

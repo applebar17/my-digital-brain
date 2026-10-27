@@ -1,6 +1,6 @@
 # Issue 4.2 — clarification as a state/tool interaction
 
-**Status: Not started**
+**Status: In progress — clarification state ready for review**
 
 Implement the clarification agent and its interaction with the existing
 human-answer channel as part of the states that need it. This issue exists to
@@ -27,10 +27,12 @@ after the answer, a resolved answer packet to its caller. Any internal
 separate protocol metadata.
 
 The clarification state may configure the question as a free response,
-confirmation, or multiple choice. These are the complete MVP presentation
-categories, not separate reasoning paths. Ordinary variations such as dates,
-places, people, corrected choices, or natural-language details are handled by
-the LLM using the question and answer content.
+confirmation, single choice, or multiple choice. These are the complete MVP
+presentation categories, not separate reasoning paths. Choice and confirmation
+packets enable a deterministic free-text Other/correction control by default;
+the LLM does not need to add a synthetic Other option. Ordinary variations
+such as dates, places, people, corrected choices, or natural-language details
+are handled by the LLM using the question and answer content.
 
 Correlation has three distinct owners:
 

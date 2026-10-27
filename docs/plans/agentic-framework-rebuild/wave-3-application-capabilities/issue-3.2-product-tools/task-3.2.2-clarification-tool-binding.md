@@ -1,6 +1,6 @@
 # Task 3.2.2 — define clarification interaction tool binding
 
-**Status: Candidate capability — activate only when a reviewed state requires a tool**
+**Status: Implemented by Task 4.2.1**
 
 ## User story
 
@@ -29,6 +29,11 @@ and returns it as a typed tool result to the waiting child state.
 The question uses the shared [user-interaction tool contract](../../../../ai-engineering/application-states/user-interaction-tools.md):
 the backend owns its deadline and resolves either the user's answer or one
 timeout result to the waiting tool call.
+
+The concrete `ask_user` registration now belongs to
+[Task 4.2.1](../../wave-4-application-states-and-workflows/issue-4.2-clarification-in-state-flow/task-4.2.1-clarification-state.md).
+Persistence and channel resolution remain part of Task 4.2.2 rather than this
+tool definition.
 
 ## Dependencies and acceptance
 

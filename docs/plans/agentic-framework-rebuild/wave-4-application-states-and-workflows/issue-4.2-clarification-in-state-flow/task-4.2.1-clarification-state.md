@@ -1,6 +1,6 @@
 # Task 4.2.1 — define clarification request/result and implement the child state
 
-**Status: Not started**
+**Status: Ready for review**
 
 ## User story
 
@@ -17,8 +17,9 @@ parent.
 
 ## Where
 
-- `src/product/application/states/clarification.py` and its prompt.
-- `product.application.tools` question/interaction registration.
+- `src/product/application/states/clarification/` and its versioned prompt.
+- `src/product/application/interactions/` question packet and deadline service.
+- `src/product/application/tools/user_interaction/` tool registration.
 
 ## Functional communication DTOs
 
@@ -26,7 +27,10 @@ Request: a descriptive LLM-generated `clarification_ref`, goal,
 context/evidence, and the specific uncertainty to resolve.
 
 Interaction: a human-readable question configured as one of `free_response`,
-`confirmation`, or `multiple_choice`, with options only where useful. The
+`confirmation`, `single_choice`, or `multiple_choice`, with options only where
+useful. Confirmation and choice modes carry `allow_other`, enabled by default,
+so the client can deterministically expose an Other/correction text input. This
+flag is set by the backend and is not part of the LLM tool arguments. The
 interaction model stays generic: it does not define separate date, number,
 entity, location, file, or other domain-specific question types. The LLM
 phrases the question and interprets the natural-language answer.
