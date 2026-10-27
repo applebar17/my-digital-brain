@@ -183,6 +183,19 @@ state A provider transcript
   assistant tool call -> matching tool output -> next assistant completion/tool call
 ```
 
+The registered handler receives a backend-only invocation context from the
+framework. It identifies state A, the provider-issued parent call, and the
+shared history session; none of those values are model tool arguments. The
+history session creates B's default inherited projection from A's selected
+conversational turns and current user message. It excludes A's system prompt,
+open assistant tool-call turn, tool outputs, traces, and provider metadata.
+
+The same inheritance applies when A invokes a deterministic workflow behind a
+tool: the workflow receives the invocation context and supplies that inherited
+projection to its AI states as needed. The workflow passes semantic results
+through explicit DTOs; it never cascades one child state's raw transcript into
+another.
+
 The child may itself invoke other agents. Each invocation creates another
 `StateHistory` linked by `parent_state_run_id`, while each provider transcript
 remains local to its state run.
@@ -225,10 +238,12 @@ returns one matched output to the parent and normal nested resumption continues.
 
 ## History selection and restriction
 
-Every state chooses the amount and form of shared master history that its
-purpose needs. A top-level state may use a concise chat-wide view; a specialized
-child can receive a broader or more detailed relevant projection plus its own
-purpose-specific context.
+The application supplies a durable conversation projection when starting a
+top-level state. A nested state or workflow inherits the invoking state's
+selected conversational projection by default through the history session. A
+specialized child may receive a deliberately restricted form plus its own
+purpose-specific typed context, but it must not independently restart from
+global master history.
 
 This is selection, not copying or uncontrolled propagation. The history session
 supplies the central source and records the selected master revision; the
@@ -244,6 +259,8 @@ until a concrete accepted state requires it.
   treated as master-history copies.
 - A child never receives its parent’s raw provider tool-call transcript as its
   own local conversation.
+- Nested agent and workflow handlers receive history through the framework
+  invocation context, never through model-generated tool arguments.
 - The client/runtime alone appends provider assistant/tool protocol messages.
 - A completed child state releases its local history after returning its compact
   typed result; a paused state persists it only for continuation.

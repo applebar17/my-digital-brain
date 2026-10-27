@@ -23,9 +23,9 @@ flowchart TB
     A["CONVERSATION ENTRY STATE · AI + TOOLS<br/>In: user message + chat history<br/>Main call: answer or select a capability<br/>Tool: ingest_memory invokes the workflow<br/>Out: final chat reply after matched tool output"]
     subgraph MW["MemoryIngestionWorkflow · BaseWorkflow"]
     direction TB
-    W["01 · ENTER WORKFLOW · CODE<br/>In: request + bound owner/history<br/>Does: MemoryIngestionWorkflow.ingest_memory<br/>Out: workflow input"]
-    B["02 · PREPARE INPUT · CODE<br/>In: user input + owner<br/>Does: normalize; retrieve bounded graph context<br/>Out: text/transcript + ReferenceContext"]
-    C["03 · UNDERSTAND MEMORY · AI<br/>In: text/transcript + graph context<br/>Main call: reason about facts, gaps, links<br/>Out: structured interpretation<br/>Extra reasoning/planning: none"]
+    W["01 · ENTER WORKFLOW · CODE<br/>In: optional guidance + inherited caller history<br/>Does: MemoryIngestionWorkflow.ingest_memory<br/>Out: workflow invocation context"]
+    B["02 · PREPARE CONTEXT · CODE<br/>In: inherited history + bound owner<br/>Does: register owner/refs; retrieve bounded graph context<br/>Out: owner + ReferenceContext + retrieval context"]
+    C["03 · UNDERSTAND MEMORY · AI<br/>In: inherited history + prepared context<br/>Main call: reason about facts, gaps, links<br/>Out: structured interpretation<br/>Extra reasoning/planning: none"]
     D["04 · PROPOSE OBJECTS · AI<br/>In: input + interpretation<br/>Main call: identify people, places, events, etc.<br/>Out: typed object candidates; no writes<br/>Extra reasoning/planning: none"]
     E["05 · LOOK UP IDENTITIES · CODE<br/>In: candidates + owner scope<br/>Does: search for possible existing objects<br/>Out: bounded match evidence + supplied refs<br/>No identity decision"]
     F["06 · RESOLVE OBJECTS · AI + TOOLS<br/>In: candidates + matches + supplied refs<br/>Main call: choose reuse, creation, or clarification<br/>Tools: write selected nodes<br/>Out: resolved refs + node-write outcomes<br/>Extra reasoning/planning: none"]
@@ -76,9 +76,9 @@ message.
 
 | Step | Kind | Receives | Does | Produces | Reasoning/planning call profile |
 | --- | --- | --- | --- | --- | --- |
-| 1. Enter workflow | `ingest_memory` bound workflow method | Validated user input, owner, selected conversation/history context | Starts `MemoryIngestionWorkflow` from the chat-facing tool call | Input and owner context | No additional LLM call |
-| 2. Prepare input | Deterministic code | User input and owner context | Normalizes text or obtains transcript; retrieves bounded existing context; builds owner projection and `ReferenceContext` | Text/transcript and relevant context | No LLM call |
-| 3. Understand memory | `IngestionReasoningState` | Text/transcript and context | Interprets facts, ambiguities, likely connections, and what should remain episodic | Structured interpretation | Its main call is the ingestion reasoning; no separate reasoning or planning call is specified |
+| 1. Enter workflow | `ingest_memory` bound workflow method | Optional model-generated guidance plus framework-owned parent invocation context | Starts `MemoryIngestionWorkflow` while preserving the invoker's selected history | Workflow invocation context | No additional LLM call |
+| 2. Prepare context | Deterministic code | Inherited conversational history and bound owner/services | Registers the owner and known refs and retrieves bounded existing context without rewriting source messages | Owner projection, `ReferenceContext`, and retrieval context | No LLM call |
+| 3. Understand memory | `IngestionReasoningState` | Inherited history, optional guidance, and prepared context | Interprets facts, ambiguities, likely connections, and what should remain episodic | Structured interpretation | Its main call is the ingestion reasoning; no separate reasoning or planning call is specified |
 | 4. Propose objects | `NodeCandidateState` | Input, interpretation, supplied references | Generates typed object candidates | Candidate objects; no writes | Main call generates candidates; no separate reasoning or planning call is specified |
 | 5. Look up identities | Deterministic service | Candidate identity details and owner scope | Searches for possible existing matches without deciding identity | Bounded match evidence and supplied existing-object references | No LLM call |
 | 6. Resolve objects | `NodeResolutionWriteState` with deterministic tools | Candidates, match evidence, input, supplied references | Decides reuse versus creation; calls typed graph tools; may invoke the clarification child state if configured and needed | Resolved references and node-write outcomes | Main call resolves identities and uses tools; no separate reasoning or planning call is specified |
@@ -89,11 +89,12 @@ message.
 
 ## Functional behavior at each handoff
 
-Input preparation is deterministic: it normalizes the input, retrieves and
-hydrates bounded graph context, builds `ReferenceContext`, and adds the active
-owner projection when relevant. It does not decide what the input means.
-This flow does not require persisting the original chat message or a separate
-source record; input text or a transcript is sufficient context for these steps.
+Input preparation is deterministic: it inherits the invoking state's selected
+history, retrieves and hydrates bounded graph context, builds
+`ReferenceContext`, and adds the active owner projection when relevant. It does
+not rewrite the source messages or decide what they mean. This flow does not
+require persisting a separate source record or copying messages into an
+ingestion-specific source DTO.
 
 `IngestionReasoningState` produces a structured, non-executable interpretation.
 It may identify salient entities, aliases, ambiguities, likely durable

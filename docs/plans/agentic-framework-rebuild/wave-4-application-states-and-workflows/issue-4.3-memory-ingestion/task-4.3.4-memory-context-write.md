@@ -1,4 +1,4 @@
-# Task 4.3.3 — create memory/context objects after their targets
+# Task 4.3.4 — create memory/context objects after their targets
 
 **Status: Not started**
 
@@ -10,11 +10,14 @@ readable and its target objects already exist.
 
 ## What and why
 
-Treat memory-log and context writing as candidate responsibilities until the
-state census confirms their boundaries and order. For each resulting state,
-agree its functional purpose and input/output before defining its typed DTOs,
-deterministic write functions, or model-visible tool. Enforce creation ordering
-through workflow handoffs, not by asking the model to invent backend IDs.
+Implement `MemoryContextWriteState` after node resolution. Define its typed
+input/output, prompt, deterministic write functions, graph-tool mappings, and
+workflow handoff together. Enforce creation ordering through workflow
+dependencies, not by asking the model to invent backend IDs.
+
+The state uses one main LLM/tool session with no separate framework
+reasoning/planning stage. It may invoke clarification for a material gap and
+then resumes the same session before the workflow advances.
 
 ## Where
 
@@ -23,11 +26,10 @@ through workflow handoffs, not by asking the model to invent backend IDs.
 
 ## Functional communication boundary
 
-Candidate memory input includes content and references to
-resolved entities; candidate context input includes its target references.
-These examples do not predefine DTO fields. The approved state task defines
-exact inputs/outputs; completed writes return local refs and readable summaries
-for the caller or next step.
+Input includes inherited history, the reasoning result, resolved entity refs,
+and relevant prior outcomes. Output contains explicit memory-log and linked
+context write outcomes. Completed writes return local refs and readable
+summaries for the caller or next step.
 
 ## Dependencies and acceptance
 

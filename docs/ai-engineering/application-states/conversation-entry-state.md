@@ -49,7 +49,9 @@ The state is dynamic and receives exactly these model-visible capabilities:
 
 - `query_memory`: an agentic tool that starts `MemoryQueryState`;
 - `ingest_memory`: a typed workflow-backed tool bound to
-  `MemoryIngestionWorkflow.ingest_memory`.
+  `MemoryIngestionWorkflow.ingest_memory`; its model-facing argument is only
+  optional purpose guidance, while the workflow inherits the selected
+  conversation and current user message through the history session.
 
 For greetings, ordinary discussion, and other non-memory requests, the state
 answers directly. For a memory-dependent question it calls `query_memory`. For

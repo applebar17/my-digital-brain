@@ -1,4 +1,4 @@
-# Task 4.3.2 — resolve and create nodes with coherent references
+# Task 4.3.3 — resolve and create nodes with coherent references
 
 **Status: Not started**
 
@@ -10,13 +10,17 @@ reuse the correct identity or create a distinct one without seeing backend IDs.
 
 ## What and why
 
-The current title and behavior are a candidate for the node-related slice, not
-an assumption that candidate extraction, identity resolution, and persistence
-belong in one agentic state. Use the Issue 4.0 census to identify the actual
-state boundary first. Then define its purpose, input/output, internal DTOs,
-deterministic lookup/write dependencies, and any model-visible tool mappings.
-The state may choose an existing or new identity from full context; local refs
-are mapped to backend UUIDs at the tool/service boundary.
+Register the completed node candidates in the shared `ReferenceContext`, run
+deterministic owner-scoped identity lookup, then invoke
+`NodeResolutionWriteState` with the candidates and bounded match evidence. The
+state may select an explicitly supplied existing reference, create a distinct
+object through typed graph tools, or invoke clarification when a material
+identity gap remains. Local refs are mapped to backend UUIDs only at the
+tool/service boundary.
+
+This state uses one main LLM/tool session with no separate framework
+reasoning/planning stage. Define its input/output DTOs, prompt, graph and
+clarification toolbox, handler mappings, and workflow handoff together.
 
 ## Where
 
@@ -26,15 +30,15 @@ are mapped to backend UUIDs at the tool/service boundary.
 
 ## Functional communication boundary
 
-Candidate input/result above is a working example only. Agree the actual
-state's input/output and whether resolution and writing are one or separate
-steps before defining concrete DTOs. Any write result used downstream returns a
-local ref and readable identity/summary, not a backend UUID.
+Input includes typed candidates, deterministic match evidence, inherited
+history, and the active reference context. Output contains one explicit
+resolution/write outcome per candidate. Any completed result used downstream
+returns a local ref and readable identity/summary, not a backend UUID.
 
 ## Dependencies and acceptance
 
 - Depends on the approved state order and relevant prior handoff from Issue
-  4.0/4.3.1.
+  4.0/4.3.2.
 - Pull in only the deterministic graph capability or child-state tool required
   by this state's agreed behavior; do not wait for Wave 3 as a whole.
 - Reference rendering uses the accepted verbosity and owner conventions.

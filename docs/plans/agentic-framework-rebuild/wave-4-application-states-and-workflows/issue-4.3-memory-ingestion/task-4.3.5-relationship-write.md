@@ -1,4 +1,4 @@
-# Task 4.3.4 — write relationships from resolved endpoints
+# Task 4.3.5 — write relationships from resolved endpoints
 
 **Status: Not started**
 
@@ -10,13 +10,15 @@ relationships are represented without inventing participants.
 
 ## What and why
 
-Confirm from the state census whether relationship writing is a distinct state
-or part of another state. If needed, agree its functional purpose and
-input/output first, then define the allowed relationship data, prompt examples,
-deterministic function, and model-visible tool mapping. Execute writes against
-resolved local endpoint refs. Preserve failed writes as recoverable tool
-outputs; reconciliation of missing edges remains outside scope unless separately
-prioritized.
+Implement `RelationshipWriteState` as the final write state. Define its typed
+input/output, allowed relationship data, prompt guidance, deterministic write
+function, graph-tool mapping, clarification capability, and workflow handoff
+together. Execute writes against resolved local endpoint refs. Preserve failed
+writes as recoverable tool outputs; reconciliation of missing edges remains
+outside scope unless separately prioritized.
+
+The state uses one main LLM/tool session with no separate framework
+reasoning/planning stage.
 
 ## Where
 
@@ -25,10 +27,9 @@ prioritized.
 
 ## Functional communication boundary
 
-Candidate input includes the relevant input context and resolved endpoint local refs.
-Agree the exact input/output DTO only if the census confirms this state is
-needed. A completed write returns the functional relationship result and
-readable summary; backend IDs remain internal.
+Input includes inherited history, reasoning and memory/context outcomes, and
+resolved endpoint local refs. A completed write returns the functional
+relationship result and readable summary; backend IDs remain internal.
 
 ## Dependencies and acceptance
 

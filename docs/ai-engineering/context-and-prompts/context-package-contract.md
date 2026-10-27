@@ -99,7 +99,7 @@ full reasoning, provider transcript, and tool trace do not propagate upward.
 | --- | --- | --- |
 | Conversation entry | Normalize the current user message and select concise chat history. | Current request and selected conversation history. |
 | Memory query | Retrieve and hydrate relevant graph context before the LLM session. | User question, retrieval packet, reference inventory, and evidence where relevant. |
-| Memory ingestion | Normalize source material and gather task-relevant graph context. | Source context, reference inventory, relevant existing candidates, and evidence. |
+| Memory ingestion | Inherit the caller-selected conversation and gather task-relevant graph context without rewriting the source messages. | Inherited conversation history plus separate guidance, owner, reference inventory, relevant existing candidates, and evidence sections. |
 | Clarification agent | Receive supplied doubts and bounded candidate context. | Doubt packet, candidate summaries, reference inventory, and prior normalized answers. |
 
 Concrete state documents define their own required sections. This table does

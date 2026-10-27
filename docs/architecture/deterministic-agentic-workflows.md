@@ -22,6 +22,10 @@ output to the chat-facing agent, which resumes and writes the final reply.
 The application binds the active owner, selected history, and service
 dependencies when assembling the workflow/toolbox; the model-visible tool
 request carries only the fields the chatbot needs to provide.
+For `ingest_memory`, that request carries only optional ingestion guidance.
+The current message and selected conversation turns reach the workflow through
+the framework-owned parent invocation context; the conversation model does not
+regenerate the memory source as tool arguments.
 
 The base invokes the concrete workflow's configured steps in dependency order,
 passes typed compact outputs to dependent steps, and exposes that same assembled
@@ -53,6 +57,10 @@ not decide independence from a drawing or from LLM output.
 It does not interpret LLM output, perform graph writes, infer missing graph
 objects, parse prose into DTO fields, hide tool failures, or carry raw provider
 traces between states.
+
+The workflow does not create a second source-history DTO. Its AI states inherit
+the invoker's selected conversational projection through
+`AgenticHistorySession`; state-specific semantic handoffs remain explicit DTOs.
 
 ## State handoff contract
 

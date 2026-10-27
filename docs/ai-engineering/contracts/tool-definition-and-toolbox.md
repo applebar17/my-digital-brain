@@ -291,11 +291,14 @@ The nested-call identity rule remains owned by the
 ## Invocation and diagnostics
 
 The runtime parses `ToolCallDTO.arguments_json` once through the registered
-input model and calls the handler with that validated DTO. Dependencies are
-bound when the toolbox is composed; a generic execution-context object is not
-added unless a concrete per-invocation need is identified. The handler's
-annotated return type defines its successful output. The client serializes
-exactly one `ToolOutputDTO` against the immutable provider call ID.
+input model and calls the handler with that validated DTO. Ordinary service
+dependencies are bound when the toolbox is composed. For agent-backed and
+workflow-backed tools, the framework additionally supplies one backend-only
+invocation context containing the active parent state/history linkage and the
+provider call ID already owned by the client. It is not added to the
+provider-facing DTO or exposed to the model. The handler's annotated return
+type defines its successful output. The client serializes exactly one
+`ToolOutputDTO` against the immutable provider call ID.
 
 Tool diagnostics show both the semantic descriptor and the compiled provider
 declaration:

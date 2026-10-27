@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: Not started**
+**Status: Not started — framework preparation defined**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
@@ -16,17 +16,21 @@ and the local inspector's composition view.
 
 ## Tasks
 
+- [Task 4.3.0a — implement invocation context and inherited child history](task-4.3.0a-invocation-context-and-history-inheritance.md)
+- [Task 4.3.0b — align existing child states with inherited history](task-4.3.0b-align-existing-child-history.md)
 - [Task 4.3.1 — define ingestion request and reasoning context](task-4.3.1-ingestion-entry-and-reasoning.md)
-- [Task 4.3.2 — resolve and create nodes with coherent references](task-4.3.2-node-resolution-and-write.md)
-- [Task 4.3.3 — create memory/context objects after their targets](task-4.3.3-memory-context-write.md)
-- [Task 4.3.4 — write relationships from resolved endpoints](task-4.3.4-relationship-write.md)
-- [Task 4.3.5 — compose the deterministic ingestion workflow](task-4.3.5-ingestion-workflow.md)
+- [Task 4.3.2 — define the node-candidate state](task-4.3.2-node-candidate.md)
+- [Task 4.3.3 — resolve and create nodes with coherent references](task-4.3.3-node-resolution-and-write.md)
+- [Task 4.3.4 — create memory/context objects after their targets](task-4.3.4-memory-context-write.md)
+- [Task 4.3.5 — write relationships from resolved endpoints](task-4.3.5-relationship-write.md)
+- [Task 4.3.6 — compose the deterministic ingestion workflow](task-4.3.6-ingestion-workflow.md)
 
-The list is an initial breakdown. Issue 4.0 may split, combine, or reorder these
-tasks after distinguishing actual agentic states from deterministic workflow
-steps. Wire each completed state into the workflow as it is delivered; Task
-4.3.5 verifies and completes the whole sequence rather than deferring all
-composition until the end.
+Tasks 4.3.0a–4.3.0b establish and apply framework-level history inheritance
+before ingestion code is added. Tasks 4.3.1–4.3.2 then define the two read-only
+interpretation states primarily through input/output contracts, prompts,
+toolbox configuration, and workflow wiring. Wire each completed state into the
+workflow as it is delivered; Task 4.3.6 verifies the complete sequence rather
+than deferring all composition until the end.
 
 ## Dependencies
 
@@ -41,12 +45,12 @@ composition until the end.
 
 ## Functional communication DTOs
 
-The chatbot's `ingest_memory` tool validates a typed request and invokes the
-bound workflow method with input content, owner identity/context, and
-relevant conversation/channel context. The precise handoffs are confirmed in
-Issue 4.0.
-The application binds owner, history, and service dependencies when composing
-the workflow tool; they are not model-supplied tool arguments.
+The chatbot's `ingest_memory` tool accepts only optional ingestion guidance. It
+does not ask the conversation model to regenerate or copy the memory content.
+The framework supplies the invoking state history to the bound workflow, and
+the workflow's states inherit that selected projection. The application binds
+owner and service dependencies when composing the workflow tool; none are
+model-supplied arguments.
 As each state is reviewed, define its purpose and input/output first, then its
 internal DTOs/artifacts, prompt/history/context, deterministic functions, any
 model-visible tools and function mappings, and the next handoff. Local

@@ -2,9 +2,10 @@
 
 ## Purpose
 
-Interpret the normalized input and its bounded graph context before any object is proposed
-or written. This state creates useful semantic guidance for downstream states;
-it does not decide persistence operations.
+Interpret the conversation history inherited from the invoking state and its
+bounded graph context before any object is proposed or written. This state
+creates useful semantic guidance for downstream states; it does not decide
+persistence operations.
 
 ## Why it exists
 
@@ -15,8 +16,10 @@ node or every co-occurrence as a relationship.
 
 ## Required context
 
-- normalized input text or transcript;
-- selected conversation history when it materially affects interpretation;
+- the invoker-selected conversational history, including the exact current
+  user message and any bounded preceding turns needed to understand it;
+- optional ingestion guidance from the `ingest_memory` tool call, which is not
+  treated as replacement source content;
 - bounded hydrated graph context;
 - `ReferenceContext` at level 1 for known objects, plus level 2 only when
   identity evidence needs richer explanation;
@@ -57,9 +60,11 @@ does not receive the reasoning provider transcript.
 
 ## Prompt contract
 
-The state prompt must label input, graph context, known references, and owner
-projection distinctly. It must say that the result is guidance for later states
-and that it must not create refs or write actions.
+The state prompt must label inherited conversation, optional guidance, graph
+context, known references, and owner projection distinctly. It must say that
+the result is guidance for later states and that it must not create refs or
+write actions. The source conversation is inherited history, not a copied
+content field in the tool request or context DTO.
 
 ## Related documentation
 

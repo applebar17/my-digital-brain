@@ -1,4 +1,4 @@
-# Task 4.3.5 — compose the deterministic ingestion workflow
+# Task 4.3.6 — compose the deterministic ingestion workflow
 
 **Status: Not started**
 
@@ -32,19 +32,19 @@ workflow DSL or an autonomous replacement for this sequence.
 
 ## Functional communication DTOs
 
-The workflow carries input/owner context, reasoning/planning artifacts,
-reference-context updates, node resolution/write results, memory/context
-results, and relationship results. It returns a concise aggregate outcome with
-successful writes, recoverable failures, clarification outcome if any, and
-useful local refs; provider transcripts stay inside each state history.
-The tool input is the typed workflow request; the tool's successful domain
-output is the workflow result. The generic client still owns provider call-ID
-pairing and wraps that result once.
+The workflow carries the inherited history projection, optional ingestion
+guidance, owner context, reasoning result, reference-context updates, node
+resolution/write results, memory/context results, and relationship results. It
+returns a concise aggregate outcome with successful writes, recoverable
+failures, clarification outcome if any, and useful local refs; provider
+transcripts stay inside each state history. The tool input contains only the
+optional guidance; framework invocation context supplies history and parent
+linkage. The generic client still owns provider call-ID pairing and wraps the
+workflow result once.
 
 ## Dependencies and acceptance
 
-- Depends on the state inventory and all state slices confirmed by Issue 4.0;
-  the current Tasks 4.3.1–4.3.4 may be revised to match that inventory.
+- Depends on the state inventory and Tasks 4.3.0a–4.3.5.
 - Completes the `ingest_memory` binding in the conversation-entry toolbox
   created by Task 4.1.1.
 - A context or relationship is not written before required target refs resolve.
