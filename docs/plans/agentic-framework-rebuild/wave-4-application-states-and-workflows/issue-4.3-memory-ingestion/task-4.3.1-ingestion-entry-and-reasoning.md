@@ -1,6 +1,6 @@
 # Task 4.3.1 — define ingestion request and reasoning context
 
-**Status: Ready for review**
+**Status: Complete**
 
 ## User story
 

@@ -13,7 +13,7 @@ search policy, backend identifiers, or persistence behavior.
 
 ## Required context
 
-- normalized input text or transcript;
+- inherited conversational history selected by the invoking workflow;
 - `IngestionReasoningResultDTO`;
 - `ReferenceContext` at level 1, including the owner projection when relevant;
 - bounded existing-object context useful for aliases and identity cues.
@@ -43,9 +43,9 @@ where bounded lookup evidence is available.
 ## Expected result and handoff
 
 The typed result is a `NodeCandidateSetDTO`. Each candidate has explicit
-semantic node fields, input grounding, relevant aliases, and any missing
-identity detail. It contains no raw UUID, persisted identifier, graph query,
-or generic execution action.
+semantic node fields, relevant aliases, and any missing identity detail. It
+contains no copied source message, message-source identifier, raw UUID,
+persisted identifier, graph query, or generic execution action.
 
 The workflow sends every eligible candidate to deterministic identity lookup.
 The lookup service allocates any temporary candidate reference needed for its

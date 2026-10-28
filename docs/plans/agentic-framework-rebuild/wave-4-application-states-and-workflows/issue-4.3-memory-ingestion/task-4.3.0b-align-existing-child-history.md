@@ -1,6 +1,6 @@
 # Task 4.3.0b — align existing child states with inherited history
 
-**Status: Ready for review**
+**Status: Complete**
 
 ## User story
 

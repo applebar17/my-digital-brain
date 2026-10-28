@@ -33,8 +33,9 @@ after this state completes.
 Input: inherited history, `IngestionReasoningResultDTO`, model-facing owner and
 known-reference context where relevant. Output: explicit typed object
 candidates with only the fields required by the later identity-lookup and
-resolution slice. The exact candidate variants are agreed during this task;
-they are not represented by a free-form property bag.
+resolution slice. The state does not receive copied source messages or
+message-source identifiers. The exact candidate variants are agreed during
+this task; they are not represented by a free-form property bag.
 
 ## Dependencies and acceptance
 

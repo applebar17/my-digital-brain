@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: In progress — ingestion reasoning ready through Task 4.3.1**
+**Status: In progress — complete through Task 4.3.1**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
