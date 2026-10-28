@@ -3,35 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Workflow inspector</title>
+  <title>AI configuration inspector</title>
   <style>
     :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #111418; color: #e8edf3; }
-    body { margin: 0; padding: 28px; max-width: 1280px; margin-inline: auto; }
-    h1, h2, h3 { line-height: 1.2; }
+    body { margin: 0; padding: 28px; max-width: 1380px; margin-inline: auto; }
+    h1, h2, h3, h4 { line-height: 1.2; }
     p, small { color: #aeb9c6; }
-    .layout { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 24px; }
-    .step, .panel { border: 1px solid #39434e; border-radius: 12px; padding: 16px; background: #1b2027; }
-    .step { width: 100%; color: inherit; text-align: left; cursor: pointer; margin-bottom: 12px; font: inherit; }
-    .step:hover, .step[aria-selected="true"] { border-color: #88abff; }
-    .step.agentic { border-left: 4px solid #a5d6a7; }
-    .step.deterministic { border-left: 4px solid #88abff; }
-    .step strong, .step small { display: block; }
-    .step small { margin-top: 4px; }
-    .edge { color: #9ba7b5; margin: -5px 0 7px 16px; }
+    .layout { display: grid; grid-template-columns: minmax(340px, 480px) minmax(0, 1fr); gap: 24px; }
+    .panel { border: 1px solid #39434e; border-radius: 12px; padding: 18px; background: #1b2027; }
+    .group { margin-bottom: 24px; }
+    .group-title { margin-bottom: 4px; }
+    .card { width: 100%; color: inherit; text-align: left; cursor: pointer; margin: 10px 0; padding: 14px; font: inherit; border: 1px solid #39434e; border-radius: 10px; background: #1b2027; }
+    .card:hover, .card[aria-selected="true"] { border-color: #88abff; }
+    .card.agentic { border-left: 4px solid #a5d6a7; }
+    .card.deterministic { border-left: 4px solid #88abff; }
+    .card strong { display: block; margin-bottom: 7px; }
+    .summary { display: grid; grid-template-columns: 92px 1fr; gap: 2px 8px; font-size: 12px; }
+    .summary dt { color: #8290a0; }
+    .summary dd { margin: 0; overflow-wrap: anywhere; }
+    .edge { color: #9ba7b5; margin: 0 0 0 16px; font-size: 13px; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; background: #303b49; font-size: 12px; }
     .section { border-top: 1px solid #39434e; margin-top: 18px; padding-top: 12px; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #111418; padding: 12px; border-radius: 8px; }
     table { border-collapse: collapse; width: 100%; }
     td, th { border-bottom: 1px solid #39434e; padding: 7px; text-align: left; vertical-align: top; }
-    @media (max-width: 780px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <h1>Workflow inspector</h1>
-  <p>Local, read-only view of an assembled workflow. No application frontend or provider call is involved.</p>
-  <h2 id="workflow-title">Loading…</h2>
-  <p id="workflow-description"></p>
-  <div class="layout"><nav id="steps" aria-label="Workflow steps"></nav><main id="details" class="panel"></main></div>
+  <h1>AI configuration inspector</h1>
+  <p>Local, read-only view assembled from the current state, toolbox, prompt, and workflow code. No provider or storage call is made.</p>
+  <div class="layout"><nav id="composition" aria-label="AI configuration"></nav><main id="details" class="panel"></main></div>
   <script>
     const element = (tag, text, parent, className) => {
       const node = document.createElement(tag);
@@ -41,10 +43,11 @@
       return node;
     };
     const details = document.getElementById('details');
-    const steps = document.getElementById('steps');
+    const composition = document.getElementById('composition');
+
     function model(title, contract, parent) {
       if (!contract) return;
-      element('h3', `${title} · ${contract.name}`, parent);
+      element('h3', `${title} - ${contract.name}`, parent);
       const table = element('table', undefined, parent);
       const head = element('tr', undefined, table);
       for (const label of ['Field', 'Type', 'Description']) element('th', label, head);
@@ -52,37 +55,93 @@
         const row = element('tr', undefined, table);
         element('td', field.name + (field.required ? ' *' : ''), row);
         element('td', field.type_name, row);
-        element('td', field.description || '—', row);
+        element('td', field.description || '-', row);
       }
     }
+
     function stage(title, config, parent) {
       if (!config) return;
       const area = element('section', undefined, parent, 'section');
       element('h3', title, area);
       element('p', `Parallel tool calls: ${config.parallel_tool_calls ?? 'not specified'}`, area);
-      element('h3', 'System prompt', area);
+      element('h4', 'System prompt', area);
       element('pre', config.system_prompt, area);
       model('Structured output', config.response_model, area);
-      element('h3', `Toolbox: ${config.toolbox_name || 'none'}`, area);
+      element('h4', `Toolbox: ${config.toolbox_name || 'none'}`, area);
+      if (!config.tools.length) element('p', 'No tools configured.', area);
       for (const tool of config.tools) toolDetails(tool, area);
     }
+
     function toolDetails(tool, parent) {
-      const toolArea = element('div', undefined, parent, 'section');
-      element('strong', tool.name, toolArea);
-      element('p', tool.description, toolArea);
-      model('Tool input', tool.input_model, toolArea);
-      model('Tool output', tool.output_model, toolArea);
+      const area = element('div', undefined, parent, 'section');
+      element('strong', tool.name, area);
+      element('p', tool.description, area);
+      model('Tool input', tool.input_model, area);
+      model('Tool output', tool.output_model, area);
       if (tool.child_state) {
-        element('h3', `Child AI state: ${tool.child_state.state_id}`, toolArea);
-        element('p', `Child toolbox: ${tool.child_state.toolbox_name || 'none'}`, toolArea);
-        for (const childTool of tool.child_state.tools) toolDetails(childTool, toolArea);
+        element('h4', `Child AI state: ${tool.child_state.state_id}`, area);
+        element('p', `Child toolbox: ${tool.child_state.toolbox_name || 'none'}`, area);
+        for (const childTool of tool.child_state.tools) toolDetails(childTool, area);
       }
     }
-    function select(step) {
-      for (const button of steps.querySelectorAll('button'))
-        button.setAttribute('aria-selected', String(button.dataset.stepId === step.step_id));
+
+    function toolNames(agentic) {
+      if (!agentic || !agentic.main.tools.length) return 'none';
+      return agentic.main.tools.map(tool => tool.name).join(', ');
+    }
+
+    function summaryRows(item) {
+      const agentic = item.agentic;
+      return [
+        ['Input', item.input_model.name],
+        ['Output', item.output_model?.name || 'assistant message'],
+        ['Tools', toolNames(agentic)],
+        ['Reasoning stage', agentic ? (agentic.reasoning ? 'configured' : 'not configured') : 'n/a'],
+        ['Planning stage', agentic ? (agentic.planning ? 'configured' : 'not configured') : 'n/a'],
+      ];
+    }
+
+    function addCard(item, kind, parent, selectItem) {
+      const button = element('button', undefined, parent, `card ${kind}`);
+      button.type = 'button';
+      element('strong', item.title, button);
+      const summary = element('dl', undefined, button, 'summary');
+      for (const [label, value] of summaryRows(item)) {
+        element('dt', label, summary);
+        element('dd', value, summary);
+      }
+      button.addEventListener('click', () => selectItem(item, button));
+      return button;
+    }
+
+    function markSelected(button) {
+      for (const candidate of composition.querySelectorAll('button')) {
+        candidate.setAttribute('aria-selected', String(candidate === button));
+      }
+    }
+
+    function showAgentic(item, button, badge) {
+      markSelected(button);
       details.replaceChildren();
-      element('span', step.kind === 'agentic' ? 'AI state' : 'Deterministic', details, 'badge');
+      element('span', badge, details, 'badge');
+      element('h2', item.title, details);
+      element('p', item.description, details);
+      model('Input DTO', item.input_model, details);
+      if (item.output_model) model('Output DTO', item.output_model, details);
+      else element('p', 'Output: assistant message in the agentic runtime result envelope.', details);
+      element('p', `State: ${item.agentic.state_id}`, details);
+      element('p', `Invocation request: ${item.agentic.invocation_request}`, details);
+      stage('Main call', item.agentic.main, details);
+      if (item.agentic.reasoning) stage('Reasoning call', item.agentic.reasoning, details);
+      else element('p', 'Reasoning call: not configured', details);
+      if (item.agentic.planning) stage('Planning call', item.agentic.planning, details);
+      else element('p', 'Planning call: not configured', details);
+    }
+
+    function showStep(step, button) {
+      markSelected(button);
+      details.replaceChildren();
+      element('span', step.kind === 'agentic' ? 'AI workflow step' : 'Deterministic step', details, 'badge');
       element('h2', step.title, details);
       element('p', step.description, details);
       element('p', `Depends on: ${step.depends_on.join(', ') || 'workflow input'}`, details);
@@ -98,23 +157,33 @@
         else element('p', 'Planning call: not configured', details);
       }
     }
-    fetch('/api/workflow').then(response => {
+
+    fetch('/api/configuration').then(response => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
-    }).then(workflow => {
-      document.getElementById('workflow-title').textContent = workflow.workflow_id;
-      document.getElementById('workflow-description').textContent = workflow.description;
-      for (const step of workflow.steps) {
-        if (step.depends_on.length) element('div', `↓ from ${step.depends_on.join(', ')}`, steps, 'edge');
-        const button = element('button', undefined, steps, `step ${step.kind}`);
-        button.type = 'button';
-        button.dataset.stepId = step.step_id;
-        element('strong', step.title, button);
-        element('small', step.kind === 'agentic' ? 'AI state' : 'Deterministic step', button);
-        button.addEventListener('click', () => select(step));
+    }).then(configuration => {
+      const stateGroup = element('section', undefined, composition, 'group');
+      element('h2', 'Configured AI states', stateGroup, 'group-title');
+      element('small', 'Standalone and entry states assembled by the application.', stateGroup);
+      let firstButton = null;
+      let firstItem = null;
+      for (const state of configuration.states) {
+        const button = addCard(state, 'agentic', stateGroup, (item, selected) => showAgentic(item, selected, 'AI state'));
+        if (!firstButton) { firstButton = button; firstItem = state; }
       }
-      if (workflow.steps.length) select(workflow.steps[0]);
-    }).catch(error => { details.textContent = `Cannot load workflow: ${error.message}`; });
+
+      for (const workflow of configuration.workflows) {
+        const group = element('section', undefined, composition, 'group');
+        element('h2', workflow.workflow_id, group, 'group-title');
+        element('small', workflow.description, group);
+        for (const step of workflow.steps) {
+          if (step.depends_on.length) element('div', `from ${step.depends_on.join(', ')}`, group, 'edge');
+          const button = addCard(step, step.kind, group, showStep);
+          if (!firstButton) { firstButton = button; firstItem = step; }
+        }
+      }
+      if (firstButton && firstItem) showAgentic(firstItem, firstButton, 'AI state');
+    }).catch(error => { details.textContent = `Cannot load configuration: ${error.message}`; });
   </script>
 </body>
 </html>

@@ -25,11 +25,12 @@ new graph package.
 - Local Python server and HTML under `src/product/dev/`, bound only to loopback.
 - Consume Task 4.P.1's typed composition DTO. Do not embed a separate workflow
   map in the page.
-- A direct Python-module command launches the sample view; later application
-  composition can pass the actual workflow object to the same server.
+- A direct Python-module command assembles the current provider-free application
+  configuration and serves it through the same inspection contract.
 
 ## Verification
 
-Open the loopback page and confirm the sample workflow is clearly identified.
-Select its AI step and verify the configured prompt, reasoning stage, toolbox,
-and annotated DTO fields. There is no selected-run behavior in this slice.
+Open the loopback page and confirm the current states, tools, DTOs, stage flags,
+and workflow steps match the assembled application configuration. Select an AI
+state and verify its prompt and typed contracts. There is no selected-run
+behavior in this slice.

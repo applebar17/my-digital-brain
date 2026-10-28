@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from product.application.workflows import BaseWorkflow, WorkflowContext, WorkflowStep
 from product.application.workflows.inspection import inspect_workflow
-from product.dev.sample_workflow import sample_workflow
+from product.dev.current_configuration import current_application_configuration
 from product.dev.workflow_inspector import make_server
 
 
@@ -57,22 +57,36 @@ def test_declared_dependencies_drive_execution_and_inspection() -> None:
     assert inspected.steps[1].input_model.name == "PreparedDTO"
 
 
-def test_local_page_shows_assembled_agentic_configuration() -> None:
-    workflow = sample_workflow()
-    with make_server(workflow, port=0) as server:
+def test_local_page_shows_current_assembled_application_configuration() -> None:
+    configuration = current_application_configuration()
+    with make_server(configuration, port=0) as server:
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            with urlopen(f"http://127.0.0.1:{server.server_port}/api/workflow") as response:
+            with urlopen(
+                f"http://127.0.0.1:{server.server_port}/api/configuration"
+            ) as response:
                 payload = response.read().decode("utf-8")
             with urlopen(f"http://127.0.0.1:{server.server_port}/") as response:
                 page = response.read().decode("utf-8")
         finally:
             server.shutdown()
             thread.join(timeout=5)
-    assert '"workflow_id":"sample_memory_ingestion"' in payload
-    assert '"state_id":"sample_interpretation"' in payload
-    assert '"toolbox_name":"sample_read_tools"' in payload
-    assert '"reasoning":{' in payload
+    assert '"state_id":"conversation_entry"' in payload
+    assert '"state_id":"memory_query"' in payload
+    assert '"workflow_id":"memory_ingestion"' in payload
+    assert '"state_id":"ingestion_reasoning"' in payload
+    assert '"toolbox_name":"conversation_entry"' in payload
+    assert '"name":"query_memory"' in payload
+    assert '"name":"ingest_memory"' in payload
+    assert '"name":"search_memory"' in payload
+    assert '"name":"ConversationEntryRequestDTO"' in payload
+    assert '"name":"IngestionReasoningResultDTO"' in payload
+    assert '"reasoning":null' in payload
     assert '"planning":null' in payload
-    assert "Workflow inspector" in page
+    assert "AI configuration inspector" in page
+    assert "Reasoning" in page
+    assert "Planning" in page
+    assert "Tools" in page
+    assert "Input" in page
+    assert "Output" in page

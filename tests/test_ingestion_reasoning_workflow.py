@@ -22,6 +22,7 @@ from product.application.tools.memory_search import (
     MemorySearchToolInputDTO,
     MemorySearchToolResultDTO,
 )
+from product.application.workflows import inspect_workflow
 from product.application.workflows.memory_ingestion.models import (
     IngestionOwnerIdentityDTO,
     IngestMemoryRequestDTO,
@@ -170,3 +171,8 @@ def test_workflow_inherits_conversation_and_prioritizes_clarification_points() -
     assert reference_context.entry_for("mario_rossi").resolution_status == (
         ReferenceResolutionStatus.EXISTING
     )
+
+    inspected = inspect_workflow(workflow)
+    assert [step.kind for step in inspected.steps] == ["deterministic", "agentic"]
+    assert inspected.steps[1].input_model.name == "IngestionPreparedContextDTO"
+    assert inspected.steps[1].output_model.name == "IngestionReasoningResultDTO"

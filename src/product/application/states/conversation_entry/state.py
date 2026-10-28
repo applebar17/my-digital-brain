@@ -55,16 +55,21 @@ class ConversationEntryState(BaseAgenticState):
             Invokes the configured LLM client. Conversation persistence remains
             the responsibility of `ConversationApplicationService`.
         """
+        return self.invoke(self.build_invocation(request))
+
+    def build_invocation(
+        self,
+        request: ConversationEntryRequestDTO,
+    ) -> AgenticStateInvocationDTO:
+        """Assemble the effective root-state configuration without calling a provider."""
         rendered_prompt = self.prompt_service.render(
             self.prompt_reference,
             PromptRenderContextDTO(),
         )
-        return self.invoke(
-            AgenticStateInvocationDTO(
-                system_prompt=rendered_prompt.text,
-                selected_history=self.history_session.master_history,
-                request=request.user_message,
-                toolbox=self.toolbox,
-                parallel_tool_calls=True,
-            )
+        return AgenticStateInvocationDTO(
+            system_prompt=rendered_prompt.text,
+            selected_history=self.history_session.master_history,
+            request=request.user_message,
+            toolbox=self.toolbox,
+            parallel_tool_calls=True,
         )

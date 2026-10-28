@@ -1,22 +1,27 @@
-"""Serve an assembled workflow's configuration locally without the app frontend."""
+"""Serve the current application AI configuration without the app frontend."""
 
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from product.application.workflows.base import BaseWorkflow
-from product.application.workflows.inspection import inspect_workflow
-from product.dev.sample_workflow import sample_workflow
+from product.application.workflows.inspection_models import (
+    ApplicationConfigurationInspectionDTO,
+)
+from product.dev.current_configuration import current_application_configuration
 
 
-def make_server(workflow: BaseWorkflow, *, port: int = 8765) -> ThreadingHTTPServer:
-    """Build a loopback-only server over the passed, already assembled workflow."""
+def make_server(
+    configuration: ApplicationConfigurationInspectionDTO,
+    *,
+    port: int = 8765,
+) -> ThreadingHTTPServer:
+    """Build a loopback-only server over the assembled application configuration."""
     page = Path(__file__).with_name("workflow_inspector.html").read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            if self.path == "/api/workflow":
-                payload = inspect_workflow(workflow).model_dump_json().encode("utf-8")
+            if self.path == "/api/configuration":
+                payload = configuration.model_dump_json().encode("utf-8")
                 content_type = "application/json; charset=utf-8"
             elif self.path == "/":
                 payload = page
@@ -34,18 +39,22 @@ def make_server(workflow: BaseWorkflow, *, port: int = 8765) -> ThreadingHTTPSer
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
-def serve(workflow: BaseWorkflow, *, port: int = 8765) -> None:
-    """Serve the assembled workflow; future application composition can call this."""
-    with make_server(workflow, port=port) as server:
+def serve(
+    configuration: ApplicationConfigurationInspectionDTO,
+    *,
+    port: int = 8765,
+) -> None:
+    """Serve one provider-free snapshot assembled from the current application code."""
+    with make_server(configuration, port=port) as server:
         print(f"Workflow inspector: http://127.0.0.1:{server.server_port}", flush=True)
         server.serve_forever()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="View an assembled workflow locally.")
+    parser = argparse.ArgumentParser(description="View current AI configuration locally.")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    serve(sample_workflow(), port=args.port)
+    serve(current_application_configuration(), port=args.port)
 
 
 if __name__ == "__main__":

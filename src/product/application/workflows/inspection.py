@@ -1,92 +1,75 @@
 """Project assembled workflow and agentic configuration into read-only DTOs."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
 from inspect import signature
-from typing import Any, Literal, get_origin, get_type_hints
+from typing import Any, get_origin, get_type_hints
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from product.agentic.contracts.state import AgenticStageConfigurationDTO, AgenticStateInvocationDTO
 from product.agentic.tools.toolbox import ToolBox
 from product.application.workflows.base import BaseWorkflow, WorkflowStep
+from product.application.workflows.inspection_models import (
+    AgenticInspectionDTO,
+    ChildStateInspectionDTO,
+    ConfiguredStateInspectionDTO,
+    FieldInspectionDTO,
+    ModelInspectionDTO,
+    StageInspectionDTO,
+    StepInspectionDTO,
+    ToolInspectionDTO,
+    WorkflowInspectionDTO,
+)
 
 
-class FieldInspectionDTO(BaseModel):
-    name: str
-    type_name: str
-    description: str | None
-    required: bool
-
-
-class ModelInspectionDTO(BaseModel):
-    name: str
-    fields: list[FieldInspectionDTO]
-
-
-class ChildStateInspectionDTO(BaseModel):
-    """Configured child state exposed by one agent-as-tool registration."""
-
-    state_id: str
-    toolbox_name: str | None
-    tools: list["ToolInspectionDTO"] = Field(default_factory=list)
-
-
-class ToolInspectionDTO(BaseModel):
-    name: str
-    description: str
-    input_model: ModelInspectionDTO
-    output_model: ModelInspectionDTO | None
-    child_state: ChildStateInspectionDTO | None = None
-
-
-class StageInspectionDTO(BaseModel):
-    system_prompt: str
-    response_model: ModelInspectionDTO | None
-    toolbox_name: str | None
-    tools: list[ToolInspectionDTO] = Field(default_factory=list)
-    parallel_tool_calls: bool | None
-
-
-class AgenticInspectionDTO(BaseModel):
-    state_id: str
-    invocation_request: str
-    main: StageInspectionDTO
-    reasoning: StageInspectionDTO | None
-    planning: StageInspectionDTO | None
-
-
-class StepInspectionDTO(BaseModel):
-    step_id: str
-    title: str
-    description: str
-    kind: Literal["deterministic", "agentic"]
-    depends_on: list[str]
-    input_model: ModelInspectionDTO
-    output_model: ModelInspectionDTO
-    agentic: AgenticInspectionDTO | None
-
-
-class WorkflowInspectionDTO(BaseModel):
-    workflow_id: str
-    description: str
-    steps: list[StepInspectionDTO]
-
-
-def inspect_workflow(workflow: BaseWorkflow) -> WorkflowInspectionDTO:
+def inspect_workflow(
+    workflow: BaseWorkflow,
+    state_configurations: Mapping[str, AgenticStateInvocationDTO] | None = None,
+) -> WorkflowInspectionDTO:
     """Read live step, state, and toolbox objects; do not maintain a shadow diagram."""
+    configurations = state_configurations or {}
     return WorkflowInspectionDTO(
         workflow_id=workflow.workflow_id,
         description=workflow.description,
-        steps=[_inspect_step(step) for step in workflow.steps],
+        steps=[_inspect_step(step, configurations) for step in workflow.steps],
     )
 
 
-def _inspect_step(step: WorkflowStep) -> StepInspectionDTO:
+def inspect_configured_state(
+    *,
+    state_id: str,
+    title: str,
+    description: str,
+    input_model: type[BaseModel],
+    configuration: AgenticStateInvocationDTO,
+) -> ConfiguredStateInspectionDTO:
+    """Project one actual state invocation configuration for local inspection."""
+    agentic = _agentic_configuration(state_id, configuration)
+    return ConfiguredStateInspectionDTO(
+        state_id=state_id,
+        title=title,
+        description=description,
+        input_model=_model_contract(input_model),
+        output_model=(
+            _model_contract(configuration.response_model)
+            if configuration.response_model is not None
+            else None
+        ),
+        agentic=agentic,
+    )
+
+
+def _inspect_step(
+    step: WorkflowStep,
+    state_configurations: Mapping[str, AgenticStateInvocationDTO],
+) -> StepInspectionDTO:
     input_model, output_model = _handler_models(step.handler)
     agentic = None
-    if step.configuration is not None and step.state_id is not None:
-        agentic = _agentic_configuration(step.state_id, step.configuration)
+    if step.state_id is not None:
+        configuration = step.configuration or state_configurations.get(step.state_id)
+        if configuration is not None:
+            agentic = _agentic_configuration(step.state_id, configuration)
     return StepInspectionDTO(
         step_id=step.step_id,
         title=step.title,
@@ -101,11 +84,13 @@ def _inspect_step(step: WorkflowStep) -> StepInspectionDTO:
 
 def _handler_models(handler: Callable[..., Any]) -> tuple[type[BaseModel], type[BaseModel]]:
     """Derive the handoff contracts from the handler's annotated DTOs."""
-    target = handler.func if isinstance(handler, partial) else handler
-    parameters = list(signature(handler).parameters.values())
+    target = _callable_target(handler)
+    parameters = list(signature(target).parameters.values())
     hints = get_type_hints(target)
-    if len(parameters) != 1:
-        raise TypeError(f"Workflow handler '{target}' must accept exactly one input DTO.")
+    if len(parameters) not in {1, 2}:
+        raise TypeError(
+            f"Workflow handler '{target}' must accept one input DTO and optional context."
+        )
     input_type = hints.get(parameters[0].name)
     output_type = hints.get("return")
     if not _is_model_type(input_type) or not _is_model_type(output_type):
@@ -175,6 +160,9 @@ def inspect_toolbox(toolbox: ToolBox) -> list[ToolInspectionDTO]:
 def _callable_target(handler: Callable[..., Any]) -> Callable[..., Any]:
     if isinstance(handler, partial):
         return handler.func
+    contextual_invoke = getattr(handler, "invoke_with_context", None)
+    if callable(contextual_invoke):
+        return contextual_invoke
     if not hasattr(handler, "__name__") and callable(handler):
         return handler.__call__
     return handler

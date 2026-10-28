@@ -19,10 +19,11 @@ is the functional source of truth for the view.
 - [Task 4.P.1 — expose assembled workflow and run inspection data](task-4-p.1-inspection-data.md)
 - [Task 4.P.2 — show the workflow and selected run locally](task-4-p.2-local-view.md)
 
-The initial page uses a clearly marked sample workflow until product states
-exist. As each Wave 4 state is connected, its real assembled configuration
-becomes visible through the same inspection contract. Selected-run overlays
-and integration into the application frontend are later concerns.
+The initial sample has been retired now that product states and the ingestion
+workflow exist. The page builds its snapshot from the actual state, prompt,
+toolbox, and workflow objects and does not imply wiring that has not yet been
+completed. Selected-run overlays and application-frontend integration remain
+later concerns.
 
 ## Dependencies and acceptance
 

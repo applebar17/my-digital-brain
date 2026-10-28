@@ -63,6 +63,19 @@ class MemoryQueryState(BaseAgenticState):
             history, provider calls, tool looping, and structured result validation.
         """
         context = self._initial_context(request.goal)
+        return self.invoke(self.build_invocation(request, invocation_context, context))
+
+    def build_invocation(
+        self,
+        request: MemoryQueryRequestDTO,
+        invocation_context: AgenticToolInvocationContext,
+        context: MemoryQueryContextPacket,
+    ) -> AgenticStateInvocationDTO:
+        """Assemble the effective query-state configuration without calling a provider.
+
+        The caller supplies the deterministic initial-search packet so inspection can
+        render the real state configuration without performing storage I/O.
+        """
         rendered_search = self.search_renderer.render(
             context.initial_search,
             level=self.initial_render_level,
@@ -76,17 +89,15 @@ class MemoryQueryState(BaseAgenticState):
             self.prompt_reference,
             PromptRenderContextDTO(values={"initial_memory_context": rendered_search}),
         )
-        return self.invoke(
-            AgenticStateInvocationDTO(
-                system_prompt=rendered_prompt.text,
-                selected_history=invocation_context.inherited_history(),
-                request=request.goal,
-                response_model=MemoryQueryResultDTO,
-                toolbox=self.toolbox,
-                parallel_tool_calls=False,
-                parent_state_run_id=invocation_context.parent_state_run_id,
-                parent_provider_call_id=invocation_context.parent_provider_call_id,
-            )
+        return AgenticStateInvocationDTO(
+            system_prompt=rendered_prompt.text,
+            selected_history=invocation_context.inherited_history(),
+            request=request.goal,
+            response_model=MemoryQueryResultDTO,
+            toolbox=self.toolbox,
+            parallel_tool_calls=False,
+            parent_state_run_id=invocation_context.parent_state_run_id,
+            parent_provider_call_id=invocation_context.parent_provider_call_id,
         )
 
     def _initial_context(self, goal: str) -> MemoryQueryContextPacket:
