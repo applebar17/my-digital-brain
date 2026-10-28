@@ -166,7 +166,7 @@ def test_memory_query_returns_as_matched_tool_output_before_parent_final_respons
     reference_context = ReferenceContext()
 
     def ingest_memory(request: IngestMemoryRequestDTO) -> IngestMemoryResultDTO:
-        return IngestMemoryResultDTO(result=f"Not used: {request.request}")
+        return IngestMemoryResultDTO(result=f"Not used: {request.guidance}")
 
     composition = compose_conversation_memory(
         owner_id="owner-id",

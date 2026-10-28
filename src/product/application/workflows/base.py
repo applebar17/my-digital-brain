@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -19,6 +19,19 @@ class WorkflowContext:
     invocation_context: AgenticToolInvocationContext | None = None
 
 
+@runtime_checkable
+class ContextualWorkflowStepHandler(Protocol):
+    """Workflow handler that also needs the active backend invocation context."""
+
+    def invoke_with_context(
+        self,
+        step_input: BaseModel,
+        context: WorkflowContext,
+    ) -> BaseModel:
+        """Execute one typed step using backend context unavailable to model DTOs."""
+        ...
+
+
 @dataclass(frozen=True)
 class WorkflowStep:
     """One annotated handler and the dependencies that execution and inspection share."""
@@ -27,7 +40,7 @@ class WorkflowStep:
     title: str
     description: str
     make_input: Callable[[WorkflowContext], BaseModel]
-    handler: Callable[..., BaseModel]
+    handler: Callable[..., BaseModel] | ContextualWorkflowStepHandler
     depends_on: tuple[str, ...] = ()
     kind: Literal["deterministic", "agentic"] = "deterministic"
     state_id: str | None = None
@@ -68,5 +81,8 @@ class BaseWorkflow:
                 invocation_context=invocation_context,
             )
             step_input = step.make_input(context)
-            results[step.step_id] = step.handler(step_input)
+            if isinstance(step.handler, ContextualWorkflowStepHandler):
+                results[step.step_id] = step.handler.invoke_with_context(step_input, context)
+            else:
+                results[step.step_id] = step.handler(step_input)
         return results

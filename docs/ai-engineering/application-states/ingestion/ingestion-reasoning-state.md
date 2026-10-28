@@ -50,10 +50,17 @@ its own.
 
 ## Expected result and handoff
 
-The typed result is an `IngestionReasoningResultDTO`: concise semantic
-highlights, useful alias observations, ambiguity/context-gap notes, durable
-relationship observations, and guidance about what should remain memory-log
-involvement rather than durable graph structure.
+The typed result is an `IngestionReasoningResultDTO` with a concise summary and
+simple lists for clarification points, entity observations, alias observations,
+relationship observations, and episodic details. `clarification_points` is the
+primary reasoning output: each item identifies an unclear, incomplete,
+contradictory, or incoherent user statement and briefly explains why resolving
+it may materially affect later interpretation. Empty lists are valid when the
+conversation contains no such signal.
+
+These fields are semantic notes rather than nested planning objects. They do
+not carry proposed references, write actions, persistence status, or generic
+metadata.
 
 The node-candidate state receives this result as a named context section. It
 does not receive the reasoning provider transcript.

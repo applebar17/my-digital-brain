@@ -89,7 +89,7 @@ def test_conversation_entry_uses_selected_history_request_and_two_capabilities()
     def ingest_memory(
         request: IngestMemoryRequestDTO,
     ) -> IngestMemoryResultDTO:
-        ingestion_calls.append(request.request)
+        ingestion_calls.append(request.guidance or "")
         return IngestMemoryResultDTO(result="Ingestion complete.")
 
     toolbox = build_conversation_entry_toolbox(
@@ -149,7 +149,7 @@ def test_conversation_entry_toolbox_validates_and_dispatches_injected_handlers()
     )
     ingestion_output = mapping["ingest_memory"].invoke_for_tool_call(
         ToolCallContextDTO(provider_call_id="ingest-call", tool_name="ingest_memory"),
-        request="Remember this.",
+        guidance="Remember this.",
     )
 
     assert query_output == MemoryQueryResultDTO(
@@ -158,4 +158,4 @@ def test_conversation_entry_toolbox_validates_and_dispatches_injected_handlers()
         uncertainties=[],
     )
     assert ingestion_output == IngestMemoryResultDTO(result="Handled.")
-    assert received == [IngestMemoryRequestDTO(request="Remember this.")]
+    assert received == [IngestMemoryRequestDTO(guidance="Remember this.")]

@@ -4,16 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class IngestMemoryRequestDTO(BaseModel):
-    """Temporary request retained until the concrete ingestion workflow exists."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    request: str = Field(
-        min_length=1,
-        description="Complete user request that the selected memory capability must handle.",
-    )
+from product.application.workflows.memory_ingestion.models import IngestMemoryRequestDTO
 
 
 class IngestMemoryResultDTO(BaseModel):

@@ -1,6 +1,6 @@
 # Task 4.3.1 — define ingestion request and reasoning context
 
-**Status: Not started**
+**Status: Ready for review**
 
 ## User story
 
@@ -39,9 +39,11 @@ Tool input: optional ingestion guidance only. Framework context: inherited
 caller history containing the current user message, plus the shared history
 session and parent linkage. State context: owner projection, rendered relevant
 references, and bounded retrieved memory context. State result:
-`IngestionReasoningResultDTO`, with the exact semantic categories agreed before
-coding. The owner shown to the model is a functional identity projection, not
-the backend owner UUID.
+`IngestionReasoningResultDTO`, whose primary `clarification_points` field
+carries unclear, incomplete, contradictory, or incoherent user statements and
+why they may matter. Summary, entity, alias, relationship, and episodic
+observations remain simple supporting lists. The owner shown to the model is a
+functional identity projection, not the backend owner UUID.
 
 ## Dependencies and acceptance
 
