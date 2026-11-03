@@ -16,7 +16,12 @@ from product.application.memory_search import (
 )
 from product.application.references import ReferenceContext
 from product.application.states.conversation_entry import ConversationEntryRequestDTO
-from product.application.states.ingestion import IngestionReasoningState
+from product.application.states.ingestion import (
+    IngestionReasoningResultDTO,
+    IngestionReasoningState,
+    NodeCandidateState,
+    NodeCandidateStateInputDTO,
+)
 from product.application.states.memory_query import MemoryQueryRequestDTO
 from product.application.states.memory_query.models import MemoryQueryContextPacket
 from product.application.tools.conversation_entry import (
@@ -145,6 +150,27 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
         retrieved_memory=MemorySearchToolResultDTO(),
     )
     reasoning_config = reasoning_state.build_invocation(prepared, invocation_context)
+    candidate_state = NodeCandidateState(
+        llm_client,
+        history_session,
+        prompt_service,
+    )
+    candidate_input = NodeCandidateStateInputDTO(
+        reasoning=IngestionReasoningResultDTO(
+            summary="<ingestion reasoning summary>",
+            clarification_points=[],
+            entity_observations=[],
+            alias_observations=[],
+            relationship_observations=[],
+            episodic_details=[],
+        ),
+        owner=owner_context,
+        known_references=reference_context.entries(),
+    )
+    candidate_config = candidate_state.build_invocation(
+        candidate_input,
+        invocation_context,
+    )
     workflow = MemoryIngestionWorkflow(
         IngestionContextPreparer(
             owner=owner,
@@ -152,6 +178,7 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
             search_tool=search_tool,
         ),
         reasoning_state,
+        candidate_state,
     )
 
     return ApplicationConfigurationInspectionDTO(
@@ -174,7 +201,10 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
         workflows=[
             inspect_workflow(
                 workflow,
-                {reasoning_state.state_id: reasoning_config},
+                {
+                    reasoning_state.state_id: reasoning_config,
+                    candidate_state.state_id: candidate_config,
+                },
             )
         ],
     )

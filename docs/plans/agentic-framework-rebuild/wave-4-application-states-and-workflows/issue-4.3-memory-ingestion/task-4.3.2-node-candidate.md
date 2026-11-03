@@ -1,6 +1,6 @@
 # Task 4.3.2 — define the node-candidate state
 
-**Status: Not started**
+**Status: Complete**
 
 ## User story
 
@@ -37,13 +37,25 @@ resolution slice. The state does not receive copied source messages or
 message-source identifiers. The exact candidate variants are agreed during
 this task; they are not represented by a free-form property bag.
 
+The fixed response covers `Person`, `Event`, `Place`, `Organization`, `Object`,
+`Animal`, `SocialCircle`, and `KnowledgeItem`. Knowledge-item kinds are `topic`,
+`concept`, `idea`, `insight`, `reminder`, `quote`, `reference`, and `other`. The
+workflow derives the present types from returned candidates and can use that
+set to compact later state/tool configuration. There is no separate candidate
+census call and no model-generated duplicate type inventory.
+
 ## Dependencies and acceptance
 
 - Depends on Tasks 4.3.0a, 4.3.0b, and 4.3.1.
 - The prompt and Pydantic field descriptions have one coherent semantic
   contract.
 - No candidate is reported as an existing identity or completed graph write.
-- The workflow passes the typed candidate result to deterministic lookup.
+- The workflow exposes the typed candidate result as the declared input for the
+  subsequent deterministic lookup slice.
 - Inspector output shows the state input/output, prompt, lack of extra stages,
   and effective empty toolbox.
+- Graph topology, persistence interfaces, and write tools for `KnowledgeItem`
+  and migration of the existing `Topic` representation are deferred to the
+  indexed topology-alignment task and are
+  not implemented in this read-only state.
 

@@ -37,8 +37,8 @@ returns a local ref and readable identity/summary, not a backend UUID.
 
 ## Dependencies and acceptance
 
-- Depends on the approved state order and relevant prior handoff from Issue
-  4.0/4.3.2.
+- Depends on the approved state order, Task 4.3.2 candidate handoff, and Task
+  4.3.2a graph-topology alignment.
 - Pull in only the deterministic graph capability or child-state tool required
   by this state's agreed behavior; do not wait for Wave 3 as a whole.
 - Reference rendering uses the accepted verbosity and owner conventions.

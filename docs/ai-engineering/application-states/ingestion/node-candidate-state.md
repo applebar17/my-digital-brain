@@ -21,8 +21,22 @@ search policy, backend identifiers, or persistence behavior.
 ## LLM convention
 
 Produce only the node candidates supported by the input and useful for memory
-retrieval. Prefer a known reference when the input unambiguously identifies it;
-otherwise describe a new candidate without inventing a backend ID.
+retrieval. Use known references as recognition context, but leave reference
+selection and identity decisions to the later resolution state.
+
+The fixed candidate taxonomy is `Person`, `Event`, `Place`, `Organization`,
+`Object`, `Animal`, `SocialCircle`, and `KnowledgeItem`. `KnowledgeItem`
+preserves one standalone abstract item with a concise category:
+
+- `topic`: a recurring subject or organizing theme;
+- `concept`: a distinct abstract notion or body of thought;
+- `idea`: a possibility, proposal, or invention;
+- `insight`: a realization, lesson, or principle;
+- `reminder`: something the owner wants to remember later, without implying a
+  scheduled notification;
+- `quote`: exact or memorable wording, with optional attribution;
+- `reference`: reusable factual or instructional knowledge; or
+- `other`: an abstract item that does not fit the preceding categories.
 
 Treat nicknames and role phrases as possible aliases or identity evidence, not
 automatically as separate people. Keep incidental actions, weak co-presence, and
@@ -51,6 +65,10 @@ The workflow sends every eligible candidate to deterministic identity lookup.
 The lookup service allocates any temporary candidate reference needed for its
 own bounded evidence packet; the model does not establish a second reference
 family.
+
+The workflow derives the candidate types present directly from this result.
+Later states may use that set to configure only relevant typed lookup and write
+operations; there is no separate pre-census call or duplicate type list.
 
 ## Prompt contract
 

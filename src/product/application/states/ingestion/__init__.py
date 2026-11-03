@@ -1,5 +1,15 @@
 """Agentic states used by the memory-ingestion workflow."""
 
+from product.application.states.ingestion.node_candidate import (
+    KnowledgeItemCandidateDTO,
+    KnowledgeItemKind,
+    NodeCandidateKind,
+    NodeCandidateSetDTO,
+    NodeCandidateState,
+    NodeCandidateStateInputDTO,
+    PersonCandidateDTO,
+    PlaceCandidateDTO,
+)
 from product.application.states.ingestion.reasoning import (
     IngestionReasoningResultDTO,
     IngestionReasoningState,
@@ -8,4 +18,12 @@ from product.application.states.ingestion.reasoning import (
 __all__ = [
     "IngestionReasoningResultDTO",
     "IngestionReasoningState",
+    "KnowledgeItemCandidateDTO",
+    "KnowledgeItemKind",
+    "NodeCandidateKind",
+    "NodeCandidateSetDTO",
+    "NodeCandidateState",
+    "NodeCandidateStateInputDTO",
+    "PersonCandidateDTO",
+    "PlaceCandidateDTO",
 ]

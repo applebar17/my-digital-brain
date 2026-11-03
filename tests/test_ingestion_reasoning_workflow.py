@@ -1,4 +1,4 @@
-"""Functional preparation and reasoning for the first memory-ingestion slice."""
+"""Functional preparation, reasoning, and candidates for the ingestion slice."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -14,8 +14,11 @@ from product.application.references import (
     ReferenceResolutionStatus,
 )
 from product.application.states.ingestion import (
-    IngestionReasoningResultDTO,
     IngestionReasoningState,
+    KnowledgeItemKind,
+    NodeCandidateKind,
+    NodeCandidateSetDTO,
+    NodeCandidateState,
 )
 from product.application.tools.memory_search import (
     MemorySearchObjectDTO,
@@ -75,12 +78,62 @@ class IngestionReasoningClient:
         )
 
 
+class NodeCandidateClient(IngestionReasoningClient):
+    """Return typed entity and abstract-information candidates."""
+
+    def call(self, request: ChatRequest, mapping: dict[str, Any]) -> ChatResponse:
+        self.requests.append(deepcopy(request))
+        self.mapping_names = sorted(mapping)
+        return ChatResponse(
+            message=Msg(
+                role="assistant",
+                content={
+                    "candidates": [
+                        {
+                            "node_type": "person",
+                            "description": "The companion mentioned for the Rome trip.",
+                            "aliases": ["Jacopo"],
+                            "identity_gaps": ["Surname is not stated."],
+                            "display_name": "Jacopo",
+                            "given_name": "Jacopo",
+                            "surname": None,
+                            "known_since": None,
+                        },
+                        {
+                            "node_type": "place",
+                            "description": "The city visited during the trip.",
+                            "aliases": [],
+                            "identity_gaps": [],
+                            "name": "Rome",
+                            "address": None,
+                            "city": "Rome",
+                            "region": "Lazio",
+                            "country": "Italy",
+                            "place_precision": "city",
+                        },
+                        {
+                            "node_type": "knowledge_item",
+                            "description": "A travel insight the owner wants to retain.",
+                            "aliases": [],
+                            "identity_gaps": [],
+                            "knowledge_kind": "insight",
+                            "title": "Travel with familiar people",
+                            "content": "Shared travel is more meaningful with close friends.",
+                            "attribution": None,
+                            "reminder_at": None,
+                        },
+                    ]
+                },
+            )
+        )
+
+
 def _prompt_service() -> PromptService:
     templates_root = Path(__file__).parents[1] / "src" / "product" / "prompts" / "templates"
     return PromptService(FilePromptTemplateSource(templates_root), PromptRenderer())
 
 
-def test_workflow_inherits_conversation_and_prioritizes_clarification_points() -> None:
+def test_workflow_inherits_conversation_and_generates_typed_candidates() -> None:
     reference_context = ReferenceContext()
     search_queries: list[str] = []
 
@@ -131,6 +184,12 @@ def test_workflow_inherits_conversation_and_prioritizes_clarification_points() -
         history_session,
         _prompt_service(),
     )
+    candidate_client = NodeCandidateClient()
+    candidate_state = NodeCandidateState(
+        candidate_client,  # type: ignore[arg-type]
+        history_session,
+        _prompt_service(),
+    )
     workflow = MemoryIngestionWorkflow(
         IngestionContextPreparer(
             owner=IngestionOwnerIdentityDTO(
@@ -142,18 +201,23 @@ def test_workflow_inherits_conversation_and_prioritizes_clarification_points() -
             search_tool=search_tool,
         ),
         reasoning_state,
+        candidate_state,
     )
 
-    result = workflow.run_initial_slice(
+    result = workflow.run_candidate_slice(
         IngestMemoryRequestDTO(guidance="Retain the trip memory."),
         invocation_context,
     )
 
-    assert isinstance(result, IngestionReasoningResultDTO)
-    assert result.clarification_points == [
-        "'With Jacopo' is unclear because two known people share that name; "
-        "identity affects later person resolution."
-    ]
+    assert isinstance(result, NodeCandidateSetDTO)
+    assert result.present_types() == {
+        NodeCandidateKind.PERSON,
+        NodeCandidateKind.PLACE,
+        NodeCandidateKind.KNOWLEDGE_ITEM,
+    }
+    knowledge_item = result.candidates[2]
+    assert knowledge_item.node_type == NodeCandidateKind.KNOWLEDGE_ITEM
+    assert knowledge_item.knowledge_kind == KnowledgeItemKind.INSIGHT
     assert search_queries == [
         "user: I went to Rome last week.\n"
         "assistant: Who were you with?\n"
@@ -168,11 +232,25 @@ def test_workflow_inherits_conversation_and_prioritizes_clarification_points() -
     assert "Mario Rossi" in sent.messages[0].as_text()
     assert "Jacopo Brutti" in sent.messages[0].as_text()
     assert client.mapping_names == []
+    candidate_request = candidate_client.requests[0]
+    assert [message.as_text() for message in candidate_request.messages[1:-1]] == [
+        "I went to Rome last week.",
+        "Who were you with?",
+        "With Jacopo.",
+    ]
+    assert "clarification_points" in candidate_request.messages[0].as_text()
+    assert candidate_client.mapping_names == []
     assert reference_context.entry_for("mario_rossi").resolution_status == (
         ReferenceResolutionStatus.EXISTING
     )
 
     inspected = inspect_workflow(workflow)
-    assert [step.kind for step in inspected.steps] == ["deterministic", "agentic"]
+    assert [step.kind for step in inspected.steps] == [
+        "deterministic",
+        "agentic",
+        "agentic",
+    ]
     assert inspected.steps[1].input_model.name == "IngestionPreparedContextDTO"
     assert inspected.steps[1].output_model.name == "IngestionReasoningResultDTO"
+    assert inspected.steps[2].input_model.name == "NodeCandidateStateInputDTO"
+    assert inspected.steps[2].output_model.name == "NodeCandidateSetDTO"

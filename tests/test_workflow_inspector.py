@@ -76,12 +76,14 @@ def test_local_page_shows_current_assembled_application_configuration() -> None:
     assert '"state_id":"memory_query"' in payload
     assert '"workflow_id":"memory_ingestion"' in payload
     assert '"state_id":"ingestion_reasoning"' in payload
+    assert '"state_id":"ingestion_node_candidate"' in payload
     assert '"toolbox_name":"conversation_entry"' in payload
     assert '"name":"query_memory"' in payload
     assert '"name":"ingest_memory"' in payload
     assert '"name":"search_memory"' in payload
     assert '"name":"ConversationEntryRequestDTO"' in payload
     assert '"name":"IngestionReasoningResultDTO"' in payload
+    assert '"name":"NodeCandidateSetDTO"' in payload
     assert '"reasoning":null' in payload
     assert '"planning":null' in payload
     assert "AI configuration inspector" in page

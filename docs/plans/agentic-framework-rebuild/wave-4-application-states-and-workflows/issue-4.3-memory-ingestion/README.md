@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: In progress — complete through Task 4.3.1**
+**Status: In progress — complete through Task 4.3.2**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
@@ -20,6 +20,7 @@ and the local inspector's composition view.
 - [Task 4.3.0b — align existing child states with inherited history](task-4.3.0b-align-existing-child-history.md)
 - [Task 4.3.1 — define ingestion request and reasoning context](task-4.3.1-ingestion-entry-and-reasoning.md)
 - [Task 4.3.2 — define the node-candidate state](task-4.3.2-node-candidate.md)
+- [Task 4.3.2a — align graph topology with candidate types](task-4.3.2a-candidate-topology-alignment.md)
 - [Task 4.3.3 — resolve and create nodes with coherent references](task-4.3.3-node-resolution-and-write.md)
 - [Task 4.3.4 — create memory/context objects after their targets](task-4.3.4-memory-context-write.md)
 - [Task 4.3.5 — write relationships from resolved endpoints](task-4.3.5-relationship-write.md)
@@ -28,9 +29,10 @@ and the local inspector's composition view.
 Tasks 4.3.0a–4.3.0b establish and apply framework-level history inheritance
 before ingestion code is added. Tasks 4.3.1–4.3.2 then define the two read-only
 interpretation states primarily through input/output contracts, prompts,
-toolbox configuration, and workflow wiring. Wire each completed state into the
-workflow as it is delivered; Task 4.3.6 verifies the complete sequence rather
-than deferring all composition until the end.
+toolbox configuration, and workflow wiring. Task 4.3.2a aligns candidate types
+with graph persistence and tools before Task 4.3.3 can write them. Wire each
+completed state into the workflow as it is delivered; Task 4.3.6 verifies the
+complete sequence rather than deferring all composition until the end.
 
 ## Dependencies
 
