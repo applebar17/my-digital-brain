@@ -62,6 +62,7 @@ behavior and update the owning document when that behavior changes.
 - Use human-first prose and give enough context that readers can understand
   code references without already knowing the codebase. Concise bullets are
   welcome when each bullet is self-contained.
+- In case of conceptual or functional updates, it's necessary to update the relative and linked documentation to keep it up to date with the code which is being implemented.
 
 ## Scoped instructions
 
