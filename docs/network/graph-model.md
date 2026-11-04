@@ -13,6 +13,42 @@
 
 ## Core Node Types
 
+### Typed node creation contracts
+
+The target graph boundary represents each supported semantic node through an
+explicit subtype DTO. A small base model contains only properties that carry
+the same meaning for every subtype, currently the node-type discriminator,
+`description`, and `aliases`. Each subtype then declares its own compact,
+typed fields with concise semantic descriptions. Provider-facing tool schemas
+are generated from these annotations; they must not accept an open
+`properties` or `metadata` dictionary as a substitute for the subtype
+contract.
+
+The initial ingestion-aligned creation fields are:
+
+| Node subtype | Subtype-specific creation fields |
+| --- | --- |
+| `Person` | `display_name`, `given_name`, `surname`, `known_since` |
+| `Event` | `title`, `started_at`, `ended_at`, `time_precision` |
+| `Place` | `name`, `address`, `city`, `region`, `country`, `place_precision` |
+| `Organization` | `name`, `domain` |
+| `Object` | `name`, `category`, `owner_hint` |
+| `Animal` | `name`, `species`, `breed`, `sex`, `owner_hint` |
+| `SocialCircle` | `name`, `circle_type` |
+| `KnowledgeItem` | `knowledge_kind`, `title`, `content`, `attribution`, `reminder_at` |
+
+Do not force a universal `name` property where the domain meaning differs. A
+person has identity-oriented name fields, an event has a title, and a
+knowledge item has both a title and its retained content. Human-readable graph
+presentation derives a display title deterministically from the concrete
+subtype.
+
+Candidate-only analysis such as unresolved `identity_gaps` is workflow context
+and is not persisted as a node property. New subtype fields are added only
+when an accepted graph behavior needs them and their persistence meaning is
+defined. Relationships such as ownership or residence are not flattened into
+ambiguous scalar properties merely to enlarge a node DTO.
+
 ### Person
 
 A human known, mentioned, or inferred by the user.
@@ -105,13 +141,19 @@ Animals can carry affective memory, relationship contexts, life events, places,
 and source evidence. They should not be flattened into generic objects when they
 are socially or emotionally meaningful.
 
-### Topic
+### KnowledgeItem
 
-A recurring theme, interest, concept, project, or subject.
+Standalone abstract information retained for future recall or use. This node
+absorbs the former standalone `Topic` representation and also covers concepts,
+ideas, insights, reminders, quotes, references, and an `other` fallback.
 
 Useful properties:
 
-- `name`
+- `knowledge_kind`: topic, concept, idea, insight, reminder, quote, reference, other.
+- `title`
+- `content`
+- `attribution`
+- `reminder_at`
 - `description`
 - `aliases`
 - `metadata`
@@ -154,7 +196,7 @@ Claims are useful when a direct relationship is too lossy or when multiple evide
 
 ### Perception
 
-A subjective perception held by the user about any graph target: person, relationship context, event, place, organization, object, topic, source, claim, project, or profile-relevant memory.
+A subjective perception held by the user about any graph target: person, relationship context, event, place, organization, object, knowledge item, source, claim, project, or profile-relevant memory.
 
 Useful properties:
 
@@ -172,7 +214,7 @@ Useful properties:
 - `privacy_level`
 - `metadata`
 
-Perceptions should not be treated as objective truth about the target. They represent the user's experienced truth and should retain provenance. This applies equally to people, places, events, objects, topics, organizations, sources, claims, and relationships.
+Perceptions should not be treated as objective truth about the target. They represent the user's experienced truth and should retain provenance. This applies equally to people, places, events, objects, knowledge items, organizations, sources, claims, and relationships.
 
 ### RelationshipContext
 
@@ -351,7 +393,7 @@ The graph model supports future judge decisions, but the database layer can also
 - `CARED_FOR_BY`: Animal to Person or Organization.
 - `LIVES_WITH`: Animal or Person to Person, Organization, or SocialCircle.
 - `MEMBER_OF`: Person or Animal to SocialCircle.
-- `ABOUT`: Source or Claim to Topic.
+- `ABOUT`: Source or Claim to KnowledgeItem.
 - `LOCATED_IN`: Place to Place.
 - `ALIAS_OF`: Alias node or label to Entity, if aliases become nodes.
 - `SAME_AS`: Entity to Entity during merge staging or external identity mapping.
@@ -404,7 +446,7 @@ The `metadata` object is useful for information that is real but not yet importa
 
 Metadata should not become the primary modeling strategy. If a metadata key becomes frequently queried, used in resolution, or important to the product behavior, it should be promoted to a typed property, relationship, or claim.
 
-Affective information should not be hidden in metadata when it is important. Perceptions, relationship contexts, emotional summaries, and original user wording should be typed fields or dedicated nodes. This rule applies beyond people: places, events, objects, organizations, topics, sources, claims, and relationships can all be emotionally meaningful.
+Affective information should not be hidden in metadata when it is important. Perceptions, relationship contexts, emotional summaries, and original user wording should be typed fields or dedicated nodes. This rule applies beyond people: places, events, objects, organizations, knowledge items, sources, claims, and relationships can all be emotionally meaningful.
 
 Sensitive, mutable, or integration-relevant details should usually be promoted early. Examples include phone numbers, email addresses, physical addresses, external profile URLs, and provider place IDs. These values need provenance, validity, privacy handling, and conflict resolution.
 

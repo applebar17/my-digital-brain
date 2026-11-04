@@ -86,14 +86,15 @@ call still receives the registered `OutputDTO` or an error output.
 
 ## Typed graph-action tool pattern
 
-The current working pattern for product graph writes is a small operation
-surface rather than one provider function for every node subtype. If selected
-for a state, one registered graph-action function would map to one dispatcher;
-its input would be typed action variants fixing valid `operation`, `kind`, and
-`type` combinations, with explicit fields for each object/operation. This is a
-design direction, not a finalized list of graph DTOs, operations, or types;
-those are confirmed state by state in the rebuild plan. A Person-create and a
-Place-create variant illustrate how type-specific fields can stay explicit.
+The accepted pattern for product graph writes is a small operation surface
+rather than one provider function for every node subtype. If selected for a
+state, one registered graph-action function maps to one dispatcher; its input
+uses typed action variants fixing valid `operation`, `kind`, and `type`
+combinations, with explicit fields for each object/operation. The canonical
+[graph model](../../network/graph-model.md#typed-node-creation-contracts) owns
+the semantic node subtypes and their fields. Exact tool operations and action
+variants are confirmed state by state in the rebuild plan. A Person-create and
+a Place-create variant illustrate how type-specific fields remain explicit.
 
 ```python
 from typing import Literal
