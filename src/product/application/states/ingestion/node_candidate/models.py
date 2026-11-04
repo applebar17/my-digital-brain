@@ -1,38 +1,12 @@
 """Typed input and candidate output contracts for node detection."""
 
-from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from product.application.references import OwnerContextDTO, ReferenceEntryDTO
 from product.application.states.ingestion.reasoning import IngestionReasoningResultDTO
-
-
-class NodeCandidateKind(StrEnum):
-    """Semantic node categories detectable before identity resolution."""
-
-    PERSON = "person"
-    EVENT = "event"
-    PLACE = "place"
-    ORGANIZATION = "organization"
-    OBJECT = "object"
-    ANIMAL = "animal"
-    SOCIAL_CIRCLE = "social_circle"
-    KNOWLEDGE_ITEM = "knowledge_item"
-
-
-class KnowledgeItemKind(StrEnum):
-    """Concise categories for standalone abstract information."""
-
-    TOPIC = "topic"
-    CONCEPT = "concept"
-    IDEA = "idea"
-    INSIGHT = "insight"
-    REMINDER = "reminder"
-    QUOTE = "quote"
-    REFERENCE = "reference"
-    OTHER = "other"
+from product.graph import KnowledgeItemKind, NodeType
 
 
 class NodeCandidateStateInputDTO(BaseModel):
@@ -56,7 +30,7 @@ class NodeCandidateDTO(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    node_type: NodeCandidateKind = Field(
+    node_type: NodeType = Field(
         description="Candidate category used to select the explicit subtype contract."
     )
     description: str | None = Field(
@@ -73,7 +47,7 @@ class NodeCandidateDTO(BaseModel):
 class PersonCandidateDTO(NodeCandidateDTO):
     """One human mentioned in the inherited conversation."""
 
-    node_type: Literal[NodeCandidateKind.PERSON] = Field(description="Person candidate.")
+    node_type: Literal[NodeType.PERSON] = Field(description="Person candidate.")
     display_name: str = Field(description="Best readable name supported by the conversation.")
     given_name: str | None = Field(description="Given name when explicitly available.")
     surname: str | None = Field(description="Surname when explicitly available.")
@@ -83,17 +57,20 @@ class PersonCandidateDTO(NodeCandidateDTO):
 class EventCandidateDTO(NodeCandidateDTO):
     """One occurrence with useful temporal or participation meaning."""
 
-    node_type: Literal[NodeCandidateKind.EVENT] = Field(description="Event candidate.")
+    node_type: Literal[NodeType.EVENT] = Field(description="Event candidate.")
     title: str = Field(description="Concise readable title for the event.")
     started_at: str | None = Field(description="Stated start date, time, or readable range.")
     ended_at: str | None = Field(description="Stated end date or time when available.")
     time_precision: str | None = Field(description="Available precision of the event timing.")
+    organizer_hint: str | None = Field(
+        description="Readable event-organizer cue from the conversation, not an object reference."
+    )
 
 
 class PlaceCandidateDTO(NodeCandidateDTO):
     """One physical or logical location."""
 
-    node_type: Literal[NodeCandidateKind.PLACE] = Field(description="Place candidate.")
+    node_type: Literal[NodeType.PLACE] = Field(description="Place candidate.")
     name: str = Field(description="Readable place name supported by the conversation.")
     address: str | None = Field(description="Street or venue address when stated.")
     city: str | None = Field(description="City when stated or inherent in the place mention.")
@@ -102,12 +79,15 @@ class PlaceCandidateDTO(NodeCandidateDTO):
     place_precision: str | None = Field(
         description="Available granularity such as country, city, venue, or address."
     )
+    owner_hint: str | None = Field(
+        description="Readable place-owner cue from the conversation, not an object reference."
+    )
 
 
 class OrganizationCandidateDTO(NodeCandidateDTO):
     """One formal or informal organization, institution, team, or group."""
 
-    node_type: Literal[NodeCandidateKind.ORGANIZATION] = Field(
+    node_type: Literal[NodeType.ORGANIZATION] = Field(
         description="Organization candidate."
     )
     name: str = Field(description="Readable organization or group name.")
@@ -117,7 +97,7 @@ class OrganizationCandidateDTO(NodeCandidateDTO):
 class ObjectCandidateDTO(NodeCandidateDTO):
     """One meaningful physical or digital object."""
 
-    node_type: Literal[NodeCandidateKind.OBJECT] = Field(description="Object candidate.")
+    node_type: Literal[NodeType.OBJECT] = Field(description="Object candidate.")
     name: str = Field(description="Readable name of the meaningful object.")
     category: str | None = Field(description="Object category when useful and supported.")
     owner_hint: str | None = Field(
@@ -128,7 +108,7 @@ class ObjectCandidateDTO(NodeCandidateDTO):
 class AnimalCandidateDTO(NodeCandidateDTO):
     """One meaningful animal, including a pet."""
 
-    node_type: Literal[NodeCandidateKind.ANIMAL] = Field(description="Animal candidate.")
+    node_type: Literal[NodeType.ANIMAL] = Field(description="Animal candidate.")
     name: str = Field(description="Animal name or best readable mention.")
     species: str | None = Field(description="Species when known.")
     breed: str | None = Field(description="Breed when known.")
@@ -141,7 +121,7 @@ class AnimalCandidateDTO(NodeCandidateDTO):
 class SocialCircleCandidateDTO(NodeCandidateDTO):
     """One user-perceived social grouping."""
 
-    node_type: Literal[NodeCandidateKind.SOCIAL_CIRCLE] = Field(
+    node_type: Literal[NodeType.SOCIAL_CIRCLE] = Field(
         description="Social-circle candidate."
     )
     name: str = Field(description="Readable name of the user-perceived social grouping.")
@@ -153,7 +133,7 @@ class SocialCircleCandidateDTO(NodeCandidateDTO):
 class KnowledgeItemCandidateDTO(NodeCandidateDTO):
     """One standalone abstract item retained for future use or recall."""
 
-    node_type: Literal[NodeCandidateKind.KNOWLEDGE_ITEM] = Field(
+    node_type: Literal[NodeType.KNOWLEDGE_ITEM] = Field(
         description="Knowledge-item candidate."
     )
     knowledge_kind: KnowledgeItemKind = Field(
@@ -193,6 +173,6 @@ class NodeCandidateSetDTO(BaseModel):
         )
     )
 
-    def present_types(self) -> set[NodeCandidateKind]:
+    def present_types(self) -> set[NodeType]:
         """Derive candidate kinds for later state/tool configuration."""
         return {candidate.node_type for candidate in self.candidates}

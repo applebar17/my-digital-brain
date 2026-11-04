@@ -1,6 +1,6 @@
 # Task 4.3.2a — align graph topology with candidate types
 
-**Status: Not started**
+**Status: Completed**
 
 ## User story
 

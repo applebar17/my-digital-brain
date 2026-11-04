@@ -2,8 +2,6 @@
 
 from product.application.states.ingestion.node_candidate import (
     KnowledgeItemCandidateDTO,
-    KnowledgeItemKind,
-    NodeCandidateKind,
     NodeCandidateSetDTO,
     NodeCandidateState,
     NodeCandidateStateInputDTO,
@@ -19,8 +17,6 @@ __all__ = [
     "IngestionReasoningResultDTO",
     "IngestionReasoningState",
     "KnowledgeItemCandidateDTO",
-    "KnowledgeItemKind",
-    "NodeCandidateKind",
     "NodeCandidateSetDTO",
     "NodeCandidateState",
     "NodeCandidateStateInputDTO",

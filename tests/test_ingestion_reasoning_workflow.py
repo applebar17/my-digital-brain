@@ -15,8 +15,6 @@ from product.application.references import (
 )
 from product.application.states.ingestion import (
     IngestionReasoningState,
-    KnowledgeItemKind,
-    NodeCandidateKind,
     NodeCandidateSetDTO,
     NodeCandidateState,
 )
@@ -32,6 +30,7 @@ from product.application.workflows.memory_ingestion.models import (
 )
 from product.application.workflows.memory_ingestion.preparation import IngestionContextPreparer
 from product.application.workflows.memory_ingestion.workflow import MemoryIngestionWorkflow
+from product.graph import KnowledgeItemKind, NodeType
 from product.prompts import FilePromptTemplateSource, PromptRenderer, PromptService
 
 
@@ -110,6 +109,7 @@ class NodeCandidateClient(IngestionReasoningClient):
                             "region": "Lazio",
                             "country": "Italy",
                             "place_precision": "city",
+                            "owner_hint": None,
                         },
                         {
                             "node_type": "knowledge_item",
@@ -211,12 +211,12 @@ def test_workflow_inherits_conversation_and_generates_typed_candidates() -> None
 
     assert isinstance(result, NodeCandidateSetDTO)
     assert result.present_types() == {
-        NodeCandidateKind.PERSON,
-        NodeCandidateKind.PLACE,
-        NodeCandidateKind.KNOWLEDGE_ITEM,
+        NodeType.PERSON,
+        NodeType.PLACE,
+        NodeType.KNOWLEDGE_ITEM,
     }
     knowledge_item = result.candidates[2]
-    assert knowledge_item.node_type == NodeCandidateKind.KNOWLEDGE_ITEM
+    assert knowledge_item.node_type == NodeType.KNOWLEDGE_ITEM
     assert knowledge_item.knowledge_kind == KnowledgeItemKind.INSIGHT
     assert search_queries == [
         "user: I went to Rome last week.\n"

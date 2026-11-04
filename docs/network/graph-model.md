@@ -29,8 +29,8 @@ The initial ingestion-aligned creation fields are:
 | Node subtype | Subtype-specific creation fields |
 | --- | --- |
 | `Person` | `display_name`, `given_name`, `surname`, `known_since` |
-| `Event` | `title`, `started_at`, `ended_at`, `time_precision` |
-| `Place` | `name`, `address`, `city`, `region`, `country`, `place_precision` |
+| `Event` | `title`, `started_at`, `ended_at`, `time_precision`, `organizer_hint` |
+| `Place` | `name`, `address`, `city`, `region`, `country`, `place_precision`, `owner_hint` |
 | `Organization` | `name`, `domain` |
 | `Object` | `name`, `category`, `owner_hint` |
 | `Animal` | `name`, `species`, `breed`, `sex`, `owner_hint` |
