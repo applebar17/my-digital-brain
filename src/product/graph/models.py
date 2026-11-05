@@ -1,7 +1,8 @@
 """Canonical typed contracts for semantic graph nodes."""
 
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +31,26 @@ class KnowledgeItemKind(StrEnum):
     QUOTE = "quote"
     REFERENCE = "reference"
     OTHER = "other"
+
+
+class IdentityMatchKind(StrEnum):
+    """Strength of one deterministic identity-evidence match."""
+
+    EXACT_NAME = "exact_name"
+    EXACT_ALIAS = "exact_alias"
+    NAME_TOKEN = "name_token"
+
+
+GRAPH_LABEL_BY_NODE_TYPE: Mapping[NodeType, str] = {
+    NodeType.PERSON: "Person",
+    NodeType.EVENT: "Event",
+    NodeType.PLACE: "Place",
+    NodeType.ORGANIZATION: "Organization",
+    NodeType.OBJECT: "Object",
+    NodeType.ANIMAL: "Animal",
+    NodeType.SOCIAL_CIRCLE: "SocialCircle",
+    NodeType.KNOWLEDGE_ITEM: "KnowledgeItem",
+}
 
 
 class NodeCreateDTO(BaseModel):
@@ -173,3 +194,179 @@ NodeCreate = (
     | SocialCircleNodeCreateDTO
     | KnowledgeItemNodeCreateDTO
 )
+
+NODE_CREATE_MODEL_BY_TYPE: Mapping[NodeType, type[NodeCreateDTO]] = {
+    NodeType.PERSON: PersonNodeCreateDTO,
+    NodeType.EVENT: EventNodeCreateDTO,
+    NodeType.PLACE: PlaceNodeCreateDTO,
+    NodeType.ORGANIZATION: OrganizationNodeCreateDTO,
+    NodeType.OBJECT: ObjectNodeCreateDTO,
+    NodeType.ANIMAL: AnimalNodeCreateDTO,
+    NodeType.SOCIAL_CIRCLE: SocialCircleNodeCreateDTO,
+    NodeType.KNOWLEDGE_ITEM: KnowledgeItemNodeCreateDTO,
+}
+
+
+class NodePatchDTO(BaseModel):
+    """Fields with shared update semantics for every semantic node."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    node_type: NodeType = Field(description="Semantic type of the existing node to update.")
+    description: str | None = Field(
+        description="Replacement grounded description, or null to leave it unchanged."
+    )
+    aliases_to_add: list[str] = Field(
+        description="Source-supported aliases to add without removing existing aliases."
+    )
+
+
+class PersonNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.PERSON] = Field(description="Person node update.")
+    display_name: str | None = Field(description="Replacement readable name, or null.")
+    given_name: str | None = Field(description="Replacement given name, or null.")
+    surname: str | None = Field(description="Replacement surname, or null.")
+    known_since: str | None = Field(description="Replacement known-since information, or null.")
+
+
+class EventNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.EVENT] = Field(description="Event node update.")
+    title: str | None = Field(description="Replacement event title, or null.")
+    started_at: str | None = Field(description="Replacement event start, or null.")
+    ended_at: str | None = Field(description="Replacement event end, or null.")
+    time_precision: str | None = Field(description="Replacement time precision, or null.")
+    organizer_hint: str | None = Field(description="Replacement organizer cue, or null.")
+
+
+class PlaceNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.PLACE] = Field(description="Place node update.")
+    name: str | None = Field(description="Replacement place name, or null.")
+    address: str | None = Field(description="Replacement address, or null.")
+    city: str | None = Field(description="Replacement city, or null.")
+    region: str | None = Field(description="Replacement region, or null.")
+    country: str | None = Field(description="Replacement country, or null.")
+    place_precision: str | None = Field(description="Replacement place precision, or null.")
+    owner_hint: str | None = Field(description="Replacement place-owner cue, or null.")
+
+
+class OrganizationNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.ORGANIZATION] = Field(description="Organization node update.")
+    name: str | None = Field(description="Replacement organization name, or null.")
+    domain: str | None = Field(description="Replacement organization domain, or null.")
+
+
+class ObjectNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.OBJECT] = Field(description="Object node update.")
+    name: str | None = Field(description="Replacement object name, or null.")
+    category: str | None = Field(description="Replacement object category, or null.")
+    owner_hint: str | None = Field(description="Replacement ownership cue, or null.")
+
+
+class AnimalNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.ANIMAL] = Field(description="Animal node update.")
+    name: str | None = Field(description="Replacement animal name, or null.")
+    species: str | None = Field(description="Replacement species, or null.")
+    breed: str | None = Field(description="Replacement breed, or null.")
+    sex: str | None = Field(description="Replacement sex, or null.")
+    owner_hint: str | None = Field(description="Replacement owner or carer cue, or null.")
+
+
+class SocialCircleNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.SOCIAL_CIRCLE] = Field(description="Social-circle update.")
+    name: str | None = Field(description="Replacement social-circle name, or null.")
+    circle_type: str | None = Field(description="Replacement circle category, or null.")
+
+
+class KnowledgeItemNodePatchDTO(NodePatchDTO):
+    node_type: Literal[NodeType.KNOWLEDGE_ITEM] = Field(description="Knowledge-item update.")
+    knowledge_kind: KnowledgeItemKind | None = Field(
+        description="Replacement knowledge category, or null."
+    )
+    title: str | None = Field(description="Replacement knowledge-item title, or null.")
+    content: str | None = Field(description="Replacement retained content, or null.")
+    attribution: str | None = Field(description="Replacement attribution, or null.")
+    reminder_at: str | None = Field(description="Replacement reminder timing, or null.")
+
+
+NodePatch = (
+    PersonNodePatchDTO
+    | EventNodePatchDTO
+    | PlaceNodePatchDTO
+    | OrganizationNodePatchDTO
+    | ObjectNodePatchDTO
+    | AnimalNodePatchDTO
+    | SocialCircleNodePatchDTO
+    | KnowledgeItemNodePatchDTO
+)
+
+
+class StoredNodeDTO(BaseModel):
+    """Trusted persisted node returned by the graph repository boundary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    backend_id: str = Field(description="Backend graph identifier kept outside model context.")
+    node: NodeCreate = Field(description="Typed semantic properties stored for this node.")
+
+
+class IdentityMatchDTO(BaseModel):
+    """Trusted backend identity evidence before model-safe reference projection."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    backend_id: str = Field(description="Backend identifier kept outside model context.")
+    node: NodeCreate = Field(description="Typed existing node matching the candidate search.")
+    match_kind: IdentityMatchKind = Field(description="Deterministic match classification.")
+
+
+class IdentityLookupResultDTO(BaseModel):
+    """Bounded same-type identity evidence returned for one candidate."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    matches: list[IdentityMatchDTO] = Field(description="Ordered deterministic match evidence.")
+
+
+class GraphNodeRepository(Protocol):
+    """Owner-scoped persistence operations required by node resolution."""
+
+    def search_nodes(
+        self,
+        owner_id: str,
+        node_type: NodeType,
+        terms: list[str],
+        *,
+        limit: int,
+    ) -> list[StoredNodeDTO]: ...
+
+    def get_node(
+        self,
+        owner_id: str,
+        backend_id: str,
+        node_type: NodeType,
+    ) -> StoredNodeDTO: ...
+
+    def create_node(self, owner_id: str, node: NodeCreate) -> StoredNodeDTO: ...
+
+    def update_node(
+        self,
+        owner_id: str,
+        backend_id: str,
+        node: NodeCreate,
+    ) -> StoredNodeDTO: ...
+
+
+class GraphQueryExecutor(Protocol):
+    """Minimal Cypher execution boundary implemented by the configured graph client."""
+
+    def execute_read(
+        self,
+        cypher: str,
+        parameters: Mapping[str, object] | None = None,
+    ) -> list[dict[str, object]]: ...
+
+    def execute_write(
+        self,
+        cypher: str,
+        parameters: Mapping[str, object] | None = None,
+    ) -> list[dict[str, object]]: ...

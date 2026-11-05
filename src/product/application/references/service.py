@@ -200,6 +200,28 @@ class ReferenceContext:
         """Return the active local reference for a trusted backend identifier."""
         return self._ref_by_backend.get(self._required_text(backend_id, "backend_id"))
 
+    def refresh_existing(
+        self,
+        ref: str,
+        *,
+        display_name: str | None,
+        summary: str | None,
+        aliases: Iterable[str],
+    ) -> ReferenceEntryDTO:
+        """Refresh readable fields after an explicit successful backend update."""
+        entry = self.entry_for(ref)
+        if entry.resolution_status == ReferenceResolutionStatus.PROPOSED:
+            raise ValueError(f"Reference '{ref}' is not bound to an existing graph object.")
+        refreshed = entry.model_copy(
+            update={
+                "display_name": self._optional_text(display_name),
+                "summary": self._optional_text(summary),
+                "aliases": self._normalize_aliases(aliases),
+            }
+        )
+        self._entries[ref] = refreshed
+        return refreshed
+
     def entries(self, refs: Iterable[str] | None = None) -> list[ReferenceEntryDTO]:
         """Return model-facing entries in stable allocation order."""
         if refs is None:
