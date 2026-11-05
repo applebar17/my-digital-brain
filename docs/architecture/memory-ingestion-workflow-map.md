@@ -27,8 +27,8 @@ flowchart TB
     B["02 · PREPARE CONTEXT · CODE<br/>In: inherited history + bound owner<br/>Does: register owner/refs; retrieve bounded graph context<br/>Out: owner + ReferenceContext + retrieval context"]
     C["03 · UNDERSTAND MEMORY · AI<br/>In: inherited history + prepared context<br/>Main call: reason about facts, gaps, links<br/>Out: structured interpretation<br/>Extra reasoning/planning: none"]
     D["04 · PROPOSE OBJECTS · AI<br/>In: input + interpretation<br/>Main call: identify people, places, events, etc.<br/>Out: typed object candidates; no writes<br/>Extra reasoning/planning: none"]
-    E["05 · LOOK UP IDENTITIES · CODE<br/>In: candidates + owner scope<br/>Does: search for possible existing objects<br/>Out: bounded match evidence + supplied refs<br/>No identity decision"]
-    F["06 · RESOLVE OBJECTS · AI + TOOLS<br/>In: candidates + matches + supplied refs<br/>Main call: choose reuse, creation, or clarification<br/>Tools: write selected nodes<br/>Out: resolved refs + node-write outcomes<br/>Extra reasoning/planning: none"]
+    E["05 · BATCH + LOOK UP IDENTITIES · CODE<br/>In: candidates + launch batch policy + owner scope<br/>Does: group candidates; search before each sequential batch<br/>Out: bounded match evidence + supplied refs<br/>No identity decision"]
+    F["06 · RESOLVE OBJECTS · AI + TOOLS<br/>In: one candidate batch + current matches + supplied refs<br/>Main call: choose reuse, create, update, or clarification<br/>Tools: typed create/update actions for batch node types<br/>Out: resolved refs + node-write outcomes<br/>Extra reasoning/planning: none"]
     G["07 · SAVE MEMORY / CONTEXT · AI + TOOLS<br/>In: input + resolved refs<br/>Main call: choose what to preserve<br/>Tools: write memory and context<br/>Out: memory/context refs + outcomes<br/>Extra reasoning/planning: none"]
     H["08 · SAVE RELATIONSHIPS · AI + TOOLS<br/>In: input + resolved endpoints + context<br/>Main call: decide which links are supported<br/>Tools: write supported relationships<br/>Out: link outcomes or deferred links<br/>Extra reasoning/planning: none"]
     I["09 · GATHER RESULT · CODE<br/>In: completed state outcomes<br/>Does: assemble typed ingestion result<br/>Out: matched ingest_memory tool output"]
@@ -80,8 +80,8 @@ message.
 | 2. Prepare context | Deterministic code | Inherited conversational history and bound owner/services | Registers the owner and known refs and retrieves bounded existing context without rewriting source messages | Owner projection, `ReferenceContext`, and retrieval context | No LLM call |
 | 3. Understand memory | `IngestionReasoningState` | Inherited history, optional guidance, and prepared context | Interprets facts, ambiguities, likely connections, and what should remain episodic | Structured interpretation | Its main call is the ingestion reasoning; no separate reasoning or planning call is specified |
 | 4. Propose objects | `NodeCandidateState` | Input, interpretation, supplied references | Generates typed object candidates | Candidate objects; no writes | Main call generates candidates; no separate reasoning or planning call is specified |
-| 5. Look up identities | Deterministic service | Candidate identity details and owner scope | Searches for possible existing matches without deciding identity | Bounded match evidence and supplied existing-object references | No LLM call |
-| 6. Resolve objects | `NodeResolutionWriteState` with deterministic tools | Candidates, match evidence, input, supplied references | Decides reuse versus creation; calls typed graph tools; may invoke the clarification child state if configured and needed | Resolved references and node-write outcomes | Main call resolves identities and uses tools; no separate reasoning or planning call is specified |
+| 5. Batch and look up identities | Deterministic service | Candidate identity details, launch-configured batch policy, and owner scope | Builds type-aware batches and searches immediately before each sequential batch without deciding identity | One bounded batch with current match evidence and supplied existing-object references | No LLM call |
+| 6. Resolve objects | `NodeResolutionWriteState` with deterministic tools | One candidate batch, current match evidence, input, supplied references | Decides reuse, creation, or an explicit typed update; may invoke the clarification child state if configured and needed | Resolved references and node-write outcomes merged before the next batch | Main call resolves identities and uses tools; no separate reasoning or planning call is specified |
 | 7. Save memory/context | `MemoryContextWriteState` with deterministic tools | Input and resolved target references | Decides what memory/context to preserve and calls typed write tools | Memory/context outcomes and references | Main call determines and requests writes; no separate reasoning or planning call is specified |
 | 8. Save relationships | `RelationshipWriteState` with deterministic tools | Input, resolved endpoints, relevant memory/context outcomes | Decides which durable links are supported and calls typed write tools | Relationship outcomes or explicitly deferred links | Main call evaluates and requests links; no separate reasoning or planning call is specified |
 | 9. Gather result | Deterministic workflow | Compact results from prior steps | Assembles one outcome for the caller | Typed ingestion result, returned as the matched `ingest_memory` tool output | No LLM call |
@@ -108,12 +108,20 @@ each candidate whose kind has configured lookup. The service derives its own
 request, returns bounded candidate evidence, and adds supplied existing-object
 references to `ReferenceContext`.
 
-`NodeResolutionWriteState` receives each candidate with its lookup evidence.
+The workflow groups candidates through launch-configurable deterministic
+batching. Defaults are 15 candidates per batch and a dedicated-type minimum of
+5. Full and substantial same-type groups receive dedicated invocations;
+smaller remainders are pooled into bounded mixed batches. Batches run
+sequentially over one shared `ReferenceContext`, and lookup runs immediately
+before each batch so prior writes participate in later identity evidence.
+
+`NodeResolutionWriteState` receives one batch with its current lookup evidence.
 It may select an explicitly supplied existing reference, create a new object,
-or ask for clarification. Lookup evidence alone does not bind or merge an
-identity, reject a candidate, or decide that clarification is required. Its
-completed results make newly created or resolved references available to
-dependent states.
+update a supplied existing object through its explicit subtype patch, or ask
+for clarification. Lookup evidence alone does not bind or merge an identity,
+reject a candidate, or decide that clarification is required. Its completed
+results make newly created, updated, or resolved references available to the
+next batch and dependent states.
 
 `MemoryContextWriteState` precedes relationship work when a relationship needs
 a context or perception object as an endpoint. `RelationshipWriteState` uses
@@ -174,11 +182,12 @@ classification, graph access, redaction, and model-safe candidate packet
 construction. The LLM receives the resulting packet as evidence only; it never
 produces Cypher, persisted IDs, or an executable graph search.
 
-When a supplied existing reference is selected, the normal default is additive:
-the workflow may create a memory, supported relationship, claim,
-perception, or context record against that reference. It must not silently
-overwrite identity properties merely because a lookup found a plausible match.
-An explicit, typed property-update contract is required for any direct update.
+When a supplied existing reference is selected, the state may leave it
+unchanged or invoke an explicit subtype update. Nullable scalar patch fields
+mean unchanged, aliases are additive, and field clearing is not part of this
+workflow. A lookup result alone never triggers an update. The model must request
+the update from grounded candidate or clarification information through the
+typed tool contract.
 
 The same principle applies after clarification. A user answer enriches the
 resumed state context; the agent must return the corrected value in its typed

@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: In progress — complete through Task 4.3.2a**
+**Status: In progress — complete through Task 4.3.3**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
@@ -31,8 +31,11 @@ before ingestion code is added. Tasks 4.3.1–4.3.2 then define the two read-onl
 interpretation states primarily through input/output contracts, prompts,
 toolbox configuration, and workflow wiring. Task 4.3.2a aligns candidate types
 with graph persistence and tools before Task 4.3.3 can write them. Wire each
-completed state into the workflow as it is delivered; Task 4.3.6 verifies the
-complete sequence rather than deferring all composition until the end.
+completed state into the workflow as it is delivered. The accepted exception is
+the node-resolution batch loop and workflow-level clarification continuation:
+Task 4.3.3 delivers the reusable batching, lookup, state, and tool components,
+while Task 4.3.6 wires their sequential execution and continuation cursor with
+the complete workflow. Task 4.3.6 then verifies the complete sequence.
 
 ## Dependencies
 

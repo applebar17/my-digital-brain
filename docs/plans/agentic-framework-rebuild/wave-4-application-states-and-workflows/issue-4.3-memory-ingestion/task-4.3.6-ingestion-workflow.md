@@ -23,6 +23,14 @@ Reasoning/planning may guide state behavior, but workflow handoffs determine
 which outputs become inputs to subsequent steps. Do not introduce a generic
 workflow DSL or an autonomous replacement for this sequence.
 
+This task also completes the workflow-level continuation deliberately deferred
+from Task 4.3.3. When a node-resolution batch pauses through the clarification
+child state, retain the active batch, completed and remaining batches, and the
+shared reference context. Resume the paused resolution state first, merge its
+completed reference delta, then continue the remaining batches and subsequent
+workflow steps. The workflow-backed `ingest_memory` tool propagates the pause
+and final matched result without treating external input as a failure.
+
 ## Where
 
 - `src/product/application/workflows/memory_ingestion.py`, inheriting the
@@ -50,6 +58,9 @@ workflow result once.
 - A context or relationship is not written before required target refs resolve.
 - A tool failure is returned to the invoking state and the workflow does not
   silently fabricate success or apply a deterministic global break.
+- A clarification pause inside node resolution resumes the same batch and then
+  the remaining deterministic workflow from a typed workflow cursor; no batch
+  is skipped, repeated, or treated as an error.
 - The local inspector shows the workflow's actual step dependencies and each
   configured state's prompt, reasoning/planning stages, toolbox, and contracts.
 - End-to-end tests assert data passed between each state, not only final DB

@@ -19,8 +19,17 @@ from product.application.states.conversation_entry import ConversationEntryReque
 from product.application.states.ingestion import (
     IngestionReasoningResultDTO,
     IngestionReasoningState,
+    NodeCandidateSetDTO,
     NodeCandidateState,
     NodeCandidateStateInputDTO,
+)
+from product.application.states.ingestion.node_candidate import PersonCandidateDTO
+from product.application.states.ingestion.node_resolution import (
+    NodeBatchPolicyDTO,
+    NodeCandidateBatchPlanner,
+    NodeResolutionBatchPreparer,
+    NodeResolutionStateInputDTO,
+    NodeResolutionWriteState,
 )
 from product.application.states.memory_query import MemoryQueryRequestDTO
 from product.application.states.memory_query.models import MemoryQueryContextPacket
@@ -43,6 +52,14 @@ from product.application.workflows.memory_ingestion.models import (
 )
 from product.application.workflows.memory_ingestion.preparation import IngestionContextPreparer
 from product.application.workflows.memory_ingestion.workflow import MemoryIngestionWorkflow
+from product.graph import (
+    GraphIdentityLookupService,
+    GraphNodeRepository,
+    GraphNodeService,
+    NodeCreate,
+    NodeType,
+    StoredNodeDTO,
+)
 from product.prompts import FilePromptTemplateSource, PromptRenderer, PromptService
 
 
@@ -78,6 +95,39 @@ class EmptyInspectionMemoryBackend:
         limit: int,
     ) -> MemorySearchResultDTO:
         return MemorySearchResultDTO()
+
+
+class EmptyInspectionGraphRepository(GraphNodeRepository):
+    """Expose real graph contracts to inspection without storage I/O."""
+
+    def search_nodes(
+        self,
+        owner_id: str,
+        node_type: NodeType,
+        terms: list[str],
+        *,
+        limit: int,
+    ) -> list[StoredNodeDTO]:
+        return []
+
+    def get_node(
+        self,
+        owner_id: str,
+        backend_id: str,
+        node_type: NodeType,
+    ) -> StoredNodeDTO:
+        raise ValueError("Inspection does not load graph nodes.")
+
+    def create_node(self, owner_id: str, node: NodeCreate) -> StoredNodeDTO:
+        raise ValueError("Inspection does not write graph nodes.")
+
+    def update_node(
+        self,
+        owner_id: str,
+        backend_id: str,
+        node: NodeCreate,
+    ) -> StoredNodeDTO:
+        raise ValueError("Inspection does not write graph nodes.")
 
 
 def current_application_configuration() -> ApplicationConfigurationInspectionDTO:
@@ -171,6 +221,42 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
         candidate_input,
         invocation_context,
     )
+    graph_repository = EmptyInspectionGraphRepository()
+    graph_service = GraphNodeService(graph_repository)
+    batch_planner = NodeCandidateBatchPlanner(NodeBatchPolicyDTO())
+    resolution_preparer = NodeResolutionBatchPreparer(
+        owner_id=owner.backend_id,
+        identity_lookup=GraphIdentityLookupService(graph_repository),
+        reference_context=reference_context,
+    )
+    resolution_state = NodeResolutionWriteState(
+        llm_client,
+        history_session,
+        prompt_service,
+        owner_id=owner.backend_id,
+        graph_service=graph_service,
+        reference_context=reference_context,
+    )
+    inspection_candidates = NodeCandidateSetDTO(
+        candidates=[
+            PersonCandidateDTO(
+                node_type=NodeType.PERSON,
+                description="<candidate description>",
+                aliases=[],
+                identity_gaps=[],
+                display_name="<candidate person>",
+                given_name=None,
+                surname=None,
+                known_since=None,
+            )
+        ]
+    )
+    inspection_batch = batch_planner.plan(inspection_candidates, reference_context)[0]
+    resolution_input = resolution_preparer.prepare(inspection_batch, owner_context)
+    resolution_config = resolution_state.build_invocation(
+        resolution_input,
+        invocation_context,
+    )
     workflow = MemoryIngestionWorkflow(
         IngestionContextPreparer(
             owner=owner,
@@ -197,6 +283,16 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
                 input_model=MemoryQueryRequestDTO,
                 configuration=query_config,
             ),
+            inspect_configured_state(
+                state_id=resolution_state.state_id,
+                title="Node resolution and write",
+                description=(
+                    "Resolve one configured candidate batch through typed create/update "
+                    "and optional clarification tools."
+                ),
+                input_model=NodeResolutionStateInputDTO,
+                configuration=resolution_config,
+            ),
         ],
         workflows=[
             inspect_workflow(
@@ -204,6 +300,7 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
                 {
                     reasoning_state.state_id: reasoning_config,
                     candidate_state.state_id: candidate_config,
+                    resolution_state.state_id: resolution_config,
                 },
             )
         ],

@@ -13,6 +13,25 @@ state keeps those responsibilities separate: backend code determines what may
 be safely considered; the LLM decides whether the supplied evidence supports
 reuse, a new object, or clarification.
 
+## Deterministic batching
+
+The workflow partitions the candidate inventory before invoking this state.
+Batching is deterministic and configured at application launch. The default
+policy uses a maximum batch size of 15 candidates and a dedicated-type minimum
+of 5:
+
+1. emit complete type-specific batches up to the maximum size;
+2. emit a dedicated type-specific batch for a remainder at or above the
+   dedicated-type minimum; and
+3. pool smaller remainders into mixed batches up to the maximum size.
+
+Both values are launch configuration, not hard-coded state behavior. Batches
+execute sequentially over the same `ReferenceContext`. Identity lookup runs
+immediately before each batch, so nodes created or updated by an earlier batch
+are available as evidence to later batches. The state class is unchanged by
+batch composition; its toolbox is narrowed to the node types present in the
+current batch.
+
 ## Required context
 
 - one `NodeCandidateDTO` or a compact batch of independent candidates;
@@ -47,12 +66,28 @@ typed result as the matched output of its original agentic tool call.
 
 ## Expected result and handoff
 
-The typed result is a `NodeResolutionWriteResultDTO`: created or selected
-model-facing refs, concise semantic outcome, additive changes made when any,
-deferred items, and a typed `ReferenceContext` delta. It contains no provider
-transcript or backend IDs.
+The model-facing typed result contains one explicit outcome per candidate:
+created, selected existing, updated existing, or deferred. The deterministic
+batch handler combines those outcomes with the trusted `ReferenceContext`
+delta produced by successful tools. Neither result contains provider
+transcripts or model-visible backend IDs.
 
-The workflow merges the reference delta before preparing memory/context work.
+The workflow merges each completed batch into the shared reference context
+before looking up and invoking the next batch. It exposes the combined result
+to memory/context work only after every batch completes.
+
+## Existing-node updates
+
+Selecting an existing reference and updating it are separate decisions. The
+state may select a supplied existing reference without changing it, or invoke
+the explicit subtype update action when the candidate or a clarification adds
+grounded information.
+
+Update DTOs are subtype-specific. Nullable scalar fields mean unchanged when
+null, aliases are additive, and field clearing is outside the current scope.
+The state handles conflicting identity information semantically, invoking
+clarification when needed; deterministic validation or write failures return
+as ordinary tool errors and do not terminate the provider interaction.
 
 ## Prompt contract
 
