@@ -1,6 +1,16 @@
 """Typed domain boundary for the target memory graph."""
 
 from product.graph.identity import GraphIdentityLookupService
+from product.graph.memory import (
+    CreatePerceptionPersistenceDTO,
+    GraphMemoryRepository,
+    GraphMemoryService,
+    MemoryLogKind,
+    MemoryLogWriteDTO,
+    PerceptionDTO,
+    StoredMemoryLogDTO,
+    StoredPerceptionDTO,
+)
 from product.graph.models import (
     GRAPH_LABEL_BY_NODE_TYPE,
     NODE_CREATE_MODEL_BY_TYPE,
@@ -38,12 +48,15 @@ from product.graph.service import GraphNodeService
 __all__ = [
     "AnimalNodeCreateDTO",
     "AnimalNodePatchDTO",
+    "CreatePerceptionPersistenceDTO",
     "EventNodeCreateDTO",
     "EventNodePatchDTO",
     "GRAPH_LABEL_BY_NODE_TYPE",
     "GraphNodeRepository",
     "GraphNodeService",
     "GraphIdentityLookupService",
+    "GraphMemoryRepository",
+    "GraphMemoryService",
     "GraphQueryExecutor",
     "IdentityLookupResultDTO",
     "IdentityMatchDTO",
@@ -51,6 +64,8 @@ __all__ = [
     "KnowledgeItemKind",
     "KnowledgeItemNodeCreateDTO",
     "KnowledgeItemNodePatchDTO",
+    "MemoryLogKind",
+    "MemoryLogWriteDTO",
     "NodeCreate",
     "NODE_CREATE_MODEL_BY_TYPE",
     "NodeCreateDTO",
@@ -63,9 +78,12 @@ __all__ = [
     "OrganizationNodePatchDTO",
     "PersonNodeCreateDTO",
     "PersonNodePatchDTO",
+    "PerceptionDTO",
     "PlaceNodeCreateDTO",
     "PlaceNodePatchDTO",
     "SocialCircleNodeCreateDTO",
     "SocialCircleNodePatchDTO",
     "StoredNodeDTO",
+    "StoredMemoryLogDTO",
+    "StoredPerceptionDTO",
 ]
