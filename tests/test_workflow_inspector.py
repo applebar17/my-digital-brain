@@ -79,6 +79,7 @@ def test_local_page_shows_current_assembled_application_configuration() -> None:
     assert '"state_id":"ingestion_node_candidate"' in payload
     assert '"state_id":"ingestion_node_resolution_write"' in payload
     assert '"state_id":"ingestion_memory_context_write"' in payload
+    assert '"state_id":"ingestion_relationship_write"' in payload
     assert '"toolbox_name":"conversation_entry"' in payload
     assert '"name":"query_memory"' in payload
     assert '"name":"ingest_memory"' in payload
@@ -86,6 +87,7 @@ def test_local_page_shows_current_assembled_application_configuration() -> None:
     assert '"name":"write_graph_node"' in payload
     assert '"name":"create_memory_log"' in payload
     assert '"name":"create_perception"' in payload
+    assert '"name":"write_relationship"' in payload
     assert '"name":"ConversationEntryRequestDTO"' in payload
     assert '"name":"IngestionReasoningResultDTO"' in payload
     assert '"name":"NodeCandidateSetDTO"' in payload

@@ -63,9 +63,11 @@ compact context categories are `family`, `friendship`, `romantic`,
 `other`. More specific source wording belongs in typed descriptive fields, not
 in an invented graph relationship type.
 
-The relationship-writing state receives existing exact context matches as
-evidence. It may reuse one, create a distinct context, or clarify a material
-ambiguity. Deterministic lookup does not make a semantic merge decision.
+The relationship-writing state chooses the participant refs and normalized
+category. The deterministic context tool reuses the exact owner, participant
+set, and category key or creates it when absent. This is identity-key reuse,
+not an inferred semantic merge. If the participants or category are materially
+unclear, the state clarifies or defers before calling the tool.
 
 ## Initialization policy
 

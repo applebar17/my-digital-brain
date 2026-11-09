@@ -1,6 +1,6 @@
 # Task 4.3.5 — write relationships from resolved endpoints
 
-**Status: Not started**
+**Status: Completed — final workflow composition remains in Task 4.3.6**
 
 ## User story
 
@@ -29,6 +29,13 @@ only the current durable edge, without silently flattening history.
 
 The state uses one main LLM/tool session with no separate framework
 reasoning/planning stage.
+
+The delivered vertical slice includes the typed topology, Neo4j persistence
+boundary, direct/context/state tool actions, state prompt and contracts,
+reference mapping, bounded context consumption packet, local inspector
+configuration, and functional tests. Task 4.3.6 places this completed state
+after memory/perception writing and carries its result into the aggregate
+ingestion outcome; no duplicate partial workflow path is introduced here.
 
 The functional meaning and lifecycle of direct edges, `RelationshipContext`,
 and `RelationshipState` are owned by the canonical
@@ -90,8 +97,8 @@ backend IDs remain internal.
   state, any combination, or only MemoryLog involvement; backend co-occurrence
   never creates a semantic relationship by itself.
 - A context is owner-scoped and matched by participant set plus normalized
-  category. Exact lookup supplies evidence/reuse; it does not merge a materially
-  different relationship.
+  category. The deterministic tool reuses that exact identity key; the LLM
+  chooses or clarifies the semantic category before invoking it.
 - An initial state is created only when the source contains meaningful status,
   closeness, emotional, or temporal state information.
 - Later observations append states. They do not overwrite history or infer an

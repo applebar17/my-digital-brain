@@ -20,10 +20,13 @@ from product.application.states.ingestion import (
     IngestionReasoningResultDTO,
     IngestionReasoningState,
     MemoryContextWriteInputDTO,
+    MemoryContextWriteResultDTO,
     MemoryContextWriteState,
     NodeCandidateSetDTO,
     NodeCandidateState,
     NodeCandidateStateInputDTO,
+    RelationshipWriteInputDTO,
+    RelationshipWriteState,
 )
 from product.application.states.ingestion.node_candidate import PersonCandidateDTO
 from product.application.states.ingestion.node_resolution import (
@@ -55,18 +58,28 @@ from product.application.workflows.memory_ingestion.models import (
 from product.application.workflows.memory_ingestion.preparation import IngestionContextPreparer
 from product.application.workflows.memory_ingestion.workflow import MemoryIngestionWorkflow
 from product.graph import (
+    AppendRelationshipStatePersistenceDTO,
     CreatePerceptionPersistenceDTO,
+    CreateRelationshipContextPersistenceDTO,
+    CreateRelationshipPersistenceDTO,
     GraphIdentityLookupService,
     GraphMemoryRepository,
     GraphMemoryService,
     GraphNodeRepository,
     GraphNodeService,
+    GraphRelationshipRepository,
+    GraphRelationshipService,
     MemoryLogWriteDTO,
     NodeCreate,
     NodeType,
+    RelationshipContextDetailDTO,
+    StoredDirectRelationshipDTO,
     StoredMemoryLogDTO,
     StoredNodeDTO,
     StoredPerceptionDTO,
+    StoredRelationshipContextDTO,
+    StoredRelationshipStateDTO,
+    UpdateRelationshipPersistenceDTO,
 )
 from product.prompts import FilePromptTemplateSource, PromptRenderer, PromptService
 
@@ -146,6 +159,47 @@ class EmptyInspectionMemoryRepository(GraphMemoryRepository):
         request: CreatePerceptionPersistenceDTO,
     ) -> StoredPerceptionDTO:
         raise ValueError("Inspection does not write perceptions.")
+
+
+class EmptyInspectionRelationshipRepository(GraphRelationshipRepository):
+    """Expose relationship contracts without storage I/O."""
+
+    def create_or_get_relationship(
+        self,
+        owner_id: str,
+        request: CreateRelationshipPersistenceDTO,
+    ) -> StoredDirectRelationshipDTO:
+        raise ValueError("Inspection does not write relationships.")
+
+    def update_relationship(
+        self,
+        owner_id: str,
+        request: UpdateRelationshipPersistenceDTO,
+    ) -> StoredDirectRelationshipDTO:
+        raise ValueError("Inspection does not update relationships.")
+
+    def create_or_get_context(
+        self,
+        owner_id: str,
+        request: CreateRelationshipContextPersistenceDTO,
+    ) -> StoredRelationshipContextDTO:
+        raise ValueError("Inspection does not write relationship contexts.")
+
+    def append_state(
+        self,
+        owner_id: str,
+        request: AppendRelationshipStatePersistenceDTO,
+    ) -> StoredRelationshipStateDTO:
+        raise ValueError("Inspection does not write relationship states.")
+
+    def get_context_detail(
+        self,
+        owner_id: str,
+        context_backend_id: str,
+        *,
+        state_limit: int,
+    ) -> RelationshipContextDetailDTO:
+        raise ValueError("Inspection does not read relationship contexts.")
 
     def update_node(
         self,
@@ -300,6 +354,31 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
         ),
         invocation_context,
     )
+    memory_context_result = MemoryContextWriteResultDTO(
+        writes=[],
+        deferred_items=[],
+        summary="<memory and perception write summary>",
+    )
+    relationship_state = RelationshipWriteState(
+        llm_client,
+        history_session,
+        prompt_service,
+        owner_id=owner.backend_id,
+        graph_relationship_service=GraphRelationshipService(
+            EmptyInspectionRelationshipRepository()
+        ),
+        reference_context=reference_context,
+    )
+    relationship_config = relationship_state.build_invocation(
+        RelationshipWriteInputDTO(
+            reasoning=candidate_input.reasoning,
+            node_resolution_results=[],
+            memory_context_result=memory_context_result,
+            owner=owner_context,
+            references=reference_context.entries(),
+        ),
+        invocation_context,
+    )
     workflow = MemoryIngestionWorkflow(
         IngestionContextPreparer(
             owner=owner,
@@ -345,6 +424,16 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
                 ),
                 input_model=MemoryContextWriteInputDTO,
                 configuration=memory_context_config,
+            ),
+            inspect_configured_state(
+                state_id=relationship_state.state_id,
+                title="Relationship write",
+                description=(
+                    "Create durable edges, narrative contexts, and append-only temporal "
+                    "relationship states."
+                ),
+                input_model=RelationshipWriteInputDTO,
+                configuration=relationship_config,
             ),
         ],
         workflows=[

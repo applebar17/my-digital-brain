@@ -37,6 +37,12 @@ shared reference context. Merge its created MemoryLog and Perception refs before
 building the Task 4.3.5 relationship input. Do not recreate memory/context DTOs,
 tools, or persistence behavior in the workflow layer.
 
+Invoke the completed Task 4.3.5 `RelationshipWriteState` after memory and
+perception work. Its direct relationship, context, and state refs are merged
+into the same run-scoped reference context and its confirmed/deferred outcomes
+are included in the aggregate workflow result. Workflow code must not recreate
+its topology rules, context identity key, append policy, or consumption logic.
+
 ## Where
 
 - `src/product/application/workflows/memory_ingestion.py`, inheriting the
