@@ -30,6 +30,11 @@ only the current durable edge, without silently flattening history.
 The state uses one main LLM/tool session with no separate framework
 reasoning/planning stage.
 
+The functional meaning and lifecycle of direct edges, `RelationshipContext`,
+and `RelationshipState` are owned by the canonical
+[relationship model](../../../../network/relationship-model.md). This task
+implements that model without redefining it in state prompts or tool code.
+
 ## Where
 
 - Relationship-write state/prompt under `product.application.states.ingestion`.
@@ -44,8 +49,9 @@ backend IDs remain internal.
 
 ## Dependencies and acceptance
 
-- Depends on whichever earlier state resolves the required endpoints and
-  creates any required relationship context, as confirmed by Issue 4.0.
+- Depends on earlier states resolving the required endpoints and creating the
+  relevant MemoryLog and Perception objects. This state creates or reuses its
+  own relationship contexts.
 - Allowed relationship schema matches the graph's supported kinds.
 - Each endpoint resolves to an existing/created object before the write call.
 - Relationship-context creation precedes every dependent relationship-state or
@@ -54,3 +60,44 @@ backend IDs remain internal.
   relationship contexts, and relationship-state history without an untyped
   property bag.
 - No relationship omission is silently reported as successful creation.
+
+## Delivery slices
+
+1. **Topology and contracts:** define the semantic provider-facing relationship
+   enum and endpoint compatibility, plus explicit direct-edge create/update,
+   context create/reuse, and state-append DTOs. Keep backend structural edges
+   out of model-facing schemas.
+2. **Lookup and persistence:** add owner-scoped exact relationship/context
+   lookup, direct-edge upsert/update, context reuse/creation, state append, and
+   MemoryLog-to-context linking. Provider refs resolve to backend UUIDs only in
+   deterministic handlers.
+3. **State and tools:** implement `RelationshipWriteState`, its versioned prompt,
+   result DTO, toolbox, clarification option, and normal provider continuation.
+   A context-dependent state append occurs only after a context tool output has
+   supplied the usable ref.
+4. **Consumption contract:** expose repository/service reads for a context with
+   participants, relevant memory logs, and chronologically ordered states, plus
+   a bounded projection suitable for retrieval. Do not build frontend rendering
+   in this task.
+5. **Configuration and verification:** expose the actual state configuration in
+   the local inspector and test edge reuse, context reuse, initial-state policy,
+   append-only enhancement, local/backend reference separation, and compact
+   consumption packets.
+
+## Initialization and enhancement acceptance
+
+- The LLM state decides whether the source supports a direct edge, context,
+  state, any combination, or only MemoryLog involvement; backend co-occurrence
+  never creates a semantic relationship by itself.
+- A context is owner-scoped and matched by participant set plus normalized
+  category. Exact lookup supplies evidence/reuse; it does not merge a materially
+  different relationship.
+- An initial state is created only when the source contains meaningful status,
+  closeness, emotional, or temporal state information.
+- Later observations append states. They do not overwrite history or infer an
+  end date for the previous state.
+- Repeated identical direct edges, contexts, or state observations do not create
+  duplicates.
+- Direct relationships remain the ordinary traversal representation. Context
+  detail and retrieval hydrate bounded narrative and temporal history according
+  to the canonical relationship model.

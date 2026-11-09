@@ -36,6 +36,9 @@ is defined in the [memory-ingestion workflow map](../architecture/memory-ingesti
   distinct meaningful episodes.
 - The system creates durable relationships only when the source supports a
   meaningful connection. Incidental co-presence remains memory involvement.
+- Rich or evolving relationships follow the direct-edge, relationship-context,
+  and append-only relationship-state policy in the
+  [relationship model](../network/relationship-model.md).
 - The final conversation reply describes the confirmed outcome in plain
   language. It never displays backend identifiers, state names, tool results,
   or internal reasoning.
@@ -74,6 +77,7 @@ The channel-neutral behavior, correlation, and answer experience are defined in
 - [Ingestion application states](../ai-engineering/application-states/ingestion/README.md)
 - [Entity resolution flow](entity-resolution.md)
 - [MemoryLog model](../network/memory-log-model.md)
+- [Relationship model](../network/relationship-model.md)
 - [Reference context and owner projection](../ai-engineering/context-and-prompts/reference-context-and-owner-projection.md)
 - [Tool-calling protocol](../ai-engineering/runtime/tool-calling-protocol.md)
 - [Media ingestion](../external-integrations/media-ingestion.md)

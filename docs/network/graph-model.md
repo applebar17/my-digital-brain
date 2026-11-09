@@ -218,53 +218,15 @@ Perceptions should not be treated as objective truth about the target. They repr
 
 ### RelationshipContext
 
-A memory object describing an emotionally or narratively meaningful relationship over time. It is usually between the user and another entity, but the target can be any meaningful memory anchor.
-
-Useful properties:
-
-- `description`
-- `relationship_type`
-- `status`
-- `closeness`
-- `emotional_summary`
-- `emotional_valence`
-- `emotional_intensity`
-- `emotion_tags`
-- `original_user_words`
-- `valid_from`
-- `valid_to`
-- `time_precision`
-- `confidence`
-- `privacy_level`
-- `metadata`
-
-Relationship contexts are useful when a simple edge such as `KNOWS`, `WORKED_ON`, `LIVED_IN`, or `RELATED_TO` loses the narrative and emotional history of a relationship.
-
-Complex relationships should not be flattened into one current edge. A relationship can have many states over time, especially with ex partners, close friends, family members, organizations, projects, or places. Use a `RelationshipContext` as the stable relationship object and attach dated `RelationshipState` records when the relationship changes.
+A stable narrative representation of a meaningful relationship between resolved
+participants. Its identity, initialization, enhancement, and consumption rules
+are defined by the [relationship model](relationship-model.md).
 
 ### RelationshipState
 
-A dated state slice inside a relationship context.
-
-Useful properties:
-
-- `description`
-- `status`
-- `closeness`
-- `emotional_summary`
-- `emotional_valence`
-- `emotion_tags`
-- `original_user_words`
-- `valid_from`
-- `valid_to`
-- `time_precision`
-- `source_kind`
-- `privacy_level`
-- `metadata`
-
-Relationship states can be sparse. They are meant to work like a structured diary: on date X the relationship felt close, on date Y it felt distant, on date Z it softened again.
-
-Relationship states belong to `RelationshipContext` nodes. Do not attach them directly to bare graph relationships. If a relationship needs state history, model it as a relationship context.
+An append-only time-qualified observation belonging to one
+`RelationshipContext`. The canonical append policy and current-state read
+projection are defined by the [relationship model](relationship-model.md).
 
 ### ProfileMemory
 

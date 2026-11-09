@@ -34,6 +34,12 @@ involvement rather than a durable relationship. If an endpoint is genuinely
 missing, use the configured clarification path or return it as a deferred
 semantic outcome; do not create an unrelated endpoint just to complete an edge.
 
+The state applies the representation and initialization decisions owned by the
+[relationship model](../../../network/relationship-model.md): a direct edge for
+durable traversal, a context for stable narrative meaning, and a state only for
+a meaningful time-qualified condition. It does not create an empty initial
+state merely because it created a context.
+
 ## Tools and clarification
 
 The toolbox exposes only deterministic relationship/context write capabilities
@@ -42,6 +48,12 @@ configured for this state, plus an agentic tool invoking
 this state as one actionable tool output. The state may retry with corrected
 typed arguments, ask clarification, or preserve the memory while
 reporting the relationship as deferred.
+
+Direct edge operations may be independent and run in one parallel tool batch.
+Context-dependent writes are sequential: context creation or reuse returns its
+ref before a later provider call may append a relationship state. The generic
+tool loop owns this dependency; the state does not fabricate a future context
+ref.
 
 ## Expected result and handoff
 
@@ -61,4 +73,5 @@ the confirmation of a completed write.
 
 - [Deterministic agentic workflows](../../../architecture/deterministic-agentic-workflows.md)
 - [MemoryLog model](../../../network/memory-log-model.md)
+- [Relationship model](../../../network/relationship-model.md)
 - [Tool-calling protocol](../../runtime/tool-calling-protocol.md)

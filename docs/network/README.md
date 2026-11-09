@@ -13,4 +13,5 @@ meaning, affective context, and metadata policy.
 - [Metadata policy contract](metadata-policy-contract.md)
 - [Personal profile memory](personal-profile-memory.md)
 - [MemoryLog model](memory-log-model.md)
+- [Relationship model](relationship-model.md)
 - [Vector retrieval and indexing](vector-retrieval.md)

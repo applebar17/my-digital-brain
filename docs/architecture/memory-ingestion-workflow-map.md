@@ -30,7 +30,7 @@ flowchart TB
     E["05 · BATCH + LOOK UP IDENTITIES · CODE<br/>In: candidates + launch batch policy + owner scope<br/>Does: group candidates; search before each sequential batch<br/>Out: bounded match evidence + supplied refs<br/>No identity decision"]
     F["06 · RESOLVE OBJECTS · AI + TOOLS<br/>In: one candidate batch + current matches + supplied refs<br/>Main call: choose reuse, create, update, or clarification<br/>Tools: typed create/update actions for batch node types<br/>Out: resolved refs + node-write outcomes<br/>Extra reasoning/planning: none"]
     G["07 · SAVE MEMORY / PERCEPTION · AI + TOOLS<br/>In: input + resolved refs<br/>Main call: choose what to preserve<br/>Tools: create MemoryLog and Perception<br/>Out: memory/perception refs + outcomes<br/>Extra reasoning/planning: none"]
-    H["08 · SAVE RELATIONSHIPS · AI + TOOLS<br/>In: input + resolved endpoints + context<br/>Main call: decide which links are supported<br/>Tools: write supported relationships<br/>Out: link outcomes or deferred links<br/>Extra reasoning/planning: none"]
+    H["08 · SAVE RELATIONSHIPS · AI + TOOLS<br/>In: resolved endpoints + memory/perception refs<br/>Main call: choose direct edge, narrative context, temporal state, or defer<br/>Tools: edge create/update; context create/reuse; state append<br/>Out: relationship/context/state refs + outcomes<br/>Extra reasoning/planning: none"]
     I["09 · GATHER RESULT · CODE<br/>In: completed state outcomes<br/>Does: assemble typed ingestion result<br/>Out: matched ingest_memory tool output"]
     W --> B --> C --> D --> E --> F --> G --> H --> I
     end
@@ -124,9 +124,15 @@ results make newly created, updated, or resolved references available to the
 next batch and dependent states.
 
 `MemoryContextWriteState` precedes relationship work when a relationship needs
-a context or perception object as an endpoint. `RelationshipWriteState` uses
+a MemoryLog or perception as supporting context. `RelationshipWriteState` uses
 references from completed prior results, not unresolved natural-language names.
 Neither state invents a missing endpoint to satisfy a planned link.
+
+Relationship writing follows the canonical
+[relationship model](../network/relationship-model.md). Direct edges support
+ordinary traversal, relationship contexts preserve stable narrative meaning,
+and relationship states are appended only for meaningful time-qualified
+observations. Creating a context does not automatically create an empty state.
 
 The conditional clarification branch uses another AI state:
 
