@@ -25,6 +25,11 @@ from product.application.states.ingestion.reasoning import (
     IngestionReasoningResultDTO,
     IngestionReasoningState,
 )
+from product.application.states.ingestion.relationship_write import (
+    RelationshipWriteInputDTO,
+    RelationshipWriteResultDTO,
+    RelationshipWriteState,
+)
 
 __all__ = [
     "IngestionReasoningResultDTO",
@@ -44,4 +49,7 @@ __all__ = [
     "NodeResolutionWriteState",
     "PersonCandidateDTO",
     "PlaceCandidateDTO",
+    "RelationshipWriteInputDTO",
+    "RelationshipWriteResultDTO",
+    "RelationshipWriteState",
 ]
