@@ -2,8 +2,9 @@
 
 ## Purpose
 
-Create `MemoryLog` records and any supported context objects that
-describe the memory itself, such as a perception or relationship context.
+Create `MemoryLog` records and supported perceptions that describe the memory.
+Relationship contexts and their history belong to the later relationship-write
+state.
 
 ## Why it exists
 
@@ -42,7 +43,7 @@ normal caller chain.
 ## Expected result and handoff
 
 The typed result is a `MemoryContextWriteResultDTO`: created MemoryLog and
-context refs, concise user-meaningful titles/summaries, deferred items, and a
+perception refs, concise user-meaningful titles/summaries, deferred items, and a
 `ReferenceContext` delta. It is compacted for relationship work; raw write
 payloads and backend identities do not propagate.
 
@@ -51,6 +52,11 @@ payloads and backend identities do not propagate.
 The prompt distinguishes durable relationships from log involvement and asks
 for fields that the DTO explicitly defines. It does not request arbitrary
 metadata or backend-owned persistence fields.
+
+The LLM-facing perception tool accepts a supplied `target_ref`. Its handler
+resolves that ref and builds a separate backend-only persistence request
+containing the target UUID and typed `PerceptionDTO`; backend identifiers never
+enter the provider-facing schema.
 
 ## Related documentation
 

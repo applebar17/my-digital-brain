@@ -4,6 +4,8 @@
 
 Create or update supported durable relationships only after their endpoints and
 any required memory/context objects are available as resolved references.
+This state owns `RelationshipContext` and relationship-state/history creation;
+the earlier memory/context state owns only `MemoryLog` and `Perception` writes.
 
 ## Why it exists
 

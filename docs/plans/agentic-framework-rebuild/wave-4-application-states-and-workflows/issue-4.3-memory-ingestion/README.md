@@ -1,6 +1,6 @@
 # Issue 4.3 — memory-ingestion state slices and workflow
 
-**Status: In progress — complete through Task 4.3.3**
+**Status: In progress — complete through Task 4.3.4**
 
 After the state census in [Issue 4.0](../issue-4.0-first-workflow-and-state-census/README.md),
 implement the confirmed memory-ingestion agentic states one at a time in their
@@ -35,7 +35,10 @@ completed state into the workflow as it is delivered. The accepted exception is
 the node-resolution batch loop and workflow-level clarification continuation:
 Task 4.3.3 delivers the reusable batching, lookup, state, and tool components,
 while Task 4.3.6 wires their sequential execution and continuation cursor with
-the complete workflow. Task 4.3.6 then verifies the complete sequence.
+the complete workflow. Task 4.3.4 likewise delivers its typed MemoryLog and
+Perception state slice without adding a duplicate partial path around the
+deferred node loop; Task 4.3.6 places it after all node batches and before
+relationship work. Task 4.3.6 then verifies the complete sequence.
 
 ## Dependencies
 

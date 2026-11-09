@@ -31,6 +31,12 @@ completed reference delta, then continue the remaining batches and subsequent
 workflow steps. The workflow-backed `ingest_memory` tool propagates the pause
 and final matched result without treating external input as a failure.
 
+After every node-resolution batch completes, invoke the Task 4.3.4
+`MemoryContextWriteState` once with the accumulated resolution results and the
+shared reference context. Merge its created MemoryLog and Perception refs before
+building the Task 4.3.5 relationship input. Do not recreate memory/context DTOs,
+tools, or persistence behavior in the workflow layer.
+
 ## Where
 
 - `src/product/application/workflows/memory_ingestion.py`, inheriting the

@@ -19,6 +19,8 @@ from product.application.states.conversation_entry import ConversationEntryReque
 from product.application.states.ingestion import (
     IngestionReasoningResultDTO,
     IngestionReasoningState,
+    MemoryContextWriteInputDTO,
+    MemoryContextWriteState,
     NodeCandidateSetDTO,
     NodeCandidateState,
     NodeCandidateStateInputDTO,
@@ -53,12 +55,18 @@ from product.application.workflows.memory_ingestion.models import (
 from product.application.workflows.memory_ingestion.preparation import IngestionContextPreparer
 from product.application.workflows.memory_ingestion.workflow import MemoryIngestionWorkflow
 from product.graph import (
+    CreatePerceptionPersistenceDTO,
     GraphIdentityLookupService,
+    GraphMemoryRepository,
+    GraphMemoryService,
     GraphNodeRepository,
     GraphNodeService,
+    MemoryLogWriteDTO,
     NodeCreate,
     NodeType,
+    StoredMemoryLogDTO,
     StoredNodeDTO,
+    StoredPerceptionDTO,
 )
 from product.prompts import FilePromptTemplateSource, PromptRenderer, PromptService
 
@@ -120,6 +128,24 @@ class EmptyInspectionGraphRepository(GraphNodeRepository):
 
     def create_node(self, owner_id: str, node: NodeCreate) -> StoredNodeDTO:
         raise ValueError("Inspection does not write graph nodes.")
+
+
+class EmptyInspectionMemoryRepository(GraphMemoryRepository):
+    """Expose memory persistence contracts without storage I/O."""
+
+    def create_memory_log(
+        self,
+        owner_id: str,
+        memory_log: MemoryLogWriteDTO,
+    ) -> StoredMemoryLogDTO:
+        raise ValueError("Inspection does not write memory logs.")
+
+    def create_perception(
+        self,
+        owner_id: str,
+        request: CreatePerceptionPersistenceDTO,
+    ) -> StoredPerceptionDTO:
+        raise ValueError("Inspection does not write perceptions.")
 
     def update_node(
         self,
@@ -257,6 +283,23 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
         resolution_input,
         invocation_context,
     )
+    memory_context_state = MemoryContextWriteState(
+        llm_client,
+        history_session,
+        prompt_service,
+        owner_id=owner.backend_id,
+        graph_memory_service=GraphMemoryService(EmptyInspectionMemoryRepository()),
+        reference_context=reference_context,
+    )
+    memory_context_config = memory_context_state.build_invocation(
+        MemoryContextWriteInputDTO(
+            reasoning=candidate_input.reasoning,
+            node_resolution_results=[],
+            owner=owner_context,
+            references=reference_context.entries(),
+        ),
+        invocation_context,
+    )
     workflow = MemoryIngestionWorkflow(
         IngestionContextPreparer(
             owner=owner,
@@ -292,6 +335,16 @@ def current_application_configuration() -> ApplicationConfigurationInspectionDTO
                 ),
                 input_model=NodeResolutionStateInputDTO,
                 configuration=resolution_config,
+            ),
+            inspect_configured_state(
+                state_id=memory_context_state.state_id,
+                title="Memory and perception write",
+                description=(
+                    "Create concise memory atoms and subjective perceptions through "
+                    "typed deterministic tools."
+                ),
+                input_model=MemoryContextWriteInputDTO,
+                configuration=memory_context_config,
             ),
         ],
         workflows=[
